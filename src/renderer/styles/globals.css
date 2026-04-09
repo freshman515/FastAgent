@@ -1,0 +1,170 @@
+@import 'tailwindcss';
+@import '@xterm/xterm/css/xterm.css';
+
+@theme {
+  /* ─── Neutral Warm Gray Palette (NOT AI-blue) ─── */
+  --color-bg-primary: #1a1a1e;
+  --color-bg-secondary: #222226;
+  --color-bg-tertiary: #2a2a2e;
+  --color-bg-surface: #323236;
+
+  --color-text-primary: #e8e8ec;
+  --color-text-secondary: #8e8e96;
+  --color-text-tertiary: #5e5e66;
+
+  --color-border: #333338;
+  --color-border-hover: #444449;
+
+  --color-accent: #7c6aef;
+  --color-accent-hover: #8d7ef5;
+  --color-accent-muted: rgba(124, 106, 239, 0.15);
+
+  --color-success: #3ecf7b;
+  --color-warning: #f0a23b;
+  --color-error: #ef5757;
+  --color-info: #5fa0f5;
+
+  /* ─── Typography ─── */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+  /* ─── Radius ─── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ─── Animations ─── */
+  --animate-toast-in: toast-in 0.2s ease-out;
+  --animate-toast-out: toast-out 0.15s ease-in forwards;
+  --animate-fade-in: fade-in 0.15s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ─── Base Styles ─── */
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--ui-font-family, var(--font-sans));
+  font-size: var(--ui-font-sm, 12px);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Title bar always stays fixed size regardless of UI font settings */
+.titlebar-fixed {
+  font-size: 13px !important;
+  font-family: var(--font-sans) !important;
+}
+
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
+}
+
+/* Drag region for custom titlebar */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Hide scrollbar but keep scroll */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Allow text selection in specific areas */
+.select-text {
+  user-select: text;
+}
+
+/* Tab bar — no bottom border */
+
+/* ─── Browser-style active tab ─── */
+.tab-active {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-primary);
+  border-radius: 8px 8px 0 0;
+  /* Extend 1px below to cover the tab-bar border line */
+  padding-bottom: 1px;
+  margin-bottom: -1px;
+}
+
+.tab-active::before,
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  z-index: 3;
+}
+
+.tab-active::before {
+  left: -8px;
+  border-bottom-right-radius: 8px;
+  box-shadow: 4px 0 0 0 var(--color-bg-primary);
+}
+
+.tab-active::after {
+  right: -8px;
+  border-bottom-left-radius: 8px;
+  box-shadow: -4px 0 0 0 var(--color-bg-primary);
+}
+
+/* Focus visible */
+*:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+  border-radius: var(--radius-sm);
+}
