@@ -111,6 +111,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       id,
       createdAt: Date.now(),
     }
+
     set((state) => ({
       toasts: [...state.toasts, notification],
     }))

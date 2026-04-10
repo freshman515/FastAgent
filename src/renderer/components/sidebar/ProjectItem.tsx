@@ -77,7 +77,8 @@ function NewWorktreeDialog({ project, onClose }: { project: Project; onClose: ()
   useEffect(() => { ref.current?.focus() }, [])
 
   const parentDir = project.path.replace(/[\\/][^\\/]+$/, '')
-  const targetName = branch.trim() ? `${project.name}-${branch.trim()}` : ''
+  const safeBranch = branch.trim().replace(/[/\\]/g, '-')
+  const targetName = safeBranch ? `${project.name}-${safeBranch}` : ''
   const targetPath = targetName ? `${parentDir}/${targetName}` : ''
 
   const submit = async (): Promise<void> => {
@@ -88,9 +89,10 @@ function NewWorktreeDialog({ project, onClose }: { project: Project; onClose: ()
       const wtStore = useWorktreesStore.getState()
       const wtId = wtStore.addWorktree(project.id, name, targetPath, false)
       wtStore.selectWorktree(wtId)
-      const sessions = useSessionsStore.getState().sessions.filter((s) => s.worktreeId === wtId)
-      usePanesStore.getState().switchWorktree(wtId, sessions.map((s) => s.id), null)
-      await useGitStore.getState().fetchWorktrees(project.id, project.path)
+      useProjectsStore.getState().selectProject(project.id)
+      usePanesStore.getState().switchWorktree(wtId, [], null)
+      // Sync worktree list in background (won't delete the entry we just created thanks to path normalization)
+      useGitStore.getState().fetchWorktrees(project.id, project.path)
     } catch {
       // Failed to create worktree
     }
@@ -130,17 +132,55 @@ function TaskStartDialog({ bundle, project, onClose }: { bundle: TaskBundle; pro
     if (!description) return
     const branchName = branchVal.trim() || undefined
     if (branchName) await useGitStore.getState().createBranch(project.id, project.path, branchName)
-    const mainWt = useWorktreesStore.getState().getMainWorktree(project.id)
+    const wtStore = useWorktreesStore.getState()
+    const mainWt = wtStore.getMainWorktree(project.id)
     const wtId = mainWt?.id
+
+    // Switch to project first so xterm components render and PTYs get created
+    useProjectsStore.getState().selectProject(project.id)
+    if (mainWt) {
+      wtStore.selectWorktree(mainWt.id)
+    }
+
     const task = useTasksStore.getState().startTask(bundle.id, project.id, description, branchName)
-    const paneId = usePanesStore.getState().activePaneId
+    const createdSids: string[] = []
     for (const step of bundle.steps) {
       const sid = useSessionsStore.getState().addSession(project.id, step.type, wtId)
-      usePanesStore.getState().addSessionToPane(paneId, sid)
+      createdSids.push(sid)
       useTasksStore.getState().addSessionToTask(task.id, sid)
     }
-    useProjectsStore.getState().selectProject(project.id)
+
+    // Set up pane with all created sessions
+    const paneId = usePanesStore.getState().activePaneId
+    for (const sid of createdSids) {
+      usePanesStore.getState().addSessionToPane(paneId, sid)
+    }
+    useSessionsStore.getState().setActive(createdSids[0])
     onClose()
+
+    // Send prompts after PTYs are ready
+    for (let i = 0; i < bundle.steps.length; i++) {
+      const step = bundle.steps[i]
+      const sid = createdSids[i]
+      const prompt = (step.prompt ?? '') + description
+      if (!prompt) continue
+
+      let attempts = 0
+      const checkAndSend = (): void => {
+        attempts++
+        if (attempts > 30) return // give up after 15s
+        const s = useSessionsStore.getState().sessions.find((x) => x.id === sid)
+        if (s?.ptyId) {
+          setTimeout(() => {
+            const cur = useSessionsStore.getState().sessions.find((x) => x.id === sid)
+            if (cur?.ptyId) window.api.session.write(cur.ptyId, prompt + '\n')
+          }, 2000)
+        } else {
+          setTimeout(checkAndSend, 500)
+        }
+      }
+      setTimeout(checkAndSend, 500)
+    }
   }
 
   return createPortal(
@@ -165,26 +205,45 @@ function TaskStartDialog({ bundle, project, onClose }: { bundle: TaskBundle; pro
 
 // ── Branch Submenu (2-level hover) ──
 
-function BranchSubmenu({ project, branchInfo, anchorRect, onClose }: {
+function BranchSubmenu({ project, branchInfo, anchorRect, onClose, onMouseEnter, onMouseLeave }: {
   project: Project
   branchInfo: { current: string; branches: string[]; isDirty: boolean }
   anchorRect: DOMRect
   onClose: () => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }): JSX.Element {
   const [showNewBranch, setShowNewBranch] = useState(false)
+  const [confirmSwitch, setConfirmSwitch] = useState<string | null>(null)
+
+  const doCheckout = async (branch: string): Promise<void> => {
+    await useGitStore.getState().checkoutBranch(project.id, project.path, branch)
+    onClose()
+  }
+
+  const handleBranchClick = async (branch: string): Promise<void> => {
+    if (branch === branchInfo.current) return
+    if (branchInfo.isDirty) {
+      setConfirmSwitch(branch)
+    } else {
+      await doCheckout(branch)
+    }
+  }
 
   return (
     <>
       <div
         style={{ top: anchorRect.top, left: anchorRect.right + 2, zIndex: 9999 }}
         className="fixed w-48 rounded-[var(--radius-md)] py-1 border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30 max-h-[60vh] overflow-y-auto"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
       >
         <button className={MENU_ITEM} onClick={() => { setShowNewBranch(true) }}>
           <PlusIcon size={12} /> New Branch...
         </button>
         <div className="border-t border-[var(--color-border)] my-0.5" />
         {branchInfo.branches.map((b) => (
-          <button key={b} onClick={() => { useGitStore.getState().checkoutBranch(project.id, project.path, b); onClose() }}
+          <button key={b} onClick={() => handleBranchClick(b)}
             className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] hover:bg-[var(--color-bg-surface)]',
               b === branchInfo.current ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]')}>
             <GitBranch size={11} /><span className="truncate">{b}</span>
@@ -193,6 +252,27 @@ function BranchSubmenu({ project, branchInfo, anchorRect, onClose }: {
         ))}
       </div>
       {showNewBranch && <NewBranchInput project={project} onClose={() => { setShowNewBranch(false); onClose() }} />}
+      {confirmSwitch && createPortal(
+        <>
+          <div className="fixed inset-0 z-[200]" onClick={() => setConfirmSwitch(null)} />
+          <div className={cn(OVERLAY_PANEL, 'z-[201]')} style={{ width: 340 }}>
+            <p className="mb-1 text-[var(--ui-font-sm)] font-medium text-[var(--color-warning)]">Uncommitted Changes</p>
+            <p className="mb-3 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
+              You have uncommitted changes on <strong>{branchInfo.current}</strong>. Switching to <strong>{confirmSwitch}</strong> may cause conflicts or loss of changes.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmSwitch(null)}
+                className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">
+                Cancel
+              </button>
+              <button onClick={() => { doCheckout(confirmSwitch) }}
+                className="rounded-[var(--radius-sm)] bg-[var(--color-warning)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90">
+                Switch Anyway
+              </button>
+            </div>
+          </div>
+        </>, document.body,
+      )}
     </>
   )
 }
@@ -201,6 +281,7 @@ function BranchSubmenu({ project, branchInfo, anchorRect, onClose }: {
 
 function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project; isActive: boolean }): JSX.Element {
   const [wtContextMenu, setWtContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
   const branchInfo = useGitStore((s) => s.branchInfo[wt.id])
 
   useEffect(() => {
@@ -220,19 +301,46 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
   }, [wt.id, project.id])
 
   const handleRemoveWorktree = useCallback(async () => {
+    // 1. Kill all PTY processes bound to this worktree first (release directory lock)
+    const sessions = useSessionsStore.getState().sessions.filter((s) => s.worktreeId === wt.id)
+    for (const s of sessions) {
+      if (s.ptyId) {
+        try { await window.api.session.kill(s.ptyId) } catch { /* ignore */ }
+      }
+    }
+    // Wait briefly for processes to exit and release file handles
+    await new Promise((r) => setTimeout(r, 500))
+
+    // 2. Remove worktree directory
     try {
       await window.api.git.removeWorktree(project.path, wt.path)
     } catch {
-      // removal may fail
+      // may still fail if something else holds a lock
     }
-    useWorktreesStore.getState().removeWorktree(wt.id)
-    // Clean up sessions bound to this worktree
-    const sessions = useSessionsStore.getState().sessions.filter((s) => s.worktreeId === wt.id)
+
+    // 3. Clean up store
     for (const s of sessions) {
+      const paneId = usePanesStore.getState().findPaneForSession(s.id)
+      if (paneId) usePanesStore.getState().removeSessionFromPane(paneId, s.id)
       useSessionsStore.getState().removeSession(s.id)
     }
+    useWorktreesStore.getState().removeWorktree(wt.id)
+
+    // 4. Switch to main worktree of this project
+    const wtStore = useWorktreesStore.getState()
+    const mainWt = wtStore.getMainWorktree(project.id)
+    if (mainWt) {
+      wtStore.selectWorktree(mainWt.id)
+      const mainSessions = useSessionsStore.getState().sessions.filter((s) =>
+        s.projectId === project.id && (!s.worktreeId || s.worktreeId === mainWt.id),
+      )
+      const activeId = mainSessions.length > 0 ? mainSessions[0].id : null
+      usePanesStore.getState().switchWorktree(mainWt.id, mainSessions.map((s) => s.id), activeId)
+      if (activeId) useSessionsStore.getState().setActive(activeId)
+    }
+
     setWtContextMenu(null)
-  }, [wt.id, wt.path, project.path])
+  }, [wt.id, wt.path, project.id, project.path])
 
   return (
     <>
@@ -272,10 +380,33 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
             <button onClick={() => { setWtContextMenu(null); window.api.shell.openPath(wt.path) }} className={MENU_ITEM}>
               <ExternalLink size={12} /> Open in Explorer
             </button>
-            <button onClick={handleRemoveWorktree}
+            <button onClick={() => { setWtContextMenu(null); setConfirmRemove(true) }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]">
               <Trash2 size={12} /> Remove Worktree
             </button>
+          </div>
+        </>, document.body,
+      )}
+
+      {confirmRemove && createPortal(
+        <>
+          <div className="fixed inset-0 z-[200]" onClick={() => setConfirmRemove(false)} />
+          <div className={cn(OVERLAY_PANEL, 'z-[201]')} style={{ width: 340 }}>
+            <p className="mb-1 text-[var(--ui-font-sm)] font-medium text-[var(--color-error)]">Remove Worktree</p>
+            <p className="mb-1 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
+              This will delete the directory and all sessions for <strong>{wt.branch}</strong>.
+            </p>
+            <p className="mb-3 truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{wt.path}</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmRemove(false)}
+                className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">
+                Cancel
+              </button>
+              <button onClick={() => { setConfirmRemove(false); handleRemoveWorktree() }}
+                className="rounded-[var(--radius-sm)] bg-[var(--color-error)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90">
+                Remove
+              </button>
+            </div>
           </div>
         </>, document.body,
       )}
@@ -320,6 +451,20 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   const [projDragOver, setProjDragOver] = useState(false)
   const [branchSubmenuAnchor, setBranchSubmenuAnchor] = useState<DOMRect | null>(null)
   const branchMenuRef = useRef<HTMLButtonElement>(null)
+  const branchCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const openBranchSub = useCallback(() => {
+    if (branchCloseTimer.current) { clearTimeout(branchCloseTimer.current); branchCloseTimer.current = null }
+    if (branchMenuRef.current) setBranchSubmenuAnchor(branchMenuRef.current.getBoundingClientRect())
+  }, [])
+
+  const scheduleBranchClose = useCallback(() => {
+    branchCloseTimer.current = setTimeout(() => setBranchSubmenuAnchor(null), 150)
+  }, [])
+
+  const cancelBranchClose = useCallback(() => {
+    if (branchCloseTimer.current) { clearTimeout(branchCloseTimer.current); branchCloseTimer.current = null }
+  }, [])
 
   const nonMainWorktrees = useMemo(() => worktrees.filter((w) => !w.isMain), [worktrees])
   const hasWorktreeChildren = nonMainWorktrees.length > 0
@@ -359,8 +504,12 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
       usePanesStore.getState().switchWorktree(mainWt.id, wtSessions.map((s) => s.id), activeId)
       if (activeId) useSessionsStore.getState().setActive(activeId)
     } else {
+      // No main worktree yet — use project.id as key, still call switchWorktree to save previous layout
+      wtStore.selectWorktree(null)
       const ps = useSessionsStore.getState().sessions.filter((s) => s.projectId === project.id)
-      useSessionsStore.getState().setActive(ps.length > 0 ? ps[0].id : null)
+      const activeId = ps.length > 0 ? ps[0].id : null
+      usePanesStore.getState().switchWorktree(project.id, ps.map((s) => s.id), activeId)
+      if (activeId) useSessionsStore.getState().setActive(activeId)
     }
   }, [project.id, selectProject])
 
@@ -397,9 +546,11 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         draggable
         onDragStart={(e) => { e.dataTransfer.setData('project-id', project.id); e.dataTransfer.setData('source-group', project.groupId); e.dataTransfer.effectAllowed = 'move' }}
         className={cn(
-          'group flex h-7 cursor-pointer items-center gap-1.5 pl-5 pr-2 transition-colors duration-75',
-          isMainWtActive ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
-          projDragOver && 'border-t border-[var(--color-accent)]',
+          'group flex h-8 cursor-pointer items-center gap-1.5 pl-5 pr-2 transition-colors duration-75',
+          isMainWtActive
+            ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] border-l-2 border-l-[var(--color-accent)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] border-l-2 border-l-transparent',
+          projDragOver && 'border-t border-t-[var(--color-accent)]',
         )}
         onClick={handleSelect}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
@@ -418,19 +569,26 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
           <ChevronRight size={12} className={cn('transition-transform duration-100', expanded && 'rotate-90')} />
         </button>
 
-        <Folder size={13} className="shrink-0" />
-        <span className="flex-1 truncate text-[var(--ui-font-sm)]">{project.name}</span>
+        <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]')} />
+        <span className="flex-1 truncate text-[var(--ui-font-sm)] font-medium">{project.name}</span>
 
-        {branchInfo && (
-          <span className="flex shrink-0 items-center gap-0.5 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-            <GitBranch size={10} className="shrink-0" />
-            <span className="max-w-[80px] truncate">{branchInfo.current}</span>
-            {branchInfo.isDirty && <div className="ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
-          </span>
-        )}
-
+        {/* Status indicators */}
         {hasOutputting && <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)]" />}
         {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
+
+        {/* Branch badge */}
+        {branchInfo && (
+          <span className={cn(
+            'flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5',
+            'text-[9px] leading-none',
+            branchInfo.isDirty
+              ? 'bg-[var(--color-warning)]/15 text-[var(--color-warning)]'
+              : 'bg-[var(--color-bg-surface)] text-[var(--color-text-tertiary)]',
+          )}>
+            <GitBranch size={9} />
+            <span className="max-w-[60px] truncate">{branchInfo.current}</span>
+          </span>
+        )}
 
         <button onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setShowMenu(showMenu ? null : { x: r.right, y: r.bottom + 4 }) }}
           className={cn('flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)]', 'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100', 'hover:bg-[var(--color-bg-surface)] transition-all duration-75')}>
@@ -472,7 +630,16 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
       {contextMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => { setContextMenu(null); setBranchSubmenuAnchor(null) }} />
-          <div style={{ top: contextMenu.y, left: contextMenu.x }}
+          <div
+            ref={(el) => {
+              if (!el) return
+              const rect = el.getBoundingClientRect()
+              const vh = window.innerHeight
+              const vw = window.innerWidth
+              if (rect.bottom > vh) el.style.top = `${Math.max(4, vh - rect.height - 4)}px`
+              if (rect.right > vw) el.style.left = `${Math.max(4, vw - rect.width - 4)}px`
+            }}
+            style={{ top: contextMenu.y, left: contextMenu.x }}
             className={cn('fixed z-50 w-52 rounded-[var(--radius-md)] py-1', 'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30 max-h-[80vh] overflow-y-auto')}>
 
             {/* New Session */}
@@ -498,9 +665,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                 <button
                   ref={branchMenuRef}
                   className={cn(MENU_ITEM, 'justify-between')}
-                  onMouseEnter={() => {
-                    if (branchMenuRef.current) setBranchSubmenuAnchor(branchMenuRef.current.getBoundingClientRect())
-                  }}
+                  onMouseEnter={openBranchSub}
+                  onMouseLeave={scheduleBranchClose}
                 >
                   <span className="flex items-center gap-2"><GitBranch size={11} /> Branches</span>
                   <ChevronRight size={12} />
@@ -578,6 +744,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               branchInfo={branchInfo}
               anchorRect={branchSubmenuAnchor}
               onClose={() => { setBranchSubmenuAnchor(null); setContextMenu(null) }}
+              onMouseEnter={cancelBranchClose}
+              onMouseLeave={scheduleBranchClose}
             />
           )}
         </>

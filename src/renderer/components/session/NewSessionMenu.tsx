@@ -3,6 +3,7 @@ import type { SessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
+import { useWorktreesStore } from '@/stores/worktrees'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
@@ -15,12 +16,12 @@ interface SessionOption {
 }
 
 const SESSION_OPTIONS: SessionOption[] = [
+  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
   { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
-  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
 ]
 
 interface NewSessionMenuProps {
@@ -36,7 +37,8 @@ export function NewSessionMenu({ projectId, paneId, onClose, position }: NewSess
 
   const handleSelect = useCallback(
     (type: SessionType) => {
-      const id = addSession(projectId, type)
+      const worktreeId = useWorktreesStore.getState().selectedWorktreeId ?? undefined
+      const id = addSession(projectId, type, worktreeId)
       const targetPane = paneId ?? usePanesStore.getState().activePaneId
       addSessionToPane(targetPane, id)
       onClose()
@@ -55,11 +57,6 @@ export function NewSessionMenu({ projectId, paneId, onClose, position }: NewSess
           'shadow-lg shadow-black/30 animate-[fade-in_0.1s_ease-out]',
         )}
       >
-        <div className="px-3 py-1.5">
-          <p className="text-[var(--ui-font-2xs)] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">
-            New Session
-          </p>
-        </div>
         {SESSION_OPTIONS.map((opt) => (
           <button
             key={opt.type}

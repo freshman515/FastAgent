@@ -105,6 +105,7 @@ const api = {
     get: () => ipcRenderer.invoke('media:get') as Promise<{
       title: string
       artist: string
+      artwork: string
       status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown'
     }>,
     command: (cmd: 'play-pause' | 'next' | 'prev') => ipcRenderer.invoke('media:command', cmd),
@@ -125,6 +126,29 @@ const api = {
         panes?: Record<string, unknown>
       }>,
     write: (key: string, value: unknown) => ipcRenderer.invoke('config:write', key, value),
+  },
+
+  overlay: {
+    sendToast: (toast: unknown) => ipcRenderer.send('overlay:toast', toast),
+    removeToast: (id: string) => ipcRenderer.send('overlay:toast-remove', id),
+    sendAction: (action: unknown) => ipcRenderer.send('overlay:action', action),
+    setIgnoreMouse: (ignore: boolean) => ipcRenderer.send('overlay:set-ignore-mouse', ignore),
+    onToast: (callback: (toast: unknown) => void) => {
+      const handler = (_: unknown, toast: unknown) => callback(toast)
+      ipcRenderer.on('overlay:toast', handler)
+      return () => ipcRenderer.removeListener('overlay:toast', handler)
+    },
+    onToastRemove: (callback: (id: string) => void) => {
+      const handler = (_: unknown, id: string) => callback(id)
+      ipcRenderer.on('overlay:toast-remove', handler)
+      return () => ipcRenderer.removeListener('overlay:toast-remove', handler)
+    },
+    onAction: (callback: (action: unknown) => void) => {
+      const handler = (_: unknown, action: unknown) => callback(action)
+      ipcRenderer.on('overlay:action', handler)
+      return () => ipcRenderer.removeListener('overlay:action', handler)
+    },
+    isOverlay: new URLSearchParams(window.location.search).get('overlay') === 'true',
   },
 
   platform: process.platform,

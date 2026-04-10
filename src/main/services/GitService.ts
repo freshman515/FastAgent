@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import { resolve } from 'node:path'
 import type { GitWorktreeInfo } from '@shared/types'
 
 export interface GitBranchInfo {
@@ -107,7 +108,27 @@ class GitService {
   }
 
   async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
-    await exec('git', ['worktree', 'remove', worktreePath, '--force'], cwd)
+    const absPath = resolve(worktreePath)
+    // Try git worktree remove first
+    try {
+      await exec('git', ['worktree', 'remove', absPath, '--force'], cwd)
+    } catch {
+      // If git fails (untracked files etc.), manually clean up
+    }
+    // Remove directory if it still exists
+    const { rm, access } = await import('node:fs/promises')
+    try {
+      await access(absPath)
+      await rm(absPath, { recursive: true, force: true })
+    } catch {
+      // Directory already gone
+    }
+    // Prune stale worktree references
+    try {
+      await exec('git', ['worktree', 'prune'], cwd)
+    } catch {
+      // ignore
+    }
   }
 }
 

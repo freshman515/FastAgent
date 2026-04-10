@@ -142,13 +142,14 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
           ref={btnRef}
           onClick={handlePlusClick}
           className={cn(
-            'flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-            'transition-colors duration-100',
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full ml-2 mr-1',
+            'text-[var(--color-text-tertiary)] border border-[var(--color-border)]',
+            'hover:bg-[var(--color-accent)]/15 hover:border-[var(--color-accent)]/50 hover:text-[var(--color-accent)]',
+            'transition-all duration-150',
           )}
           title="New Session"
         >
-          <Plus size={14} />
+          <Plus size={14} strokeWidth={2.5} />
         </button>
       </div>
 

@@ -18,14 +18,12 @@ class AnimationMapper {
   map(features: AudioFeatures): VisualParams {
     const { volume, bass, mid, treble, beat, dominantBand } = features
 
-    // Smooth all values to prevent jitter
     this.smoothVolume += (volume - this.smoothVolume) * 0.15
     this.smoothBass += (bass - this.smoothBass) * 0.2
     this.smoothMid += (mid - this.smoothMid) * 0.12
     this.smoothTreble += (treble - this.smoothTreble) * 0.1
 
-    // Hue shifts based on dominant frequency band
-    const targetHue = 180 + (dominantBand / 128) * 180 // 180-360 (cyan → magenta)
+    const targetHue = 180 + (dominantBand / 128) * 180
     this.hue += (targetHue - this.hue) * 0.03
 
     return {
@@ -42,7 +40,6 @@ class AnimationMapper {
 }
 
 // ─── Melody Renderer ───
-// Multi-layer canvas renderer: glow → curves → particles → sparkles
 
 export class MelodyRenderer {
   private mapper = new AnimationMapper()
@@ -53,6 +50,10 @@ export class MelodyRenderer {
 
   mode: VisualizerMode = 'melody'
 
+  /**
+   * Render with real audio data from AudioAnalyzer.getFeatures().
+   * spectrum[] values come from FFT frequency bins, not fake data.
+   */
   render(ctx: CanvasRenderingContext2D, w: number, h: number, features: AudioFeatures): void {
     const params = this.mapper.map(features)
     this.time += 0.016 * params.flowSpeed
@@ -69,41 +70,40 @@ export class MelodyRenderer {
     }
   }
 
-  /** Render idle animation when no audio is connected */
-  renderIdle(ctx: CanvasRenderingContext2D, w: number, h: number, playing: boolean): void {
-    this.time += 0.008
-
+  /**
+   * Render when no audio is connected.
+   * No fake data — bars decay to zero, melody shows a flat line.
+   */
+  renderIdle(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.clearRect(0, 0, w, h)
 
-    if (!playing) {
-      if (this.mode === 'bars') {
-        this.renderIdleBars(ctx, w, h)
-      } else {
-        ctx.strokeStyle = 'hsla(200, 30%, 50%, 0.2)'
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        for (let x = 0; x < w; x++) {
-          const y = h * 0.7 + Math.sin(x * 0.04 + this.time) * 2
-          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-        }
-        ctx.stroke()
-      }
-      return
-    }
+    if (this.mode === 'bars') {
+      // Decay all bars toward zero — no fake spectrum
+      const gap = 1.5
+      const barW = (w - gap * (BARS_COUNT - 1)) / BARS_COUNT
+      const maxH = h - 2
 
-    // Simulated idle visualization when playing but not connected to audio
-    const fakeFeatures: AudioFeatures = {
-      volume: 0.3 + Math.sin(this.time * 1.5) * 0.15,
-      bass: 0.25 + Math.sin(this.time * 2.3) * 0.15,
-      mid: 0.3 + Math.sin(this.time * 1.8) * 0.1,
-      treble: 0.2 + Math.sin(this.time * 3.1) * 0.1,
-      beat: false,
-      spectrum: Array.from({ length: 32 }, (_, i) =>
-        0.15 + Math.sin(i * 0.5 + this.time * 2) * 0.1 + Math.random() * 0.05,
-      ),
-      dominantBand: 30,
+      for (let i = 0; i < BARS_COUNT; i++) {
+        // Smooth decay toward 0
+        this.smoothBars[i] += (0 - this.smoothBars[i]) * 0.06
+        // Clamp to avoid sub-pixel noise
+        if (this.smoothBars[i] < 0.005) this.smoothBars[i] = 0
+
+        const barH = Math.max(1, this.smoothBars[i] * maxH)
+        const x = i * (barW + gap)
+        const y = h - barH
+        ctx.fillStyle = 'hsla(200, 30%, 50%, 0.15)'
+        ctx.fillRect(x, y, barW, barH)
+      }
+    } else {
+      // Flat baseline — no sine wave
+      ctx.strokeStyle = 'hsla(200, 30%, 50%, 0.15)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(0, h * 0.75)
+      ctx.lineTo(w, h * 0.75)
+      ctx.stroke()
     }
-    this.render(ctx, w, h, fakeFeatures)
   }
 
   // ── Layer 1: Background Glow ──
@@ -128,7 +128,7 @@ export class MelodyRenderer {
     ctx.fillRect(0, 0, w, h)
   }
 
-  // ── Layer 2: Flowing Curves ──
+  // ── Layer 2: Flowing Curves (driven by real spectrum) ──
 
   private renderCurves(
     ctx: CanvasRenderingContext2D,
@@ -160,13 +160,12 @@ export class MelodyRenderer {
         const t = i / CURVE_SEGMENTS
         const x = t * w
 
-        // Blend multiple sine frequencies for organic shape
         const phase = this.curvePhases[c]
         const s1 = Math.sin(t * Math.PI * 2 + phase) * 0.5
         const s2 = Math.sin(t * Math.PI * 4.5 + phase * 1.3) * 0.25
         const s3 = Math.sin(t * Math.PI * 7 + phase * 0.7) * 0.15
 
-        // Mix in spectrum data for reactivity
+        // Real spectrum data drives curve deformation
         const specIdx = Math.floor(t * (spectrum.length - 1))
         const specVal = spectrum[specIdx] ?? 0
         const specInfluence = (specVal - 0.15) * 0.6
@@ -189,7 +188,6 @@ export class MelodyRenderer {
     h: number,
     params: VisualParams,
   ): void {
-    // Spawn particles on beat
     if (params.particleBurst) {
       const count = 4 + Math.floor(params.bassImpact * 6)
       for (let i = 0; i < count && this.particles.length < MAX_PARTICLES; i++) {
@@ -206,7 +204,6 @@ export class MelodyRenderer {
       }
     }
 
-    // Update & render
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i]
       p.life -= 0.016 / p.maxLife
@@ -217,7 +214,7 @@ export class MelodyRenderer {
 
       p.x += p.vx
       p.y += p.vy
-      p.vy -= 0.02 // slight upward drift
+      p.vy -= 0.02
 
       const alpha = p.life * 0.8
       ctx.save()
@@ -255,7 +252,15 @@ export class MelodyRenderer {
     }
   }
 
-  // ── Bars Mode: Spectrum Bars ──
+  // ── Bars Mode: Real Spectrum Bars ──
+  //
+  // Each bar independently reads from AudioAnalyzer's log-mapped spectrum.
+  // Smoothing (attack/release) varies by frequency band:
+  //   - Low freq (bars 0-30%):   slow attack 0.25, slow release 0.06 → heavy, powerful
+  //   - Mid freq (bars 30-65%):  medium attack 0.45, medium release 0.12 → melodic movement
+  //   - High freq (bars 65-100%): fast attack 0.6, fast release 0.2 → crisp, detailed
+  //
+  // This creates visible independence: bass bars lag behind, treble bars flicker.
 
   private renderBars(
     ctx: CanvasRenderingContext2D,
@@ -271,26 +276,43 @@ export class MelodyRenderer {
     const barW = (w - gap * (BARS_COUNT - 1)) / BARS_COUNT
     const maxH = h - 2
 
-    // Resample spectrum to BARS_COUNT bins
+    // spectrum[] is already SPECTRUM_SIZE (48) bars from AudioAnalyzer.
+    // If BARS_COUNT matches, use directly. Otherwise interpolate.
     const step = spectrum.length / BARS_COUNT
 
     for (let i = 0; i < BARS_COUNT; i++) {
-      // Sample spectrum with interpolation
       const srcIdx = i * step
       const lo = Math.floor(srcIdx)
       const hi = Math.min(lo + 1, spectrum.length - 1)
       const frac = srcIdx - lo
       const raw = (spectrum[lo] ?? 0) * (1 - frac) + (spectrum[hi] ?? 0) * frac
 
-      // Boost low frequencies for visual impact
-      const freqBoost = i < BARS_COUNT * 0.15 ? 1.3 : i < BARS_COUNT * 0.4 ? 1.1 : 1.0
-      const target = Math.min(1, raw * freqBoost)
+      const target = Math.min(1, raw)
 
-      // Smooth: fast attack, slow decay
-      if (target > this.smoothBars[i]) {
-        this.smoothBars[i] += (target - this.smoothBars[i]) * 0.45
+      // Per-bar smoothing with frequency-dependent attack/release.
+      // t=0 → lowest frequency, t=1 → highest frequency.
+      const t = i / BARS_COUNT
+      let attack: number
+      let release: number
+
+      if (t < 0.3) {
+        // Low frequency: slow and heavy
+        attack = 0.25
+        release = 0.06
+      } else if (t < 0.65) {
+        // Mid frequency: responsive, musical
+        attack = 0.45
+        release = 0.12
       } else {
-        this.smoothBars[i] += (target - this.smoothBars[i]) * 0.12
+        // High frequency: fast and crisp
+        attack = 0.6
+        release = 0.2
+      }
+
+      if (target > this.smoothBars[i]) {
+        this.smoothBars[i] += (target - this.smoothBars[i]) * attack
+      } else {
+        this.smoothBars[i] += (target - this.smoothBars[i]) * release
       }
 
       const val = this.smoothBars[i]
@@ -298,7 +320,6 @@ export class MelodyRenderer {
       const x = i * (barW + gap)
       const y = h - barH
 
-      // Color: hue shifts across frequency range, brightness tracks value
       const barHue = hue + (i / BARS_COUNT) * 60
       const lightness = 50 + val * 20
       const alpha = 0.55 + val * 0.45
@@ -332,21 +353,6 @@ export class MelodyRenderer {
       grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
       ctx.fillStyle = grad
       ctx.fillRect(0, 0, w, h)
-    }
-  }
-
-  private renderIdleBars(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const gap = 1.5
-    const barW = (w - gap * (BARS_COUNT - 1)) / BARS_COUNT
-
-    for (let i = 0; i < BARS_COUNT; i++) {
-      // Decay to small idle height
-      this.smoothBars[i] += (0.03 - this.smoothBars[i]) * 0.05
-      const barH = Math.max(1, this.smoothBars[i] * (h - 2))
-      const x = i * (barW + gap)
-      const y = h - barH
-      ctx.fillStyle = 'hsla(200, 30%, 50%, 0.2)'
-      ctx.fillRect(x, y, barW, barH)
     }
   }
 }

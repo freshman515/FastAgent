@@ -81,6 +81,16 @@ export function App(): JSX.Element {
     return window.api.session.onFocus((event) => focusSession(event.sessionId))
   }, [focusSession])
 
+  // Listen for overlay actions (e.g., "Jump to session" clicked in overlay)
+  useEffect(() => {
+    return window.api.overlay.onAction((raw) => {
+      const action = raw as { type: string; sessionId?: string; projectId?: string }
+      if (action.type === 'jump' && action.sessionId) {
+        focusSession(action.sessionId)
+      }
+    })
+  }, [focusSession])
+
   // Listen for Claude Code Stop hook — show completion toast
   useEffect(() => {
     return window.api.session.onIdleToast((event) => {

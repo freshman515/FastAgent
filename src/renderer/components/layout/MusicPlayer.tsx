@@ -1,4 +1,4 @@
-import { Play, Pause, SkipBack, SkipForward, Music, Radio } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui'
@@ -9,10 +9,11 @@ interface MediaInfo {
   title: string
   artist: string
   status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown'
+  artwork: string
 }
 
 export function MusicPlayer(): JSX.Element {
-  const [media, setMedia] = useState<MediaInfo>({ title: '', artist: '', status: 'Stopped' })
+  const [media, setMedia] = useState<MediaInfo>({ title: '', artist: '', status: 'Stopped', artwork: '' })
   const [audioConnected, setAudioConnected] = useState(false)
   const vizMode = useUIStore((s) => s.settings.visualizerMode)
   const analyzerRef = useRef<AudioAnalyzer>(new AudioAnalyzer())
@@ -43,6 +44,14 @@ export function MusicPlayer(): JSX.Element {
       } catch {
         setAudioConnected(false)
       }
+    }
+  }, [])
+
+  // ── Auto-connect system audio on mount ──
+  useEffect(() => {
+    const analyzer = analyzerRef.current
+    if (!analyzer.connected) {
+      analyzer.connect().then(() => setAudioConnected(true)).catch(() => {})
     }
   }, [])
 
@@ -82,7 +91,7 @@ export function MusicPlayer(): JSX.Element {
         const features = analyzer.getFeatures()
         renderer.render(ctx, w, h, features)
       } else {
-        renderer.renderIdle(ctx, w, h, playing)
+        renderer.renderIdle(ctx, w, h)
       }
       animRef.current = requestAnimationFrame(draw)
     }
@@ -101,48 +110,52 @@ export function MusicPlayer(): JSX.Element {
     : 'No media'
 
   return (
-    <div className="no-drag flex items-center gap-1.5 rounded-full bg-[var(--color-bg-primary)]/60 px-2 py-0.5 backdrop-blur-sm">
-      {/* Prev */}
-      <button
-        onClick={handlePrev}
-        disabled={!hasMedia}
-        className={cn(
-          'flex h-5 w-5 items-center justify-center rounded-full',
-          'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
-          'transition-colors duration-100',
-          !hasMedia && 'opacity-40 pointer-events-none',
-        )}
-      >
-        <SkipBack size={10} fill="currentColor" />
-      </button>
+    <div className="no-drag flex items-center gap-2 rounded-full bg-[var(--color-bg-primary)]/50 pl-1.5 pr-3 py-0.5 backdrop-blur-sm border border-[var(--color-border)]/30">
+      {/* Controls group */}
+      <div className="flex items-center gap-0.5">
+        {/* Prev */}
+        <button
+          onClick={handlePrev}
+          disabled={!hasMedia}
+          className={cn(
+            'flex h-6 w-6 items-center justify-center rounded-full',
+            'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-white/5',
+            'transition-all duration-150 active:scale-90',
+            !hasMedia && 'opacity-30 pointer-events-none',
+          )}
+        >
+          <SkipBack size={11} fill="currentColor" />
+        </button>
 
-      {/* Play/Pause */}
-      <button
-        onClick={handlePlayPause}
-        disabled={!hasMedia}
-        className={cn(
-          'flex h-5 w-5 items-center justify-center rounded-full',
-          'bg-[var(--color-accent)] text-white',
-          'hover:brightness-110 transition-all duration-100',
-          !hasMedia && 'opacity-40 pointer-events-none',
-        )}
-      >
-        {playing ? <Pause size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
-      </button>
+        {/* Play/Pause */}
+        <button
+          onClick={handlePlayPause}
+          disabled={!hasMedia}
+          className={cn(
+            'flex h-7 w-7 items-center justify-center rounded-full',
+            'bg-[var(--color-accent)] text-white shadow-sm shadow-[var(--color-accent)]/30',
+            'hover:shadow-md hover:shadow-[var(--color-accent)]/40 hover:brightness-110',
+            'transition-all duration-150 active:scale-90',
+            !hasMedia && 'opacity-30 pointer-events-none',
+          )}
+        >
+          {playing ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" className="ml-0.5" />}
+        </button>
 
-      {/* Next */}
-      <button
-        onClick={handleNext}
-        disabled={!hasMedia}
-        className={cn(
-          'flex h-5 w-5 items-center justify-center rounded-full',
-          'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
-          'transition-colors duration-100',
-          !hasMedia && 'opacity-40 pointer-events-none',
-        )}
-      >
-        <SkipForward size={10} fill="currentColor" />
-      </button>
+        {/* Next */}
+        <button
+          onClick={handleNext}
+          disabled={!hasMedia}
+          className={cn(
+            'flex h-6 w-6 items-center justify-center rounded-full',
+            'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-white/5',
+            'transition-all duration-150 active:scale-90',
+            !hasMedia && 'opacity-30 pointer-events-none',
+          )}
+        >
+          <SkipForward size={11} fill="currentColor" />
+        </button>
+      </div>
 
       {/* Melody Visualizer */}
       <button
@@ -151,27 +164,25 @@ export function MusicPlayer(): JSX.Element {
         title={audioConnected ? 'Disconnect audio visualization' : 'Connect system audio for visualization'}
       >
         <canvas ref={canvasRef} className="h-7 w-48 rounded" />
-        {/* Connection indicator */}
-        {!audioConnected && (
-          <div className="absolute inset-0 flex items-center justify-center rounded bg-[var(--color-bg-primary)]/30 opacity-0 transition-opacity hover:opacity-100">
-            <Radio size={12} className="text-[var(--color-text-tertiary)]" />
-          </div>
-        )}
-        {audioConnected && (
-          <div className="absolute right-1 top-0.5">
-            <span className="block h-1 w-1 rounded-full bg-green-400 shadow-[0_0_3px_theme(colors.green.400)]" />
-          </div>
-        )}
       </button>
 
-      {/* Track info */}
+      {/* Track info with artwork */}
       {hasMedia ? (
-        <span
-          className="max-w-[120px] truncate text-[10px] font-medium text-[var(--color-text-secondary)]"
-          title={displayText}
-        >
-          {displayText}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0 max-w-[180px]">
+          {media.artwork && (
+            <img
+              src={media.artwork}
+              alt=""
+              className="h-6 w-6 shrink-0 rounded object-cover shadow-sm"
+            />
+          )}
+          <span
+            className="truncate text-xs font-medium text-[var(--color-text-primary)]"
+            title={displayText}
+          >
+            {displayText}
+          </span>
+        </div>
       ) : (
         <span className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)]">
           <Music size={10} />

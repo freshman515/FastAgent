@@ -183,20 +183,20 @@ export const usePanesStore = create<PanesState>((set, get) => ({
   switchProject: (projectId, projectSessionIds, activeSessionId) => {
     const state = get()
 
-    // Save current project's layout
+    // Save current project's layout (immutable copy)
+    const updatedLayouts = { ...state.projectLayouts }
     if (state.currentProjectId) {
-      state.projectLayouts[state.currentProjectId] = {
+      updatedLayouts[state.currentProjectId] = {
         root: state.root,
         activePaneId: state.activePaneId,
-        paneSessions: state.paneSessions,
-        paneActiveSession: state.paneActiveSession,
+        paneSessions: { ...state.paneSessions },
+        paneActiveSession: { ...state.paneActiveSession },
       }
     }
 
     // Restore target project's layout if cached
-    const saved = state.projectLayouts[projectId]
+    const saved = updatedLayouts[projectId]
     if (saved) {
-      // Verify saved sessions still exist
       const allSaved = Object.values(saved.paneSessions).flat()
       const allValid = allSaved.every((sid) => projectSessionIds.includes(sid))
       if (allValid && allSaved.length > 0) {
@@ -206,7 +206,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
           paneSessions: saved.paneSessions,
           paneActiveSession: saved.paneActiveSession,
           currentProjectId: projectId,
-          projectLayouts: { ...state.projectLayouts },
+          projectLayouts: updatedLayouts,
         })
         return
       }
@@ -219,26 +219,27 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       paneSessions: { [DEFAULT_PANE_ID]: projectSessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
       currentProjectId: projectId,
-      projectLayouts: { ...state.projectLayouts },
+      projectLayouts: updatedLayouts,
     })
   },
 
   switchWorktree: (worktreeId, worktreeSessionIds, activeSessionId) => {
     const state = get()
 
-    // Save current layout keyed by current context
+    // Save current layout keyed by current context (immutable copy)
+    const updatedLayouts = { ...state.projectLayouts }
     const currentKey = state.currentProjectId
     if (currentKey) {
-      state.projectLayouts[currentKey] = {
+      updatedLayouts[currentKey] = {
         root: state.root,
         activePaneId: state.activePaneId,
-        paneSessions: state.paneSessions,
-        paneActiveSession: state.paneActiveSession,
+        paneSessions: { ...state.paneSessions },
+        paneActiveSession: { ...state.paneActiveSession },
       }
     }
 
     // Restore worktree's saved layout if cached
-    const saved = state.projectLayouts[worktreeId]
+    const saved = updatedLayouts[worktreeId]
     if (saved) {
       // Filter out sessions that no longer exist, keep ones that do
       const validSessionSet = new Set(worktreeSessionIds)
@@ -276,7 +277,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
           paneSessions: cleanedPaneSessions,
           paneActiveSession: cleanedPaneActive,
           currentProjectId: worktreeId,
-          projectLayouts: { ...state.projectLayouts },
+          projectLayouts: updatedLayouts,
         })
         return
       }
@@ -289,7 +290,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       paneSessions: { [DEFAULT_PANE_ID]: worktreeSessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
       currentProjectId: worktreeId,
-      projectLayouts: { ...state.projectLayouts },
+      projectLayouts: updatedLayouts,
     })
   },
 

@@ -74,7 +74,7 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
           e.dataTransfer.effectAllowed = 'move'
         }}
         className={cn(
-          'group flex h-7 cursor-pointer items-center gap-1 px-2',
+          'group flex h-8 cursor-pointer items-center gap-1.5 px-2',
           'hover:bg-[var(--color-bg-tertiary)] transition-colors duration-75',
           dragOver && 'bg-[var(--color-accent-muted)] border border-dashed border-[var(--color-accent)]',
         )}
@@ -118,8 +118,8 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
 
         {/* Color dot */}
         <div
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: group.color }}
+          className="h-2.5 w-2.5 shrink-0 rounded-full shadow-sm"
+          style={{ backgroundColor: group.color, boxShadow: `0 0 6px ${group.color}40` }}
         />
 
         {/* Name */}
@@ -134,14 +134,22 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
               if (e.key === 'Escape') setEditing(false)
             }}
             onClick={(e) => e.stopPropagation()}
+            style={{ outline: 'none' }}
             className={cn(
-              'h-5 flex-1 rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)] px-1.5 text-[var(--ui-font-sm)]',
-              'text-[var(--color-text-primary)] border border-[var(--color-accent)] focus:outline-none',
+              'h-6 flex-1 rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)] px-1.5 text-[var(--ui-font-sm)]',
+              'text-[var(--color-text-primary)] border border-[var(--color-accent)]',
             )}
           />
         ) : (
-          <span className="flex-1 truncate text-[var(--ui-font-sm)] font-medium text-[var(--color-text-primary)]">
+          <span className="flex-1 truncate text-[var(--ui-font-sm)] font-semibold tracking-wide text-[var(--color-text-primary)]">
             {group.name}
+          </span>
+        )}
+
+        {/* Project count */}
+        {!editing && projects.length > 0 && (
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-bg-surface)] px-1 text-[9px] font-medium text-[var(--color-text-tertiary)]">
+            {projects.length}
           </span>
         )}
 
@@ -287,12 +295,15 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
 
       {/* Projects list */}
       {!group.collapsed && (
-        <div className="flex flex-col">
+        <div className="flex flex-col pb-1">
           {projects.map((project) => (
             <ProjectItem key={project.id} project={project} />
           ))}
         </div>
       )}
+
+      {/* Group separator */}
+      <div className="mx-3 border-b border-[var(--color-border)]/40" />
     </div>
   )
 }

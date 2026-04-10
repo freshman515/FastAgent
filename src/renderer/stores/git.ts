@@ -2,6 +2,11 @@ import { create } from 'zustand'
 import type { GitBranchInfo, GitWorktreeInfo } from '@shared/types'
 import { useWorktreesStore } from './worktrees'
 
+/** Normalize path separators for consistent comparison (Windows git returns backslashes) */
+function normPath(p: string): string {
+  return p.replace(/\\/g, '/')
+}
+
 interface GitState {
   branchInfo: Record<string, GitBranchInfo>  // keyed by projectId or worktreeId
   fetchStatus: (projectId: string, path: string) => Promise<void>
@@ -29,13 +34,13 @@ export const useGitStore = create<GitState>((set, get) => ({
       const worktreeInfos: GitWorktreeInfo[] = await window.api.git.listWorktrees(projectPath)
       const wtStore = useWorktreesStore.getState()
 
-      // Ensure each worktree from disk has a store entry
+      // Ensure each worktree from disk has a store entry (normalize paths for comparison)
       const diskPaths = new Set<string>()
       for (const info of worktreeInfos) {
-        diskPaths.add(info.path)
-        const existing = wtStore.getWorktreesForProject(projectId).find((w) => w.path === info.path)
+        const np = normPath(info.path)
+        diskPaths.add(np)
+        const existing = wtStore.getWorktreesForProject(projectId).find((w) => normPath(w.path) === np)
         if (existing) {
-          // Update branch if it changed
           if (existing.branch !== info.branch) {
             wtStore.updateBranch(existing.id, info.branch)
           }
@@ -47,7 +52,7 @@ export const useGitStore = create<GitState>((set, get) => ({
       // Remove store entries that no longer exist on disk (except main)
       const storeWorktrees = useWorktreesStore.getState().getWorktreesForProject(projectId)
       for (const w of storeWorktrees) {
-        if (!w.isMain && !diskPaths.has(w.path)) {
+        if (!w.isMain && !diskPaths.has(normPath(w.path))) {
           wtStore.removeWorktree(w.id)
         }
       }

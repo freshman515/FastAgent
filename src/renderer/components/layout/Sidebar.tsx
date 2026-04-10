@@ -1,4 +1,4 @@
-import { FolderPlus, PanelLeftClose, Plus, Search, Settings } from 'lucide-react'
+import { FolderPlus, Layers, PanelLeftClose, Plus, Search, Settings } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useGroupsStore } from '@/stores/groups'
@@ -47,9 +47,12 @@ export function Sidebar(): JSX.Element {
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
       {/* Header */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Projects
-        </span>
+        <div className="flex items-center gap-1.5">
+          <Layers size={13} className="text-[var(--color-accent)]" />
+          <span className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+            Projects
+          </span>
+        </div>
         <div className="flex items-center gap-0.5">
           <button
             onClick={handleStartAdding}
@@ -99,14 +102,23 @@ export function Sidebar(): JSX.Element {
       )}
 
       {/* Search */}
-      <div className="shrink-0 px-3 py-1.5">
-        <div className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--color-bg-tertiary)] px-2 h-6">
-          <Search size={11} className="shrink-0 text-[var(--color-text-tertiary)]" />
+      <div className="shrink-0 px-3 py-2">
+        <div className="relative">
+          {!searchQuery && (
+            <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center gap-1.5">
+              <Search size={12} className="text-[var(--color-text-tertiary)]" />
+              <span className="text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">Search...</span>
+            </div>
+          )}
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter..."
-            className="h-full w-full bg-transparent text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
+            style={{ outline: 'none', boxShadow: 'none' }}
+            className={cn(
+              'h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
+              'text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'transition-colors focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-tertiary)]',
+            )}
           />
         </div>
       </div>
@@ -117,17 +129,17 @@ export function Sidebar(): JSX.Element {
       </div>
 
       {/* Footer: settings */}
-      <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-2">
+      <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-1.5">
         <button
           onClick={openSettings}
           className={cn(
-            'flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5',
+            'flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2',
             'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-            'transition-colors duration-75',
+            'transition-colors duration-100',
           )}
         >
-          <Settings size={13} />
-          <span className="text-[var(--ui-font-sm)]">Settings</span>
+          <Settings size={14} />
+          <span className="text-[var(--ui-font-sm)] font-medium">Settings</span>
         </button>
       </div>
     </div>
