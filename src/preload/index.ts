@@ -151,6 +151,28 @@ const api = {
     isOverlay: new URLSearchParams(window.location.search).get('overlay') === 'true',
   },
 
+  detach: {
+    create: (sessionIds: string[], title: string, sessionData?: unknown[], position?: { x: number; y: number }, size?: { width: number; height: number }) =>
+      ipcRenderer.invoke('detach:create', sessionIds, title, sessionData ?? [], position, size) as Promise<string>,
+    minimize: () => ipcRenderer.invoke('detach:minimize'),
+    maximize: () => ipcRenderer.invoke('detach:maximize'),
+    close: () => ipcRenderer.invoke('detach:close'),
+    onClosed: (callback: (data: { id: string; sessionIds: string[] }) => void) => {
+      const handler = (_: unknown, data: { id: string; sessionIds: string[] }) => callback(data)
+      ipcRenderer.on('detach:closed', handler)
+      return () => ipcRenderer.removeListener('detach:closed', handler)
+    },
+    getSessions: (windowId: string) =>
+      ipcRenderer.invoke('detach:get-sessions', windowId) as Promise<unknown[]>,
+    getWindowId: () => new URLSearchParams(window.location.search).get('windowId') ?? '',
+    isDetached: new URLSearchParams(window.location.search).get('detached') === 'true',
+    getSessionIds: () => {
+      const raw = new URLSearchParams(window.location.search).get('sessionIds') ?? ''
+      return raw ? raw.split(',') : []
+    },
+    getTitle: () => new URLSearchParams(window.location.search).get('title') ?? 'FastAgents',
+  },
+
   platform: process.platform,
 }
 

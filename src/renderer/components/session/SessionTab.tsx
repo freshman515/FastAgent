@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUIStore } from '@/stores/ui'
 import { usePanesStore, type SplitPosition } from '@/stores/panes'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import claudeIcon from '@/assets/icons/Claude.png'
@@ -144,7 +145,20 @@ export function SessionTab({
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(session.id, e) }}
         onDragLeave={onDragLeave}
         onDrop={() => onDrop(session.id)}
-        onDragEnd={onDragEnd}
+        onDragEnd={(e) => {
+          onDragEnd()
+          // Detect if dropped outside the window → pop out
+          const { clientX, clientY, screenX, screenY } = e
+          const inWindow = clientX >= 0 && clientY >= 0
+            && clientX <= window.innerWidth && clientY <= window.innerHeight
+          if (!inWindow && !session.pinned) {
+            const liveSession = useSessionsStore.getState().sessions.find((s) => s.id === session.id)
+            const { popoutPosition, popoutWidth, popoutHeight } = useUIStore.getState().settings
+            const pos = popoutPosition === 'center' ? undefined : { x: screenX, y: screenY }
+            removeSessionFromPane(paneId, session.id)
+            window.api.detach.create([session.id], session.name, liveSession ? [liveSession] : [], pos, { width: popoutWidth, height: popoutHeight })
+          }
+        }}
         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); handleClose() } }}
         className={cn(
           'group flex h-7 cursor-pointer items-center gap-1.5 px-2.5',
@@ -223,6 +237,22 @@ export function SessionTab({
             >
               <span>Rename</span>
               <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">F2</span>
+            </button>
+
+            {/* Pop Out */}
+            <button
+              onClick={() => {
+                setContextMenu(null)
+                const liveSession = useSessionsStore.getState().sessions.find((s) => s.id === session.id)
+                const { popoutPosition, popoutWidth, popoutHeight } = useUIStore.getState().settings
+                const pos = popoutPosition === 'center' ? undefined
+                  : { x: window.screenX + window.innerWidth / 2, y: window.screenY + window.innerHeight / 2 }
+                removeSessionFromPane(paneId, session.id)
+                window.api.detach.create([session.id], session.name, liveSession ? [liveSession] : [], pos, { width: popoutWidth, height: popoutHeight })
+              }}
+              className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+            >
+              Pop Out
             </button>
 
             {/* Split options */}

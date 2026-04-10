@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3 } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore, type AppSettings } from '@/stores/ui'
@@ -79,6 +79,33 @@ function FontSelect({ label, value, options, labels, onChange }: {
   )
 }
 
+function ToggleRow({ label, description, checked, onChange }: {
+  label: string; description: string; checked: boolean; onChange: (v: boolean) => void
+}): JSX.Element {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex flex-col">
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{label}</span>
+        <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{description}</span>
+      </div>
+      <button
+        onClick={() => onChange(!checked)}
+        className={cn(
+          'relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200',
+          checked ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-bg-surface)]',
+        )}
+      >
+        <span
+          className={cn(
+            'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
+            checked && 'translate-x-4',
+          )}
+        />
+      </button>
+    </div>
+  )
+}
+
 // ─── Pages ───
 
 function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
@@ -153,6 +180,42 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         ))}
       </div>
 
+      {/* Pop-out window */}
+      <div className="h-px bg-[var(--color-border)]" />
+      <div className="flex items-center gap-2 mb-1">
+        <ExternalLink size={14} className="text-[var(--color-accent)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          Pop-out Window
+        </span>
+      </div>
+      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Default size and position when popping out a session tab.
+      </p>
+      <div className="flex gap-3">
+        <FontSizeSlider label="Width" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
+        <FontSizeSlider label="Height" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
+      </div>
+      <div className="flex gap-2">
+        {([
+          { id: 'cursor' as const, label: 'Follow Cursor', desc: 'Window appears at mouse position' },
+          { id: 'center' as const, label: 'Screen Center', desc: 'Window always opens centered' },
+        ]).map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => onUpdate('popoutPosition', id)}
+            className={cn(
+              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
+              settings.popoutPosition === id
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+            )}
+          >
+            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Music player toggle + visualizer mode */}
       <div className="h-px bg-[var(--color-border)]" />
       <div className="flex items-center gap-2 mb-1">
@@ -211,6 +274,31 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           </button>
         ))}
       </div>
+
+      {/* Visualizer width */}
+      <FontSizeSlider
+        label="Visualizer Width"
+        value={settings.visualizerWidth}
+        min={80}
+        max={Math.max(400, window.innerWidth)}
+        onChange={(v) => onUpdate('visualizerWidth', v)}
+      />
+
+      {/* Show controls toggle */}
+      <ToggleRow
+        label="Play Controls"
+        description="Previous / Play-Pause / Next buttons"
+        checked={settings.showPlayerControls}
+        onChange={(v) => onUpdate('showPlayerControls', v)}
+      />
+
+      {/* Show track info toggle */}
+      <ToggleRow
+        label="Track Info"
+        description="Song title, artist name and artwork"
+        checked={settings.showTrackInfo}
+        onChange={(v) => onUpdate('showTrackInfo', v)}
+      />
         </>
       )}
     </div>

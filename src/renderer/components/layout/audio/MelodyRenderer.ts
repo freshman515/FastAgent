@@ -1,22 +1,117 @@
 import type { AudioFeatures, Particle, VisualParams, VisualizerMode } from './types'
 
 const MAX_PARTICLES = 40
-const CURVE_SEGMENTS = 64
-const CURVE_COUNT = 3
-const BARS_COUNT = 48
+
+// ─── Bars: Adaptive Density ───
+
+const BAR_WIDTH = 3
+const BAR_GAP = 1.5
+const BAR_PITCH = BAR_WIDTH + BAR_GAP
+const MIN_BARS = 8
+const MAX_BARS = 200
+const SMOOTH_BUFFER_SIZE = MAX_BARS
+
+// ─── Ribbon: Overshoot ───
+
+const RIBBON_OVERSHOOT = 0.18
+const RIBBON_PAD_POINTS = 3
+
+// ─── Energy Ribbon Architecture ───
+
+interface RibbonLayer {
+  bandStart: number
+  bandEnd: number
+  controlPoints: number
+  attack: number
+  release: number
+  amplitude: number
+  baseline: number
+  ribbonHalf: number
+  ribbonGrow: number
+  edgeWidth: number
+  alpha: number
+  fillAlpha: number
+  hueShift: number
+  glow: number
+  driftSpeed: number
+  skeletonWeight: number
+  flowSpread: number
+}
+
+const RIBBON_LAYERS: RibbonLayer[] = [
+  {
+    // Foundation — bass
+    bandStart: 0,
+    bandEnd: 0.3,
+    controlPoints: 10,
+    attack: 0.18,
+    release: 0.045,
+    amplitude: 0.9,
+    baseline: 0.62,
+    ribbonHalf: 4,
+    ribbonGrow: 6,
+    edgeWidth: 1.2,
+    alpha: 0.3,
+    fillAlpha: 0.35,
+    hueShift: -15,
+    glow: 14,
+    driftSpeed: 0.2,
+    skeletonWeight: 0.38,
+    flowSpread: 1.2,
+  },
+  {
+    // Primary — mid
+    bandStart: 0.15,
+    bandEnd: 0.65,
+    controlPoints: 20,
+    attack: 0.28,
+    release: 0.09,
+    amplitude: 0.75,
+    baseline: 0.6,
+    ribbonHalf: 2.5,
+    ribbonGrow: 4,
+    edgeWidth: 1.6,
+    alpha: 0.8,
+    fillAlpha: 0.2,
+    hueShift: 0,
+    glow: 8,
+    driftSpeed: 0.45,
+    skeletonWeight: 0.28,
+    flowSpread: 1.8,
+  },
+  {
+    // Detail — treble
+    bandStart: 0.5,
+    bandEnd: 1.0,
+    controlPoints: 26,
+    attack: 0.42,
+    release: 0.16,
+    amplitude: 0.45,
+    baseline: 0.58,
+    ribbonHalf: 1,
+    ribbonGrow: 2,
+    edgeWidth: 0.8,
+    alpha: 0.4,
+    fillAlpha: 0.1,
+    hueShift: 30,
+    glow: 4,
+    driftSpeed: 0.75,
+    skeletonWeight: 0.18,
+    flowSpread: 2.5,
+  },
+]
 
 // ─── Animation Mapper ───
-// Maps raw AudioFeatures → smoothed VisualParams
 
 class AnimationMapper {
-  private smoothVolume = 0
-  private smoothBass = 0
-  private smoothMid = 0
-  private smoothTreble = 0
-  private hue = 200
+  smoothVolume = 0
+  smoothBass = 0
+  smoothMid = 0
+  smoothTreble = 0
+  hue = 200
 
   map(features: AudioFeatures): VisualParams {
-    const { volume, bass, mid, treble, beat, dominantBand } = features
+    const { volume, bass, mid, treble, dominantBand } = features
 
     this.smoothVolume += (volume - this.smoothVolume) * 0.15
     this.smoothBass += (bass - this.smoothBass) * 0.2
@@ -27,11 +122,11 @@ class AnimationMapper {
     this.hue += (targetHue - this.hue) * 0.03
 
     return {
-      amplitude: 0.3 + this.smoothVolume * 0.7 + this.smoothBass * 0.4,
+      amplitude: 0.55 + this.smoothVolume * 0.45 + this.smoothBass * 0.3,
       flowSpeed: 0.8 + this.smoothMid * 1.2,
       hue: this.hue,
       glowIntensity: 0.3 + this.smoothBass * 0.7,
-      particleBurst: beat,
+      particleBurst: features.beat,
       bassImpact: this.smoothBass,
       trebleShimmer: this.smoothTreble,
       lineWidth: 1.2 + this.smoothVolume * 1.0,
@@ -45,15 +140,15 @@ export class MelodyRenderer {
   private mapper = new AnimationMapper()
   private particles: Particle[] = []
   private time = 0
-  private curvePhases: number[] = Array.from({ length: CURVE_COUNT }, (_, i) => i * 2.1)
-  private smoothBars: number[] = Array.from({ length: BARS_COUNT }, () => 0)
+  private smoothBars: number[] = Array.from({ length: SMOOTH_BUFFER_SIZE }, () => 0)
+
+  private layerSmoothed: number[][] = RIBBON_LAYERS.map((l) =>
+    Array.from({ length: l.controlPoints + RIBBON_PAD_POINTS * 2 }, () => 0),
+  )
+  private layerPhase: number[] = RIBBON_LAYERS.map(() => 0)
 
   mode: VisualizerMode = 'melody'
 
-  /**
-   * Render with real audio data from AudioAnalyzer.getFeatures().
-   * spectrum[] values come from FFT frequency bins, not fake data.
-   */
   render(ctx: CanvasRenderingContext2D, w: number, h: number, features: AudioFeatures): void {
     const params = this.mapper.map(features)
     this.time += 0.016 * params.flowSpeed
@@ -64,141 +159,282 @@ export class MelodyRenderer {
       this.renderBars(ctx, w, h, params, features)
     } else {
       this.renderGlow(ctx, w, h, params)
-      this.renderCurves(ctx, w, h, params, features.spectrum)
+      this.renderRibbonLayers(ctx, w, h, params, features)
       this.updateAndRenderParticles(ctx, w, h, params)
       this.renderSparkles(ctx, w, h, params)
     }
+    this.renderEdgeFade(ctx, w, h)
   }
 
-  /**
-   * Render when no audio is connected.
-   * No fake data — bars decay to zero, melody shows a flat line.
-   */
   renderIdle(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.clearRect(0, 0, w, h)
 
     if (this.mode === 'bars') {
-      // Decay all bars toward zero — no fake spectrum
-      const gap = 1.5
-      const barW = (w - gap * (BARS_COUNT - 1)) / BARS_COUNT
+      const barCount = computeBarCount(w)
       const maxH = h - 2
-
-      for (let i = 0; i < BARS_COUNT; i++) {
-        // Smooth decay toward 0
+      for (let i = 0; i < barCount; i++) {
         this.smoothBars[i] += (0 - this.smoothBars[i]) * 0.06
-        // Clamp to avoid sub-pixel noise
         if (this.smoothBars[i] < 0.005) this.smoothBars[i] = 0
-
         const barH = Math.max(1, this.smoothBars[i] * maxH)
-        const x = i * (barW + gap)
-        const y = h - barH
+        const x = i * BAR_PITCH
         ctx.fillStyle = 'hsla(200, 30%, 50%, 0.15)'
-        ctx.fillRect(x, y, barW, barH)
+        ctx.fillRect(x, h - barH, BAR_WIDTH, barH)
       }
     } else {
-      // Flat baseline — no sine wave
-      ctx.strokeStyle = 'hsla(200, 30%, 50%, 0.15)'
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(0, h * 0.75)
-      ctx.lineTo(w, h * 0.75)
-      ctx.stroke()
+      for (let li = 0; li < RIBBON_LAYERS.length; li++) {
+        const sm = this.layerSmoothed[li]
+        for (let j = 0; j < sm.length; j++) {
+          sm[j] += (0 - sm[j]) * 0.04
+          if (sm[j] < 0.003) sm[j] = 0
+        }
+        this.layerPhase[li] += 0.006 * RIBBON_LAYERS[li].driftSpeed
+      }
+      this.time += 0.006
+      for (let li = 0; li < RIBBON_LAYERS.length; li++) {
+        this.drawRibbon(ctx, w, h, RIBBON_LAYERS[li], this.layerSmoothed[li], li, 0.3)
+      }
     }
+    this.renderEdgeFade(ctx, w, h)
   }
 
-  // ── Layer 1: Background Glow ──
+  // ── Ribbon Layer Pipeline ──
 
-  private renderGlow(
+  private renderRibbonLayers(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number,
     params: VisualParams,
+    features: AudioFeatures,
   ): void {
+    const { spectrum } = features
+
+    for (let li = 0; li < RIBBON_LAYERS.length; li++) {
+      const layer = RIBBON_LAYERS[li]
+      const sm = this.layerSmoothed[li]
+      const totalCp = layer.controlPoints + RIBBON_PAD_POINTS * 2
+
+      this.layerPhase[li] += 0.016 * layer.driftSpeed * params.flowSpeed
+
+      const bStart = Math.floor(layer.bandStart * spectrum.length)
+      const bEnd = Math.ceil(layer.bandEnd * spectrum.length)
+      const bLen = bEnd - bStart
+
+      for (let cp = 0; cp < totalCp; cp++) {
+        const normalizedT = (cp - RIBBON_PAD_POINTS) / (layer.controlPoints - 1)
+        const specT = Math.max(0, Math.min(1, normalizedT))
+        const srcIdx = bStart + specT * (bLen - 1)
+        const lo = Math.floor(srcIdx)
+        const hi = Math.min(lo + 1, spectrum.length - 1)
+        const t = srcIdx - lo
+        const raw = (spectrum[lo] ?? 0) * (1 - t) + (spectrum[hi] ?? 0) * t
+
+        if (raw > sm[cp]) {
+          sm[cp] += (raw - sm[cp]) * layer.attack
+        } else {
+          sm[cp] += (raw - sm[cp]) * layer.release
+        }
+      }
+
+      this.drawRibbon(ctx, w, h, layer, sm, li, params.amplitude)
+    }
+  }
+
+  // ── Ribbon Drawing (with overshoot) ──
+
+  private drawRibbon(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    layer: RibbonLayer,
+    smoothed: number[],
+    layerIndex: number,
+    globalAmp: number,
+  ): void {
+    const phase = this.layerPhase[layerIndex]
+    const visibleCp = layer.controlPoints
+    const totalCp = visibleCp + RIBBON_PAD_POINTS * 2
+    const amp = layer.amplitude * globalAmp * h
+    const baseY = layer.baseline * h
+    const hue = this.mapper.hue + layer.hueShift
+    const segments = Math.max(80, visibleCp * 5)
+
+    const cpYs: number[] = []
+    const cpEnergy: number[] = []
+
+    for (let i = 0; i < totalCp; i++) {
+      const normalizedT = (i - RIBBON_PAD_POINTS) / (visibleCp - 1)
+      const specRaw = smoothed[i]
+      const specBoosted = Math.pow(Math.min(1, specRaw), 0.5)
+      const localPhase = phase + normalizedT * layer.flowSpread
+
+      const skeleton =
+        Math.sin(normalizedT * Math.PI * 2.2 + localPhase) * 0.35 +
+        Math.sin(normalizedT * Math.PI * 3.8 + localPhase * 1.5) * 0.18 +
+        Math.sin(normalizedT * Math.PI * 6.3 + localPhase * 0.6) * 0.08
+
+      const val = skeleton * layer.skeletonWeight + specBoosted * (1 - layer.skeletonWeight)
+      cpYs.push(val)
+      cpEnergy.push(specBoosted)
+    }
+
+    const xStart = -RIBBON_OVERSHOOT * w
+    const xEnd = (1 + RIBBON_OVERSHOOT) * w
+    const xRange = xEnd - xStart
+
+    const centerYs: number[] = []
+    const energyVals: number[] = []
+    const xPositions: number[] = []
+
+    for (let seg = 0; seg <= segments; seg++) {
+      const segT = seg / segments
+      const x = xStart + segT * xRange
+      xPositions.push(x)
+
+      const cpPos = RIBBON_PAD_POINTS + ((x / w) * (visibleCp - 1))
+      const idx = Math.floor(cpPos)
+      const frac = cpPos - idx
+
+      const p0 = cpYs[clampIdx(idx - 1, totalCp)]
+      const p1 = cpYs[clampIdx(idx, totalCp)]
+      const p2 = cpYs[clampIdx(idx + 1, totalCp)]
+      const p3 = cpYs[clampIdx(idx + 2, totalCp)]
+
+      const val = catmullRom(p0, p1, p2, p3, frac)
+      centerYs.push(baseY - val * amp)
+
+      const e1 = cpEnergy[clampIdx(idx, totalCp)]
+      const e2 = cpEnergy[clampIdx(idx + 1, totalCp)]
+      energyVals.push(e1 + (e2 - e1) * Math.max(0, Math.min(1, frac)))
+    }
+
+    // Pass 1: Ribbon fill
+    if (layer.fillAlpha > 0.01) {
+      ctx.save()
+      ctx.beginPath()
+      for (let i = 0; i <= segments; i++) {
+        const energy = energyVals[i]
+        const halfThick = layer.ribbonHalf + energy * layer.ribbonGrow
+        const y = centerYs[i] - halfThick
+        if (i === 0) ctx.moveTo(xPositions[i], y)
+        else ctx.lineTo(xPositions[i], y)
+      }
+      for (let i = segments; i >= 0; i--) {
+        const energy = energyVals[i]
+        const halfThick = layer.ribbonHalf + energy * layer.ribbonGrow
+        ctx.lineTo(xPositions[i], centerYs[i] + halfThick)
+      }
+      ctx.closePath()
+
+      const gradY = baseY - amp * 0.5
+      const gradH = amp * 1.0
+      const grad = ctx.createLinearGradient(0, gradY, 0, gradY + gradH)
+      const fillA = layer.fillAlpha * globalAmp
+      grad.addColorStop(0, `hsla(${hue}, 70%, 60%, 0)`)
+      grad.addColorStop(0.35, `hsla(${hue}, 70%, 60%, ${fillA * 0.7})`)
+      grad.addColorStop(0.5, `hsla(${hue}, 70%, 65%, ${fillA})`)
+      grad.addColorStop(0.65, `hsla(${hue}, 70%, 60%, ${fillA * 0.7})`)
+      grad.addColorStop(1, `hsla(${hue}, 70%, 60%, 0)`)
+      ctx.fillStyle = grad
+      ctx.fill()
+      ctx.restore()
+    }
+
+    // Pass 2: Edge stroke
+    ctx.save()
+    ctx.strokeStyle = `hsla(${hue}, 78%, 68%, ${layer.alpha})`
+    ctx.lineWidth = layer.edgeWidth
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    if (layer.glow > 0) {
+      ctx.shadowBlur = layer.glow * Math.max(0.4, globalAmp)
+      ctx.shadowColor = `hsla(${hue}, 80%, 60%, ${layer.alpha * 0.45})`
+    }
+
+    ctx.beginPath()
+    for (let i = 0; i <= segments; i++) {
+      if (i === 0) ctx.moveTo(xPositions[i], centerYs[i])
+      else ctx.lineTo(xPositions[i], centerYs[i])
+    }
+    ctx.stroke()
+
+    // Pass 3: Peak highlight
+    const peakThreshold = 0.4
+    ctx.strokeStyle = `hsla(${hue}, 85%, 80%, ${layer.alpha * 0.6})`
+    ctx.lineWidth = layer.edgeWidth * 0.6
+    ctx.shadowBlur = layer.glow * 1.2 * Math.max(0.4, globalAmp)
+    ctx.shadowColor = `hsla(${hue}, 85%, 70%, ${layer.alpha * 0.5})`
+
+    let inPeak = false
+    for (let i = 0; i <= segments; i++) {
+      if (energyVals[i] > peakThreshold) {
+        if (!inPeak) {
+          ctx.beginPath()
+          ctx.moveTo(xPositions[i], centerYs[i])
+          inPeak = true
+        } else {
+          ctx.lineTo(xPositions[i], centerYs[i])
+        }
+      } else if (inPeak) {
+        ctx.stroke()
+        inPeak = false
+      }
+    }
+    if (inPeak) ctx.stroke()
+    ctx.restore()
+  }
+
+  // ── Edge Fade ──
+
+  private renderEdgeFade(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-out'
+    const fadeW = Math.min(28, w * 0.14)
+
+    const leftGrad = ctx.createLinearGradient(0, 0, fadeW, 0)
+    leftGrad.addColorStop(0, 'rgba(0,0,0,1)')
+    leftGrad.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = leftGrad
+    ctx.fillRect(0, 0, fadeW, h)
+
+    const rightGrad = ctx.createLinearGradient(w - fadeW, 0, w, 0)
+    rightGrad.addColorStop(0, 'rgba(0,0,0,0)')
+    rightGrad.addColorStop(1, 'rgba(0,0,0,1)')
+    ctx.fillStyle = rightGrad
+    ctx.fillRect(w - fadeW, 0, fadeW, h)
+
+    ctx.restore()
+  }
+
+  // ── Background Glow ──
+
+  private renderGlow(ctx: CanvasRenderingContext2D, w: number, h: number, params: VisualParams): void {
     const { hue, glowIntensity, bassImpact } = params
     const cx = w * 0.5
     const cy = h * 0.6
     const radius = w * 0.35 + bassImpact * w * 0.15
 
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
-    grad.addColorStop(0, `hsla(${hue}, 70%, 55%, ${glowIntensity * 0.15})`)
-    grad.addColorStop(0.5, `hsla(${hue + 30}, 60%, 45%, ${glowIntensity * 0.06})`)
+    grad.addColorStop(0, `hsla(${hue}, 70%, 55%, ${glowIntensity * 0.12})`)
+    grad.addColorStop(0.5, `hsla(${hue + 30}, 60%, 45%, ${glowIntensity * 0.05})`)
     grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
-
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, w, h)
   }
 
-  // ── Layer 2: Flowing Curves (driven by real spectrum) ──
+  // ── Particles ──
 
-  private renderCurves(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    params: VisualParams,
-    spectrum: number[],
-  ): void {
-    const { amplitude, hue, lineWidth } = params
-    const baseY = h * 0.65
-
-    for (let c = 0; c < CURVE_COUNT; c++) {
-      this.curvePhases[c] += 0.01 * (1 + c * 0.3) * params.flowSpeed
-
-      const alpha = 0.6 - c * 0.15
-      const curveHue = hue + c * 25
-      const curveAmp = amplitude * (1 - c * 0.2) * h * 0.45
-
-      ctx.save()
-      ctx.shadowBlur = 6 + params.glowIntensity * 8
-      ctx.shadowColor = `hsla(${curveHue}, 80%, 60%, ${alpha * 0.6})`
-      ctx.strokeStyle = `hsla(${curveHue}, 75%, 65%, ${alpha})`
-      ctx.lineWidth = lineWidth - c * 0.3
-      ctx.lineJoin = 'round'
-      ctx.lineCap = 'round'
-
-      ctx.beginPath()
-      for (let i = 0; i <= CURVE_SEGMENTS; i++) {
-        const t = i / CURVE_SEGMENTS
-        const x = t * w
-
-        const phase = this.curvePhases[c]
-        const s1 = Math.sin(t * Math.PI * 2 + phase) * 0.5
-        const s2 = Math.sin(t * Math.PI * 4.5 + phase * 1.3) * 0.25
-        const s3 = Math.sin(t * Math.PI * 7 + phase * 0.7) * 0.15
-
-        // Real spectrum data drives curve deformation
-        const specIdx = Math.floor(t * (spectrum.length - 1))
-        const specVal = spectrum[specIdx] ?? 0
-        const specInfluence = (specVal - 0.15) * 0.6
-
-        const y = baseY - (s1 + s2 + s3 + specInfluence) * curveAmp
-
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
-      }
-      ctx.stroke()
-      ctx.restore()
-    }
-  }
-
-  // ── Layer 3: Particles ──
-
-  private updateAndRenderParticles(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    params: VisualParams,
-  ): void {
+  private updateAndRenderParticles(ctx: CanvasRenderingContext2D, w: number, h: number, params: VisualParams): void {
     if (params.particleBurst) {
-      const count = 4 + Math.floor(params.bassImpact * 6)
+      const count = 3 + Math.floor(params.bassImpact * 5)
       for (let i = 0; i < count && this.particles.length < MAX_PARTICLES; i++) {
         this.particles.push({
           x: Math.random() * w,
-          y: h * (0.3 + Math.random() * 0.5),
-          vx: (Math.random() - 0.5) * 1.5,
-          vy: -(0.5 + Math.random() * 1.5),
+          y: h * (0.35 + Math.random() * 0.4),
+          vx: (Math.random() - 0.5) * 1.2,
+          vy: -(0.4 + Math.random() * 1.2),
           life: 1,
           maxLife: 0.6 + Math.random() * 0.6,
-          size: 1 + Math.random() * 1.5,
+          size: 0.8 + Math.random() * 1.2,
           hue: params.hue + (Math.random() - 0.5) * 40,
         })
       }
@@ -211,14 +447,13 @@ export class MelodyRenderer {
         this.particles.splice(i, 1)
         continue
       }
-
       p.x += p.vx
       p.y += p.vy
-      p.vy -= 0.02
+      p.vy -= 0.015
 
-      const alpha = p.life * 0.8
+      const alpha = p.life * 0.7
       ctx.save()
-      ctx.shadowBlur = 4
+      ctx.shadowBlur = 3
       ctx.shadowColor = `hsla(${p.hue}, 80%, 70%, ${alpha})`
       ctx.fillStyle = `hsla(${p.hue}, 80%, 75%, ${alpha})`
       ctx.beginPath()
@@ -228,23 +463,16 @@ export class MelodyRenderer {
     }
   }
 
-  // ── Layer 4: Treble Sparkles ──
+  // ── Treble Sparkles ──
 
-  private renderSparkles(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    params: VisualParams,
-  ): void {
-    if (params.trebleShimmer < 0.15) return
-
-    const count = Math.floor(params.trebleShimmer * 8)
+  private renderSparkles(ctx: CanvasRenderingContext2D, w: number, h: number, params: VisualParams): void {
+    if (params.trebleShimmer < 0.2) return
+    const count = Math.floor(params.trebleShimmer * 6)
     for (let i = 0; i < count; i++) {
       const x = Math.random() * w
-      const y = Math.random() * h * 0.8
-      const alpha = params.trebleShimmer * (0.3 + Math.random() * 0.4)
-      const size = 0.5 + Math.random() * 0.8
-
+      const y = h * (0.3 + Math.random() * 0.5)
+      const alpha = params.trebleShimmer * (0.2 + Math.random() * 0.3)
+      const size = 0.4 + Math.random() * 0.7
       ctx.fillStyle = `hsla(${params.hue + 60}, 90%, 85%, ${alpha})`
       ctx.beginPath()
       ctx.arc(x, y, size, 0, Math.PI * 2)
@@ -252,15 +480,7 @@ export class MelodyRenderer {
     }
   }
 
-  // ── Bars Mode: Real Spectrum Bars ──
-  //
-  // Each bar independently reads from AudioAnalyzer's log-mapped spectrum.
-  // Smoothing (attack/release) varies by frequency band:
-  //   - Low freq (bars 0-30%):   slow attack 0.25, slow release 0.06 → heavy, powerful
-  //   - Mid freq (bars 30-65%):  medium attack 0.45, medium release 0.12 → melodic movement
-  //   - High freq (bars 65-100%): fast attack 0.6, fast release 0.2 → crisp, detailed
-  //
-  // This creates visible independence: bass bars lag behind, treble bars flicker.
+  // ── Bars Mode: Adaptive Density ──
 
   private renderBars(
     ctx: CanvasRenderingContext2D,
@@ -272,39 +492,28 @@ export class MelodyRenderer {
     const { spectrum, bass, beat } = features
     const { hue, bassImpact } = params
 
-    const gap = 1.5
-    const barW = (w - gap * (BARS_COUNT - 1)) / BARS_COUNT
+    const barCount = computeBarCount(w)
     const maxH = h - 2
+    const step = spectrum.length / barCount
 
-    // spectrum[] is already SPECTRUM_SIZE (48) bars from AudioAnalyzer.
-    // If BARS_COUNT matches, use directly. Otherwise interpolate.
-    const step = spectrum.length / BARS_COUNT
-
-    for (let i = 0; i < BARS_COUNT; i++) {
+    for (let i = 0; i < barCount; i++) {
       const srcIdx = i * step
       const lo = Math.floor(srcIdx)
       const hi = Math.min(lo + 1, spectrum.length - 1)
       const frac = srcIdx - lo
       const raw = (spectrum[lo] ?? 0) * (1 - frac) + (spectrum[hi] ?? 0) * frac
-
       const target = Math.min(1, raw)
 
-      // Per-bar smoothing with frequency-dependent attack/release.
-      // t=0 → lowest frequency, t=1 → highest frequency.
-      const t = i / BARS_COUNT
+      const t = i / barCount
       let attack: number
       let release: number
-
       if (t < 0.3) {
-        // Low frequency: slow and heavy
         attack = 0.25
         release = 0.06
       } else if (t < 0.65) {
-        // Mid frequency: responsive, musical
         attack = 0.45
         release = 0.12
       } else {
-        // High frequency: fast and crisp
         attack = 0.6
         release = 0.2
       }
@@ -317,35 +526,31 @@ export class MelodyRenderer {
 
       const val = this.smoothBars[i]
       const barH = Math.max(1, val * maxH)
-      const x = i * (barW + gap)
+      const x = i * BAR_PITCH
       const y = h - barH
 
-      const barHue = hue + (i / BARS_COUNT) * 60
+      const barHue = hue + t * 60
       const lightness = 50 + val * 20
       const alpha = 0.55 + val * 0.45
 
-      // Glow on beat
-      if (beat && i < BARS_COUNT * 0.3) {
+      if (beat && t < 0.3) {
         ctx.save()
         ctx.shadowBlur = 8 + bassImpact * 6
         ctx.shadowColor = `hsla(${barHue}, 85%, 60%, ${alpha * 0.7})`
         ctx.fillStyle = `hsla(${barHue}, 85%, ${lightness + 10}%, ${Math.min(1, alpha + 0.2)})`
-        ctx.fillRect(x, y, barW, barH)
+        ctx.fillRect(x, y, BAR_WIDTH, barH)
         ctx.restore()
       } else {
         ctx.fillStyle = `hsla(${barHue}, 75%, ${lightness}%, ${alpha})`
-        ctx.fillRect(x, y, barW, barH)
+        ctx.fillRect(x, y, BAR_WIDTH, barH)
       }
 
-      // Bright cap on top of each bar
       if (barH > 3) {
-        const capH = 1.5
         ctx.fillStyle = `hsla(${barHue}, 90%, 80%, ${0.6 + val * 0.4})`
-        ctx.fillRect(x, y, barW, capH)
+        ctx.fillRect(x, y, BAR_WIDTH, 1.5)
       }
     }
 
-    // Bass pulse overlay
     if (bass > 0.3) {
       const pulseAlpha = (bass - 0.3) * 0.12
       const grad = ctx.createLinearGradient(0, h, 0, 0)
@@ -355,4 +560,26 @@ export class MelodyRenderer {
       ctx.fillRect(0, 0, w, h)
     }
   }
+}
+
+// ── Helpers ──
+
+function computeBarCount(w: number): number {
+  return Math.max(MIN_BARS, Math.min(MAX_BARS, Math.floor(w / BAR_PITCH)))
+}
+
+function clampIdx(i: number, len: number): number {
+  return Math.max(0, Math.min(len - 1, i))
+}
+
+function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const t2 = t * t
+  const t3 = t2 * t
+  return (
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+  )
 }

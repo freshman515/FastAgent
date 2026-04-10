@@ -25,18 +25,24 @@ export function useXterm(
   // Create terminal + PTY once on mount
   useEffect(() => {
     const container = containerRef.current
-    const project = useProjectsStore
-      .getState()
-      .projects.find((p) => p.id === sessionRef.current.projectId)
-    // Resolve cwd from worktree if bound
-    const worktreeStore = useWorktreesStore.getState()
-    const worktree = sessionRef.current.worktreeId
-      ? worktreeStore.worktrees.find((w) => w.id === sessionRef.current.worktreeId)
-      : worktreeStore.getMainWorktree(sessionRef.current.projectId)
-    const cwd = worktree?.path ?? project?.path
-    if (!container || !cwd) return
+    if (!container) return
 
     const currentSession = sessionRef.current
+    const hasExistingPty = currentSession.ptyId && currentSession.status === 'running'
+
+    // Resolve cwd (only needed for new PTY creation, not for reconnecting)
+    let cwd: string | undefined
+    if (!hasExistingPty) {
+      const project = useProjectsStore
+        .getState()
+        .projects.find((p) => p.id === currentSession.projectId)
+      const worktreeStore = useWorktreesStore.getState()
+      const worktree = currentSession.worktreeId
+        ? worktreeStore.worktrees.find((w) => w.id === currentSession.worktreeId)
+        : worktreeStore.getMainWorktree(currentSession.projectId)
+      cwd = worktree?.path ?? project?.path
+      if (!cwd) return
+    }
     const sessionId = currentSession.id
     const sessionType = currentSession.type
     const shouldResume = currentSession.initialized && isClaudeCodeType(currentSession.type)
@@ -135,7 +141,7 @@ export function useXterm(
       // Create new PTY
       window.api.session
         .create({
-          cwd,
+          cwd: cwd!,
           type: sessionType,
           sessionId,
           resume: shouldResume,

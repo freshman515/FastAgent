@@ -5,6 +5,7 @@ import { ToastContainer } from '@/components/notification/ToastContainer'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
+import { DetachedApp } from '@/DetachedApp'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
@@ -17,6 +18,11 @@ import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function App(): JSX.Element {
+  // If this window is a detached pop-out, render the detached UI instead
+  if (window.api.detach.isDetached) {
+    return <DetachedApp />
+  }
+
   const [ready, setReady] = useState(false)
 
   // Load config from file on startup
@@ -107,6 +113,20 @@ export function App(): JSX.Element {
         projectId: session?.projectId,
         duration: 8000,
       })
+    })
+  }, [])
+
+  // Listen for detached window close — re-attach sessions to main window
+  useEffect(() => {
+    return window.api.detach.onClosed(({ sessionIds }) => {
+      const paneStore = usePanesStore.getState()
+      const paneId = paneStore.activePaneId
+      for (const sid of sessionIds) {
+        paneStore.addSessionToPane(paneId, sid)
+      }
+      if (sessionIds.length > 0) {
+        useSessionsStore.getState().setActive(sessionIds[0])
+      }
     })
   }, [])
 

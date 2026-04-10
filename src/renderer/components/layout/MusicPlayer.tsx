@@ -16,6 +16,9 @@ export function MusicPlayer(): JSX.Element {
   const [media, setMedia] = useState<MediaInfo>({ title: '', artist: '', status: 'Stopped', artwork: '' })
   const [audioConnected, setAudioConnected] = useState(false)
   const vizMode = useUIStore((s) => s.settings.visualizerMode)
+  const vizWidth = useUIStore((s) => s.settings.visualizerWidth)
+  const showControls = useUIStore((s) => s.settings.showPlayerControls)
+  const showTrackInfo = useUIStore((s) => s.settings.showTrackInfo)
   const analyzerRef = useRef<AudioAnalyzer>(new AudioAnalyzer())
   const rendererRef = useRef<MelodyRenderer>(new MelodyRenderer())
   const animRef = useRef<number>(0)
@@ -98,7 +101,7 @@ export function MusicPlayer(): JSX.Element {
 
     draw()
     return () => cancelAnimationFrame(animRef.current)
-  }, [audioConnected, playing])
+  }, [audioConnected, playing, vizWidth])
 
   // ── Media controls ──
   const handlePlayPause = useCallback(() => window.api.media.command('play-pause'), [])
@@ -110,8 +113,9 @@ export function MusicPlayer(): JSX.Element {
     : 'No media'
 
   return (
-    <div className="no-drag flex items-center gap-2 rounded-full bg-[var(--color-bg-primary)]/50 pl-1.5 pr-3 py-0.5 backdrop-blur-sm border border-[var(--color-border)]/30">
+    <div className="no-drag flex items-center gap-2 pl-1.5 pr-3 py-0.5">
       {/* Controls group */}
+      {showControls && (
       <div className="flex items-center gap-0.5">
         {/* Prev */}
         <button
@@ -156,6 +160,7 @@ export function MusicPlayer(): JSX.Element {
           <SkipForward size={11} fill="currentColor" />
         </button>
       </div>
+      )}
 
       {/* Melody Visualizer */}
       <button
@@ -163,31 +168,33 @@ export function MusicPlayer(): JSX.Element {
         className="relative cursor-pointer"
         title={audioConnected ? 'Disconnect audio visualization' : 'Connect system audio for visualization'}
       >
-        <canvas ref={canvasRef} className="h-7 w-48 rounded" />
+        <canvas ref={canvasRef} className="h-7 rounded" style={{ width: vizWidth }} />
       </button>
 
       {/* Track info with artwork */}
-      {hasMedia ? (
-        <div className="flex items-center gap-1.5 min-w-0 max-w-[180px]">
-          {media.artwork && (
-            <img
-              src={media.artwork}
-              alt=""
-              className="h-6 w-6 shrink-0 rounded object-cover shadow-sm"
-            />
-          )}
-          <span
-            className="truncate text-xs font-medium text-[var(--color-text-primary)]"
-            title={displayText}
-          >
-            {displayText}
+      {showTrackInfo && (
+        hasMedia ? (
+          <div className="flex items-center gap-1.5 min-w-0 max-w-[180px]">
+            {media.artwork && (
+              <img
+                src={media.artwork}
+                alt=""
+                className="h-6 w-6 shrink-0 rounded object-cover shadow-sm"
+              />
+            )}
+            <span
+              className="truncate text-xs font-medium text-[var(--color-text-primary)]"
+              title={displayText}
+            >
+              {displayText}
+            </span>
+          </div>
+        ) : (
+          <span className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)]">
+            <Music size={10} />
+            No media
           </span>
-        </div>
-      ) : (
-        <span className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)]">
-          <Music size={10} />
-          No media
-        </span>
+        )
       )}
     </div>
   )

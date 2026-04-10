@@ -14,6 +14,18 @@ export interface AppSettings {
   recentPaths: string[]
   visualizerMode: VisualizerMode
   showMusicPlayer: boolean
+  /** Visualizer canvas width in px (shared by melody and bars) */
+  visualizerWidth: number
+  /** Show play/pause/prev/next control buttons */
+  showPlayerControls: boolean
+  /** Show track info (artist - title) and artwork */
+  showTrackInfo: boolean
+  /** Pop-out window default width */
+  popoutWidth: number
+  /** Pop-out window default height */
+  popoutHeight: number
+  /** Pop-out window position: 'cursor' follows mouse, 'center' centers on screen */
+  popoutPosition: 'cursor' | 'center'
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -26,6 +38,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   recentPaths: [],
   visualizerMode: 'melody',
   showMusicPlayer: true,
+  visualizerWidth: 192,
+  showPlayerControls: true,
+  showTrackInfo: true,
+  popoutWidth: 800,
+  popoutHeight: 600,
+  popoutPosition: 'cursor',
 }
 
 interface UIState {
@@ -81,6 +99,12 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
       if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
       if (typeof raw.showMusicPlayer === 'boolean') s.showMusicPlayer = raw.showMusicPlayer
+      if (typeof raw.visualizerWidth === 'number') s.visualizerWidth = Math.max(80, Math.min(7680, raw.visualizerWidth))
+      if (typeof raw.showPlayerControls === 'boolean') s.showPlayerControls = raw.showPlayerControls
+      if (typeof raw.showTrackInfo === 'boolean') s.showTrackInfo = raw.showTrackInfo
+      if (typeof raw.popoutWidth === 'number') s.popoutWidth = Math.max(400, Math.min(1920, raw.popoutWidth))
+      if (typeof raw.popoutHeight === 'number') s.popoutHeight = Math.max(300, Math.min(1080, raw.popoutHeight))
+      if (raw.popoutPosition === 'cursor' || raw.popoutPosition === 'center') s.popoutPosition = raw.popoutPosition
       if (typeof raw.sidebarWidth === 'number') set({ sidebarWidth: raw.sidebarWidth })
     }
     set({ settings: s })

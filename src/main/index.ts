@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, globalShortcut, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
@@ -10,6 +10,7 @@ import { registerHooks, unregisterHooks } from './services/HookInstaller'
 import { mediaMonitor } from './services/MediaMonitor'
 
 let mainWindow: BrowserWindow | null = null
+const detachedWindows = new Map<string, BrowserWindow>()
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -60,6 +61,71 @@ app.whenReady().then(() => {
   createWindow()
   mediaMonitor.start()
 
+  // ─── Detached window IPC ───
+  // Store session data for detached windows to fetch
+  const detachedSessionData = new Map<string, unknown[]>()
+
+  ipcMain.handle('detach:get-sessions', (_event, windowId: string) => {
+    return detachedSessionData.get(windowId) ?? []
+  })
+
+  ipcMain.handle('detach:create', (_event, sessionIds: string[], title: string, sessionData: unknown[], position?: { x: number; y: number }, size?: { width: number; height: number }) => {
+    const id = `detach-${Date.now()}`
+    const w = size?.width ?? 800
+    const h = size?.height ?? 600
+    const win = new BrowserWindow({
+      width: w,
+      height: h,
+      ...(position ? { x: Math.round(position.x - w / 2), y: Math.round(position.y - h / 2) } : {}),
+      minWidth: 400,
+      minHeight: 300,
+      frame: false,
+      titleBarStyle: 'default',
+      backgroundColor: '#1a1a1e',
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.cjs'),
+        sandbox: false,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
+
+    detachedWindows.set(id, win)
+    detachedSessionData.set(id, sessionData)
+
+    win.on('closed', () => {
+      detachedWindows.delete(id)
+      detachedSessionData.delete(id)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('detach:closed', { id, sessionIds })
+      }
+    })
+
+    const query = { detached: 'true', sessionIds: sessionIds.join(','), windowId: id, title }
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      const url = new URL(process.env['ELECTRON_RENDERER_URL'])
+      Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v))
+      win.loadURL(url.toString())
+    } else {
+      win.loadFile(join(__dirname, '../renderer/index.html'), { query })
+    }
+
+    return id
+  })
+
+  ipcMain.handle('detach:minimize', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize()
+  })
+
+  ipcMain.handle('detach:maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.isMaximized() ? win.unmaximize() : win.maximize()
+  })
+
+  ipcMain.handle('detach:close', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close()
+  })
+
   // Start hook server and register Claude Code hooks
   hookServer.start().then((port) => {
     registerHooks(port)
@@ -104,6 +170,12 @@ app.on('before-quit', async (e) => {
   e.preventDefault()
 
   activityMonitor.stopAll()
+
+  // Destroy all detached windows
+  for (const [, win] of detachedWindows) {
+    if (!win.isDestroyed()) win.destroy()
+  }
+  detachedWindows.clear()
 
   try {
     // Snapshot sessions and panes BEFORE graceful shutdown
