@@ -60,7 +60,7 @@ function detectUnixShell(): ShellInfo {
 }
 
 export function buildAgentCommand(
-  type: 'claude-code' | 'codex' | 'opencode' | 'terminal',
+  type: 'claude-code' | 'claude-code-yolo' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal',
   _sessionId?: string,
   resume?: boolean,
   resumeUUID?: string,
@@ -69,15 +69,20 @@ export function buildAgentCommand(
     return null
   }
 
-  if (type === 'claude-code') {
+  if (type === 'claude-code' || type === 'claude-code-yolo') {
+    const baseArgs = type === 'claude-code-yolo' ? ['--dangerously-skip-permissions'] : []
     if (resume && resumeUUID) {
-      return { command: 'claude', args: ['--resume', resumeUUID] }
+      return { command: 'claude', args: [...baseArgs, '--resume', resumeUUID] }
     }
-    return { command: 'claude', args: [] }
+    return { command: 'claude', args: baseArgs }
   }
 
   if (type === 'codex') {
     return { command: 'codex', args: [] }
+  }
+
+  if (type === 'codex-yolo') {
+    return { command: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox'] }
   }
 
   if (type === 'opencode') {

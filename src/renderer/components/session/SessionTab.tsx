@@ -7,12 +7,15 @@ import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore, type SplitPosition } from '@/stores/panes'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import claudeIcon from '@/assets/icons/Claude.png'
+import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 
 const TYPE_ICONS: Record<string, string> = {
   'claude-code': claudeIcon,
-  codex: opencodeIcon,
+  'claude-code-yolo': claudeIcon,
+  codex: codexIcon,
+  'codex-yolo': codexIcon,
   opencode: opencodeIcon,
   terminal: terminalIcon,
 }

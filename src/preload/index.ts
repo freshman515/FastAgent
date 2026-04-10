@@ -25,6 +25,8 @@ const api = {
     resize: (ptyId: string, cols: number, rows: number) =>
       ipcRenderer.invoke(IPC.SESSION_RESIZE, ptyId, cols, rows),
     kill: (ptyId: string) => ipcRenderer.invoke(IPC.SESSION_KILL, ptyId),
+    getReplay: (ptyId: string) =>
+      ipcRenderer.invoke(IPC.SESSION_REPLAY, ptyId) as Promise<string>,
     getActivity: (ptyId: string) =>
       ipcRenderer.invoke(IPC.SESSION_ACTIVITY, ptyId) as Promise<boolean>,
     export: (ptyId: string, name: string) =>
@@ -46,6 +48,28 @@ const api = {
       ipcRenderer.on(IPC.SESSION_EXIT, handler)
       return () => ipcRenderer.removeListener(IPC.SESSION_EXIT, handler)
     },
+    onFocus: (callback: (event: { sessionId: string }) => void) => {
+      const handler = (_: unknown, event: { sessionId: string }) => callback(event)
+      ipcRenderer.on(IPC.SESSION_FOCUS, handler)
+      return () => ipcRenderer.removeListener(IPC.SESSION_FOCUS, handler)
+    },
+    onIdleToast: (callback: (event: { sessionId?: string | null }) => void) => {
+      const handler = (_: unknown, event: { sessionId?: string | null }) => callback(event)
+      ipcRenderer.on(IPC.SESSION_IDLE_TOAST, handler)
+      return () => ipcRenderer.removeListener(IPC.SESSION_IDLE_TOAST, handler)
+    },
+    onPermissionRequest: (callback: (event: { id: string; sessionId: string | null; toolName: string; detail: string; suggestions: string[] }) => void) => {
+      const handler = (_: unknown, event: { id: string; sessionId: string | null; toolName: string; detail: string; suggestions: string[] }) => callback(event)
+      ipcRenderer.on(IPC.PERMISSION_REQUEST, handler)
+      return () => ipcRenderer.removeListener(IPC.PERMISSION_REQUEST, handler)
+    },
+    onPermissionDismiss: (callback: (event: { id: string }) => void) => {
+      const handler = (_: unknown, event: { id: string }) => callback(event)
+      ipcRenderer.on(IPC.PERMISSION_DISMISS, handler)
+      return () => ipcRenderer.removeListener(IPC.PERMISSION_DISMISS, handler)
+    },
+    respondPermission: (id: string, behavior: 'allow' | 'deny', suggestionIndex?: number) =>
+      ipcRenderer.invoke(IPC.PERMISSION_RESPOND, id, behavior, suggestionIndex),
   },
 
   notification: {
@@ -56,6 +80,38 @@ const api = {
         callback(data)
       ipcRenderer.on(IPC.NOTIFICATION_CLICK, handler)
       return () => ipcRenderer.removeListener(IPC.NOTIFICATION_CLICK, handler)
+    },
+  },
+
+  git: {
+    getStatus: (path: string) => ipcRenderer.invoke('git:get-status', path) as Promise<{
+      current: string
+      branches: string[]
+      isDirty: boolean
+    }>,
+    init: (path: string) => ipcRenderer.invoke('git:init', path) as Promise<void>,
+    createBranch: (path: string, name: string) => ipcRenderer.invoke('git:create-branch', path, name) as Promise<void>,
+    checkoutBranch: (path: string, name: string) => ipcRenderer.invoke('git:checkout-branch', path, name) as Promise<void>,
+    listWorktrees: (path: string) => ipcRenderer.invoke('git:worktree-list', path) as Promise<Array<{
+      path: string
+      branch: string
+      isMain: boolean
+    }>>,
+    addWorktree: (cwd: string, path: string, branch: string) => ipcRenderer.invoke('git:worktree-add', cwd, path, branch) as Promise<void>,
+    removeWorktree: (cwd: string, path: string) => ipcRenderer.invoke('git:worktree-remove', cwd, path) as Promise<void>,
+  },
+
+  media: {
+    get: () => ipcRenderer.invoke('media:get') as Promise<{
+      title: string
+      artist: string
+      status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown'
+    }>,
+    command: (cmd: 'play-pause' | 'next' | 'prev') => ipcRenderer.invoke('media:command', cmd),
+    onUpdate: (callback: (info: { title: string; artist: string; status: string }) => void) => {
+      const handler = (_: unknown, info: { title: string; artist: string; status: string }) => callback(info)
+      ipcRenderer.on('media:update', handler)
+      return () => ipcRenderer.removeListener('media:update', handler)
     },
   },
 

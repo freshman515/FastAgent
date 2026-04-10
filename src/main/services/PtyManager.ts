@@ -48,6 +48,8 @@ export class PtyManager {
       ...process.env as Record<string, string>,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
+      // Inject session ID so hook scripts can identify this exact session
+      ...(options.sessionId ? { FASTAGENTS_SESSION_ID: options.sessionId } : {}),
       ...(options.env ?? {}),
     }
 
@@ -114,6 +116,8 @@ export class PtyManager {
       }
 
       sendToWindows({ ptyId: id, data })
+
+      // Permission & idle notifications are handled by HookServer (Claude Code hooks)
     })
 
     ptyProcess.onExit(({ exitCode }) => {
@@ -139,7 +143,21 @@ export class PtyManager {
   }
 
   write(id: string, data: string): void {
-    this.ptys.get(id)?.pty.write(data)
+    const managed = this.ptys.get(id)
+    if (!managed) return
+    managed.pty.write(data)
+  }
+
+  /** Find a claude-code session by CWD path */
+  findClaudeSessionByCwd(cwd: string): string | null {
+    const norm = cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+    for (const [, m] of this.ptys) {
+      if (!m.sessionId) continue
+      if (m.type !== 'claude-code' && m.type !== 'claude-code-yolo') continue
+      const mCwd = m.cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+      if (norm === mCwd || norm.startsWith(mCwd + '/')) return m.sessionId
+    }
+    return null
   }
 
   resize(id: string, cols: number, rows: number): void {
@@ -156,6 +174,7 @@ export class PtyManager {
       managed.pty.kill()
       this.ptys.delete(id)
     }
+
   }
 
   getPid(id: string): number | undefined {
@@ -178,7 +197,7 @@ export class PtyManager {
   async gracefulShutdownClaudeSessions(): Promise<Map<string, string>> {
     const results = new Map<string, string>()
     const claudePtys = Array.from(this.ptys.entries()).filter(
-      ([, m]) => m.type === 'claude-code' && m.sessionId,
+      ([, m]) => (m.type === 'claude-code' || m.type === 'claude-code-yolo') && m.sessionId,
     )
 
     if (claudePtys.length === 0) return results
@@ -230,6 +249,7 @@ export class PtyManager {
   }
 
   destroyAll(): void {
+
     for (const [, managed] of this.ptys) {
       try {
         managed.pty.kill()

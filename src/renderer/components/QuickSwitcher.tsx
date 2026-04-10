@@ -3,12 +3,15 @@ import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import claudeIcon from '@/assets/icons/Claude.png'
+import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 
 const TYPE_ICONS: Record<string, string> = {
   'claude-code': claudeIcon,
-  codex: opencodeIcon,
+  'claude-code-yolo': claudeIcon,
+  codex: codexIcon,
+  'codex-yolo': codexIcon,
   opencode: opencodeIcon,
   terminal: terminalIcon,
 }
@@ -95,7 +98,7 @@ export function QuickSwitcher(): JSX.Element | null {
       <div className="fixed inset-0 z-[200] bg-black/30" onClick={() => setOpen(false)} />
       <div
         className={cn(
-          'fixed left-1/2 top-[20%] z-[201] w-[400px] -translate-x-1/2',
+          'fixed left-1/2 top-[60px] z-[201] w-[400px] -translate-x-1/2',
           'rounded-[var(--radius-xl)] border border-[var(--color-border)]',
           'bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/50 overflow-hidden',
         )}

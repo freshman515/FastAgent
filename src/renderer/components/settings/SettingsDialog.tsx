@@ -1,15 +1,17 @@
-import { X, Settings, Type, Terminal, Layers } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore, type AppSettings } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
+import { TemplatesPage } from './TemplatesPage'
 
-type SettingsPage = 'general' | 'appearance' | 'terminal'
+type SettingsPage = 'general' | 'appearance' | 'terminal' | 'templates'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; icon: typeof Settings }> = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'appearance', label: 'Appearance', icon: Type },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
+  { id: 'templates', label: 'Templates', icon: Layers },
 ]
 
 const UI_FONT_OPTIONS = [
@@ -135,7 +137,7 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         Session type created when double-clicking the tab bar.
       </p>
       <div className="flex flex-wrap gap-1">
-        {(['claude-code', 'codex', 'opencode', 'terminal'] as const).map((t) => (
+        {(['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode', 'terminal'] as const).map((t) => (
           <button
             key={t}
             onClick={() => onUpdate('defaultSessionType', t)}
@@ -146,10 +148,71 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
                 : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
             )}
           >
-            {t === 'claude-code' ? 'Claude Code' : t === 'opencode' ? 'OpenCode' : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'claude-code' ? 'Claude Code' : t === 'claude-code-yolo' ? 'Claude Code YOLO' : t === 'codex-yolo' ? 'Codex YOLO' : t === 'opencode' ? 'OpenCode' : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
+
+      {/* Music player toggle + visualizer mode */}
+      <div className="h-px bg-[var(--color-border)]" />
+      <div className="flex items-center gap-2 mb-1">
+        <AudioLines size={14} className="text-[var(--color-accent)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          Music Player
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Show in title bar</span>
+          <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+            {settings.showMusicPlayer ? 'Music player with visualizer' : 'Current project name'}
+          </span>
+        </div>
+        <button
+          onClick={() => onUpdate('showMusicPlayer', !settings.showMusicPlayer)}
+          className={cn(
+            'relative h-5 w-9 rounded-full transition-colors duration-200',
+            settings.showMusicPlayer ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-bg-surface)]',
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
+              settings.showMusicPlayer && 'translate-x-4',
+            )}
+          />
+        </button>
+      </div>
+      {settings.showMusicPlayer && (
+        <>
+      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Visualizer style for the title bar music player.
+      </p>
+      <div className="flex gap-2">
+        {([
+          { id: 'melody' as const, label: 'Melody', icon: AudioLines, desc: 'Flowing curves & particles' },
+          { id: 'bars' as const, label: 'Bars', icon: BarChart3, desc: 'Spectrum bar chart' },
+        ]).map(({ id, label, icon: Icon, desc }) => (
+          <button
+            key={id}
+            onClick={() => onUpdate('visualizerMode', id)}
+            className={cn(
+              'flex flex-1 items-center gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5 transition-colors',
+              settings.visualizerMode === id
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+            )}
+          >
+            <Icon size={16} />
+            <div className="flex flex-col items-start">
+              <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
+              <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+        </>
+      )}
     </div>
   )
 }
@@ -223,7 +286,7 @@ export function SettingsDialog(): JSX.Element | null {
       <div
         className={cn(
           'fixed left-1/2 top-1/2 z-[101] flex -translate-x-1/2 -translate-y-1/2',
-          'h-[420px] w-[600px] overflow-hidden',
+          'h-[520px] w-[680px] overflow-hidden',
           'rounded-[var(--radius-xl)] border border-[var(--color-border)]',
           'bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/40',
           'animate-[fade-in_0.15s_ease-out]',
@@ -270,6 +333,7 @@ export function SettingsDialog(): JSX.Element | null {
             {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'appearance' && <AppearancePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'terminal' && <TerminalPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'templates' && <TemplatesPage />}
           </div>
           <div className="border-t border-[var(--color-border)] px-5 py-2">
             <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">

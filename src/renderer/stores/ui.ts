@@ -2,14 +2,18 @@ import { create } from 'zustand'
 import type { ToastNotification } from '@shared/types'
 import { generateId } from '@/lib/utils'
 
+export type VisualizerMode = 'melody' | 'bars'
+
 export interface AppSettings {
   uiFontSize: number
   uiFontFamily: string
   terminalFontSize: number
   terminalFontFamily: string
   visibleGroupId: string | null // null = show all groups
-  defaultSessionType: 'claude-code' | 'terminal' | 'codex' | 'opencode'
+  defaultSessionType: 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'opencode'
   recentPaths: string[]
+  visualizerMode: VisualizerMode
+  showMusicPlayer: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -20,6 +24,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   visibleGroupId: null,
   defaultSessionType: 'claude-code',
   recentPaths: [],
+  visualizerMode: 'melody',
+  showMusicPlayer: true,
 }
 
 interface UIState {
@@ -71,8 +77,10 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.terminalFontSize === 'number') s.terminalFontSize = raw.terminalFontSize
       if (typeof raw.terminalFontFamily === 'string') s.terminalFontFamily = raw.terminalFontFamily
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
-      if (typeof raw.defaultSessionType === 'string' && ['claude-code', 'terminal', 'codex', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
+      if (typeof raw.defaultSessionType === 'string' && ['claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
+      if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
+      if (typeof raw.showMusicPlayer === 'boolean') s.showMusicPlayer = raw.showMusicPlayer
       if (typeof raw.sidebarWidth === 'number') set({ sidebarWidth: raw.sidebarWidth })
     }
     set({ settings: s })

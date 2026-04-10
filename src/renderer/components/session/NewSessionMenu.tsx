@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import claudeIcon from '@/assets/icons/Claude.png'
-import codexIcon from '@/assets/icons/icon-opencode.png'
+import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 
@@ -16,7 +16,9 @@ interface SessionOption {
 
 const SESSION_OPTIONS: SessionOption[] = [
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
+  { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
+  { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
   { type: 'terminal', label: 'Terminal', icon: terminalIcon },
 ]
@@ -48,7 +50,7 @@ export function NewSessionMenu({ projectId, paneId, onClose, position }: NewSess
       <div
         style={{ top: position.top, left: position.left }}
         className={cn(
-          'fixed z-50 w-52 rounded-[var(--radius-md)] py-1',
+          'fixed z-50 w-48 rounded-[var(--radius-md)] py-1',
           'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]',
           'shadow-lg shadow-black/30 animate-[fade-in_0.1s_ease-out]',
         )}

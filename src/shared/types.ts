@@ -15,7 +15,12 @@ export interface Project {
   groupId: string
 }
 
-export type SessionType = 'claude-code' | 'codex' | 'opencode' | 'terminal'
+export type SessionType = 'claude-code' | 'claude-code-yolo' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal'
+
+/** Returns true for any Claude Code variant (normal or yolo mode) */
+export function isClaudeCodeType(type: SessionType): boolean {
+  return type === 'claude-code' || type === 'claude-code-yolo'
+}
 export type SessionStatus = 'running' | 'idle' | 'waiting-input' | 'stopped'
 export type OutputState = 'idle' | 'outputting' | 'unread'
 
@@ -31,6 +36,7 @@ export interface Session {
   pinned: boolean
   createdAt: number
   updatedAt: number
+  worktreeId?: string   // bound to specific worktree; undefined = main worktree
 }
 
 // ─── IPC Types ───
@@ -72,6 +78,77 @@ export interface ToastNotification {
   createdAt: number
 }
 
+// ─── Git Types ───
+
+export interface GitBranchInfo {
+  current: string
+  branches: string[]
+  isDirty: boolean
+}
+
+export interface Worktree {
+  id: string
+  projectId: string
+  branch: string
+  path: string       // filesystem path (main worktree = project.path)
+  isMain: boolean    // true for the project dir itself
+}
+
+export interface GitWorktreeInfo {
+  path: string
+  branch: string
+  isMain: boolean
+}
+
+// ─── Session Template Types ───
+
+export interface SessionTemplateItem {
+  type: SessionType
+  name: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  prompt?: string
+}
+
+export interface SessionTemplate {
+  id: string
+  name: string
+  projectId: string | null  // null = global template
+  items: SessionTemplateItem[]
+}
+
+// ─── Task Bundle Types ───
+
+export type TaskBundleType = 'fix-bug' | 'new-feature' | 'code-review' | 'release-check' | 'custom'
+
+export interface TaskBundleStep {
+  type: SessionType
+  name: string
+  prompt: string
+  env?: Record<string, string>
+}
+
+export interface TaskBundle {
+  id: string
+  type: TaskBundleType
+  name: string
+  description: string
+  steps: TaskBundleStep[]
+  branchPrefix?: string
+}
+
+export interface ActiveTask {
+  id: string
+  bundleId: string
+  projectId: string
+  branch?: string
+  description: string
+  sessionIds: string[]
+  status: 'active' | 'completed' | 'cancelled'
+  createdAt: number
+}
+
 // ─── IPC Channels ───
 
 export const IPC = {
@@ -81,9 +158,16 @@ export const IPC = {
   SESSION_KILL: 'session:kill',
   SESSION_ACTIVITY: 'session:activity',
   SESSION_EXPORT: 'session:export',
+  SESSION_REPLAY: 'session:replay',
   SESSION_DATA: 'session:data',
   SESSION_EXIT: 'session:exit',
   SESSION_GRACEFUL_SHUTDOWN: 'session:graceful-shutdown',
+  SESSION_FOCUS: 'session:focus',
+  SESSION_IDLE_TOAST: 'session:idle-toast',
+
+  PERMISSION_REQUEST: 'permission:request',
+  PERMISSION_RESPOND: 'permission:respond',
+  PERMISSION_DISMISS: 'permission:dismiss',
 
   NOTIFICATION_SHOW: 'notification:show',
   NOTIFICATION_CLICK: 'notification:click',
@@ -104,7 +188,9 @@ export const SESSION_TYPE_CONFIG: Record<
   { label: string; command: string; icon: string }
 > = {
   'claude-code': { label: 'Claude Code', command: 'claude', icon: 'brain' },
+  'claude-code-yolo': { label: 'Claude Code YOLO', command: 'claude', icon: 'brain' },
   codex: { label: 'Codex', command: 'codex', icon: 'cpu' },
+  'codex-yolo': { label: 'Codex YOLO', command: 'codex', icon: 'cpu' },
   opencode: { label: 'OpenCode', command: 'opencode', icon: 'code' },
   terminal: { label: 'Terminal', command: '', icon: 'terminal' },
 }

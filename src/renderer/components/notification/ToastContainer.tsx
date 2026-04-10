@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
+import { usePanesStore } from '@/stores/panes'
 
 const TYPE_ICONS = {
   info: Info,
@@ -29,8 +30,31 @@ export function ToastContainer(): JSX.Element {
 
   const handleJump = useCallback(
     (toast: ToastNotification) => {
-      if (toast.projectId) selectProject(toast.projectId)
-      if (toast.sessionId) setActive(toast.sessionId)
+      if (toast.sessionId) {
+        const session = useSessionsStore.getState().sessions.find((s) => s.id === toast.sessionId)
+        if (session) {
+          const projectsStore = useProjectsStore.getState()
+          const paneStore = usePanesStore.getState()
+
+          // Switch project (restores pane layout) if needed
+          if (projectsStore.selectedProjectId !== session.projectId) {
+            selectProject(session.projectId)
+            const projectSessions = useSessionsStore.getState().sessions
+              .filter((s) => s.projectId === session.projectId)
+              .map((s) => s.id)
+            paneStore.switchProject(session.projectId, projectSessions, toast.sessionId)
+          }
+
+          setActive(toast.sessionId)
+          const paneId = paneStore.findPaneForSession(toast.sessionId)
+          if (paneId) {
+            paneStore.setActivePaneId(paneId)
+            paneStore.setPaneActiveSession(paneId, toast.sessionId)
+          }
+        }
+      } else if (toast.projectId) {
+        selectProject(toast.projectId)
+      }
       removeToast(toast.id)
     },
     [selectProject, setActive, removeToast],

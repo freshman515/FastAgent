@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Session, SessionType, SessionStatus, OutputState } from '@shared/types'
-import { SESSION_TYPE_CONFIG } from '@shared/types'
+import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
 import { generateId } from '@/lib/utils'
 
 function sanitizeSession(s: unknown): Session | null {
@@ -10,7 +10,7 @@ function sanitizeSession(s: unknown): Session | null {
   return {
     id: obj.id,
     projectId: obj.projectId,
-    type: (['claude-code', 'codex', 'opencode', 'terminal'].includes(obj.type as string)
+    type: (['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode', 'terminal'].includes(obj.type as string)
       ? obj.type
       : 'terminal') as SessionType,
     name: typeof obj.name === 'string' ? obj.name : 'Session',
@@ -21,6 +21,7 @@ function sanitizeSession(s: unknown): Session | null {
     pinned: obj.pinned === true,
     createdAt: typeof obj.createdAt === 'number' ? obj.createdAt : Date.now(),
     updatedAt: Date.now(),
+    worktreeId: typeof obj.worktreeId === 'string' ? obj.worktreeId : undefined,
   }
 }
 
@@ -39,7 +40,8 @@ interface SessionsState {
   _loaded: boolean
   _loadFromConfig: (raw: unknown[]) => void
 
-  addSession: (projectId: string, type: SessionType) => string
+  addSession: (projectId: string, type: SessionType, worktreeId?: string) => string
+  addSessionFromTemplate: (projectId: string, item: { type: SessionType; name: string; prompt?: string }, worktreeId?: string) => string
   removeSession: (id: string) => void
   restoreLastClosed: () => void
   setSplit: (id: string | null) => void
@@ -72,7 +74,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({ sessions, activeSessionId, _loaded: true })
   },
 
-  addSession: (projectId, type) => {
+  addSession: (projectId, type, worktreeId) => {
     const id = generateId()
     const config = SESSION_TYPE_CONFIG[type]
     const existing = get().sessions.filter((s) => s.projectId === projectId)
@@ -90,8 +92,33 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      worktreeId,
     }
 
+    set((state) => {
+      const sessions = [...state.sessions, session]
+      persist(sessions)
+      return { sessions, activeSessionId: id }
+    })
+    return id
+  },
+
+  addSessionFromTemplate: (projectId, item, worktreeId) => {
+    const id = generateId()
+    const session: Session = {
+      id,
+      projectId,
+      type: item.type,
+      name: item.name,
+      status: 'stopped',
+      ptyId: null,
+      initialized: false,
+      resumeUUID: null,
+      pinned: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      worktreeId,
+    }
     set((state) => {
       const sessions = [...state.sessions, session]
       persist(sessions)
@@ -133,7 +160,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         id: generateId(), // new id to avoid conflicts
         status: 'stopped',
         ptyId: null,
-        initialized: restored.type === 'claude-code' ? restored.initialized : false,
+        initialized: isClaudeCodeType(restored.type) ? restored.initialized : false,
       }
       const sessions = [...state.sessions, session]
       persist(sessions)

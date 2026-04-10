@@ -38,6 +38,7 @@ interface PanesState {
 
   // Actions
   switchProject: (projectId: string, projectSessionIds: string[], activeSessionId: string | null) => void
+  switchWorktree: (worktreeId: string, worktreeSessionIds: string[], activeSessionId: string | null) => void
   initPane: (sessionIds: string[], activeSessionId: string | null) => void
   loadFromConfig: (raw: Record<string, unknown>) => void
   splitPane: (paneId: string, position: SplitPosition, sessionId: string) => void
@@ -218,6 +219,76 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       paneSessions: { [DEFAULT_PANE_ID]: projectSessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
       currentProjectId: projectId,
+      projectLayouts: { ...state.projectLayouts },
+    })
+  },
+
+  switchWorktree: (worktreeId, worktreeSessionIds, activeSessionId) => {
+    const state = get()
+
+    // Save current layout keyed by current context
+    const currentKey = state.currentProjectId
+    if (currentKey) {
+      state.projectLayouts[currentKey] = {
+        root: state.root,
+        activePaneId: state.activePaneId,
+        paneSessions: state.paneSessions,
+        paneActiveSession: state.paneActiveSession,
+      }
+    }
+
+    // Restore worktree's saved layout if cached
+    const saved = state.projectLayouts[worktreeId]
+    if (saved) {
+      // Filter out sessions that no longer exist, keep ones that do
+      const validSessionSet = new Set(worktreeSessionIds)
+      const cleanedPaneSessions: Record<string, string[]> = {}
+      const cleanedPaneActive: Record<string, string | null> = {}
+      let hasAnySessions = false
+
+      for (const [paneId, sids] of Object.entries(saved.paneSessions)) {
+        const valid = sids.filter((sid) => validSessionSet.has(sid))
+        cleanedPaneSessions[paneId] = valid
+        cleanedPaneActive[paneId] = valid.includes(saved.paneActiveSession[paneId] ?? '')
+          ? saved.paneActiveSession[paneId]
+          : (valid[0] ?? null)
+        if (valid.length > 0) hasAnySessions = true
+      }
+
+      // Add any new sessions (created since layout was cached) to the first pane
+      const allCached = Object.values(cleanedPaneSessions).flat()
+      const cachedSet = new Set(allCached)
+      const newSessions = worktreeSessionIds.filter((sid) => !cachedSet.has(sid))
+      if (newSessions.length > 0) {
+        const firstPaneId = getFirstLeafId(saved.root)
+        const pane = cleanedPaneSessions[firstPaneId] ?? []
+        cleanedPaneSessions[firstPaneId] = [...pane, ...newSessions]
+        if (!cleanedPaneActive[firstPaneId]) {
+          cleanedPaneActive[firstPaneId] = newSessions[0]
+        }
+        hasAnySessions = true
+      }
+
+      if (hasAnySessions) {
+        set({
+          root: saved.root,
+          activePaneId: saved.activePaneId,
+          paneSessions: cleanedPaneSessions,
+          paneActiveSession: cleanedPaneActive,
+          currentProjectId: worktreeId,
+          projectLayouts: { ...state.projectLayouts },
+        })
+        return
+      }
+    }
+
+    // No saved layout — init fresh
+    set({
+      root: { type: 'leaf', id: DEFAULT_PANE_ID },
+      activePaneId: DEFAULT_PANE_ID,
+      paneSessions: { [DEFAULT_PANE_ID]: worktreeSessionIds },
+      paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
+      currentProjectId: worktreeId,
       projectLayouts: { ...state.projectLayouts },
     })
   },

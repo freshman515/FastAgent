@@ -4,11 +4,15 @@ import { MainPanel } from '@/components/layout/MainPanel'
 import { ToastContainer } from '@/components/notification/ToastContainer'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
+import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useTemplatesStore } from '@/stores/templates'
+import { useTasksStore } from '@/stores/tasks'
+import { useWorktreesStore } from '@/stores/worktrees'
 import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -22,6 +26,9 @@ export function App(): JSX.Element {
       useProjectsStore.getState()._loadFromConfig(data.projects)
       useSessionsStore.getState()._loadFromConfig(data.sessions)
       useUIStore.getState()._loadSettings(data.ui)
+      useTemplatesStore.getState()._loadFromConfig((data as Record<string, unknown>).templates as unknown[] ?? [])
+      useTasksStore.getState()._loadFromConfig({ activeTasks: (data as Record<string, unknown>).activeTasks as unknown[] ?? [] })
+      useWorktreesStore.getState()._loadFromConfig((data as Record<string, unknown>).worktrees as unknown[] ?? [])
 
       // Restore pane layout if saved
       if (data.panes && typeof data.panes === 'object') {
@@ -43,6 +50,55 @@ export function App(): JSX.Element {
   }, [])
 
   useActivityMonitor()
+
+  // Focus a specific session (navigate project + pane + tab)
+  const focusSession = useCallback((sessionId: string) => {
+    const session = useSessionsStore.getState().sessions.find((s) => s.id === sessionId)
+    if (!session) return
+
+    const projectsStore = useProjectsStore.getState()
+    const paneStore = usePanesStore.getState()
+
+    // Switch project (restores pane layout) if needed
+    if (projectsStore.selectedProjectId !== session.projectId) {
+      projectsStore.selectProject(session.projectId)
+      const projectSessions = useSessionsStore.getState().sessions
+        .filter((s) => s.projectId === session.projectId)
+        .map((s) => s.id)
+      paneStore.switchProject(session.projectId, projectSessions, sessionId)
+    }
+
+    // Now find and activate the session in the restored pane layout
+    const paneId = paneStore.findPaneForSession(sessionId)
+    if (paneId) {
+      paneStore.setActivePaneId(paneId)
+      paneStore.setPaneActiveSession(paneId, sessionId)
+    }
+  }, [])
+
+  // Listen for session focus requests (from notification click)
+  useEffect(() => {
+    return window.api.session.onFocus((event) => focusSession(event.sessionId))
+  }, [focusSession])
+
+  // Listen for Claude Code Stop hook — show completion toast
+  useEffect(() => {
+    return window.api.session.onIdleToast((event) => {
+      // sessionId is already matched by HookServer via CWD + last user input
+      const session = event.sessionId
+        ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
+        : undefined
+      const name = session?.name ?? 'Claude Code'
+      useUIStore.getState().addToast({
+        title: 'Task completed',
+        body: name,
+        type: 'success',
+        sessionId: session?.id,
+        projectId: session?.projectId,
+        duration: 8000,
+      })
+    })
+  }, [])
 
   // Global keyboard shortcuts — operate on the active pane
   useEffect(() => {
@@ -178,6 +234,9 @@ export function App(): JSX.Element {
 
       {/* Quick switcher */}
       <QuickSwitcher />
+
+      {/* Permission dialogs */}
+      <PermissionDialog />
 
       {/* Toast notifications */}
       <ToastContainer />

@@ -4,10 +4,12 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import type { Session } from '@shared/types'
+import { isClaudeCodeType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { usePanesStore } from '@/stores/panes'
+import { useWorktreesStore } from '@/stores/worktrees'
 
 export function useXterm(
   session: Session,
@@ -26,13 +28,18 @@ export function useXterm(
     const project = useProjectsStore
       .getState()
       .projects.find((p) => p.id === sessionRef.current.projectId)
-    const cwd = project?.path
+    // Resolve cwd from worktree if bound
+    const worktreeStore = useWorktreesStore.getState()
+    const worktree = sessionRef.current.worktreeId
+      ? worktreeStore.worktrees.find((w) => w.id === sessionRef.current.worktreeId)
+      : worktreeStore.getMainWorktree(sessionRef.current.projectId)
+    const cwd = worktree?.path ?? project?.path
     if (!container || !cwd) return
 
     const currentSession = sessionRef.current
     const sessionId = currentSession.id
     const sessionType = currentSession.type
-    const shouldResume = currentSession.initialized && currentSession.type === 'claude-code'
+    const shouldResume = currentSession.initialized && isClaudeCodeType(currentSession.type)
     const resumeUUID = currentSession.resumeUUID ?? undefined
     const { settings } = useUIStore.getState()
     let ptyId: string | null = null
@@ -110,15 +117,19 @@ export function useXterm(
     // Check if session already has an active PTY (e.g. after React remount during reorder)
     const existingPtyId = currentSession.ptyId
     if (existingPtyId && currentSession.status === 'running') {
-      // Reuse existing PTY — just attach to data stream
+      // Reuse existing PTY — replay buffered output to restore scrollback
       ptyId = existingPtyId
-      requestAnimationFrame(() => {
-        if (!destroyed) {
-          try {
-            fitAddon.fit()
-            window.api.session.resize(ptyId!, terminal.cols, terminal.rows)
-          } catch { /* ignore */ }
-        }
+      window.api.session.getReplay(existingPtyId).then((replay) => {
+        if (destroyed || !replay) return
+        terminal.write(replay)
+        requestAnimationFrame(() => {
+          if (!destroyed) {
+            try {
+              fitAddon.fit()
+              window.api.session.resize(ptyId!, terminal.cols, terminal.rows)
+            } catch { /* ignore */ }
+          }
+        })
       })
     } else {
       // Create new PTY
@@ -184,16 +195,13 @@ export function useXterm(
       // Allow IME composition (Chinese/Japanese/Korean input)
       if (e.isComposing || e.keyCode === 229) return true
 
-      // Re-dispatch global shortcuts to window so App-level handlers can catch them
+      // Let global shortcuts bubble to window for App-level handlers
       if ((e.ctrlKey && e.key === 'Tab')
         || (e.ctrlKey && e.key === 'w')
         || (e.ctrlKey && e.key === 'p')
         || (e.ctrlKey && e.key >= '1' && e.key <= '9')
         || (e.ctrlKey && e.key === 'f')
         || (e.ctrlKey && e.shiftKey && e.key === 'T')) {
-        window.dispatchEvent(new KeyboardEvent('keydown', {
-          key: e.key, code: e.code, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, bubbles: true,
-        }))
         return false
       }
 
@@ -216,7 +224,7 @@ export function useXterm(
       }
 
       // Ctrl+V in claude-code session: remap to Alt+V (image paste)
-      if (e.ctrlKey && e.key === 'v' && sessionType === 'claude-code') {
+      if (e.ctrlKey && e.key === 'v' && (sessionType === 'claude-code' || sessionType === 'claude-code-yolo')) {
         if (ptyId) {
           window.api.session.write(ptyId, '\x1bv')
         }

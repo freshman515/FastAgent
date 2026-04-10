@@ -1,10 +1,13 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, shell } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
 import { ptyManager } from './services/PtyManager'
 import { activityMonitor } from './services/ActivityMonitor'
 import { readConfig, writeConfig } from './services/ConfigStore'
+import { hookServer } from './services/HookServer'
+import { registerHooks, unregisterHooks } from './services/HookInstaller'
+import { mediaMonitor } from './services/MediaMonitor'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -26,6 +29,16 @@ function createWindow(): void {
     },
   })
 
+  // Auto-approve system audio capture for music visualizer (no picker dialog)
+  mainWindow.webContents.session.setDisplayMediaRequestHandler(
+    async (_request, callback) => {
+      const sources = await desktopCapturer.getSources({ types: ['screen'] })
+      if (sources.length > 0) {
+        callback({ video: sources[0], audio: 'loopback' })
+      }
+    },
+  )
+
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
   })
@@ -45,6 +58,29 @@ function createWindow(): void {
 app.whenReady().then(() => {
   registerAllHandlers()
   createWindow()
+  mediaMonitor.start()
+
+  // Start hook server and register Claude Code hooks
+  hookServer.start().then((port) => {
+    registerHooks(port)
+  }).catch((err) => {
+    console.error('[HookServer] failed to start:', err)
+  })
+
+  // Global hotkey: Alt+Space to toggle window
+  globalShortcut.register('Alt+Space', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow()
+      return
+    }
+    if (mainWindow.isFocused()) {
+      mainWindow.hide()
+    } else {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -55,6 +91,10 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   // Don't quit here — let before-quit handle graceful shutdown
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })
 
 let isQuitting = false
@@ -90,6 +130,9 @@ app.on('before-quit', async (e) => {
     // ignore errors during shutdown
   }
 
+  hookServer.stop()
+  unregisterHooks()
+  mediaMonitor.stop()
   ptyManager.destroyAll()
   app.quit()
 })

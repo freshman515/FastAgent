@@ -4,6 +4,7 @@ import { IPC } from '@shared/types'
 import type { SessionCreateOptions } from '@shared/types'
 import { ptyManager } from '../services/PtyManager'
 import { activityMonitor } from '../services/ActivityMonitor'
+import { hookServer } from '../services/HookServer'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSION_CREATE, (_event, options: SessionCreateOptions) => {
@@ -22,6 +23,10 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSION_KILL, (_event, ptyId: string) => {
     activityMonitor.stopMonitoring(ptyId)
     ptyManager.kill(ptyId)
+  })
+
+  ipcMain.handle(IPC.SESSION_REPLAY, (_event, ptyId: string) => {
+    return ptyManager.getReplay(ptyId)
   })
 
   ipcMain.handle(IPC.SESSION_ACTIVITY, async (_event, ptyId: string) => {
@@ -67,5 +72,10 @@ export function registerSessionHandlers(): void {
       result[ptyId] = uuid
     }
     return result
+  })
+
+  // Permission response from renderer: respond to HTTP hook
+  ipcMain.handle(IPC.PERMISSION_RESPOND, (_event, id: string, behavior: 'allow' | 'deny', suggestionIndex?: number) => {
+    hookServer.resolvePermission(id, behavior, suggestionIndex)
   })
 }
