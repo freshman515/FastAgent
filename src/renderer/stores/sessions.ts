@@ -26,6 +26,8 @@ function sanitizeSession(s: unknown): Session | null {
 }
 
 function persist(sessions: Session[]): void {
+  // Don't persist from detached windows — they have incomplete session lists
+  if (window.api.detach.isDetached) return
   const toSave = sessions.map((s) => ({ ...s, status: 'stopped', ptyId: null }))
   window.api.config.write('sessions', toSave)
 }
@@ -39,6 +41,7 @@ interface SessionsState {
   closedStack: Session[]
   _loaded: boolean
   _loadFromConfig: (raw: unknown[]) => void
+  upsertSessions: (sessions: Session[]) => void
 
   addSession: (projectId: string, type: SessionType, worktreeId?: string) => string
   addSessionFromTemplate: (projectId: string, item: { type: SessionType; name: string; prompt?: string }, worktreeId?: string) => string
@@ -74,11 +77,31 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({ sessions, activeSessionId, _loaded: true })
   },
 
+  upsertSessions: (incomingSessions) =>
+    set((state) => {
+      if (incomingSessions.length === 0) return state
+      const byId = new Map(state.sessions.map((session) => [session.id, session]))
+      for (const session of incomingSessions) {
+        byId.set(session.id, session)
+      }
+      const sessions = Array.from(byId.values())
+      persist(sessions)
+      return {
+        sessions,
+        activeSessionId: state.activeSessionId ?? incomingSessions[0]?.id ?? null,
+      }
+    }),
+
   addSession: (projectId, type, worktreeId) => {
     const id = generateId()
     const config = SESSION_TYPE_CONFIG[type]
-    const existing = get().sessions.filter((s) => s.projectId === projectId)
-    const name = `${config.label} ${existing.filter((s) => s.type === type).length + 1}`
+    const existing = get().sessions.filter((s) => s.projectId === projectId && s.type === type)
+    let maxNum = 0
+    for (const s of existing) {
+      const match = s.name.match(new RegExp(`^${config.label}\\s+(\\d+)$`))
+      if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10))
+    }
+    const name = `${config.label} ${maxNum + 1}`
 
     const session: Session = {
       id,

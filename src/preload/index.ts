@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/types'
-import type { SessionCreateOptions, SessionCreateResult } from '@shared/types'
+import type { Session, SessionCreateOptions, SessionCreateResult } from '@shared/types'
 
 const api = {
   window: {
@@ -157,13 +157,17 @@ const api = {
     minimize: () => ipcRenderer.invoke('detach:minimize'),
     maximize: () => ipcRenderer.invoke('detach:maximize'),
     close: () => ipcRenderer.invoke('detach:close'),
-    onClosed: (callback: (data: { id: string; sessionIds: string[] }) => void) => {
-      const handler = (_: unknown, data: { id: string; sessionIds: string[] }) => callback(data)
+    onClosed: (callback: (data: { id: string; sessionIds: string[]; sessions: Session[] }) => void) => {
+      const handler = (_: unknown, data: { id: string; sessionIds: string[]; sessions: Session[] }) => callback(data)
       ipcRenderer.on('detach:closed', handler)
       return () => ipcRenderer.removeListener('detach:closed', handler)
     },
     getSessions: (windowId: string) =>
       ipcRenderer.invoke('detach:get-sessions', windowId) as Promise<unknown[]>,
+    updateSessionIds: (windowId: string, sessionIds: string[]) =>
+      ipcRenderer.invoke('detach:update-session-ids', windowId, sessionIds),
+    updateSessions: (windowId: string, sessions: Session[]) =>
+      ipcRenderer.invoke('detach:update-sessions', windowId, sessions),
     getWindowId: () => new URLSearchParams(window.location.search).get('windowId') ?? '',
     isDetached: new URLSearchParams(window.location.search).get('detached') === 'true',
     getSessionIds: () => {

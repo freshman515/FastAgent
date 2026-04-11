@@ -116,17 +116,49 @@ export function App(): JSX.Element {
     })
   }, [])
 
-  // Listen for detached window close — re-attach sessions to main window
+  // Listen for detached window close — re-attach sessions to their original project
   useEffect(() => {
-    return window.api.detach.onClosed(({ sessionIds }) => {
+    return window.api.detach.onClosed(({ sessionIds, sessions: detachedSessions }) => {
+      if (sessionIds.length === 0) return
+      useSessionsStore.getState().upsertSessions(detachedSessions)
+      const sessStore = useSessionsStore.getState()
       const paneStore = usePanesStore.getState()
-      const paneId = paneStore.activePaneId
+      const projectsStore = useProjectsStore.getState()
+      const wtStore = useWorktreesStore.getState()
+
+      const firstSession = detachedSessions.find((s) => sessionIds.includes(s.id))
+        ?? sessStore.sessions.find((s) => sessionIds.includes(s.id))
+      const targetProjectId = firstSession?.projectId
+
+      // Switch to correct project if needed
+      if (targetProjectId && targetProjectId !== projectsStore.selectedProjectId) {
+        projectsStore.selectProject(targetProjectId)
+        const mainWt = wtStore.getMainWorktree(targetProjectId)
+        if (mainWt) {
+          wtStore.selectWorktree(mainWt.id)
+          // Include ALL sessions for this project (including returning ones)
+          const allProjectSessions = sessStore.sessions
+            .filter((s) => s.projectId === targetProjectId)
+            .map((s) => s.id)
+          paneStore.switchWorktree(mainWt.id, allProjectSessions, sessionIds[0])
+        } else {
+          wtStore.selectWorktree(null)
+          const ps = sessStore.sessions.filter((s) => s.projectId === targetProjectId).map((s) => s.id)
+          paneStore.switchWorktree(targetProjectId, ps, sessionIds[0])
+        }
+      }
+
+      // Always ensure returning sessions are in the active pane
+      // Re-fetch state since switchWorktree may have replaced it
+      const fresh = usePanesStore.getState()
+      // Find an actual leaf pane from the current root
+      const findLeaf = (node: { type: string; id: string; first?: unknown }): string =>
+        node.type === 'leaf' ? node.id : findLeaf(node.first as typeof node)
+      const paneId = findLeaf(fresh.root)
       for (const sid of sessionIds) {
-        paneStore.addSessionToPane(paneId, sid)
+        usePanesStore.getState().addSessionToPane(paneId, sid)
       }
-      if (sessionIds.length > 0) {
-        useSessionsStore.getState().setActive(sessionIds[0])
-      }
+      useSessionsStore.getState().setActive(sessionIds[0])
     })
   }, [])
 

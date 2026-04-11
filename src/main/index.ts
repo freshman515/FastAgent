@@ -62,11 +62,21 @@ app.whenReady().then(() => {
   mediaMonitor.start()
 
   // ─── Detached window IPC ───
-  // Store session data for detached windows to fetch
+  // Store live session snapshots for detached windows to fetch and hand back on close
   const detachedSessionData = new Map<string, unknown[]>()
+  // Track live session IDs per detached window (updated by the detached renderer)
+  const detachedSessionIds = new Map<string, string[]>()
 
   ipcMain.handle('detach:get-sessions', (_event, windowId: string) => {
     return detachedSessionData.get(windowId) ?? []
+  })
+
+  ipcMain.handle('detach:update-session-ids', (_event, windowId: string, sessionIds: string[]) => {
+    detachedSessionIds.set(windowId, sessionIds)
+  })
+
+  ipcMain.handle('detach:update-sessions', (_event, windowId: string, sessions: unknown[]) => {
+    detachedSessionData.set(windowId, sessions)
   })
 
   ipcMain.handle('detach:create', (_event, sessionIds: string[], title: string, sessionData: unknown[], position?: { x: number; y: number }, size?: { width: number; height: number }) => {
@@ -92,12 +102,17 @@ app.whenReady().then(() => {
 
     detachedWindows.set(id, win)
     detachedSessionData.set(id, sessionData)
+    detachedSessionIds.set(id, sessionIds)
 
     win.on('closed', () => {
+      // Use the latest session list (includes newly added sessions)
+      const liveIds = detachedSessionIds.get(id) ?? sessionIds
+      const liveSessions = detachedSessionData.get(id) ?? sessionData
       detachedWindows.delete(id)
       detachedSessionData.delete(id)
+      detachedSessionIds.delete(id)
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('detach:closed', { id, sessionIds })
+        mainWindow.webContents.send('detach:closed', { id, sessionIds: liveIds, sessions: liveSessions })
       }
     })
 
