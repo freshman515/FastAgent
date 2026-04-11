@@ -15,6 +15,15 @@ export interface Project {
   groupId: string
 }
 
+export const UNGROUPED_PROJECT_GROUP_ID = '__ungrouped__'
+export const ANONYMOUS_PROJECT_ID = '__anonymous_project__'
+export const ANONYMOUS_PROJECT_NAME = 'Anonymous'
+export const ANONYMOUS_PROJECT_DIR_NAME = 'anonymous-workspace'
+
+export function isAnonymousProjectId(projectId: string): boolean {
+  return projectId === ANONYMOUS_PROJECT_ID
+}
+
 export type SessionType = 'claude-code' | 'claude-code-yolo' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal'
 
 /** Returns true for any Claude Code variant (normal or yolo mode) */
@@ -102,6 +111,49 @@ export interface GitWorktreeInfo {
   isMain: boolean
 }
 
+export type ExternalIdeId = 'cursor' | 'vscode' | 'trae' | 'rider'
+
+export interface ExternalIdeOption {
+  id: ExternalIdeId
+  label: string
+}
+
+export interface OpenIdeResult {
+  ok: boolean
+  error?: string
+}
+
+export interface ProjectSearchMatch {
+  id: string
+  filePath: string
+  relativePath: string
+  line: number
+  column: number
+  endColumn: number
+  lineText: string
+  matchText: string
+}
+
+export interface SearchQueryOptions {
+  limit?: number
+  fileFilter?: string
+}
+
+export interface FileSearchResult {
+  id: string
+  rootPath: string
+  filePath: string
+  fileName: string
+  relativePath: string
+}
+
+export const EXTERNAL_IDE_OPTIONS: ExternalIdeOption[] = [
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'vscode', label: 'VS Code' },
+  { id: 'trae', label: 'Trae' },
+  { id: 'rider', label: 'Rider' },
+]
+
 // ─── Session Template Types ───
 
 export interface SessionTemplateItem {
@@ -181,6 +233,8 @@ export const IPC = {
 
   DIALOG_SELECT_FOLDER: 'dialog:select-folder',
   SHELL_OPEN_PATH: 'shell:open-path',
+  SHELL_OPEN_IN_IDE: 'shell:open-in-ide',
+  SHELL_LIST_IDES: 'shell:list-ides',
 } as const
 
 // ─── Session Type Labels ───

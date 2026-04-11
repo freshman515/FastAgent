@@ -6,6 +6,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
+import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
 
 interface TreeEntry {
   name: string
@@ -17,6 +18,8 @@ interface TreeNodeProps {
   path: string
   isDir: boolean
   depth: number
+  projectId: string | null
+  worktreeId?: string
 }
 
 const IGNORED = new Set([
@@ -27,7 +30,28 @@ const IGNORED = new Set([
 
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
 
-function TreeNode({ name, path, isDir, depth }: TreeNodeProps): JSX.Element {
+function FileTypeIcon({ name }: { name: string }): JSX.Element {
+  const iconInfo = FILE_ICONS[detectLanguage(name)]
+
+  if (!iconInfo) {
+    return <File size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+  }
+
+  return (
+    <span
+      className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded px-1 text-[9px] font-semibold leading-none"
+      style={{
+        color: iconInfo.color,
+        backgroundColor: `${iconInfo.color}18`,
+        border: `1px solid ${iconInfo.color}33`,
+      }}
+    >
+      {iconInfo.icon}
+    </span>
+  )
+}
+
+function TreeNode({ name, path, isDir, depth, projectId, worktreeId }: TreeNodeProps): JSX.Element {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<TreeEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -50,10 +74,23 @@ function TreeNode({ name, path, isDir, depth }: TreeNodeProps): JSX.Element {
     setExpanded(true)
   }, [isDir, expanded, path])
 
+  const handleClick = useCallback(() => {
+      if (isDir) {
+        toggle()
+      } else {
+        // Open file in editor
+        const tabId = useEditorsStore.getState().openFile(path, { projectId, worktreeId })
+        const paneStore = usePanesStore.getState()
+        const paneId = paneStore.activePaneId
+        paneStore.addSessionToPane(paneId, tabId)
+        paneStore.setPaneActiveSession(paneId, tabId)
+      }
+  }, [isDir, path, projectId, toggle, worktreeId])
+
   return (
     <div>
       <div
-        onClick={toggle}
+        onClick={handleClick}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
         className={cn(
           'group flex items-center gap-1 py-[3px] pr-2 cursor-pointer',
@@ -69,7 +106,7 @@ function TreeNode({ name, path, isDir, depth }: TreeNodeProps): JSX.Element {
         ) : (
           <>
             <span className="w-3 shrink-0" />
-            <File size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+            <FileTypeIcon name={name} />
           </>
         )}
         <span className="flex-1 truncate text-[var(--color-text-secondary)]">{name}</span>
@@ -110,6 +147,8 @@ function TreeNode({ name, path, isDir, depth }: TreeNodeProps): JSX.Element {
           path={`${path}/${child.name}`}
           isDir={child.isDir}
           depth={depth + 1}
+          projectId={projectId}
+          worktreeId={worktreeId}
         />
       ))}
       {loading && (
@@ -121,8 +160,10 @@ function TreeNode({ name, path, isDir, depth }: TreeNodeProps): JSX.Element {
 
 export function FileTree(): JSX.Element {
   const selectedProject = useProjectsStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
+  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectedWorktree = useWorktreesStore((s) => s.worktrees.find((w) => w.id === s.selectedWorktreeId))
   const projectPath = selectedWorktree?.path ?? selectedProject?.path
+  const editorWorktreeId = selectedWorktree && !selectedWorktree.isMain ? selectedWorktree.id : undefined
 
   const [entries, setEntries] = useState<TreeEntry[]>([])
 
@@ -158,6 +199,8 @@ export function FileTree(): JSX.Element {
           path={`${projectPath}/${entry.name}`}
           isDir={entry.isDir}
           depth={0}
+          projectId={selectedProjectId}
+          worktreeId={editorWorktreeId}
         />
       ))}
     </div>

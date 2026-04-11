@@ -4,11 +4,12 @@ import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
 import { SplitContainer } from '@/components/split/SplitContainer'
 import type { Session } from '@shared/types'
 
 export function DetachedApp(): JSX.Element {
-  const initialSessionIds = useRef(window.api.detach.getSessionIds()).current
+  const initialTabIds = useRef(window.api.detach.getTabIds()).current
   const windowId = useRef(window.api.detach.getWindowId()).current
   const [ready, setReady] = useState(false)
   const projectIdRef = useRef<string>('')
@@ -38,6 +39,20 @@ export function DetachedApp(): JSX.Element {
         }
       }
 
+      const editorData = await window.api.detach.getEditors(windowId)
+      const editors = editorData
+        .map((raw) => sanitizeEditorTab(raw))
+        .filter((tab): tab is NonNullable<ReturnType<typeof sanitizeEditorTab>> => tab !== null)
+      if (editors.length > 0) {
+        if (!projectIdRef.current && editors[0].projectId) {
+          projectIdRef.current = editors[0].projectId
+        }
+        if (!worktreeIdRef.current && editors[0].worktreeId) {
+          worktreeIdRef.current = editors[0].worktreeId
+        }
+        useEditorsStore.getState().upsertTabs(editors)
+      }
+
       if (projectIdRef.current) {
         useProjectsStore.getState().selectProject(projectIdRef.current)
         const wtStore = useWorktreesStore.getState()
@@ -46,23 +61,30 @@ export function DetachedApp(): JSX.Element {
         )
       }
 
-      usePanesStore.getState().initPane(initialSessionIds, initialSessionIds[0] ?? null)
+      usePanesStore.getState().initPane(initialTabIds, initialTabIds[0] ?? null)
       setReady(true)
     }
     init()
-  }, [windowId, initialSessionIds])
+  }, [windowId, initialTabIds])
 
   const sessions = useSessionsStore((s) => s.sessions)
+  const editors = useEditorsStore((s) => s.tabs)
 
-  // Sync live detached sessions to main process so newly created tabs can be restored.
+  // Sync live detached tabs to main process so newly created tabs can be restored.
   const paneSessions = usePanesStore((s) => s.paneSessions)
   useEffect(() => {
     if (!ready) return
     const allIds = Object.values(paneSessions).flat()
     const liveSessions = sessions.filter((session) => allIds.includes(session.id))
+    const liveEditors = editors.filter((tab) => allIds.includes(tab.id))
     window.api.detach.updateSessionIds(windowId, allIds)
     window.api.detach.updateSessions(windowId, liveSessions)
-  }, [paneSessions, sessions, windowId, ready])
+    window.api.detach.updateEditors(windowId, liveEditors)
+    window.api.detach.updateContext(windowId, {
+      projectId: projectIdRef.current || liveSessions[0]?.projectId || liveEditors[0]?.projectId || null,
+      worktreeId: worktreeIdRef.current ?? liveSessions[0]?.worktreeId ?? liveEditors[0]?.worktreeId ?? null,
+    })
+  }, [editors, paneSessions, sessions, windowId, ready])
 
   if (!ready) {
     return (

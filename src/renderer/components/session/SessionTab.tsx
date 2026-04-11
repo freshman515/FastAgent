@@ -38,10 +38,10 @@ interface SessionTabProps {
 }
 
 const SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
-  { position: 'right', label: 'Split Right' },
-  { position: 'down', label: 'Split Down' },
-  { position: 'left', label: 'Split Left' },
-  { position: 'up', label: 'Split Up' },
+  { position: 'right', label: '向右分屏' },
+  { position: 'down', label: '向下分屏' },
+  { position: 'left', label: '向左分屏' },
+  { position: 'up', label: '向上分屏' },
 ]
 
 export function SessionTab({
@@ -186,7 +186,15 @@ export function SessionTab({
             const { popoutPosition, popoutWidth, popoutHeight } = useUIStore.getState().settings
             const pos = popoutPosition === 'center' ? undefined : { x: screenX, y: screenY }
             removeSessionFromPane(paneId, session.id)
-            window.api.detach.create([session.id], detachTitle, liveSession ? [liveSession] : [], pos, { width: popoutWidth, height: popoutHeight })
+            window.api.detach.create(
+              [session.id],
+              detachTitle,
+              liveSession ? [liveSession] : [],
+              [],
+              { projectId: session.projectId, worktreeId: session.worktreeId ?? null },
+              pos,
+              { width: popoutWidth, height: popoutHeight },
+            )
           }
         }}
         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); handleClose() } }}
@@ -203,7 +211,7 @@ export function SessionTab({
           setPreview(null)
         }}
         className={cn(
-          'no-drag group flex h-7 cursor-pointer items-center gap-1.5 px-2.5',
+          'no-drag group flex h-[34px] cursor-pointer items-center gap-1.5 px-2.5',
           'max-w-[180px]',
           isActive
             ? 'tab-active text-[var(--color-text-primary)]'
@@ -248,7 +256,7 @@ export function SessionTab({
         )}
 
         {session.pinned ? (
-          <div className="h-3 w-3 shrink-0 flex items-center justify-center text-[var(--color-accent)]" title="Pinned">
+          <div className="h-3 w-3 shrink-0 flex items-center justify-center text-[var(--color-accent)]" title="已固定">
             <svg viewBox="0 0 16 16" width={10} height={10} fill="currentColor"><path d="M9.828.722a.5.5 0 01.354.146l4.95 4.95a.5.5 0 010 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.93 5.93 0 01.16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 01-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 010-.707c.688-.688 1.673-.767 2.375-.72a5.93 5.93 0 011.013.16l3.134-3.133a2.77 2.77 0 01-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 01.353-.146z"/></svg>
           </div>
         ) : (
@@ -304,7 +312,7 @@ export function SessionTab({
               onClick={() => { setContextMenu(null); updateSession(session.id, { pinned: !session.pinned }) }}
               className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
             >
-              {session.pinned ? 'Unpin' : 'Pin'}
+              {session.pinned ? '取消固定' : '固定标签页'}
             </button>
 
             {/* Rename */}
@@ -312,7 +320,7 @@ export function SessionTab({
               onClick={startRename}
               className="flex w-full items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
             >
-              <span>Rename</span>
+              <span>重命名</span>
               <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">F2</span>
             </button>
 
@@ -326,7 +334,7 @@ export function SessionTab({
                     onClick={() => updateSession(session.id, { color: undefined })}
                     className="text-[8px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
                   >
-                    clear
+                    清除
                   </button>
                 )}
               </div>
@@ -352,7 +360,7 @@ export function SessionTab({
                     onClick={() => updateSession(session.id, { label: undefined })}
                     className="text-[8px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
                   >
-                    clear
+                    清除
                   </button>
                 )}
               </div>
@@ -373,7 +381,7 @@ export function SessionTab({
                 ))}
               </div>
               <input
-                placeholder="Custom label..."
+                placeholder="自定义标签..."
                 defaultValue={session.label && !['前端', '后端', 'API', 'DB', 'Test', 'Dev', 'Bug'].includes(session.label) ? session.label : ''}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
@@ -402,11 +410,19 @@ export function SessionTab({
                 const pos = popoutPosition === 'center' ? undefined
                   : { x: window.screenX + window.innerWidth / 2, y: window.screenY + window.innerHeight / 2 }
                 removeSessionFromPane(paneId, session.id)
-                window.api.detach.create([session.id], detachTitle, liveSession ? [liveSession] : [], pos, { width: popoutWidth, height: popoutHeight })
+                window.api.detach.create(
+                  [session.id],
+                  detachTitle,
+                  liveSession ? [liveSession] : [],
+                  [],
+                  { projectId: session.projectId, worktreeId: session.worktreeId ?? null },
+                  pos,
+                  { width: popoutWidth, height: popoutHeight },
+                )
               }}
               className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
             >
-              Pop Out
+              弹出为独立窗口
             </button>
 
             {/* Split options */}
@@ -437,7 +453,7 @@ export function SessionTab({
                 }}
                 className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
               >
-                Merge All Panes
+                合并全部分屏
               </button>
             )}
 
@@ -449,7 +465,7 @@ export function SessionTab({
                   onClick={() => { setContextMenu(null); window.api.session.export(session.ptyId!, session.name) }}
                   className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
                 >
-                  Export Output
+                  导出输出
                 </button>
               </>
             )}
@@ -462,7 +478,7 @@ export function SessionTab({
                   onClick={() => { setContextMenu(null); handleClose() }}
                   className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]"
                 >
-                  Close
+                  关闭
                 </button>
               </>
             )}
@@ -473,9 +489,9 @@ export function SessionTab({
 
       {showCloseConfirm && (
         <ConfirmDialog
-          title="Close Session"
-          message={`"${session.name}" is still running. Are you sure?`}
-          confirmLabel="Close"
+          title="关闭会话"
+          message={`"${session.name}" 仍在运行，确认关闭吗？`}
+          confirmLabel="关闭"
           danger
           onConfirm={doClose}
           onCancel={() => setShowCloseConfirm(false)}

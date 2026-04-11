@@ -8,6 +8,8 @@ import { readConfig, writeConfig } from './services/ConfigStore'
 import { hookServer } from './services/HookServer'
 import { registerHooks, unregisterHooks } from './services/HookInstaller'
 import { mediaMonitor } from './services/MediaMonitor'
+import { startIdeServer, stopIdeServer, registerIdeIPC } from './services/IdeServer'
+import { opencodeService } from './services/OpencodeService'
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
@@ -21,6 +23,7 @@ function createWindow(): void {
     frame: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#1a1a1e',
+    icon: join(__dirname, '../../assets/icons/fastagents-256.png'),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
@@ -61,11 +64,17 @@ app.whenReady().then(() => {
   createWindow()
   mediaMonitor.start()
 
+  // Start IDE bridge for Claude Code /ide integration (lock file + WebSocket)
+  registerIdeIPC()
+  startIdeServer().catch((err) => console.error('[IDE] failed to start:', err))
+
   // ─── Detached window IPC ───
-  // Store live session snapshots for detached windows to fetch and hand back on close
+  // Store live tab snapshots for detached windows to fetch and hand back on close
   const detachedSessionData = new Map<string, unknown[]>()
-  // Track live session IDs per detached window (updated by the detached renderer)
-  const detachedSessionIds = new Map<string, string[]>()
+  const detachedEditorData = new Map<string, unknown[]>()
+  const detachedContext = new Map<string, { projectId: string | null; worktreeId: string | null }>()
+  // Track live tab IDs per detached window (updated by the detached renderer)
+  const detachedTabIds = new Map<string, string[]>()
   const tabDragState = new Map<string, {
     payload: unknown
     targetWindowId: string | null
@@ -75,12 +84,24 @@ app.whenReady().then(() => {
     return detachedSessionData.get(windowId) ?? []
   })
 
-  ipcMain.handle('detach:update-session-ids', (_event, windowId: string, sessionIds: string[]) => {
-    detachedSessionIds.set(windowId, sessionIds)
+  ipcMain.handle('detach:get-editors', (_event, windowId: string) => {
+    return detachedEditorData.get(windowId) ?? []
+  })
+
+  ipcMain.handle('detach:update-session-ids', (_event, windowId: string, tabIds: string[]) => {
+    detachedTabIds.set(windowId, tabIds)
   })
 
   ipcMain.handle('detach:update-sessions', (_event, windowId: string, sessions: unknown[]) => {
     detachedSessionData.set(windowId, sessions)
+  })
+
+  ipcMain.handle('detach:update-editors', (_event, windowId: string, editors: unknown[]) => {
+    detachedEditorData.set(windowId, editors)
+  })
+
+  ipcMain.handle('detach:update-context', (_event, windowId: string, context: { projectId: string | null; worktreeId: string | null }) => {
+    detachedContext.set(windowId, context)
   })
 
   ipcMain.on('detach:tab-drag-register', (event, token: string, payload: unknown) => {
@@ -117,7 +138,18 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('detach:create', (_event, sessionIds: string[], title: string, sessionData: unknown[], position?: { x: number; y: number }, size?: { width: number; height: number }) => {
+  ipcMain.handle(
+    'detach:create',
+    (
+      _event,
+      tabIds: string[],
+      title: string,
+      sessionData: unknown[],
+      editorData: unknown[],
+      context?: { projectId: string | null; worktreeId: string | null } | null,
+      position?: { x: number; y: number },
+      size?: { width: number; height: number },
+    ) => {
     const id = `detach-${Date.now()}`
     const w = size?.width ?? 800
     const h = size?.height ?? 600
@@ -129,6 +161,7 @@ app.whenReady().then(() => {
       minHeight: 300,
       frame: false,
       titleBarStyle: 'default',
+      icon: join(__dirname, '../../assets/icons/fastagents-256.png'),
       backgroundColor: '#1a1a1e',
       webPreferences: {
         preload: join(__dirname, '../preload/index.cjs'),
@@ -140,21 +173,34 @@ app.whenReady().then(() => {
 
     detachedWindows.set(id, win)
     detachedSessionData.set(id, sessionData)
-    detachedSessionIds.set(id, sessionIds)
+    detachedEditorData.set(id, editorData)
+    detachedTabIds.set(id, tabIds)
+    detachedContext.set(id, context ?? { projectId: null, worktreeId: null })
 
     win.on('closed', () => {
-      // Use the latest session list (includes newly added sessions)
-      const liveIds = detachedSessionIds.get(id) ?? sessionIds
+      // Use the latest tab list (includes newly added tabs)
+      const liveIds = detachedTabIds.get(id) ?? tabIds
       const liveSessions = detachedSessionData.get(id) ?? sessionData
+      const liveEditors = detachedEditorData.get(id) ?? editorData
+      const liveContext = detachedContext.get(id) ?? context ?? { projectId: null, worktreeId: null }
       detachedWindows.delete(id)
       detachedSessionData.delete(id)
-      detachedSessionIds.delete(id)
+      detachedEditorData.delete(id)
+      detachedTabIds.delete(id)
+      detachedContext.delete(id)
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('detach:closed', { id, sessionIds: liveIds, sessions: liveSessions })
+        mainWindow.webContents.send('detach:closed', {
+          id,
+          tabIds: liveIds,
+          sessions: liveSessions,
+          editors: liveEditors,
+          projectId: liveContext.projectId ?? null,
+          worktreeId: liveContext.worktreeId ?? null,
+        })
       }
     })
 
-    const query = { detached: 'true', sessionIds: sessionIds.join(','), windowId: id, title }
+    const query = { detached: 'true', sessionIds: tabIds.join(','), windowId: id, title }
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       const url = new URL(process.env['ELECTRON_RENDERER_URL'])
       Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v))
@@ -164,7 +210,8 @@ app.whenReady().then(() => {
     }
 
     return id
-  })
+    },
+  )
 
   ipcMain.handle('detach:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
@@ -267,6 +314,8 @@ app.on('before-quit', async (e) => {
   hookServer.stop()
   unregisterHooks()
   mediaMonitor.stop()
+  stopIdeServer()
+  opencodeService.disposeAll()
   ptyManager.destroyAll()
   app.quit()
 })

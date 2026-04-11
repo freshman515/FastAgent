@@ -72,10 +72,13 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     <div className="relative h-full w-full">
       {/* Search bar */}
       {searchOpen && (
-        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 shadow-lg">
+        <div className="terminal-search-bar absolute right-2.5 top-2.5 z-10 flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 shadow-lg">
           <input
             ref={inputRef}
             value={searchText}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             onChange={(e) => setSearchText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -84,7 +87,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
               if (e.key === 'Escape') closeSearch()
             }}
             placeholder="Search..."
-            className="w-40 bg-transparent text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
+            className="terminal-search-input w-40 bg-transparent text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
           />
           <button onClick={findPrev} className="p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
             <ChevronUp size={14} />
@@ -98,11 +101,12 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         </div>
       )}
 
-      <div
-        ref={containerRef}
-        className="h-full w-full bg-[var(--color-bg-primary)]"
-        style={{ padding: '2px 0 0 2px' }}
-      />
+      <div className="absolute inset-2.5">
+        <div
+          ref={containerRef}
+          className="h-full w-full bg-[var(--color-bg-primary)]"
+        />
+      </div>
     </div>
   )
 }

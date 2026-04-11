@@ -31,6 +31,7 @@ interface ProjectsState {
   _loaded: boolean
   _loadFromConfig: (raw: unknown[]) => void
   addProject: (path: string, groupId: string) => string
+  upsertProject: (project: Project) => void
   removeProject: (id: string) => void
   moveProject: (id: string, toGroupId: string) => void
   selectProject: (id: string | null) => void
@@ -63,6 +64,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     })
     return id
   },
+
+  upsertProject: (project) =>
+    set((state) => {
+      const existingIndex = state.projects.findIndex((item) => item.id === project.id)
+      const projects = existingIndex === -1
+        ? [...state.projects, project]
+        : state.projects.map((item) => (item.id === project.id ? project : item))
+      persist(projects)
+      return { projects }
+    }),
 
   removeProject: (id) =>
     set((state) => {

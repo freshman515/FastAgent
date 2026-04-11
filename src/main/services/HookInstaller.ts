@@ -164,6 +164,11 @@ export function registerHooks(port: number): void {
   // Stop: command hook (non-blocking)
   addCommandHook(settings, 'Stop', command)
 
+  // Notification: status-line hook (non-blocking — captures model, context, cost)
+  // Include port in a query param so the PERM_MARKER match works for cleanup
+  const statusUrl = `http://127.0.0.1:${port}/status-line?src=fast-agents`
+  addHttpHook(settings, 'Notification', statusUrl)
+
   // PermissionRequest: HTTP hook (blocking — Claude Code waits for our response)
   const permUrl = `http://127.0.0.1:${port}/permission`
   addHttpHook(settings, 'PermissionRequest', permUrl)
@@ -190,7 +195,7 @@ export function unregisterHooks(): void {
     }
 
     // Remove HTTP hooks
-    for (const event of ['PermissionRequest']) {
+    for (const event of ['PermissionRequest', 'Notification']) {
       if (!Array.isArray(hooks[event])) continue
       hooks[event] = hooks[event].filter((e) => {
         if (e.type === 'http' && e.url?.includes(PERM_MARKER)) return false

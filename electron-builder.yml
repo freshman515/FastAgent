@@ -8,6 +8,7 @@ directories:
 
 files:
   - "out/**/*"
+  - "assets/icons/fastagents-256.png"
   - "node_modules/**/*"
   - "!node_modules/**/README.md"
   - "!node_modules/**/CHANGELOG.md"

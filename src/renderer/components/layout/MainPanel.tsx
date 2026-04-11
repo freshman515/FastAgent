@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useEditorsStore } from '@/stores/editors'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
@@ -12,7 +13,8 @@ export function MainPanel(): JSX.Element {
   const worktreesLoaded = useWorktreesStore((s) => s._loaded)
   const worktrees = useWorktreesStore((s) => s.worktrees)
   const sessions = useSessionsStore((s) => s.sessions)
-  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const editors = useEditorsStore((s) => s.tabs)
+  const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const currentLayoutKey = usePanesStore((s) => s.currentProjectId)
 
   // Keep panes in sync with the selected project/worktree without overwriting
@@ -37,14 +39,21 @@ export function MainPanel(): JSX.Element {
           && (s.worktreeId === selectedWorktree.id || (!s.worktreeId && selectedWorktree.isMain)),
         )
         .map((s) => s.id)
-      const nextActiveSessionId = activeSessionId && worktreeSessionIds.includes(activeSessionId)
-        ? activeSessionId
-        : (worktreeSessionIds[0] ?? null)
+      const worktreeEditorIds = editors
+        .filter((tab) =>
+          tab.projectId === selectedProjectId
+          && (tab.worktreeId === selectedWorktree.id || (!tab.worktreeId && selectedWorktree.isMain)),
+        )
+        .map((tab) => tab.id)
+      const worktreeTabIds = [...worktreeSessionIds, ...worktreeEditorIds]
+      const nextActiveSessionId = activeTabId && worktreeTabIds.includes(activeTabId)
+        ? activeTabId
+        : (worktreeTabIds[0] ?? null)
 
       if (currentLayoutKey !== selectedWorktree.id) {
         usePanesStore.getState().switchWorktree(
           selectedWorktree.id,
-          worktreeSessionIds,
+          worktreeTabIds,
           nextActiveSessionId,
         )
       }
@@ -54,25 +63,46 @@ export function MainPanel(): JSX.Element {
     const projectSessionIds = sessions
       .filter((s) => s.projectId === selectedProjectId)
       .map((s) => s.id)
-    const nextActiveSessionId = activeSessionId && projectSessionIds.includes(activeSessionId)
-      ? activeSessionId
-      : (projectSessionIds[0] ?? null)
+    const projectEditorIds = editors
+      .filter((tab) => tab.projectId === selectedProjectId)
+      .map((tab) => tab.id)
+    const projectTabIds = [...projectSessionIds, ...projectEditorIds]
+    const nextActiveSessionId = activeTabId && projectTabIds.includes(activeTabId)
+      ? activeTabId
+      : (projectTabIds[0] ?? null)
 
     if (currentLayoutKey !== selectedProjectId) {
       usePanesStore.getState().switchProject(
         selectedProjectId,
-        projectSessionIds,
+        projectTabIds,
         nextActiveSessionId,
       )
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on project/worktree switch, not on session changes
-  }, [selectedProjectId, selectedWorktreeId, currentLayoutKey, worktreesLoaded, worktrees])
+  }, [selectedProjectId, selectedWorktreeId, currentLayoutKey, worktreesLoaded, worktrees, editors])
+
+  // Sync workspace folders to IDE bridge for Claude Code /ide
+  const selectedProject = useProjectsStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
+  useEffect(() => {
+    if (selectedProject?.path) {
+      window.api.ide.updateWorkspace([selectedProject.path])
+    }
+  }, [selectedProject?.path])
 
   // Dynamic window title
-  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const activeSession = sessions.find((s) => s.id === activeTabId)
+  const activeEditor = editors.find((tab) => tab.id === activeTabId)
   useEffect(() => {
-    document.title = activeSession ? `${activeSession.name} — FastAgents` : 'FastAgents'
-  }, [activeSession?.name, activeSession?.id])
+    if (activeSession) {
+      document.title = `${activeSession.name} — FastAgents`
+      return
+    }
+    if (activeEditor) {
+      document.title = `${activeEditor.fileName} — FastAgents`
+      return
+    }
+    document.title = 'FastAgents'
+  }, [activeEditor?.fileName, activeEditor?.id, activeSession?.name, activeSession?.id])
 
   if (!selectedProjectId) {
     return (

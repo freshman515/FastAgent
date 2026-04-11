@@ -8,6 +8,7 @@ import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { DetachedApp } from '@/DetachedApp'
+import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
@@ -17,8 +18,209 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useTemplatesStore } from '@/stores/templates'
 import { useTasksStore } from '@/stores/tasks'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { type EditorTab, sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
+import { useLaunchesStore } from '@/stores/launches'
 import { useActivityMonitor } from '@/hooks/useActivityMonitor'
+import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ANONYMOUS_PROJECT_ID } from '@shared/types'
+
+interface EditorPathContext {
+  projectId: string
+  worktreeId?: string
+  path: string
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function getEditorPathContexts(rawProjects: unknown[], rawWorktrees: unknown[]): EditorPathContext[] {
+  const worktreeContexts = (Array.isArray(rawWorktrees) ? rawWorktrees : [])
+    .flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const worktree = entry as Record<string, unknown>
+      if (typeof worktree.projectId !== 'string' || typeof worktree.path !== 'string') return []
+      return [{
+        projectId: worktree.projectId,
+        worktreeId: worktree.isMain === true
+          ? undefined
+          : (typeof worktree.id === 'string' ? worktree.id : undefined),
+        path: worktree.path,
+      }]
+    })
+
+  const existingProjectIds = new Set(worktreeContexts.map((context) => context.projectId))
+  const projectContexts = (Array.isArray(rawProjects) ? rawProjects : [])
+    .flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const project = entry as Record<string, unknown>
+      if (typeof project.id !== 'string' || typeof project.path !== 'string') return []
+      if (existingProjectIds.has(project.id)) return []
+      return [{ projectId: project.id, path: project.path }]
+    })
+
+  return [...worktreeContexts, ...projectContexts]
+    .sort((a, b) => normalizePath(b.path).length - normalizePath(a.path).length)
+}
+
+function inferEditorContext(filePath: string, contexts: EditorPathContext[]): { projectId: string; worktreeId?: string } | undefined {
+  const normalizedFilePath = normalizePath(filePath)
+  const match = contexts.find((context) => {
+    const normalizedContextPath = normalizePath(context.path)
+    return normalizedFilePath === normalizedContextPath || normalizedFilePath.startsWith(`${normalizedContextPath}/`)
+  })
+
+  return match ? { projectId: match.projectId, worktreeId: match.worktreeId } : undefined
+}
+
+async function filterExistingEditorTabs(
+  raw: unknown[],
+  rawProjects: unknown[],
+  rawWorktrees: unknown[],
+): Promise<{ tabs: EditorTab[]; changed: boolean }> {
+  const pathContexts = getEditorPathContexts(rawProjects, rawWorktrees)
+  let changed = false
+  const sanitizedTabs = raw.flatMap((tab) => {
+    if (!tab || typeof tab !== 'object') {
+      changed = true
+      return []
+    }
+    const filePath = typeof (tab as { filePath?: unknown }).filePath === 'string'
+      ? (tab as { filePath: string }).filePath
+      : null
+    const sanitized = sanitizeEditorTab(
+      tab,
+      filePath ? inferEditorContext(filePath, pathContexts) : undefined,
+    )
+    if (!sanitized) {
+      changed = true
+      return []
+    }
+    const rawTab = tab as Record<string, unknown>
+    if (
+      rawTab.language !== sanitized.language
+      || rawTab.projectId !== sanitized.projectId
+      || rawTab.worktreeId !== sanitized.worktreeId
+    ) {
+      changed = true
+    }
+    return [sanitized]
+  })
+
+  const existingTabs = (await Promise.all(
+    sanitizedTabs.map(async (tab) => {
+      try {
+        await window.api.fs.readFile(tab.filePath)
+        return tab
+      } catch {
+        changed = true
+        return null
+      }
+    }),
+  )).filter((tab): tab is EditorTab => tab !== null)
+
+  return {
+    tabs: existingTabs,
+    changed,
+  }
+}
+
+function sanitizePaneSessions(
+  rawPaneSessions: unknown,
+  rawPaneActiveSession: unknown,
+  validTabIds: Set<string>,
+): {
+  paneSessions: Record<string, string[]>
+  paneActiveSession: Record<string, string | null>
+  changed: boolean
+} {
+  const paneSessionsInput = rawPaneSessions && typeof rawPaneSessions === 'object'
+    ? rawPaneSessions as Record<string, unknown>
+    : {}
+  const paneActiveInput = rawPaneActiveSession && typeof rawPaneActiveSession === 'object'
+    ? rawPaneActiveSession as Record<string, unknown>
+    : {}
+
+  const paneSessions: Record<string, string[]> = {}
+  const paneActiveSession: Record<string, string | null> = {}
+  let changed = false
+
+  for (const [paneId, value] of Object.entries(paneSessionsInput)) {
+    const sessionIds = Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === 'string')
+      : []
+    const validSessionIds = sessionIds.filter((id) => validTabIds.has(id))
+    const rawActiveSession = paneActiveInput[paneId]
+    const activeSession = typeof rawActiveSession === 'string' && validSessionIds.includes(rawActiveSession)
+      ? rawActiveSession
+      : (validSessionIds[0] ?? null)
+
+    if (!Array.isArray(value) || sessionIds.length !== value.length || validSessionIds.length !== sessionIds.length) {
+      changed = true
+    }
+    if (rawActiveSession !== activeSession) {
+      changed = true
+    }
+
+    paneSessions[paneId] = validSessionIds
+    paneActiveSession[paneId] = activeSession
+  }
+
+  return { paneSessions, paneActiveSession, changed }
+}
+
+function sanitizePanesConfig(raw: unknown, validTabIds: Set<string>): { panes: Record<string, unknown> | null; changed: boolean } {
+  if (!raw || typeof raw !== 'object') return { panes: null, changed: false }
+  const panes = raw as Record<string, unknown>
+  if (!panes.root || !panes.paneSessions) return { panes: null, changed: false }
+
+  const { paneSessions, paneActiveSession, changed: currentChanged } = sanitizePaneSessions(
+    panes.paneSessions,
+    panes.paneActiveSession,
+    validTabIds,
+  )
+
+  const rawProjectLayouts = panes.projectLayouts && typeof panes.projectLayouts === 'object'
+    ? panes.projectLayouts as Record<string, unknown>
+    : {}
+  const projectLayouts: Record<string, unknown> = {}
+  let changed = currentChanged
+
+  for (const [layoutKey, layoutValue] of Object.entries(rawProjectLayouts)) {
+    if (!layoutValue || typeof layoutValue !== 'object') {
+      changed = true
+      continue
+    }
+
+    const layout = layoutValue as Record<string, unknown>
+    const { paneSessions: layoutPaneSessions, paneActiveSession: layoutActiveSession, changed: layoutChanged } = sanitizePaneSessions(
+      layout.paneSessions,
+      layout.paneActiveSession,
+      validTabIds,
+    )
+
+    if (layoutChanged) {
+      changed = true
+    }
+
+    projectLayouts[layoutKey] = {
+      ...layout,
+      paneSessions: layoutPaneSessions,
+      paneActiveSession: layoutActiveSession,
+    }
+  }
+
+  return {
+    panes: {
+      ...panes,
+      paneSessions,
+      paneActiveSession,
+      projectLayouts,
+    },
+    changed,
+  }
+}
 
 export function App(): JSX.Element {
   // If this window is a detached pop-out, render the detached UI instead
@@ -30,7 +232,10 @@ export function App(): JSX.Element {
 
   // Load config from file on startup
   useEffect(() => {
-    window.api.config.read().then((data) => {
+    let disposed = false
+
+    void (async () => {
+      const data = await window.api.config.read()
       const rawWorktrees = (data as Record<string, unknown>).worktrees as unknown[] ?? []
       const validWorktreeIds = new Set(
         (Array.isArray(rawWorktrees) ? rawWorktrees : [])
@@ -47,40 +252,140 @@ export function App(): JSX.Element {
         return typeof worktreeId !== 'string' || validWorktreeIds.has(worktreeId)
       })
       const removedInvalidSessions = sanitizedSessions.length !== rawSessions.length
+      const rawEditors = Array.isArray((data as Record<string, unknown>).editors)
+        ? (data as Record<string, unknown>).editors as unknown[]
+        : []
+      const { tabs: sanitizedEditors, changed: removedInvalidEditors } = await filterExistingEditorTabs(
+        rawEditors,
+        data.projects,
+        rawWorktrees,
+      )
+
+      if (disposed) return
 
       useGroupsStore.getState()._loadFromConfig(data.groups)
       useProjectsStore.getState()._loadFromConfig(data.projects)
       useSessionsStore.getState()._loadFromConfig(sanitizedSessions)
+      useEditorsStore.getState()._loadFromConfig(sanitizedEditors)
       useUIStore.getState()._loadSettings(data.ui)
       useTemplatesStore.getState()._loadFromConfig((data as Record<string, unknown>).templates as unknown[] ?? [])
       useTasksStore.getState()._loadFromConfig({ activeTasks: (data as Record<string, unknown>).activeTasks as unknown[] ?? [] })
       useWorktreesStore.getState()._loadFromConfig(rawWorktrees)
+      useLaunchesStore.getState()._loadFromConfig((data as Record<string, unknown>).launches as unknown[] ?? [])
+
+      const hasAnonymousProjectData = sanitizedSessions.some((session) =>
+        session && typeof session === 'object' && (session as { projectId?: unknown }).projectId === ANONYMOUS_PROJECT_ID,
+      ) || (Array.isArray(data.projects) && data.projects.some((project) =>
+        project && typeof project === 'object' && (project as { id?: unknown }).id === ANONYMOUS_PROJECT_ID,
+      ))
+
+      if (hasAnonymousProjectData) {
+        await ensureAnonymousProject()
+      }
+
+      const validSessionIds = sanitizedSessions
+        .map((session) => (session && typeof session === 'object' && typeof (session as { id?: unknown }).id === 'string')
+          ? (session as { id: string }).id
+          : null)
+        .filter((id): id is string => id !== null)
+      const validTabIds = new Set<string>([...validSessionIds, ...sanitizedEditors.map((tab) => tab.id)])
+      const { panes: sanitizedPanes, changed: removedInvalidPaneTabs } = sanitizePanesConfig(data.panes, validTabIds)
 
       // Restore pane layout if saved
-      if (!removedInvalidSessions && data.panes && typeof data.panes === 'object') {
-        usePanesStore.getState().loadFromConfig(data.panes as Record<string, unknown>)
+      if (!removedInvalidSessions && sanitizedPanes) {
+        usePanesStore.getState().loadFromConfig(sanitizedPanes)
+      }
+
+      if (removedInvalidEditors) {
+        window.api.config.write('editors', sanitizedEditors)
       }
 
       if (removedInvalidSessions) {
         window.api.config.write('sessions', sanitizedSessions)
         window.api.config.write('panes', {})
+      } else if (removedInvalidPaneTabs && sanitizedPanes) {
+        window.api.config.write('panes', sanitizedPanes)
       }
 
-      // Auto-select the project of the first active session
-      const { activeSessionId, sessions } = useSessionsStore.getState()
-      if (activeSessionId) {
-        const session = sessions.find((s) => s.id === activeSessionId)
-        if (session) {
-          useProjectsStore.getState().selectProject(session.projectId)
+      // Restore the last visible context from the saved pane layout instead of
+      // defaulting to the first session in the flat session list.
+      const paneStore = usePanesStore.getState()
+      const sessionStore = useSessionsStore.getState()
+      const editorStore = useEditorsStore.getState()
+      const projectStore = useProjectsStore.getState()
+      const worktreeStore = useWorktreesStore.getState()
+
+      const restoreCandidates = [
+        paneStore.paneActiveSession[paneStore.activePaneId] ?? null,
+        ...(paneStore.paneSessions[paneStore.activePaneId] ?? []),
+        ...Object.values(paneStore.paneSessions).flat(),
+        sessionStore.activeSessionId,
+      ].filter((id): id is string => typeof id === 'string')
+
+      const restoredSession = restoreCandidates
+        .map((sessionId) => sessionStore.sessions.find((session) => session.id === sessionId))
+        .find((session): session is NonNullable<typeof sessionStore.sessions[number]> => Boolean(session))
+      const restoredEditor = restoreCandidates
+        .map((tabId) => editorStore.tabs.find((tab) => tab.id === tabId))
+        .find((tab): tab is NonNullable<typeof editorStore.tabs[number]> => Boolean(tab))
+
+      if (restoredSession) {
+        projectStore.selectProject(restoredSession.projectId)
+        worktreeStore.selectWorktree(
+          restoredSession.worktreeId
+          ?? worktreeStore.getMainWorktree(restoredSession.projectId)?.id
+          ?? null,
+        )
+        sessionStore.setActive(restoredSession.id)
+
+        const paneId = paneStore.findPaneForSession(restoredSession.id)
+        if (paneId) {
+          paneStore.setActivePaneId(paneId)
+          paneStore.setPaneActiveSession(paneId, restoredSession.id)
+        }
+      } else if (restoredEditor) {
+        projectStore.selectProject(restoredEditor.projectId)
+        worktreeStore.selectWorktree(
+          restoredEditor.worktreeId
+          ?? worktreeStore.getMainWorktree(restoredEditor.projectId)?.id
+          ?? null,
+        )
+
+        const paneId = paneStore.findPaneForSession(restoredEditor.id)
+        if (paneId) {
+          paneStore.setActivePaneId(paneId)
+          paneStore.setPaneActiveSession(paneId, restoredEditor.id)
         }
       }
 
       setReady(true)
-    })
+    })()
 
+    return () => {
+      disposed = true
+    }
   }, [])
 
   useActivityMonitor()
+
+  // Listen for Claude Code status-line updates (model, context, cost)
+  useEffect(() => {
+    return window.api.session.onStatusUpdate((data) => {
+      if (!data.sessionId) return
+      updateAgentStatus(data.sessionId, {
+        model: typeof data.model === 'string' ? data.model : null,
+        contextWindow: data.contextWindow && typeof data.contextWindow === 'object'
+          ? data.contextWindow as { used: number; total: number; percentage: number }
+          : null,
+        cost: data.cost && typeof data.cost === 'object'
+          ? data.cost as { total: string; session: string }
+          : null,
+        workspace: data.workspace && typeof data.workspace === 'object'
+          ? data.workspace as { current_dir: string }
+          : null,
+      })
+    })
+  }, [])
 
   // Focus a specific session (navigate project + pane + tab)
   const focusSession = useCallback((sessionId: string) => {
@@ -137,49 +442,48 @@ export function App(): JSX.Element {
     })
   }, [])
 
-  // Listen for detached window close — re-attach sessions to their original project
+  // Listen for detached window close — re-attach tabs to their original project
   useEffect(() => {
-    return window.api.detach.onClosed(({ sessionIds, sessions: detachedSessions }) => {
-      if (sessionIds.length === 0) return
+    return window.api.detach.onClosed(({ tabIds, sessions: detachedSessions, editors: detachedEditorsRaw, projectId, worktreeId }) => {
+      if (tabIds.length === 0) return
+      const detachedEditors = detachedEditorsRaw
+        .map((editor) => sanitizeEditorTab(editor))
+        .filter((editor): editor is EditorTab => editor !== null)
       useSessionsStore.getState().upsertSessions(detachedSessions)
+      useEditorsStore.getState().upsertTabs(detachedEditors)
       const sessStore = useSessionsStore.getState()
+      const editorStore = useEditorsStore.getState()
       const paneStore = usePanesStore.getState()
       const projectsStore = useProjectsStore.getState()
-      const wtStore = useWorktreesStore.getState()
+      const firstSession = detachedSessions.find((session) => tabIds.includes(session.id))
+        ?? sessStore.sessions.find((session) => tabIds.includes(session.id))
+      const firstEditor = detachedEditors.find((editor) => tabIds.includes(editor.id))
+        ?? editorStore.tabs.find((editor) => tabIds.includes(editor.id))
+      const targetProjectId = projectId ?? firstSession?.projectId ?? firstEditor?.projectId ?? null
+      const targetWorktreeId = worktreeId ?? firstSession?.worktreeId ?? firstEditor?.worktreeId ?? null
 
-      const firstSession = detachedSessions.find((s) => sessionIds.includes(s.id))
-        ?? sessStore.sessions.find((s) => sessionIds.includes(s.id))
-      const targetProjectId = firstSession?.projectId
+      if (!targetProjectId) return
 
-      // Switch to correct project if needed
-      if (targetProjectId && targetProjectId !== projectsStore.selectedProjectId) {
-        projectsStore.selectProject(targetProjectId)
-        const mainWt = wtStore.getMainWorktree(targetProjectId)
-        if (mainWt) {
-          wtStore.selectWorktree(mainWt.id)
-          // Include ALL sessions for this project (including returning ones)
-          const allProjectSessions = sessStore.sessions
-            .filter((s) => s.projectId === targetProjectId)
-            .map((s) => s.id)
-          paneStore.switchWorktree(mainWt.id, allProjectSessions, sessionIds[0])
-        } else {
-          wtStore.selectWorktree(null)
-          const ps = sessStore.sessions.filter((s) => s.projectId === targetProjectId).map((s) => s.id)
-          paneStore.switchWorktree(targetProjectId, ps, sessionIds[0])
-        }
+      const selectedWorktreeId = useWorktreesStore.getState().selectedWorktreeId
+      const needsContextSwitch = projectsStore.selectedProjectId !== targetProjectId
+        || (targetWorktreeId ?? null) !== (selectedWorktreeId ?? null)
+
+      if (needsContextSwitch) {
+        switchProjectContext(targetProjectId, tabIds[0] ?? null, targetWorktreeId)
       }
 
-      // Always ensure returning sessions are in the active pane
-      // Re-fetch state since switchWorktree may have replaced it
+      // Always ensure returning tabs are in the active pane
       const fresh = usePanesStore.getState()
-      // Find an actual leaf pane from the current root
       const findLeaf = (node: { type: string; id: string; first?: unknown }): string =>
         node.type === 'leaf' ? node.id : findLeaf(node.first as typeof node)
       const paneId = findLeaf(fresh.root)
-      for (const sid of sessionIds) {
-        usePanesStore.getState().addSessionToPane(paneId, sid)
+      for (const tabId of tabIds) {
+        usePanesStore.getState().addSessionToPane(paneId, tabId)
       }
-      useSessionsStore.getState().setActive(sessionIds[0])
+      usePanesStore.getState().setPaneActiveSession(paneId, tabIds[0] ?? null)
+      if (tabIds[0] && !tabIds[0].startsWith('editor-')) {
+        useSessionsStore.getState().setActive(tabIds[0])
+      }
     })
   }, [])
 
@@ -218,6 +522,13 @@ export function App(): JSX.Element {
       if (e.ctrlKey && e.key === 'w') {
         e.preventDefault()
         if (activeSessionId) {
+          if (activeSessionId.startsWith('editor-')) {
+            const editorTab = useEditorsStore.getState().getTab(activeSessionId)
+            if (editorTab?.modified) return
+            paneStore.removeSessionFromPane(activePaneId, activeSessionId)
+            useEditorsStore.getState().closeTab(activeSessionId)
+            return
+          }
           const session = sessStore.sessions.find((s) => s.id === activeSessionId)
           if (session?.pinned) return
           if (session?.ptyId) window.api.session.kill(session.ptyId)

@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { execFile } from 'node:child_process'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gitService } from '../services/GitService'
 
@@ -46,12 +46,25 @@ export function registerGitHandlers(): void {
   ipcMain.handle('git:file-status', async (_event, cwd: string) => {
     try {
       const output = await execGit(cwd, ['status', '--porcelain', '-u'])
-      return output.trim().split('\n').filter(Boolean).map((line) => {
-        const staged = line[0] !== ' ' && line[0] !== '?'
-        const statusChar = staged ? line[0] : line[1]
+      const results: Array<{ path: string; status: string; staged: boolean }> = []
+      for (const line of output.split(/\r?\n/).filter((entry) => entry.length > 0)) {
+        const x = line[0] // staged status
+        const y = line[1] // unstaged status
         const filePath = line.slice(3)
-        return { path: filePath, status: statusChar, staged }
-      })
+        // Staged change
+        if (x !== ' ' && x !== '?') {
+          results.push({ path: filePath, status: x, staged: true })
+        }
+        // Unstaged change
+        if (y !== ' ' && x !== '?') {
+          results.push({ path: filePath, status: y, staged: false })
+        }
+        // Untracked
+        if (x === '?') {
+          results.push({ path: filePath, status: '?', staged: false })
+        }
+      }
+      return results
     } catch {
       return []
     }
@@ -76,7 +89,12 @@ export function registerGitHandlers(): void {
 
   // Git unstage
   ipcMain.handle('git:unstage', async (_event, cwd: string, filePath: string) => {
-    await execGit(cwd, ['reset', 'HEAD', '--', filePath])
+    try {
+      await execGit(cwd, ['restore', '--staged', '--', filePath])
+    } catch {
+      // Fallback for files not in HEAD (e.g., newly added)
+      await execGit(cwd, ['rm', '--cached', '--', filePath])
+    }
   })
 
   // Git commit
@@ -106,5 +124,24 @@ export function registerGitHandlers(): void {
     } catch {
       return []
     }
+  })
+
+  // Git show HEAD version of a file
+  ipcMain.handle('git:show-head', async (_event, cwd: string, filePath: string) => {
+    try {
+      return await execGit(cwd, ['show', `HEAD:${filePath}`])
+    } catch {
+      return ''
+    }
+  })
+
+  // Filesystem: read file content
+  ipcMain.handle('fs:read-file', async (_event, filePath: string) => {
+    return readFile(filePath, 'utf-8')
+  })
+
+  // Filesystem: write file content
+  ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string) => {
+    await writeFile(filePath, content, 'utf-8')
   })
 }

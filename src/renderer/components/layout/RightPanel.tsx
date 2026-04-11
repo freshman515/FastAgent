@@ -1,4 +1,4 @@
-import { Activity, Command, FolderTree, GitBranch, History, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Activity, Bot, Command, FolderTree, GitBranch, History, PanelRightClose, PanelRightOpen, Search } from 'lucide-react'
 import { useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui'
@@ -7,14 +7,20 @@ import { QuickCommands } from '@/components/rightpanel/QuickCommands'
 import { FileTree } from '@/components/rightpanel/FileTree'
 import { SessionTimeline } from '@/components/rightpanel/SessionTimeline'
 import { GitChanges } from '@/components/rightpanel/GitChanges'
+import { OpenCodePanel } from '@/components/rightpanel/OpenCodePanel'
+import { ProjectSearch } from '@/components/rightpanel/ProjectSearch'
 
 const TABS = [
   { id: 'agent', label: 'Agent', icon: Activity },
   { id: 'commands', label: 'Commands', icon: Command },
   { id: 'files', label: 'Files', icon: FolderTree },
+  { id: 'search', label: 'Search', icon: Search },
   { id: 'timeline', label: 'Timeline', icon: History },
   { id: 'git', label: 'Git', icon: GitBranch },
+  { id: 'ai', label: 'OpenCode', icon: Bot },
 ] as const
+
+const TAB_BUTTON = 'flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] transition-colors'
 
 export function RightPanel(): JSX.Element {
   const collapsed = useUIStore((s) => s.rightPanelCollapsed)
@@ -24,6 +30,14 @@ export function RightPanel(): JSX.Element {
   const width = useUIStore((s) => s.rightPanelWidth)
   const setWidth = useUIStore((s) => s.setRightPanelWidth)
   const isDragging = useRef(false)
+
+  const handleTabClick = useCallback((tabId: string) => {
+    if (activeTab === tabId) {
+      toggle()
+      return
+    }
+    setTab(tabId)
+  }, [activeTab, setTab, toggle])
 
   const handleResizeMouseDown = useCallback(() => {
     isDragging.current = true
@@ -50,28 +64,28 @@ export function RightPanel(): JSX.Element {
 
   if (collapsed) {
     return (
-      <div className="flex h-full shrink-0 flex-col items-center border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-2 px-1 gap-1">
+      <div className="flex h-full shrink-0 flex-col items-center border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-2 px-1.5 gap-1.5">
         <button
           onClick={toggle}
-          className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
+          className={cn(TAB_BUTTON, 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]')}
           title="Expand Panel"
         >
-          <PanelRightOpen size={14} />
+          <PanelRightOpen size={16} />
         </button>
-        <div className="h-px w-5 bg-[var(--color-border)] my-1" />
+        <div className="h-px w-6 bg-[var(--color-border)] my-1" />
         {TABS.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setTab(tab.id)}
+            onClick={() => handleTabClick(tab.id)}
             className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] transition-colors',
+              TAB_BUTTON,
               activeTab === tab.id
                 ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
                 : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
             )}
             title={tab.label}
           >
-            <tab.icon size={14} />
+            <tab.icon size={16} />
           </button>
         ))}
       </div>
@@ -88,33 +102,6 @@ export function RightPanel(): JSX.Element {
         <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-[var(--color-accent)]/20" />
       </div>
 
-      {/* Tab strip */}
-      <div className="flex shrink-0 flex-col items-center border-r border-[var(--color-border)] bg-[var(--color-bg-primary)] py-2 px-1 gap-1">
-        <button
-          onClick={toggle}
-          className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
-          title="Collapse Panel"
-        >
-          <PanelRightClose size={14} />
-        </button>
-        <div className="h-px w-5 bg-[var(--color-border)] my-1" />
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setTab(tab.id)}
-            className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] transition-colors',
-              activeTab === tab.id
-                ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
-                : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-            )}
-            title={tab.label}
-          >
-            <tab.icon size={14} />
-          </button>
-        ))}
-      </div>
-
       {/* Content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
@@ -129,9 +116,38 @@ export function RightPanel(): JSX.Element {
           {activeTab === 'agent' && <AgentMonitor />}
           {activeTab === 'commands' && <QuickCommands />}
           {activeTab === 'files' && <FileTree />}
+          {activeTab === 'search' && <ProjectSearch />}
           {activeTab === 'timeline' && <SessionTimeline />}
           {activeTab === 'git' && <GitChanges />}
+          {activeTab === 'ai' && <OpenCodePanel />}
         </div>
+      </div>
+
+      {/* Tab strip */}
+      <div className="flex shrink-0 flex-col items-center border-l border-[var(--color-border)] bg-[var(--color-bg-primary)] py-2 px-1.5 gap-1.5">
+        <button
+          onClick={toggle}
+          className={cn(TAB_BUTTON, 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]')}
+          title="Collapse Panel"
+        >
+          <PanelRightClose size={16} />
+        </button>
+        <div className="h-px w-6 bg-[var(--color-border)] my-1" />
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => handleTabClick(tab.id)}
+            className={cn(
+              TAB_BUTTON,
+              activeTab === tab.id
+                ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+            )}
+            title={tab.label}
+          >
+            <tab.icon size={16} />
+          </button>
+        ))}
       </div>
     </div>
   )

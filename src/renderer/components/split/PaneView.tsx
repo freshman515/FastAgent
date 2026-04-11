@@ -1,13 +1,20 @@
 import { GitBranch, Minus, Plus, Square, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { usePanesStore, registerPaneElement, type PaneNode, type SplitPosition } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
+import { useEditorsStore, FILE_ICONS } from '@/stores/editors'
+import { useGitStore } from '@/stores/git'
+import { useProjectsStore } from '@/stores/projects'
+import { useWorktreesStore } from '@/stores/worktrees'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionTab } from '@/components/session/SessionTab'
 import { NewSessionMenu } from '@/components/session/NewSessionMenu'
 import { TerminalView } from '@/components/session/TerminalView'
+import { EditorView } from '@/components/session/EditorView'
 import { EmptyState } from '@/components/session/EmptyState'
 
 interface PaneViewProps {
@@ -31,6 +38,385 @@ const isDetached = window.api.detach.isDetached
 
 function isTabDrag(e: React.DragEvent): boolean {
   return e.dataTransfer.types.includes('session-tab-id') || e.dataTransfer.types.includes('session-tab-drag-token')
+}
+
+type EditorTabItem = ReturnType<typeof useEditorsStore.getState>['tabs'][number]
+type PaneTabItem =
+  | { kind: 'session'; id: string; session: ReturnType<typeof useSessionsStore.getState>['sessions'][number] }
+  | { kind: 'editor'; id: string; tab: EditorTabItem }
+type DetachedTabDragPayload =
+  | { kind: 'session'; session: ReturnType<typeof useSessionsStore.getState>['sessions'][number]; sourcePaneId: string; sourceWindowId: string }
+  | { kind: 'editor'; editor: EditorTabItem; sourcePaneId: string; sourceWindowId: string }
+
+const MENU_ITEM = 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
+const MENU_ITEM_DISABLED = `${MENU_ITEM} cursor-not-allowed opacity-40 hover:bg-transparent hover:text-[var(--color-text-secondary)]`
+const FILE_TAB_SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
+  { position: 'right', label: '向右分屏' },
+  { position: 'down', label: '向下分屏' },
+  { position: 'left', label: '向左分屏' },
+  { position: 'up', label: '向上分屏' },
+]
+
+function getParentPath(path: string): string {
+  return path.replace(/[/\\][^/\\]+$/, '') || path
+}
+
+function getRelativePath(filePath: string, basePath: string | null): string | null {
+  if (!basePath) return null
+  const normalizedBase = basePath.replace(/\\/g, '/').replace(/\/+$/, '')
+  const normalizedFile = filePath.replace(/\\/g, '/')
+  if (normalizedFile === normalizedBase) return normalizedFile.split('/').pop() ?? null
+  const prefix = `${normalizedBase}/`
+  if (!normalizedFile.toLowerCase().startsWith(prefix.toLowerCase())) return null
+  return normalizedFile.slice(prefix.length)
+}
+
+function EditorTabButton({ tab, isActive, paneId, projectId, currentWindowId, isDragging, dropSide, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onSelect }: {
+  tab: EditorTabItem
+  isActive: boolean
+  paneId: string
+  projectId: string
+  currentWindowId: string
+  isDragging: boolean
+  dropSide: 'left' | 'right' | null
+  onDragStart: (id: string, e: React.DragEvent) => void
+  onDragOver: (id: string, e: React.DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (id: string) => void
+  onDragEnd: () => void
+  onSelect: () => void
+}): JSX.Element {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [pendingClose, setPendingClose] = useState<{ ids: string[]; title: string; message: string } | null>(null)
+  const [pendingPopout, setPendingPopout] = useState<{ position?: { x: number; y: number } } | null>(null)
+  const dragTokenRef = useRef<string | null>(null)
+  const iconInfo = FILE_ICONS[tab.language] ?? FILE_ICONS.plaintext
+  const paneTabIds = usePanesStore((s) => s.paneSessions[paneId] ?? [])
+  const splitPane = usePanesStore((s) => s.splitPane)
+  const rootType = usePanesStore((s) => s.root.type)
+  const allEditorTabs = useEditorsStore((s) => s.tabs)
+  const project = useProjectsStore((s) => s.projects.find((item) => item.id === projectId))
+  const branchInfo = useGitStore((s) => s.branchInfo[projectId])
+  const selectedWorktree = useWorktreesStore((s) => s.worktrees.find((item) => item.id === s.selectedWorktreeId && item.projectId === projectId))
+  const tabWorktree = useWorktreesStore((s) => tab.worktreeId ? s.worktrees.find((item) => item.id === tab.worktreeId) : undefined)
+  const projectRootPath = selectedWorktree?.path ?? project?.path ?? null
+  const relativePath = useMemo(() => getRelativePath(tab.filePath, projectRootPath), [tab.filePath, projectRootPath])
+  const branchName = tabWorktree && !tabWorktree.isMain ? tabWorktree.branch : branchInfo?.current
+
+  const fileTabIds = useMemo(
+    () => paneTabIds.filter((id) => id.startsWith('editor-')),
+    [paneTabIds],
+  )
+  const fileTabsToRightIds = useMemo(() => {
+    const currentIndex = paneTabIds.indexOf(tab.id)
+    if (currentIndex === -1) return []
+    return paneTabIds.slice(currentIndex + 1).filter((id) => id.startsWith('editor-'))
+  }, [paneTabIds, tab.id])
+  const otherFileTabIds = useMemo(
+    () => fileTabIds.filter((id) => id !== tab.id),
+    [fileTabIds, tab.id],
+  )
+  const canSplit = paneTabIds.length >= 2
+  const isSplit = rootType === 'split'
+
+  const closeEditorTabs = useCallback((ids: string[]) => {
+    const targets = [...new Set(ids)].filter((id) => fileTabIds.includes(id))
+    if (targets.length === 0) {
+      setPendingClose(null)
+      setContextMenu(null)
+      return
+    }
+
+    for (const id of targets) {
+      if (!usePanesStore.getState().paneSessions[paneId]?.includes(id)) continue
+      usePanesStore.getState().removeSessionFromPane(paneId, id)
+      useEditorsStore.getState().closeTab(id)
+    }
+
+    setPendingClose(null)
+    setContextMenu(null)
+  }, [fileTabIds, paneId])
+
+  const requestClose = useCallback((ids: string[]) => {
+    const targets = [...new Set(ids)].filter((id) => fileTabIds.includes(id))
+    if (targets.length === 0) {
+      setContextMenu(null)
+      return
+    }
+
+    const modifiedTabs = targets
+      .map((id) => allEditorTabs.find((item) => item.id === id))
+      .filter((item): item is typeof allEditorTabs[number] => Boolean(item?.modified))
+
+    if (modifiedTabs.length > 0) {
+      setPendingClose({
+        ids: targets,
+        title: modifiedTabs.length === 1 ? '未保存更改' : '关闭文件',
+        message: modifiedTabs.length === 1
+          ? `"${modifiedTabs[0].fileName}" 有未保存更改，仍要关闭吗？`
+          : `${modifiedTabs.length} 个文件标签页有未保存更改，仍要关闭吗？`,
+      })
+      setContextMenu(null)
+      return
+    }
+
+    closeEditorTabs(targets)
+  }, [allEditorTabs, closeEditorTabs, fileTabIds])
+
+  const doPopOut = useCallback((position?: { x: number; y: number }) => {
+    const liveTab = useEditorsStore.getState().getTab(tab.id) ?? tab
+    const detachTitle = (project?.name ?? liveTab.fileName) + (branchName ? `|${branchName}` : '')
+    const { popoutPosition, popoutWidth, popoutHeight } = useUIStore.getState().settings
+    const pos = position ?? (
+      popoutPosition === 'center'
+        ? undefined
+        : { x: window.screenX + window.innerWidth / 2, y: window.screenY + window.innerHeight / 2 }
+    )
+    usePanesStore.getState().removeSessionFromPane(paneId, tab.id)
+    window.api.detach.create(
+      [tab.id],
+      detachTitle,
+      [],
+      [liveTab],
+      { projectId: liveTab.projectId, worktreeId: liveTab.worktreeId ?? null },
+      pos,
+      { width: popoutWidth, height: popoutHeight },
+    )
+    setPendingPopout(null)
+    setContextMenu(null)
+  }, [branchName, paneId, project?.name, tab])
+
+  const requestPopOut = useCallback((position?: { x: number; y: number }) => {
+    const liveTab = useEditorsStore.getState().getTab(tab.id) ?? tab
+    if (liveTab.modified) {
+      setPendingPopout({ position })
+      setContextMenu(null)
+      return
+    }
+    doPopOut(position)
+  }, [doPopOut, tab])
+
+  const handleClose = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    requestClose([tab.id])
+  }
+
+  return (
+    <>
+      {dropSide === 'left' && (
+        <div className="h-5 w-0.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
+      )}
+
+      <div
+        draggable
+        onDragStart={(e) => {
+          const liveTab = useEditorsStore.getState().getTab(tab.id) ?? tab
+          const dragToken = `tabdrag-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          dragTokenRef.current = dragToken
+          e.dataTransfer.setData('session-tab-id', tab.id)
+          e.dataTransfer.setData('source-pane-id', paneId)
+          e.dataTransfer.setData('source-window-id', currentWindowId)
+          e.dataTransfer.setData('session-tab-drag-token', dragToken)
+          e.dataTransfer.effectAllowed = 'move'
+          window.api.detach.registerTabDrag(dragToken, {
+            kind: 'editor',
+            editor: liveTab,
+            sourcePaneId: paneId,
+            sourceWindowId: currentWindowId,
+          } satisfies DetachedTabDragPayload)
+          onDragStart(tab.id, e)
+        }}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(tab.id, e) }}
+        onDragLeave={onDragLeave}
+        onDrop={() => onDrop(tab.id)}
+        onDragEnd={(e) => {
+          onDragEnd()
+          const dragToken = dragTokenRef.current
+          dragTokenRef.current = null
+          const dragResult = dragToken ? window.api.detach.finishTabDrag(dragToken) : null
+
+          if (dragResult?.claimed && dragResult.targetWindowId && dragResult.targetWindowId !== currentWindowId) {
+            usePanesStore.getState().removeSessionFromPane(paneId, tab.id)
+            return
+          }
+
+          const { clientX, clientY, screenX, screenY } = e
+          const inWindow = clientX >= 0 && clientY >= 0
+            && clientX <= window.innerWidth && clientY <= window.innerHeight
+          if (!inWindow) {
+            requestPopOut({ x: screenX, y: screenY })
+          }
+        }}
+        onClick={onSelect}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setContextMenu({ x: e.clientX, y: e.clientY })
+        }}
+        className={cn(
+          'no-drag group flex h-[34px] cursor-pointer items-center gap-1.5 px-2.5 max-w-[200px]',
+          isActive
+            ? 'tab-active text-[var(--color-text-primary)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]',
+          isDragging && 'opacity-40',
+        )}
+      >
+        {/* File type icon */}
+        <span
+          className="shrink-0 rounded px-[3px] py-px text-[8px] font-bold leading-none"
+          style={{ backgroundColor: iconInfo.color + '20', color: iconInfo.color }}
+        >
+          {tab.isDiff ? '⇄' : iconInfo.icon}
+        </span>
+        <span className="flex-1 truncate text-[var(--ui-font-xs)]">{tab.fileName}</span>
+        {/* Modified indicator or close button */}
+        {tab.modified ? (
+          <button onClick={handleClose} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[var(--color-warning)]" title="未保存更改">
+            <span className="text-[10px]">●</span>
+          </button>
+        ) : (
+          <button
+            onClick={handleClose}
+            className={cn(
+              'flex h-4 w-4 items-center justify-center rounded-sm shrink-0',
+              'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
+              'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+              'transition-all duration-75',
+            )}
+          >
+            <X size={10} />
+          </button>
+        )}
+      </div>
+
+      {dropSide === 'right' && (
+        <div className="h-5 w-0.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
+      )}
+
+      {contextMenu && createPortal(
+        <>
+          <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setContextMenu(null)} />
+          <div
+            style={{ top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
+            className="fixed w-56 rounded-[var(--radius-md)] py-1 border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30"
+          >
+            <button
+              onClick={() => requestClose([tab.id])}
+              className={`${MENU_ITEM} text-[var(--color-error)] hover:text-[var(--color-error)]`}
+            >
+              关闭
+            </button>
+            <button
+              onClick={() => requestClose(otherFileTabIds)}
+              disabled={otherFileTabIds.length === 0}
+              className={otherFileTabIds.length === 0 ? MENU_ITEM_DISABLED : MENU_ITEM}
+            >
+              关闭其他文件标签页
+            </button>
+            <button
+              onClick={() => requestClose(fileTabsToRightIds)}
+              disabled={fileTabsToRightIds.length === 0}
+              className={fileTabsToRightIds.length === 0 ? MENU_ITEM_DISABLED : MENU_ITEM}
+            >
+              关闭右侧文件标签页
+            </button>
+            <button
+              onClick={() => requestClose(fileTabIds)}
+              disabled={fileTabIds.length <= 1}
+              className={fileTabIds.length <= 1 ? MENU_ITEM_DISABLED : MENU_ITEM}
+            >
+              关闭全部文件标签页
+            </button>
+
+            <div className="h-px my-0.5 bg-[var(--color-border)]" />
+
+            <button
+              onClick={() => { window.api.shell.openPath(tab.filePath); setContextMenu(null) }}
+              className={MENU_ITEM}
+            >
+              使用默认程序打开
+            </button>
+            <button
+              onClick={() => { window.api.shell.openPath(getParentPath(tab.filePath)); setContextMenu(null) }}
+              className={MENU_ITEM}
+            >
+              在资源管理器中打开
+            </button>
+            <button
+              onClick={() => { navigator.clipboard.writeText(tab.filePath); setContextMenu(null) }}
+              className={MENU_ITEM}
+            >
+              复制路径
+            </button>
+            {relativePath && (
+              <button
+                onClick={() => { navigator.clipboard.writeText(relativePath); setContextMenu(null) }}
+                className={MENU_ITEM}
+              >
+                复制相对路径
+              </button>
+            )}
+            <button
+              onClick={() => requestPopOut()}
+              className={MENU_ITEM}
+            >
+              弹出为独立窗口
+            </button>
+
+            {(canSplit || isSplit) && <div className="h-px my-0.5 bg-[var(--color-border)]" />}
+
+            {canSplit && FILE_TAB_SPLIT_OPTIONS.map((opt) => (
+              <button
+                key={opt.position}
+                onClick={() => {
+                  setContextMenu(null)
+                  splitPane(paneId, opt.position, tab.id)
+                }}
+                className={MENU_ITEM}
+              >
+                {opt.label}
+              </button>
+            ))}
+
+            {isSplit && (
+              <button
+                onClick={() => {
+                  setContextMenu(null)
+                  usePanesStore.getState().mergeAllPanes()
+                }}
+                className={MENU_ITEM}
+              >
+                合并全部分屏
+              </button>
+            )}
+          </div>
+        </>,
+        document.body,
+      )}
+
+      {pendingClose && (
+        <ConfirmDialog
+          title={pendingClose.title}
+          message={pendingClose.message}
+          confirmLabel="关闭"
+          danger
+          onConfirm={() => closeEditorTabs(pendingClose.ids)}
+          onCancel={() => setPendingClose(null)}
+        />
+      )}
+
+      {pendingPopout && (
+        <ConfirmDialog
+          title="弹出文件标签页"
+          message={`"${tab.fileName}" 有未保存更改。弹出后会按磁盘中的内容重新打开，仍要继续吗？`}
+          confirmLabel="继续弹出"
+          danger
+          onConfirm={() => doPopOut(pendingPopout.position)}
+          onCancel={() => setPendingPopout(null)}
+        />
+      )}
+    </>
+  )
 }
 
 function getTopRightLeafId(node: PaneNode): string {
@@ -59,16 +445,32 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       .filter(Boolean) as typeof allSessions
   }, [paneSessions, allSessions])
 
-  // Pinned first
-  const sortedSessions = useMemo(() => {
-    return [...sessions.filter((s) => s.pinned), ...sessions.filter((s) => !s.pinned)]
-  }, [sessions])
+  // Editor tabs in this pane
+  const allEditorTabs = useEditorsStore((s) => s.tabs)
+  const editorTabs = useMemo(() => {
+    const editorIds = paneSessions.filter((id) => id.startsWith('editor-'))
+    return editorIds.map((id) => allEditorTabs.find((t) => t.id === id)).filter(Boolean) as typeof allEditorTabs
+  }, [paneSessions, allEditorTabs])
+  const orderedTabs = useMemo<PaneTabItem[]>(() => {
+    return paneSessions.flatMap((id) => {
+      if (id.startsWith('editor-')) {
+        const tab = allEditorTabs.find((item) => item.id === id)
+        return tab ? [{ kind: 'editor', id, tab }] : []
+      }
+
+      const session = allSessions.find((item) => item.id === id)
+      return session ? [{ kind: 'session', id, session }] : []
+    })
+  }, [paneSessions, allEditorTabs, allSessions])
   const showDetachedWindowControls = isDetached && paneId === getTopRightLeafId(root)
 
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [dropHighlight, setDropHighlight] = useState(false)
   const [edgeDrop, setEdgeDrop] = useState<SplitPosition | 'center' | null>(null)
+  const [dragTabId, setDragTabId] = useState<string | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null)
   const termAreaRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const windowDragRef = useRef<WindowDragState | null>(null)
@@ -163,23 +565,30 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     handleWindowDragDoubleClick(e)
   }, [handleWindowDragDoubleClick])
 
-  const attachDraggedSession = useCallback((dragToken: string, zone?: SplitPosition | 'center' | null) => {
-    const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId)
+  const attachDraggedTab = useCallback((dragToken: string, zone?: SplitPosition | 'center' | null) => {
+    const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId) as DetachedTabDragPayload | null
     if (!payload) return false
 
-    useSessionsStore.getState().upsertSessions([payload.session])
+    const tabId = payload.kind === 'session' ? payload.session.id : payload.editor.id
+    if (payload.kind === 'session') {
+      useSessionsStore.getState().upsertSessions([payload.session])
+    } else {
+      useEditorsStore.getState().upsertTabs([payload.editor])
+    }
     const store = usePanesStore.getState()
 
     if (zone && zone !== 'center') {
-      store.addSessionToPane(paneId, payload.session.id)
-      store.splitPane(paneId, zone, payload.session.id)
+      store.addSessionToPane(paneId, tabId)
+      store.splitPane(paneId, zone, tabId)
     } else {
-      store.addSessionToPane(paneId, payload.session.id)
+      store.addSessionToPane(paneId, tabId)
     }
 
     store.setActivePaneId(paneId)
-    store.setPaneActiveSession(paneId, payload.session.id)
-    useSessionsStore.getState().setActive(payload.session.id)
+    store.setPaneActiveSession(paneId, tabId)
+    if (payload.kind === 'session') {
+      useSessionsStore.getState().setActive(payload.session.id)
+    }
     return true
   }, [currentWindowId, paneId])
 
@@ -209,13 +618,13 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           'tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]',
           dropHighlight && 'ring-2 ring-inset ring-[var(--color-accent)]',
         )}
-        style={{ height: 33 }}
+        style={{ height: 39 }}
         onWheel={(e) => {
-          if (sortedSessions.length === 0) return
-          const activeIdx = sortedSessions.findIndex((s) => s.id === paneActiveSessionId)
+          if (orderedTabs.length === 0) return
+          const activeIdx = orderedTabs.findIndex((tab) => tab.id === paneActiveSessionId)
           const dir = e.deltaY > 0 ? 1 : -1
-          const next = (activeIdx + dir + sortedSessions.length) % sortedSessions.length
-          usePanesStore.getState().setPaneActiveSession(paneId, sortedSessions[next].id)
+          const next = (activeIdx + dir + orderedTabs.length) % orderedTabs.length
+          usePanesStore.getState().setPaneActiveSession(paneId, orderedTabs[next].id)
         }}
         onDoubleClick={(e) => {
           if (isDetached || e.target !== e.currentTarget) return
@@ -240,12 +649,13 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           const dragToken = e.dataTransfer.getData('session-tab-drag-token')
             || window.api.detach.getActiveTabDrag()
           if (dragToken && sourceWindowId !== currentWindowId) {
-            attachDraggedSession(dragToken)
+            attachDraggedTab(dragToken)
             return
           }
+          if (sourceWindowId !== currentWindowId && !dragToken) return
           // Cross-window fallback: getData may return empty, use IPC token
           if (!sessionId && dragToken) {
-            attachDraggedSession(dragToken)
+            attachDraggedTab(dragToken)
             return
           }
           if (sessionId && sourcePaneId && sourcePaneId !== paneId) {
@@ -280,19 +690,59 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               </span>
             )
           })()}
-          {sortedSessions.map((session) => (
+          {orderedTabs.map((tab) => tab.kind === 'session' ? (
             <SessionTab
-              key={session.id}
-              session={session}
-              isActive={session.id === paneActiveSessionId}
+              key={tab.id}
+              session={tab.session}
+              isActive={tab.id === paneActiveSessionId}
               paneId={paneId}
-              isDragging={false}
-              dropSide={null}
-              onDragStart={() => {}}
-              onDragOver={() => {}}
-              onDragLeave={() => {}}
-              onDrop={() => {}}
-              onDragEnd={() => {}}
+              isDragging={dragTabId === tab.id}
+              dropSide={dropTargetId === tab.id ? dropSide : null}
+              onDragStart={(id) => setDragTabId(id)}
+              onDragOver={(id, e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                const mid = rect.left + rect.width / 2
+                setDropTargetId(id)
+                setDropSide(e.clientX < mid ? 'left' : 'right')
+              }}
+              onDragLeave={() => { setDropTargetId(null); setDropSide(null) }}
+              onDrop={(id) => {
+                if (dragTabId && dragTabId !== id) {
+                  usePanesStore.getState().reorderPaneSessions(paneId, dragTabId, id)
+                }
+                setDropTargetId(null); setDropSide(null)
+              }}
+              onDragEnd={() => { setDragTabId(null); setDropTargetId(null); setDropSide(null) }}
+            />
+          ) : (
+            <EditorTabButton
+              key={tab.id}
+              tab={tab.tab}
+              isActive={tab.id === paneActiveSessionId}
+              paneId={paneId}
+              projectId={projectId}
+              currentWindowId={currentWindowId}
+              isDragging={dragTabId === tab.id}
+              dropSide={dropTargetId === tab.id ? dropSide : null}
+              onDragStart={(id) => setDragTabId(id)}
+              onDragOver={(id, e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                const mid = rect.left + rect.width / 2
+                setDropTargetId(id)
+                setDropSide(e.clientX < mid ? 'left' : 'right')
+              }}
+              onDragLeave={() => { setDropTargetId(null); setDropSide(null) }}
+              onDrop={(id) => {
+                if (dragTabId && dragTabId !== id) {
+                  usePanesStore.getState().reorderPaneSessions(paneId, dragTabId, id)
+                }
+                setDropTargetId(null); setDropSide(null)
+              }}
+              onDragEnd={() => { setDragTabId(null); setDropTargetId(null); setDropSide(null) }}
+              onSelect={() => {
+                usePanesStore.getState().setPaneActiveSession(paneId, tab.id)
+                usePanesStore.getState().setActivePaneId(paneId)
+              }}
             />
           ))}
 
@@ -300,7 +750,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             ref={btnRef}
             onClick={handlePlusClick}
             className={cn(
-              'no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
+              'no-drag flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               'transition-colors duration-100',
             )}
@@ -314,7 +764,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             <button
               onClick={() => usePanesStore.getState().mergePane(paneId)}
               className={cn(
-                'no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
+                'no-drag flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
                 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-error)]/20 hover:text-[var(--color-error)]',
                 'transition-colors duration-100',
               )}
@@ -384,9 +834,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             || window.api.detach.getActiveTabDrag()
           // Cross-window drop
           if (dragToken && (sourceWindowId !== currentWindowId || !sessionId)) {
-            attachDraggedSession(dragToken, zone)
+            attachDraggedTab(dragToken, zone)
             return
           }
+          if (sourceWindowId !== currentWindowId && !dragToken) return
           if (!sessionId || !sourcePaneId) return
           const store = usePanesStore.getState()
 
@@ -424,7 +875,25 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           )
         })}
 
-        {sessions.length === 0 && (
+        {/* Editor views */}
+        {editorTabs.map((tab) => {
+          const isActive = tab.id === paneActiveSessionId
+          return (
+            <div
+              key={tab.id}
+              className="absolute inset-0"
+              style={{
+                visibility: isActive ? 'visible' : 'hidden',
+                zIndex: isActive ? 1 : 0,
+                pointerEvents: isActive ? 'auto' : 'none',
+              }}
+            >
+              <EditorView editorTabId={tab.id} isActive={isActive && isActivePane} />
+            </div>
+          )
+        })}
+
+        {sessions.length === 0 && editorTabs.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
             <EmptyState
               title="Empty pane"

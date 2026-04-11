@@ -2,7 +2,7 @@ import { Circle, Play, Square, Terminal, MessageSquare, AlertTriangle } from 'lu
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
-import { usePanesStore } from '@/stores/panes'
+import { useProjectsStore } from '@/stores/projects'
 
 export interface TimelineEvent {
   id: string
@@ -58,21 +58,53 @@ const ICON_MAP = {
 
 export function SessionTimeline(): JSX.Element {
   const events = useTimeline()
-  const activeSessionId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const sessions = useSessionsStore((s) => s.sessions)
+  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
 
   const [filterSession, setFilterSession] = useState<string | 'all'>('all')
 
+  const projectSessions = useMemo(
+    () => sessions.filter((session) => session.projectId === selectedProjectId),
+    [selectedProjectId, sessions],
+  )
+
+  const projectSessionIds = useMemo(
+    () => new Set(projectSessions.map((session) => session.id)),
+    [projectSessions],
+  )
+
+  useEffect(() => {
+    if (filterSession !== 'all' && !projectSessionIds.has(filterSession)) {
+      setFilterSession('all')
+    }
+  }, [filterSession, projectSessionIds])
+
   const filtered = useMemo(() => {
-    const list = filterSession === 'all' ? events : events.filter((e) => e.sessionId === filterSession)
+    const projectEvents = events.filter((event) => projectSessionIds.has(event.sessionId))
+    const sessionsWithEvents = new Set(projectEvents.map((event) => event.sessionId))
+    const snapshotEvents: TimelineEvent[] = projectSessions
+      .filter((session) => !sessionsWithEvents.has(session.id))
+      .map((session) => ({
+        id: `snapshot-${session.id}`,
+        sessionId: session.id,
+        type: session.status === 'stopped' ? 'stop' : 'start',
+        message: session.status === 'stopped'
+          ? `Session stopped (${session.type})`
+          : `Session running (${session.type})`,
+        timestamp: session.updatedAt || session.createdAt,
+      }))
+    const allProjectEvents = [...projectEvents, ...snapshotEvents]
+    const list = filterSession === 'all'
+      ? allProjectEvents
+      : allProjectEvents.filter((event) => event.sessionId === filterSession)
     return [...list].reverse()
-  }, [events, filterSession])
+  }, [events, filterSession, projectSessionIds, projectSessions])
 
   const sessionNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const s of sessions) map.set(s.id, s.name)
+    for (const session of projectSessions) map.set(session.id, session.name)
     return map
-  }, [sessions])
+  }, [projectSessions])
 
   return (
     <div className="flex flex-col h-full">
@@ -83,8 +115,8 @@ export function SessionTimeline(): JSX.Element {
           onChange={(e) => setFilterSession(e.target.value)}
           className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none"
         >
-          <option value="all">All Sessions</option>
-          {sessions.map((s) => (
+          <option value="all">当前项目全部会话</option>
+          {projectSessions.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
@@ -94,7 +126,7 @@ export function SessionTimeline(): JSX.Element {
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {filtered.length === 0 ? (
           <div className="text-center py-8 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-            No events yet
+            当前项目暂无时间线事件
           </div>
         ) : (
           <div className="flex flex-col gap-0">

@@ -1,6 +1,30 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/types'
-import type { Session, SessionCreateOptions, SessionCreateResult } from '@shared/types'
+import type {
+  ExternalIdeId,
+  ExternalIdeOption,
+  FileSearchResult,
+  OpenIdeResult,
+  ProjectSearchMatch,
+  SearchQueryOptions,
+  Session,
+  SessionCreateOptions,
+  SessionCreateResult,
+} from '@shared/types'
+
+interface OpencodeRequest {
+  directory: string
+  model?: string
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
+  path: string
+  query?: Record<string, string | number | boolean | undefined | null>
+  body?: unknown
+}
+
+interface OpencodeSubscriptionRequest {
+  directory: string
+  model?: string
+}
 
 const api = {
   window: {
@@ -16,6 +40,10 @@ const api = {
 
   shell: {
     openPath: (path: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_PATH, path),
+    openInIde: (ide: ExternalIdeId, path: string) =>
+      ipcRenderer.invoke(IPC.SHELL_OPEN_IN_IDE, ide, path) as Promise<OpenIdeResult>,
+    listIdes: () =>
+      ipcRenderer.invoke(IPC.SHELL_LIST_IDES) as Promise<ExternalIdeOption[]>,
   },
 
   session: {
@@ -57,6 +85,11 @@ const api = {
       const handler = (_: unknown, event: { sessionId?: string | null }) => callback(event)
       ipcRenderer.on(IPC.SESSION_IDLE_TOAST, handler)
       return () => ipcRenderer.removeListener(IPC.SESSION_IDLE_TOAST, handler)
+    },
+    onStatusUpdate: (callback: (data: { sessionId: string | null; model?: string; contextWindow?: unknown; cost?: unknown; workspace?: unknown }) => void) => {
+      const handler = (_: unknown, data: { sessionId: string | null; model?: string; contextWindow?: unknown; cost?: unknown; workspace?: unknown }) => callback(data)
+      ipcRenderer.on('agent:status-update', handler)
+      return () => ipcRenderer.removeListener('agent:status-update', handler)
     },
     onPermissionRequest: (callback: (event: { id: string; sessionId: string | null; toolName: string; detail: string; suggestions: string[] }) => void) => {
       const handler = (_: unknown, event: { id: string; sessionId: string | null; toolName: string; detail: string; suggestions: string[] }) => callback(event)
@@ -105,10 +138,70 @@ const api = {
     unstage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:unstage', cwd, filePath) as Promise<void>,
     commit: (cwd: string, message: string) => ipcRenderer.invoke('git:commit', cwd, message) as Promise<void>,
     discard: (cwd: string, filePath: string) => ipcRenderer.invoke('git:discard', cwd, filePath) as Promise<void>,
+    showHead: (cwd: string, filePath: string) => ipcRenderer.invoke('git:show-head', cwd, filePath) as Promise<string>,
+  },
+
+  ai: {
+    chat: (options: { baseUrl: string; apiKey: string; model: string; provider: string; messages: Array<{ role: string; content: string }>; maxTokens?: number }) =>
+      ipcRenderer.invoke('ai:chat', options) as Promise<{ content: string; tokens?: number; error?: string }>,
+  },
+
+  opencode: {
+    request: (payload: OpencodeRequest) =>
+      ipcRenderer.invoke('opencode:request', payload) as Promise<unknown>,
+    listModels: (directory: string) =>
+      ipcRenderer.invoke('opencode:list-models', directory) as Promise<string[]>,
+    subscribe: async (
+      payload: OpencodeSubscriptionRequest,
+      callback: (event: { subscriptionId: string; type: 'event' | 'error'; event?: unknown; error?: string }) => void,
+    ) => {
+      const subscriptionId = await ipcRenderer.invoke('opencode:subscribe', payload) as string
+      const handler = (
+        _: unknown,
+        event: { subscriptionId: string; type: 'event' | 'error'; event?: unknown; error?: string },
+      ) => {
+        if (event.subscriptionId !== subscriptionId) return
+        callback(event)
+      }
+      ipcRenderer.on('opencode:event', handler)
+      return () => {
+        ipcRenderer.removeListener('opencode:event', handler)
+        void ipcRenderer.invoke('opencode:unsubscribe', subscriptionId)
+      }
+    },
+  },
+
+  ide: {
+    selectionChanged: (params: {
+      text: string
+      filePath: string
+      fileUrl: string
+      fileName: string
+      language: string
+      cursorLine: number
+      cursorColumn: number
+      selection: {
+        start: { line: number; character: number }
+        end: { line: number; character: number }
+        isEmpty: boolean
+      }
+    }) =>
+      ipcRenderer.send('ide:selection-changed', params),
+    updateWorkspace: (folders: string[]) => ipcRenderer.send('ide:update-workspace', folders),
+    getPort: () => ipcRenderer.invoke('ide:get-port') as Promise<number | null>,
   },
 
   fs: {
     readDir: (path: string) => ipcRenderer.invoke('fs:read-dir', path) as Promise<Array<{ name: string; isDir: boolean }>>,
+    readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path) as Promise<string>,
+    writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:write-file', path, content) as Promise<void>,
+  },
+
+  search: {
+    findInFiles: (rootPath: string, query: string, options?: SearchQueryOptions) =>
+      ipcRenderer.invoke('search:find-in-files', rootPath, query, options) as Promise<ProjectSearchMatch[]>,
+    findFiles: (rootPath: string, query: string, options?: SearchQueryOptions) =>
+      ipcRenderer.invoke('search:find-files', rootPath, query, options) as Promise<FileSearchResult[]>,
   },
 
   media: {
@@ -132,12 +225,15 @@ const api = {
         groups: unknown[]
         projects: unknown[]
         sessions: unknown[]
+        editors?: unknown[]
         worktrees?: unknown[]
         templates?: unknown[]
         activeTasks?: unknown[]
         ui: Record<string, unknown>
         panes?: Record<string, unknown>
       }>,
+    getAnonymousWorkspace: () =>
+      ipcRenderer.invoke('config:get-anonymous-workspace') as Promise<string>,
     write: (key: string, value: unknown) => ipcRenderer.invoke('config:write', key, value),
   },
 
@@ -165,28 +261,56 @@ const api = {
   },
 
   detach: {
-    create: (sessionIds: string[], title: string, sessionData?: unknown[], position?: { x: number; y: number }, size?: { width: number; height: number }) =>
-      ipcRenderer.invoke('detach:create', sessionIds, title, sessionData ?? [], position, size) as Promise<string>,
+    create: (
+      tabIds: string[],
+      title: string,
+      sessionData?: unknown[],
+      editorData?: unknown[],
+      context?: { projectId: string | null; worktreeId: string | null },
+      position?: { x: number; y: number },
+      size?: { width: number; height: number },
+    ) =>
+      ipcRenderer.invoke('detach:create', tabIds, title, sessionData ?? [], editorData ?? [], context ?? null, position, size) as Promise<string>,
     minimize: () => ipcRenderer.invoke('detach:minimize'),
     maximize: () => ipcRenderer.invoke('detach:maximize'),
     close: () => ipcRenderer.invoke('detach:close'),
     setPosition: (x: number, y: number) => ipcRenderer.invoke('detach:set-position', x, y),
-    onClosed: (callback: (data: { id: string; sessionIds: string[]; sessions: Session[] }) => void) => {
-      const handler = (_: unknown, data: { id: string; sessionIds: string[]; sessions: Session[] }) => callback(data)
+    onClosed: (callback: (data: {
+      id: string
+      tabIds: string[]
+      sessions: Session[]
+      editors: unknown[]
+      projectId: string | null
+      worktreeId: string | null
+    }) => void) => {
+      const handler = (_: unknown, data: {
+        id: string
+        tabIds: string[]
+        sessions: Session[]
+        editors: unknown[]
+        projectId: string | null
+        worktreeId: string | null
+      }) => callback(data)
       ipcRenderer.on('detach:closed', handler)
       return () => ipcRenderer.removeListener('detach:closed', handler)
     },
     getSessions: (windowId: string) =>
       ipcRenderer.invoke('detach:get-sessions', windowId) as Promise<unknown[]>,
-    updateSessionIds: (windowId: string, sessionIds: string[]) =>
-      ipcRenderer.invoke('detach:update-session-ids', windowId, sessionIds),
+    getEditors: (windowId: string) =>
+      ipcRenderer.invoke('detach:get-editors', windowId) as Promise<unknown[]>,
+    updateSessionIds: (windowId: string, tabIds: string[]) =>
+      ipcRenderer.invoke('detach:update-session-ids', windowId, tabIds),
     updateSessions: (windowId: string, sessions: Session[]) =>
       ipcRenderer.invoke('detach:update-sessions', windowId, sessions),
-    registerTabDrag: (token: string, payload: { session: Session; sourcePaneId: string; sourceWindowId: string }) =>
+    updateEditors: (windowId: string, editors: unknown[]) =>
+      ipcRenderer.invoke('detach:update-editors', windowId, editors),
+    updateContext: (windowId: string, context: { projectId: string | null; worktreeId: string | null }) =>
+      ipcRenderer.invoke('detach:update-context', windowId, context),
+    registerTabDrag: (token: string, payload: unknown) =>
       ipcRenderer.sendSync('detach:tab-drag-register', token, payload) as boolean,
     claimTabDrag: (token: string, targetWindowId: string) =>
       ipcRenderer.sendSync('detach:tab-drag-claim', token, targetWindowId) as
-        | { session: Session; sourcePaneId: string; sourceWindowId: string }
+        | unknown
         | null,
     finishTabDrag: (token: string) =>
       ipcRenderer.sendSync('detach:tab-drag-finish', token) as
@@ -197,6 +321,10 @@ const api = {
     getWindowId: () => new URLSearchParams(window.location.search).get('windowId') ?? '',
     isDetached: new URLSearchParams(window.location.search).get('detached') === 'true',
     getSessionIds: () => {
+      const raw = new URLSearchParams(window.location.search).get('sessionIds') ?? ''
+      return raw ? raw.split(',') : []
+    },
+    getTabIds: () => {
       const raw = new URLSearchParams(window.location.search).get('sessionIds') ?? ''
       return raw ? raw.split(',') : []
     },

@@ -89,7 +89,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
   return (
     <div
       className="tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]"
-      style={{ height: 37 }}
+      style={{ height: 39 }}
       onWheel={(e) => {
         if (sessions.length === 0) return
         const store = useSessionsStore.getState()
@@ -116,7 +116,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
           <button
             onClick={toggleSidebar}
             className={cn(
-              'flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] mr-1',
+              'flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] mr-1',
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               'transition-colors duration-100',
             )}
@@ -144,7 +144,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
           ref={btnRef}
           onClick={handlePlusClick}
           className={cn(
-            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full ml-2 mr-1',
+            'flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full ml-2 mr-1',
             'text-[var(--color-text-tertiary)] border border-[var(--color-border)]',
             'hover:bg-[var(--color-accent)]/15 hover:border-[var(--color-accent)]/50 hover:text-[var(--color-accent)]',
             'transition-all duration-150',

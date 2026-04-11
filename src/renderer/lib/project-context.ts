@@ -1,4 +1,5 @@
 import type { Worktree } from '@shared/types'
+import { useEditorsStore } from '@/stores/editors'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -24,14 +25,27 @@ function resolveProjectWorktree(projectId: string, preferredWorktreeId?: string 
   return wtStore.getMainWorktree(projectId)
 }
 
-function getContextSessionIds(projectId: string, worktree?: Worktree): string[] {
-  return useSessionsStore.getState().sessions
+function matchesContext(worktree: Worktree | undefined, tabWorktreeId: string | undefined): boolean {
+  if (!worktree) return true
+  return tabWorktreeId === worktree.id || (!tabWorktreeId && worktree.isMain)
+}
+
+function getContextTabIds(projectId: string, worktree?: Worktree): string[] {
+  const sessionIds = useSessionsStore.getState().sessions
     .filter((session) => {
       if (session.projectId !== projectId) return false
-      if (!worktree) return true
-      return session.worktreeId === worktree.id || (!session.worktreeId && worktree.isMain)
+      return matchesContext(worktree, session.worktreeId)
     })
     .map((session) => session.id)
+
+  const editorIds = useEditorsStore.getState().tabs
+    .filter((tab) => {
+      if (tab.projectId !== projectId) return false
+      return matchesContext(worktree, tab.worktreeId)
+    })
+    .map((tab) => tab.id)
+
+  return [...sessionIds, ...editorIds]
 }
 
 export function getDefaultWorktreeIdForProject(projectId: string): string | undefined {
@@ -51,21 +65,30 @@ export function switchProjectContext(
   const wtStore = useWorktreesStore.getState()
 
   const worktree = resolveProjectWorktree(projectId, preferredWorktreeId)
-  const sessionIds = getContextSessionIds(projectId, worktree)
-  const nextActiveSessionId = preferredSessionId && sessionIds.includes(preferredSessionId)
+  const tabIds = getContextTabIds(projectId, worktree)
+  const nextActiveSessionId = preferredSessionId && tabIds.includes(preferredSessionId)
     ? preferredSessionId
-    : (sessionIds[0] ?? null)
+    : (tabIds[0] ?? null)
 
   projectStore.selectProject(projectId)
   wtStore.selectWorktree(worktree?.id ?? null)
 
   if (worktree) {
-    paneStore.switchWorktree(worktree.id, sessionIds, nextActiveSessionId)
+    paneStore.switchWorktree(worktree.id, tabIds, nextActiveSessionId)
   } else {
-    paneStore.switchProject(projectId, sessionIds, nextActiveSessionId)
+    paneStore.switchProject(projectId, tabIds, nextActiveSessionId)
   }
 
   if (nextActiveSessionId) {
+    const refreshedPaneStore = usePanesStore.getState()
+    const paneId = refreshedPaneStore.findPaneForSession(nextActiveSessionId)
+    if (paneId) {
+      refreshedPaneStore.setActivePaneId(paneId)
+      refreshedPaneStore.setPaneActiveSession(paneId, nextActiveSessionId)
+    }
+  }
+
+  if (nextActiveSessionId && !nextActiveSessionId.startsWith('editor-')) {
     sessionStore.setActive(nextActiveSessionId)
   }
 }

@@ -1,5 +1,7 @@
 import { FolderPlus, Layers, PanelLeftClose, Plus, Search, Settings } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
+import terminalIcon from '@/assets/icons/terminal_white.png'
+import { createAnonymousTerminal } from '@/lib/anonymous-project'
 import { cn } from '@/lib/utils'
 import { useGroupsStore } from '@/stores/groups'
 import { useUIStore } from '@/stores/ui'
@@ -54,6 +56,17 @@ export function Sidebar(): JSX.Element {
           </span>
         </div>
         <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => { void createAnonymousTerminal() }}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+              'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+              'transition-colors duration-100',
+            )}
+            title="Anonymous Terminal"
+          >
+            <img src={terminalIcon} alt="" className="h-3.5 w-3.5 opacity-85" draggable={false} />
+          </button>
           <button
             onClick={handleStartAdding}
             className={cn(

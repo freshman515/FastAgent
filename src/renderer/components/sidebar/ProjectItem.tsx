@@ -1,7 +1,8 @@
-import { ArrowRightLeft, ChevronRight, ExternalLink, Folder, GitBranch, Layers, MoreHorizontal, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ChevronRight, ExternalLink, Folder, GitBranch, Layers, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, SessionType, TaskBundle, Worktree } from '@shared/types'
+import { isAnonymousProject, removeAnonymousProject } from '@/lib/anonymous-project'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
@@ -12,6 +13,8 @@ import { useGitStore } from '@/stores/git'
 import { useTemplatesStore } from '@/stores/templates'
 import { useTasksStore } from '@/stores/tasks'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { useLaunchesStore } from '@/stores/launches'
+import { LaunchMenu } from './LaunchMenu'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
@@ -414,6 +417,7 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
 interface ProjectItemProps { project: Project }
 
 export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
+  const isAnonymous = isAnonymousProject(project)
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectProject = useProjectsStore((s) => s.selectProject)
   const removeProject = useProjectsStore((s) => s.removeProject)
@@ -442,6 +446,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showNewBranch, setShowNewBranch] = useState(false)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
+  const [showLaunchMenu, setShowLaunchMenu] = useState<{ x: number; y: number } | null>(null)
   const [taskDialog, setTaskDialog] = useState<TaskBundle | null>(null)
   const [projDragOver, setProjDragOver] = useState(false)
   const [branchSubmenuAnchor, setBranchSubmenuAnchor] = useState<DOMRect | null>(null)
@@ -461,25 +466,32 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     if (branchCloseTimer.current) { clearTimeout(branchCloseTimer.current); branchCloseTimer.current = null }
   }, [])
 
-  const nonMainWorktrees = useMemo(() => worktrees.filter((w) => !w.isMain), [worktrees])
+  const nonMainWorktrees = useMemo(
+    () => (isAnonymous ? [] : worktrees.filter((w) => !w.isMain)),
+    [isAnonymous, worktrees],
+  )
   const hasWorktreeChildren = nonMainWorktrees.length > 0
   const mainWorktree = useMemo(() => worktrees.find((w) => w.isMain), [worktrees])
 
   const sessions = useMemo(() => allSessions.filter((s) => s.projectId === project.id), [allSessions, project.id])
-  const otherGroups = useMemo(() => allGroups.filter((g) => g.id !== project.groupId), [allGroups, project.groupId])
+  const otherGroups = useMemo(
+    () => (isAnonymous ? [] : allGroups.filter((g) => g.id !== project.groupId)),
+    [allGroups, isAnonymous, project.groupId],
+  )
   const matchingTemplates = useMemo(() => templates.filter((t) => t.projectId === null || t.projectId === project.id), [templates, project.id])
 
   useEffect(() => {
+    if (isAnonymous) return
     useGitStore.getState().fetchStatus(project.id, project.path)
     useGitStore.getState().fetchWorktrees(project.id, project.path)
-  }, [project.id, project.path])
+  }, [isAnonymous, project.id, project.path])
 
   // Ensure main worktree exists once branch info is available
   useEffect(() => {
-    if (branchInfo) {
+    if (!isAnonymous && branchInfo) {
       useWorktreesStore.getState().ensureMainWorktree(project.id, project.path, branchInfo.current)
     }
-  }, [project.id, project.path, branchInfo])
+  }, [branchInfo, isAnonymous, project.id, project.path])
 
   const isSelected = selectedProjectId === project.id
   const isMainWtActive = isSelected && (!selectedWorktreeId || selectedWorktreeId === mainWorktree?.id)
@@ -492,10 +504,14 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   }, [isMainWtActive, project.id])
 
   const handleRemove = useCallback(() => {
-    removeProjectFromGroup(project.groupId, project.id)
-    removeProject(project.id)
+    if (isAnonymous) {
+      void removeAnonymousProject()
+    } else {
+      removeProjectFromGroup(project.groupId, project.id)
+      removeProject(project.id)
+    }
     setShowMenu(null)
-  }, [project.id, project.groupId, removeProject, removeProjectFromGroup])
+  }, [isAnonymous, project.groupId, project.id, removeProject, removeProjectFromGroup])
 
   const handleApplyTemplate = useCallback((tid: string) => {
     const t = useTemplatesStore.getState().templates.find((x) => x.id === tid)
@@ -524,8 +540,13 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     <div className="relative">
       {/* Main project row */}
       <div
-        draggable
-        onDragStart={(e) => { e.dataTransfer.setData('project-id', project.id); e.dataTransfer.setData('source-group', project.groupId); e.dataTransfer.effectAllowed = 'move' }}
+        draggable={!isAnonymous}
+        onDragStart={(e) => {
+          if (isAnonymous) return
+          e.dataTransfer.setData('project-id', project.id)
+          e.dataTransfer.setData('source-group', project.groupId)
+          e.dataTransfer.effectAllowed = 'move'
+        }}
         className={cn(
           'group flex h-8 cursor-pointer items-center gap-1 pl-2 pr-2 transition-colors duration-75',
           isMainWtActive
@@ -536,9 +557,20 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         onClick={handleSelect}
         onDoubleClick={handleRowDoubleClick}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
-        onDragOver={(e) => { if (e.dataTransfer.types.includes('project-id')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setProjDragOver(true) } }}
-        onDragLeave={() => setProjDragOver(false)}
+        onDragOver={(e) => {
+          if (isAnonymous) return
+          if (e.dataTransfer.types.includes('project-id')) {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            setProjDragOver(true)
+          }
+        }}
+        onDragLeave={() => {
+          if (isAnonymous) return
+          setProjDragOver(false)
+        }}
         onDrop={(e) => {
+          if (isAnonymous) return
           e.stopPropagation(); setProjDragOver(false)
           const did = e.dataTransfer.getData('project-id'), sg = e.dataTransfer.getData('source-group')
           if (!did || did === project.id) return
@@ -559,7 +591,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
 
         {/* Branch badge */}
-        {branchInfo && (
+        {!isAnonymous && branchInfo && (
           <span className={cn(
             'flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5',
             'text-[9px] leading-none',
@@ -639,32 +671,45 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               </button>
             ))}
 
-            {/* Git section */}
-            <SectionDivider icon={GitBranch} label="Git" />
-            {branchInfo && branchInfo.current ? (
+            {!isAnonymous && (
               <>
-                <button
-                  ref={branchMenuRef}
-                  className={cn(MENU_ITEM, 'justify-between')}
-                  onMouseEnter={openBranchSub}
-                  onMouseLeave={scheduleBranchClose}
-                >
-                  <span className="flex items-center gap-2"><GitBranch size={11} /> Branches</span>
-                  <ChevronRight size={12} />
-                </button>
-                <button className={MENU_ITEM} onClick={() => { setContextMenu(null); setShowNewWorktree(true) }}>
-                  <PlusIcon size={12} /> New Worktree...
-                </button>
+                {/* Git section */}
+                <SectionDivider icon={GitBranch} label="Git" />
+                {branchInfo && branchInfo.current ? (
+                  <>
+                    <button
+                      ref={branchMenuRef}
+                      className={cn(MENU_ITEM, 'justify-between')}
+                      onMouseEnter={openBranchSub}
+                      onMouseLeave={scheduleBranchClose}
+                    >
+                      <span className="flex items-center gap-2"><GitBranch size={11} /> Branches</span>
+                      <ChevronRight size={12} />
+                    </button>
+                    <button className={MENU_ITEM} onClick={() => { setContextMenu(null); setShowNewWorktree(true) }}>
+                      <PlusIcon size={12} /> New Worktree...
+                    </button>
+                  </>
+                ) : (
+                  <button className={MENU_ITEM} onClick={async () => {
+                    setContextMenu(null)
+                    await window.api.git.init(project.path)
+                    await useGitStore.getState().fetchStatus(project.id, project.path)
+                  }}>
+                    <PlusIcon size={12} /> Initialize Repository
+                  </button>
+                )}
               </>
-            ) : (
-              <button className={MENU_ITEM} onClick={async () => {
-                setContextMenu(null)
-                await window.api.git.init(project.path)
-                await useGitStore.getState().fetchStatus(project.id, project.path)
-              }}>
-                <PlusIcon size={12} /> Initialize Repository
-              </button>
             )}
+
+            {/* Run */}
+            <SectionDivider icon={Play} label="Run" />
+            <button className={MENU_ITEM} onClick={() => {
+              setContextMenu(null)
+              setShowLaunchMenu(contextMenu)
+            }}>
+              <Play size={11} /> Launch Profiles...
+            </button>
 
             {/* Apply Template */}
             {matchingTemplates.length > 0 && (
@@ -693,7 +738,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             )}
 
             {/* Move to */}
-            {otherGroups.length > 0 && (
+            {!isAnonymous && otherGroups.length > 0 && (
               <>
                 <SectionDivider icon={ArrowRightLeft} label="Move to" />
                 {otherGroups.map((g) => (
@@ -719,7 +764,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
           </div>
 
           {/* Branch submenu (hover popup) */}
-          {branchSubmenuAnchor && branchInfo && (
+          {!isAnonymous && branchSubmenuAnchor && branchInfo && (
             <BranchSubmenu
               project={project}
               branchInfo={branchInfo}
@@ -735,6 +780,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
       {showNewBranch && <NewBranchInput project={project} onClose={() => setShowNewBranch(false)} />}
       {showNewWorktree && <NewWorktreeDialog project={project} onClose={() => setShowNewWorktree(false)} />}
       {taskDialog && <TaskStartDialog bundle={taskDialog} project={project} onClose={() => setTaskDialog(null)} />}
+      {showLaunchMenu && <LaunchMenu projectId={project.id} projectPath={project.path} position={showLaunchMenu} onClose={() => setShowLaunchMenu(null)} />}
     </div>
   )
 }

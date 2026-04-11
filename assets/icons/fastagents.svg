@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e1e24"/>
+      <stop offset="1" stop-color="#12121a"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="220" y1="100" x2="310" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="0.55" stop-color="#7c6aef"/>
+      <stop offset="1" stop-color="#5b4cd4"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Subtle border -->
+  <rect x="1" y="1" width="510" height="510" rx="111" stroke="#7c6aef" stroke-width="1.5" opacity="0.12"/>
+
+  <!-- Lightning bolt — large, centered, clean -->
+  <path
+    d="M 296 108 L 224 256 L 268 256 L 216 404 L 320 240 L 272 240 L 328 108 Z"
+    fill="url(#bolt)"
+    filter="url(#glow)"
+  />
+</svg>

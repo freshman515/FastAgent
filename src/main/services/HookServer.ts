@@ -134,6 +134,11 @@ export class HookServer {
       return
     }
 
+    if (req.method === 'POST' && req.url === '/status-line') {
+      this.handleStatusLine(req, res)
+      return
+    }
+
     if (req.method === 'POST' && req.url === '/permission') {
       this.handlePermission(req, res)
       return
@@ -245,6 +250,37 @@ export class HookServer {
         res.writeHead(400)
         res.end('bad json')
       }
+    })
+  }
+
+  /** Status line updates from Claude Code */
+  private handleStatusLine(req: http.IncomingMessage, res: http.ServerResponse): void {
+    let body = ''
+    req.on('data', (chunk: Buffer) => { body += chunk })
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true }))
+
+      try {
+        const data = JSON.parse(body)
+        const sessionId = data.session_id as string | undefined
+        const cwd = typeof data.cwd === 'string' ? data.cwd : (typeof data.workspace?.current_dir === 'string' ? data.workspace.current_dir : undefined)
+        const faSessionId = cwd ? ptyManager.findClaudeSessionByCwd(cwd) : (sessionId ?? null)
+
+        // Broadcast to all windows
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('agent:status-update', {
+              sessionId: faSessionId,
+              claudeSessionId: sessionId,
+              model: data.model,
+              contextWindow: data.context_window,
+              cost: data.cost,
+              workspace: data.workspace,
+            })
+          }
+        }
+      } catch { /* ignore */ }
     })
   }
 

@@ -1,4 +1,4 @@
-import { GitBranch, Cpu, Layers, Circle, Clock } from 'lucide-react'
+import { GitBranch, Cpu, Layers, Circle, Clock, FileCode, Play } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
@@ -6,6 +6,9 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useGitStore } from '@/stores/git'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { usePanesStore } from '@/stores/panes'
+import { useEditorsStore, FILE_ICONS } from '@/stores/editors'
+import { useLaunchesStore } from '@/stores/launches'
+import { LaunchMenu } from '@/components/sidebar/LaunchMenu'
 
 function formatUptime(ms: number): string {
   const seconds = Math.floor(ms / 1000)
@@ -33,6 +36,9 @@ export function StatusBar(): JSX.Element {
   const activePaneId = usePanesStore((s) => s.activePaneId)
   const activeSessionId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const activeSession = useSessionsStore((s) => s.sessions.find((x) => x.id === activeSessionId))
+  const cursorInfo = useEditorsStore((s) => s.cursorInfo)
+  const [launchMenuPos, setLaunchMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const activeEditorTab = useEditorsStore((s) => activeSessionId?.startsWith('editor-') ? s.tabs.find((t) => t.id === activeSessionId) : undefined)
 
   // Project sessions
   const projectSessions = useMemo(
@@ -106,10 +112,53 @@ export function StatusBar(): JSX.Element {
             )}
           </span>
         </span>
+
+        {/* Run button */}
+        {selectedProject && (
+          <>
+            <div className="mx-0.5 h-3 w-px bg-[var(--color-border)]" />
+            <button
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setLaunchMenuPos({ x: rect.left, y: rect.top - 8 })
+              }}
+              className={cn(ITEM, 'cursor-pointer text-[var(--color-success)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-[var(--radius-sm)]')}
+              title="Run"
+            >
+              <Play size={11} fill="currentColor" /> Run
+            </button>
+          </>
+        )}
       </div>
 
       {/* Right section */}
       <div className="flex items-center gap-0">
+        {/* Editor cursor info */}
+        {activeEditorTab && cursorInfo && (() => {
+          const iconInfo = FILE_ICONS[activeEditorTab.language] ?? FILE_ICONS.plaintext
+          return (
+            <>
+              <span className={cn(ITEM, 'text-[var(--color-text-tertiary)]')}>
+                <span className="rounded px-[3px] py-px text-[8px] font-bold leading-none" style={{ backgroundColor: iconInfo.color + '20', color: iconInfo.color }}>
+                  {iconInfo.icon}
+                </span>
+                <span>{activeEditorTab.language}</span>
+              </span>
+              <div className="mx-0.5 h-3 w-px bg-[var(--color-border)]" />
+              <span className={cn(ITEM, 'text-[var(--color-text-tertiary)] tabular-nums')}>
+                Ln {cursorInfo.line}, Col {cursorInfo.column}
+                {cursorInfo.selection && (
+                  <span className="text-[var(--color-accent)] ml-1">
+                    ({cursorInfo.selection.chars} selected)
+                  </span>
+                )}
+              </span>
+              <div className="mx-0.5 h-3 w-px bg-[var(--color-border)]" />
+              <span className={cn(ITEM, 'text-[var(--color-text-tertiary)]')}>UTF-8</span>
+            </>
+          )
+        })()}
+
         {/* Active session status */}
         {activeSession && (
           <span className={cn(ITEM, 'text-[var(--color-text-tertiary)]')}>
@@ -133,6 +182,16 @@ export function StatusBar(): JSX.Element {
           </span>
         )}
       </div>
+
+      {/* Launch menu */}
+      {launchMenuPos && selectedProject && (
+        <LaunchMenu
+          projectId={selectedProject.id ?? ''}
+          projectPath={selectedProject.path ?? ''}
+          position={{ x: launchMenuPos.x, y: launchMenuPos.y - 300 }}
+          onClose={() => setLaunchMenuPos(null)}
+        />
+      )}
     </div>
   )
 }

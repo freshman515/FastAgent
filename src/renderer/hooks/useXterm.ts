@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal, type IBufferLine } from '@xterm/xterm'
 import { addTimelineEvent } from '@/components/rightpanel/SessionTimeline'
-import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/AgentMonitor'
+import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/agentRuntime'
 
 // ─── Global terminal registry for preview snapshots ───
 const terminalRegistry = new Map<string, Terminal>()
@@ -18,6 +18,10 @@ export function getTerminalPreviewText(sessionId: string, lineCount = 16): strin
     result.push(line ? line.translateToString() : '')
   }
   return result
+}
+
+export function getTerminalBufferText(sessionId: string, lineCount = 120): string {
+  return getTerminalPreviewText(sessionId, lineCount).join('\n')
 }
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'

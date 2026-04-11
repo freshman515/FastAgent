@@ -3,6 +3,7 @@ import type { IPty } from '@lydell/node-pty'
 import { BrowserWindow } from 'electron'
 import { IPC } from '@shared/types'
 import type { SessionCreateOptions } from '@shared/types'
+import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
 
 const isWindows = process.platform === 'win32'
@@ -50,6 +51,8 @@ export class PtyManager {
       COLORTERM: 'truecolor',
       // Inject session ID so hook scripts can identify this exact session
       ...(options.sessionId ? { FASTAGENTS_SESSION_ID: options.sessionId } : {}),
+      // IDE server port for Claude Code MCP integration
+      ...(getIdeServerPort() ? { FASTAGENTS_IDE_PORT: String(getIdeServerPort()) } : {}),
       ...(options.env ?? {}),
     }
 
