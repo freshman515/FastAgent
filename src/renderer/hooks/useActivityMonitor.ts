@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { switchProjectContext } from '@/lib/project-context'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
@@ -66,12 +67,17 @@ export function useActivityMonitor(): void {
   // Listen for system notification clicks
   useEffect(() => {
     return window.api.notification.onClick((data) => {
-      if (data.projectId) {
-        useProjectsStore.getState().selectProject(data.projectId)
-      }
       if (data.sessionId) {
+        const session = useSessionsStore.getState().sessions.find((s) => s.id === data.sessionId)
+        if (session) {
+          switchProjectContext(session.projectId, session.id, session.worktreeId ?? null)
+        } else if (data.projectId) {
+          useProjectsStore.getState().selectProject(data.projectId)
+        }
         useSessionsStore.getState().setActive(data.sessionId)
         useSessionsStore.getState().markAsRead(data.sessionId)
+      } else if (data.projectId) {
+        useProjectsStore.getState().selectProject(data.projectId)
       }
     })
   }, [])

@@ -52,6 +52,7 @@ interface PanesState {
   reorderPaneSessions: (paneId: string, fromId: string, toId: string) => void
   findPaneForSession: (sessionId: string) => string | null
   getPaneIdForActiveSession: () => string
+  mergeAllPanes: () => void
 }
 
 const DEFAULT_PANE_ID = 'pane-root'
@@ -153,6 +154,8 @@ function findClosestPaneByRect(currentId: string, direction: 'left' | 'right' | 
 }
 
 function persistPanes(state: PanesState): void {
+  // Don't persist from detached windows — they have incomplete state
+  if (window.api.detach.isDetached) return
   window.api.config.write('panes', {
     root: state.root,
     activePaneId: state.activePaneId,
@@ -492,6 +495,31 @@ export const usePanesStore = create<PanesState>((set, get) => ({
   navigatePane: (direction: 'left' | 'right' | 'up' | 'down') => {
     const target = findClosestPaneByRect(get().activePaneId, direction)
     if (target) set({ activePaneId: target })
+  },
+
+  // Merge all split panes into a single pane with all sessions as tabs
+  mergeAllPanes: () => {
+    const state = get()
+    if (state.root.type !== 'split') return
+
+    // Collect all sessions from all panes in order
+    const allLeafIds = getAllLeafIds(state.root)
+    const allSessionIds: string[] = []
+    for (const leafId of allLeafIds) {
+      const sessions = state.paneSessions[leafId] ?? []
+      allSessionIds.push(...sessions)
+    }
+
+    // Use the current active session as the active tab, fallback to first
+    const currentActivePane = state.activePaneId
+    const activeSession = state.paneActiveSession[currentActivePane] ?? allSessionIds[0] ?? null
+
+    set({
+      root: { type: 'leaf', id: DEFAULT_PANE_ID },
+      activePaneId: DEFAULT_PANE_ID,
+      paneSessions: { [DEFAULT_PANE_ID]: allSessionIds },
+      paneActiveSession: { [DEFAULT_PANE_ID]: activeSession },
+    })
   },
 
   // Merge all sessions from paneId into the adjacent pane, then close

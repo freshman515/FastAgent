@@ -3,6 +3,12 @@ import type { Session, SessionType, SessionStatus, OutputState } from '@shared/t
 import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
 import { generateId } from '@/lib/utils'
 
+const RUNTIME_ONLY_SESSION_FIELDS = new Set<keyof Omit<Session, 'id'>>([
+  'ptyId',
+  'status',
+  'updatedAt',
+])
+
 function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
@@ -22,6 +28,8 @@ function sanitizeSession(s: unknown): Session | null {
     createdAt: typeof obj.createdAt === 'number' ? obj.createdAt : Date.now(),
     updatedAt: Date.now(),
     worktreeId: typeof obj.worktreeId === 'string' ? obj.worktreeId : undefined,
+    color: typeof obj.color === 'string' ? obj.color : undefined,
+    label: typeof obj.label === 'string' ? obj.label : undefined,
   }
 }
 
@@ -203,9 +211,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const sessions = state.sessions.map((s) =>
         s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s,
       )
-      // Persist when meaningful fields change (initialized, name, etc)
-      // Skip persisting for pure runtime changes (only ptyId+status without initialized)
-      const hasPersistedField = updates.initialized !== undefined || updates.name !== undefined || updates.resumeUUID !== undefined || updates.pinned !== undefined
+      // Persist any non-runtime field change (name, initialized, worktreeId, color, label, etc).
+      const hasPersistedField = Object.keys(updates).some((key) =>
+        !RUNTIME_ONLY_SESSION_FIELDS.has(key as keyof Omit<Session, 'id'>),
+      )
       if (hasPersistedField) {
         persist(sessions)
       }

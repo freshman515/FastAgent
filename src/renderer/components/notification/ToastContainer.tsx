@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle, AlertTriangle, Info, XCircle, X } from 'lucide
 import { useCallback } from 'react'
 import type { ToastNotification } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { switchProjectContext } from '@/lib/project-context'
 import { useUIStore } from '@/stores/ui'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -38,11 +39,7 @@ export function ToastContainer(): JSX.Element {
 
           // Switch project (restores pane layout) if needed
           if (projectsStore.selectedProjectId !== session.projectId) {
-            selectProject(session.projectId)
-            const projectSessions = useSessionsStore.getState().sessions
-              .filter((s) => s.projectId === session.projectId)
-              .map((s) => s.id)
-            paneStore.switchProject(session.projectId, projectSessions, toast.sessionId)
+            switchProjectContext(session.projectId, toast.sessionId, session.worktreeId ?? null)
           }
 
           setActive(toast.sessionId)

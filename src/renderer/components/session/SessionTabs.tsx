@@ -2,6 +2,7 @@ import { PanelLeftOpen, Plus } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { SessionTab } from './SessionTab'
@@ -103,7 +104,8 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
           const defaultType = useUIStore.getState().settings.defaultSessionType
           const addSession = useSessionsStore.getState().addSession
           const setActiveSession = useSessionsStore.getState().setActive
-          const id = addSession(projectId, defaultType)
+          const worktreeId = getDefaultWorktreeIdForProject(projectId)
+          const id = addSession(projectId, defaultType, worktreeId)
           setActiveSession(id)
         }
       }}

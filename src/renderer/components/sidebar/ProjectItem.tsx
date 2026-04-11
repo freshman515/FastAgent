@@ -2,6 +2,7 @@ import { ArrowRightLeft, ChevronRight, ExternalLink, Folder, GitBranch, Layers, 
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, SessionType, TaskBundle, Worktree } from '@shared/types'
+import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useGroupsStore } from '@/stores/groups'
@@ -29,7 +30,7 @@ const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-fon
 const SECTION_HEADER = 'text-[var(--ui-font-2xs)] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]'
 const INPUT_CLS = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
 const OVERLAY_PANEL = 'fixed left-1/2 top-1/3 z-50 -translate-x-1/2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3 shadow-lg shadow-black/30'
-const WT_ROW = 'flex h-6 w-full cursor-pointer items-center gap-1.5 pl-14 pr-2 text-[var(--ui-font-2xs)] transition-colors duration-75'
+const WT_ROW = 'flex h-7 w-full cursor-pointer items-center gap-1.5 pl-8 pr-2 text-[var(--ui-font-2xs)] transition-colors duration-75'
 
 function SectionDivider({ icon: Icon, label }: { icon: typeof GitBranch; label: string }): JSX.Element {
   return (
@@ -134,7 +135,7 @@ function TaskStartDialog({ bundle, project, onClose }: { bundle: TaskBundle; pro
     if (branchName) await useGitStore.getState().createBranch(project.id, project.path, branchName)
     const wtStore = useWorktreesStore.getState()
     const mainWt = wtStore.getMainWorktree(project.id)
-    const wtId = mainWt?.id
+    const wtId = undefined
 
     // Switch to project first so xterm components render and PTYs get created
     useProjectsStore.getState().selectProject(project.id)
@@ -291,13 +292,7 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
   const isDirty = branchInfo?.isDirty ?? false
 
   const handleClick = useCallback(() => {
-    const wtStore = useWorktreesStore.getState()
-    wtStore.selectWorktree(wt.id)
-    useProjectsStore.getState().selectProject(project.id)
-    const sessions = useSessionsStore.getState().sessions.filter((s) => s.worktreeId === wt.id)
-    const activeId = sessions.length > 0 ? sessions[0].id : null
-    usePanesStore.getState().switchWorktree(wt.id, sessions.map((s) => s.id), activeId)
-    if (activeId) useSessionsStore.getState().setActive(activeId)
+    switchProjectContext(project.id, null, wt.id)
   }, [wt.id, project.id])
 
   const handleRemoveWorktree = useCallback(async () => {
@@ -492,26 +487,9 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   const hasOutputting = sessions.some((s) => outputStates[s.id] === 'outputting')
 
   const handleSelect = useCallback(() => {
-    selectProject(project.id)
-    const wtStore = useWorktreesStore.getState()
-    const mainWt = wtStore.getMainWorktree(project.id)
-    if (mainWt) {
-      wtStore.selectWorktree(mainWt.id)
-      const wtSessions = useSessionsStore.getState().sessions.filter((s) =>
-        s.projectId === project.id && (!s.worktreeId || s.worktreeId === mainWt.id),
-      )
-      const activeId = wtSessions.length > 0 ? wtSessions[0].id : null
-      usePanesStore.getState().switchWorktree(mainWt.id, wtSessions.map((s) => s.id), activeId)
-      if (activeId) useSessionsStore.getState().setActive(activeId)
-    } else {
-      // No main worktree yet — use project.id as key, still call switchWorktree to save previous layout
-      wtStore.selectWorktree(null)
-      const ps = useSessionsStore.getState().sessions.filter((s) => s.projectId === project.id)
-      const activeId = ps.length > 0 ? ps[0].id : null
-      usePanesStore.getState().switchWorktree(project.id, ps.map((s) => s.id), activeId)
-      if (activeId) useSessionsStore.getState().setActive(activeId)
-    }
-  }, [project.id, selectProject])
+    if (isMainWtActive) return
+    switchProjectContext(project.id, null, null)
+  }, [isMainWtActive, project.id])
 
   const handleRemove = useCallback(() => {
     removeProjectFromGroup(project.groupId, project.id)
@@ -523,8 +501,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     const t = useTemplatesStore.getState().templates.find((x) => x.id === tid)
     if (!t) return
     selectProject(project.id)
-    const mainWt = useWorktreesStore.getState().getMainWorktree(project.id)
-    const wtId = mainWt?.id
+    const wtId = undefined
     const paneId = usePanesStore.getState().activePaneId
     for (const item of t.items) {
       const sid = addSession(project.id, item.type, wtId)
@@ -539,6 +516,10 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     if (hasWorktreeChildren) setExpanded((prev) => !prev)
   }, [hasWorktreeChildren])
 
+  const handleRowDoubleClick = useCallback(() => {
+    if (hasWorktreeChildren) setExpanded((prev) => !prev)
+  }, [hasWorktreeChildren])
+
   return (
     <div className="relative">
       {/* Main project row */}
@@ -546,13 +527,14 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         draggable
         onDragStart={(e) => { e.dataTransfer.setData('project-id', project.id); e.dataTransfer.setData('source-group', project.groupId); e.dataTransfer.effectAllowed = 'move' }}
         className={cn(
-          'group flex h-8 cursor-pointer items-center gap-1.5 pl-5 pr-2 transition-colors duration-75',
+          'group flex h-8 cursor-pointer items-center gap-1 pl-2 pr-2 transition-colors duration-75',
           isMainWtActive
             ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] border-l-2 border-l-[var(--color-accent)]'
             : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] border-l-2 border-l-transparent',
           projDragOver && 'border-t border-t-[var(--color-accent)]',
         )}
         onClick={handleSelect}
+        onDoubleClick={handleRowDoubleClick}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
         onDragOver={(e) => { if (e.dataTransfer.types.includes('project-id')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setProjDragOver(true) } }}
         onDragLeave={() => setProjDragOver(false)}
@@ -565,8 +547,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         }}
       >
         {/* Expand/collapse chevron */}
-        <button onClick={handleToggleExpand} className={cn('flex h-5 w-5 shrink-0 items-center justify-center', hasWorktreeChildren ? 'cursor-pointer' : 'cursor-default opacity-0')}>
-          <ChevronRight size={12} className={cn('transition-transform duration-100', expanded && 'rotate-90')} />
+        <button onClick={handleToggleExpand} className={cn('flex h-4 w-4 shrink-0 items-center justify-center', hasWorktreeChildren ? 'cursor-pointer' : 'cursor-default opacity-0')}>
+          <ChevronRight size={11} className={cn('transition-transform duration-100', expanded && 'rotate-90')} />
         </button>
 
         <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]')} />
@@ -649,8 +631,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {SESSION_OPTS.map((opt) => (
               <button key={opt.type} className={MENU_ITEM} onClick={() => {
                 selectProject(project.id)
-                const mainWt = useWorktreesStore.getState().getMainWorktree(project.id)
-                const id = addSession(project.id, opt.type, mainWt?.id)
+                const id = addSession(project.id, opt.type, getDefaultWorktreeIdForProject(project.id))
                 usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
                 setActive(id); setContextMenu(null)
               }}>

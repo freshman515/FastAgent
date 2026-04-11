@@ -23,6 +23,7 @@ function sanitizeGroup(g: unknown): Group | null {
 }
 
 function persist(groups: Group[]): void {
+  if (window.api.detach.isDetached) return
   window.api.config.write('groups', groups)
 }
 

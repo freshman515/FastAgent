@@ -26,6 +26,7 @@ export interface AppSettings {
   popoutHeight: number
   /** Pop-out window position: 'cursor' follows mouse, 'center' centers on screen */
   popoutPosition: 'cursor' | 'center'
+  quickCommands: Array<{ id: string; name: string; command: string }>
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -44,6 +45,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   popoutWidth: 800,
   popoutHeight: 600,
   popoutPosition: 'cursor',
+  quickCommands: [],
 }
 
 interface UIState {
@@ -51,6 +53,13 @@ interface UIState {
   setSidebarWidth: (width: number) => void
   sidebarCollapsed: boolean
   toggleSidebar: () => void
+
+  rightPanelWidth: number
+  setRightPanelWidth: (width: number) => void
+  rightPanelCollapsed: boolean
+  toggleRightPanel: () => void
+  rightPanelTab: string
+  setRightPanelTab: (tab: string) => void
 
   settingsOpen: boolean
   openSettings: () => void
@@ -68,6 +77,7 @@ interface UIState {
 }
 
 function persistSettings(settings: AppSettings): void {
+  if (window.api.detach.isDetached) return
   window.api.config.write('ui', settings)
 }
 
@@ -80,6 +90,13 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+
+  rightPanelWidth: 300,
+  rightPanelCollapsed: true,
+  rightPanelTab: 'agent',
+  setRightPanelWidth: (width) => set({ rightPanelWidth: width }),
+  toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed })),
+  setRightPanelTab: (tab) => set({ rightPanelTab: tab, rightPanelCollapsed: false }),
 
   settingsOpen: false,
   openSettings: () => set({ settingsOpen: true }),
@@ -105,6 +122,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.popoutWidth === 'number') s.popoutWidth = Math.max(400, Math.min(1920, raw.popoutWidth))
       if (typeof raw.popoutHeight === 'number') s.popoutHeight = Math.max(300, Math.min(1080, raw.popoutHeight))
       if (raw.popoutPosition === 'cursor' || raw.popoutPosition === 'center') s.popoutPosition = raw.popoutPosition
+      if (Array.isArray(raw.quickCommands)) s.quickCommands = raw.quickCommands as AppSettings['quickCommands']
       if (typeof raw.sidebarWidth === 'number') set({ sidebarWidth: raw.sidebarWidth })
     }
     set({ settings: s })

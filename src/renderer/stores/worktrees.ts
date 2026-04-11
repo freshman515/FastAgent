@@ -16,6 +16,7 @@ function sanitizeWorktree(w: unknown): Worktree | null {
 }
 
 function persist(worktrees: Worktree[]): void {
+  if (window.api.detach.isDetached) return
   window.api.config.write('worktrees', worktrees)
 }
 

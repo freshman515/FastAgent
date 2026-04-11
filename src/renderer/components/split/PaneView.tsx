@@ -1,7 +1,8 @@
-import { Plus, X } from 'lucide-react'
+import { GitBranch, Minus, Plus, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { usePanesStore, registerPaneElement, type SplitPosition } from '@/stores/panes'
+import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { usePanesStore, registerPaneElement, type PaneNode, type SplitPosition } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { SessionTab } from '@/components/session/SessionTab'
@@ -14,9 +15,35 @@ interface PaneViewProps {
   projectId: string
 }
 
+interface WindowDragState {
+  startMouseX: number
+  startMouseY: number
+  startWindowX: number
+  startWindowY: number
+  pendingX: number
+  pendingY: number
+  frameId: number | null
+  handleMouseMove: (event: MouseEvent) => void
+  handleMouseUp: () => void
+}
+
+const isDetached = window.api.detach.isDetached
+
+function isTabDrag(e: React.DragEvent): boolean {
+  return e.dataTransfer.types.includes('session-tab-id') || e.dataTransfer.types.includes('session-tab-drag-token')
+}
+
+function getTopRightLeafId(node: PaneNode): string {
+  if (node.type === 'leaf') return node.id
+  return node.direction === 'horizontal'
+    ? getTopRightLeafId(node.second)
+    : getTopRightLeafId(node.first)
+}
+
 export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const activePaneId = usePanesStore((s) => s.activePaneId)
   const setActivePaneId = usePanesStore((s) => s.setActivePaneId)
+  const root = usePanesStore((s) => s.root)
   const paneSessions = usePanesStore((s) => s.paneSessions[paneId] ?? [])
   const paneActiveSessionId = usePanesStore((s) => s.paneActiveSession[paneId] ?? null)
   const allSessions = useSessionsStore((s) => s.sessions)
@@ -36,6 +63,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const sortedSessions = useMemo(() => {
     return [...sessions.filter((s) => s.pinned), ...sessions.filter((s) => !s.pinned)]
   }, [sessions])
+  const showDetachedWindowControls = isDetached && paneId === getTopRightLeafId(root)
 
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -43,6 +71,8 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const [edgeDrop, setEdgeDrop] = useState<SplitPosition | 'center' | null>(null)
   const termAreaRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const windowDragRef = useRef<WindowDragState | null>(null)
+  const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
 
   const handlePlusClick = (): void => {
     if (btnRef.current) {
@@ -58,11 +88,110 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     if (!isActivePane) setActivePaneId(paneId)
   }, [isActivePane, paneId, setActivePaneId])
 
+  const stopWindowDrag = useCallback(() => {
+    const drag = windowDragRef.current
+    if (!drag) return
+    if (drag.frameId !== null) {
+      cancelAnimationFrame(drag.frameId)
+    }
+    window.removeEventListener('mousemove', drag.handleMouseMove)
+    window.removeEventListener('mouseup', drag.handleMouseUp)
+    document.body.style.cursor = ''
+    windowDragRef.current = null
+  }, [])
+
+  const handleWindowDragMouseDown = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    if (!isDetached || e.button !== 0) return
+
+    e.preventDefault()
+    e.stopPropagation()
+    stopWindowDrag()
+
+    const dragState: WindowDragState = {
+      startMouseX: e.screenX,
+      startMouseY: e.screenY,
+      startWindowX: window.screenX,
+      startWindowY: window.screenY,
+      pendingX: window.screenX,
+      pendingY: window.screenY,
+      frameId: null,
+      handleMouseMove: () => {},
+      handleMouseUp: () => {},
+    }
+
+    dragState.handleMouseMove = (moveEvent: MouseEvent) => {
+      if (moveEvent.buttons === 0) {
+        stopWindowDrag()
+        return
+      }
+
+      dragState.pendingX = dragState.startWindowX + (moveEvent.screenX - dragState.startMouseX)
+      dragState.pendingY = dragState.startWindowY + (moveEvent.screenY - dragState.startMouseY)
+
+      if (dragState.frameId !== null) return
+      dragState.frameId = requestAnimationFrame(() => {
+        dragState.frameId = null
+        void window.api.detach.setPosition(dragState.pendingX, dragState.pendingY)
+      })
+    }
+
+    dragState.handleMouseUp = () => {
+      stopWindowDrag()
+    }
+
+    windowDragRef.current = dragState
+    document.body.style.cursor = ''
+    window.addEventListener('mousemove', dragState.handleMouseMove)
+    window.addEventListener('mouseup', dragState.handleMouseUp)
+  }, [stopWindowDrag])
+
+  const handleWindowDragDoubleClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    if (!isDetached) return
+    e.preventDefault()
+    e.stopPropagation()
+    stopWindowDrag()
+    void window.api.detach.maximize()
+  }, [stopWindowDrag])
+
+  const handleTopBarBlankMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return
+    handleWindowDragMouseDown(e)
+  }, [handleWindowDragMouseDown])
+
+  const handleTopBarBlankDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return
+    handleWindowDragDoubleClick(e)
+  }, [handleWindowDragDoubleClick])
+
+  const attachDraggedSession = useCallback((dragToken: string, zone?: SplitPosition | 'center' | null) => {
+    const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId)
+    if (!payload) return false
+
+    useSessionsStore.getState().upsertSessions([payload.session])
+    const store = usePanesStore.getState()
+
+    if (zone && zone !== 'center') {
+      store.addSessionToPane(paneId, payload.session.id)
+      store.splitPane(paneId, zone, payload.session.id)
+    } else {
+      store.addSessionToPane(paneId, payload.session.id)
+    }
+
+    store.setActivePaneId(paneId)
+    store.setPaneActiveSession(paneId, payload.session.id)
+    useSessionsStore.getState().setActive(payload.session.id)
+    return true
+  }, [currentWindowId, paneId])
+
   // Register pane DOM element for rect-based navigation
   useEffect(() => {
     registerPaneElement(paneId, paneRootRef.current)
     return () => registerPaneElement(paneId, null)
   }, [paneId])
+
+  useEffect(() => {
+    return () => stopWindowDrag()
+  }, [stopWindowDrag])
 
   return (
     <div
@@ -89,14 +218,14 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           usePanesStore.getState().setPaneActiveSession(paneId, sortedSessions[next].id)
         }}
         onDoubleClick={(e) => {
-          if (e.target === e.currentTarget) {
-            const defaultType = useUIStore.getState().settings.defaultSessionType
-            const id = useSessionsStore.getState().addSession(projectId, defaultType)
-            usePanesStore.getState().addSessionToPane(paneId, id)
-          }
+          if (isDetached || e.target !== e.currentTarget) return
+          const defaultType = useUIStore.getState().settings.defaultSessionType
+          const worktreeId = getDefaultWorktreeIdForProject(projectId)
+          const id = useSessionsStore.getState().addSession(projectId, defaultType, worktreeId)
+          usePanesStore.getState().addSessionToPane(paneId, id)
         }}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('session-tab-id')) {
+          if (isTabDrag(e)) {
             e.preventDefault()
             e.dataTransfer.dropEffect = 'move'
             setDropHighlight(true)
@@ -107,12 +236,50 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           setDropHighlight(false)
           const sessionId = e.dataTransfer.getData('session-tab-id')
           const sourcePaneId = e.dataTransfer.getData('source-pane-id')
+          const sourceWindowId = e.dataTransfer.getData('source-window-id') || 'main'
+          const dragToken = e.dataTransfer.getData('session-tab-drag-token')
+            || window.api.detach.getActiveTabDrag()
+          if (dragToken && sourceWindowId !== currentWindowId) {
+            attachDraggedSession(dragToken)
+            return
+          }
+          // Cross-window fallback: getData may return empty, use IPC token
+          if (!sessionId && dragToken) {
+            attachDraggedSession(dragToken)
+            return
+          }
           if (sessionId && sourcePaneId && sourcePaneId !== paneId) {
             usePanesStore.getState().moveSession(sourcePaneId, paneId, sessionId)
           }
         }}
       >
-        <div className="flex items-end gap-0 overflow-x-auto px-1 scrollbar-none" style={{ position: 'relative', zIndex: 1 }}>
+        {/* Scrollable tabs + buttons area */}
+        <div
+          className="flex min-w-0 flex-1 items-end gap-0 overflow-x-auto px-1 scrollbar-none"
+          style={{ position: 'relative', zIndex: 1 }}
+          onMouseDown={handleTopBarBlankMouseDown}
+          onDoubleClick={handleTopBarBlankDoubleClick}
+        >
+          {/* Project + branch badge in detached window */}
+          {isDetached && (() => {
+            const title = window.api.detach.getTitle()
+            const [projName, branchName] = title.includes('|') ? title.split('|', 2) : [title, '']
+            return (
+              <span
+                className="no-drag flex shrink-0 items-center gap-1.5 self-center mr-2 pl-2 pr-2.5 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] text-[11px] font-semibold text-[var(--color-text-secondary)]"
+                onMouseDown={handleWindowDragMouseDown}
+                onDoubleClick={handleWindowDragDoubleClick}
+              >
+                {projName}
+                {branchName && (
+                  <>
+                    <GitBranch size={11} className="text-[var(--color-text-tertiary)]" />
+                    <span className="font-normal text-[var(--color-text-tertiary)]">{branchName}</span>
+                  </>
+                )}
+              </span>
+            )
+          })()}
           {sortedSessions.map((session) => (
             <SessionTab
               key={session.id}
@@ -133,7 +300,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             ref={btnRef}
             onClick={handlePlusClick}
             className={cn(
-              'flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
+              'no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               'transition-colors duration-100',
             )}
@@ -147,7 +314,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             <button
               onClick={() => usePanesStore.getState().mergePane(paneId)}
               className={cn(
-                'flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
+                'no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
                 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-error)]/20 hover:text-[var(--color-error)]',
                 'transition-colors duration-100',
               )}
@@ -157,6 +324,23 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             </button>
           )}
         </div>
+
+        {/* Detached window controls — pushed to far right */}
+        {showDetachedWindowControls && (
+          <>
+            <div className="no-drag ml-auto flex shrink-0 items-center self-stretch">
+              <button onClick={() => window.api.detach.minimize()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
+                <Minus size={14} />
+              </button>
+              <button onClick={() => window.api.detach.maximize()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
+                <Square size={11} />
+              </button>
+              <button onClick={() => window.api.detach.close()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-error)] hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+          </>
+        )}
 
         {showNewMenu && (
           <NewSessionMenu
@@ -173,7 +357,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         ref={termAreaRef}
         className="relative flex-1 overflow-hidden bg-[var(--color-bg-primary)]"
         onDragOver={(e) => {
-          if (!e.dataTransfer.types.includes('session-tab-id')) return
+          if (!isTabDrag(e)) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
 
@@ -195,6 +379,14 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           setEdgeDrop(null)
           const sessionId = e.dataTransfer.getData('session-tab-id')
           const sourcePaneId = e.dataTransfer.getData('source-pane-id')
+          const sourceWindowId = e.dataTransfer.getData('source-window-id') || 'main'
+          const dragToken = e.dataTransfer.getData('session-tab-drag-token')
+            || window.api.detach.getActiveTabDrag()
+          // Cross-window drop
+          if (dragToken && (sourceWindowId !== currentWindowId || !sessionId)) {
+            attachDraggedSession(dragToken, zone)
+            return
+          }
           if (!sessionId || !sourcePaneId) return
           const store = usePanesStore.getState()
 

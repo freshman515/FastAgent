@@ -113,10 +113,10 @@ export function MusicPlayer(): JSX.Element {
     : 'No media'
 
   return (
-    <div className="no-drag flex items-center gap-2 pl-1.5 pr-3 py-0.5">
+    <div className="flex items-center gap-2 pl-1.5 pr-3 py-0.5">
       {/* Controls group */}
       {showControls && (
-      <div className="flex items-center gap-0.5">
+      <div className="no-drag flex items-center gap-0.5">
         {/* Prev */}
         <button
           onClick={handlePrev}
@@ -162,19 +162,15 @@ export function MusicPlayer(): JSX.Element {
       </div>
       )}
 
-      {/* Melody Visualizer */}
-      <button
-        onClick={toggleAudioCapture}
-        className="relative cursor-pointer"
-        title={audioConnected ? 'Disconnect audio visualization' : 'Connect system audio for visualization'}
-      >
+      {/* Melody Visualizer — click-through to title bar drag */}
+      <div className="relative pointer-events-none">
         <canvas ref={canvasRef} className="h-7 rounded" style={{ width: vizWidth }} />
-      </button>
+      </div>
 
       {/* Track info with artwork */}
       {showTrackInfo && (
         hasMedia ? (
-          <div className="flex items-center gap-1.5 min-w-0 max-w-[180px]">
+          <div className="no-drag flex items-center gap-1.5 min-w-0 max-w-[180px]">
             {media.artwork && (
               <img
                 src={media.artwork}

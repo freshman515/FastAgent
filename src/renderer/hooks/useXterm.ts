@@ -1,5 +1,24 @@
 import { useEffect, useRef } from 'react'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IBufferLine } from '@xterm/xterm'
+import { addTimelineEvent } from '@/components/rightpanel/SessionTimeline'
+import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/AgentMonitor'
+
+// ─── Global terminal registry for preview snapshots ───
+const terminalRegistry = new Map<string, Terminal>()
+
+export function getTerminalPreviewText(sessionId: string, lineCount = 16): string[] {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return []
+  const buf = terminal.buffer.active
+  const result: string[] = []
+  const end = buf.baseY + buf.cursorY + 1
+  const start = Math.max(0, end - lineCount)
+  for (let i = start; i < end; i++) {
+    const line = buf.getLine(i)
+    result.push(line ? line.translateToString() : '')
+  }
+  return result
+}
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -95,6 +114,7 @@ export function useXterm(
     terminal.unicode.activeVersion = '11'
     searchAddonRef.current = searchAddon
     terminal.open(container)
+    terminalRegistry.set(sessionId, terminal)
 
     // IME compositionend: clear textarea to prevent stale content
     const textarea = terminal.textarea
@@ -158,6 +178,7 @@ export function useXterm(
           useSessionsStore
             .getState()
             .updateSession(sessionId, { ptyId, status: 'running', initialized: true })
+          addTimelineEvent(sessionId, 'start', `Session started (${sessionType})`)
 
           requestAnimationFrame(() => {
             if (!destroyed) {
@@ -174,6 +195,7 @@ export function useXterm(
     const offData = window.api.session.onData((event) => {
       if (event.ptyId && event.ptyId === ptyId) {
         terminal.write(event.data)
+        trackSessionOutput(sessionId, event.data.length)
       }
     })
 
@@ -181,17 +203,11 @@ export function useXterm(
     const offExit = window.api.session.onExit((event) => {
       if (event.ptyId && event.ptyId === ptyId) {
         ptyId = null
-        // For agent sessions, auto-remove from pane and session store
-        if (sessionType !== 'terminal') {
-          const paneId = usePanesStore.getState().findPaneForSession(sessionId)
-          if (paneId) usePanesStore.getState().removeSessionFromPane(paneId, sessionId)
-          useSessionsStore.getState().removeSession(sessionId)
-        } else {
-          terminal.write(
-            `\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`,
-          )
-          useSessionsStore.getState().updateStatus(sessionId, 'stopped')
-        }
+        terminal.write(
+          `\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`,
+        )
+        useSessionsStore.getState().updateStatus(sessionId, 'stopped')
+        addTimelineEvent(sessionId, 'stop', `Exited with code ${event.exitCode}`)
       }
     })
 
@@ -244,6 +260,10 @@ export function useXterm(
     const onDataDisposable = terminal.onData((data) => {
       if (ptyId) {
         window.api.session.write(ptyId, data)
+        if (data === '\r' || data === '\n') {
+          trackSessionInput(sessionId)
+          addTimelineEvent(sessionId, 'input', 'User input')
+        }
       }
     })
 
@@ -268,6 +288,7 @@ export function useXterm(
 
     return () => {
       destroyed = true
+      terminalRegistry.delete(sessionId)
       terminalRef.current = null
       fitAddonRef.current = null
       searchAddonRef.current = null

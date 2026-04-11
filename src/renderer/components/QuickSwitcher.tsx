@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { switchProjectContext } from '@/lib/project-context'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import claudeIcon from '@/assets/icons/Claude.png'
@@ -23,9 +24,7 @@ export function QuickSwitcher(): JSX.Element | null {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const sessions = useSessionsStore((s) => s.sessions)
-  const setActive = useSessionsStore((s) => s.setActive)
   const projects = useProjectsStore((s) => s.projects)
-  const selectProject = useProjectsStore((s) => s.selectProject)
 
   const items = useMemo(() => {
     return sessions.map((s) => {
@@ -68,11 +67,10 @@ export function QuickSwitcher(): JSX.Element | null {
     (idx: number) => {
       const item = filtered[idx]
       if (!item) return
-      selectProject(item.session.projectId)
-      setActive(item.session.id)
+      switchProjectContext(item.session.projectId, item.session.id, item.session.worktreeId ?? null)
       setOpen(false)
     },
-    [filtered, selectProject, setActive],
+    [filtered],
   )
 
   const handleKeyDown = useCallback(

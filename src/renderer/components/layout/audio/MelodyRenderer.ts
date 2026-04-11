@@ -4,11 +4,11 @@ const MAX_PARTICLES = 40
 
 // ─── Bars: Adaptive Density ───
 
-const BAR_WIDTH = 3
-const BAR_GAP = 1.5
-const BAR_PITCH = BAR_WIDTH + BAR_GAP
+const BAR_MIN_WIDTH = 3
+const BAR_MIN_GAP = 1
+const TARGET_BAR_PITCH = 5
 const MIN_BARS = 8
-const MAX_BARS = 200
+const MAX_BARS = 72
 const SMOOTH_BUFFER_SIZE = MAX_BARS
 
 // ─── Ribbon: Overshoot ───
@@ -170,15 +170,17 @@ export class MelodyRenderer {
     ctx.clearRect(0, 0, w, h)
 
     if (this.mode === 'bars') {
-      const barCount = computeBarCount(w)
+      const { count, barWidth, slotWidth } = computeBarsLayout(w)
       const maxH = h - 2
-      for (let i = 0; i < barCount; i++) {
+      for (let i = 0; i < count; i++) {
         this.smoothBars[i] += (0 - this.smoothBars[i]) * 0.06
         if (this.smoothBars[i] < 0.005) this.smoothBars[i] = 0
-        const barH = Math.max(1, this.smoothBars[i] * maxH)
-        const x = i * BAR_PITCH
+        const val = this.smoothBars[i]
+        if (val <= 0.01) continue
+        const barH = Math.max(1.25, val * maxH)
+        const x = i * slotWidth + (slotWidth - barWidth) / 2
         ctx.fillStyle = 'hsla(200, 30%, 50%, 0.15)'
-        ctx.fillRect(x, h - barH, BAR_WIDTH, barH)
+        ctx.fillRect(x, h - barH, barWidth, barH)
       }
     } else {
       for (let li = 0; li < RIBBON_LAYERS.length; li++) {
@@ -492,25 +494,29 @@ export class MelodyRenderer {
     const { spectrum, bass, beat } = features
     const { hue, bassImpact } = params
 
-    const barCount = computeBarCount(w)
+    const { count: barCount, barWidth, slotWidth } = computeBarsLayout(w)
     const maxH = h - 2
-    const step = spectrum.length / barCount
+    const maxSpectrumIndex = Math.max(0, spectrum.length - 1)
+    const center = (barCount - 1) / 2
 
     for (let i = 0; i < barCount; i++) {
-      const srcIdx = i * step
+      const distanceFromCenter = center > 0 ? Math.abs(i - center) / center : 0
+      const frequencyT = Math.pow(distanceFromCenter, 1.25)
+      const centerBias = 1 - distanceFromCenter
+      const srcIdx = frequencyT * maxSpectrumIndex
       const lo = Math.floor(srcIdx)
-      const hi = Math.min(lo + 1, spectrum.length - 1)
+      const hi = Math.min(lo + 1, maxSpectrumIndex)
       const frac = srcIdx - lo
       const raw = (spectrum[lo] ?? 0) * (1 - frac) + (spectrum[hi] ?? 0) * frac
       const target = Math.min(1, raw)
 
-      const t = i / barCount
+      const t = barCount > 1 ? i / (barCount - 1) : 0
       let attack: number
       let release: number
-      if (t < 0.3) {
+      if (frequencyT < 0.3) {
         attack = 0.25
         release = 0.06
-      } else if (t < 0.65) {
+      } else if (frequencyT < 0.65) {
         attack = 0.45
         release = 0.12
       } else {
@@ -525,29 +531,30 @@ export class MelodyRenderer {
       }
 
       const val = this.smoothBars[i]
-      const barH = Math.max(1, val * maxH)
-      const x = i * BAR_PITCH
+      if (val <= 0.012) continue
+      const barH = Math.max(1.25, val * maxH)
+      const x = i * slotWidth + (slotWidth - barWidth) / 2
       const y = h - barH
 
-      const barHue = hue + t * 60
+      const barHue = hue + frequencyT * 60
       const lightness = 50 + val * 20
       const alpha = 0.55 + val * 0.45
 
-      if (beat && t < 0.3) {
+      if (beat && centerBias > 0.68) {
         ctx.save()
         ctx.shadowBlur = 8 + bassImpact * 6
         ctx.shadowColor = `hsla(${barHue}, 85%, 60%, ${alpha * 0.7})`
         ctx.fillStyle = `hsla(${barHue}, 85%, ${lightness + 10}%, ${Math.min(1, alpha + 0.2)})`
-        ctx.fillRect(x, y, BAR_WIDTH, barH)
+        ctx.fillRect(x, y, barWidth, barH)
         ctx.restore()
       } else {
         ctx.fillStyle = `hsla(${barHue}, 75%, ${lightness}%, ${alpha})`
-        ctx.fillRect(x, y, BAR_WIDTH, barH)
+        ctx.fillRect(x, y, barWidth, barH)
       }
 
       if (barH > 3) {
         ctx.fillStyle = `hsla(${barHue}, 90%, 80%, ${0.6 + val * 0.4})`
-        ctx.fillRect(x, y, BAR_WIDTH, 1.5)
+        ctx.fillRect(x, y, barWidth, 1.5)
       }
     }
 
@@ -564,8 +571,12 @@ export class MelodyRenderer {
 
 // ── Helpers ──
 
-function computeBarCount(w: number): number {
-  return Math.max(MIN_BARS, Math.min(MAX_BARS, Math.floor(w / BAR_PITCH)))
+function computeBarsLayout(w: number): { count: number; barWidth: number; slotWidth: number } {
+  const count = Math.max(MIN_BARS, Math.min(MAX_BARS, Math.floor(w / TARGET_BAR_PITCH)))
+  const slotWidth = w / count
+  const gap = Math.max(BAR_MIN_GAP, Math.min(2.5, slotWidth * 0.22))
+  const barWidth = Math.max(BAR_MIN_WIDTH, slotWidth - gap)
+  return { count, barWidth, slotWidth }
 }
 
 function clampIdx(i: number, len: number): number {

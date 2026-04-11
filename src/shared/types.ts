@@ -37,6 +37,8 @@ export interface Session {
   createdAt: number
   updatedAt: number
   worktreeId?: string   // bound to specific worktree; undefined = main worktree
+  color?: string        // color tag for visual grouping (hex)
+  label?: string        // short label (e.g. "前端", "API")
 }
 
 // ─── IPC Types ───

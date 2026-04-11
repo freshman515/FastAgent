@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Shield, Check, X, ArrowRight } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { switchProjectContext } from '@/lib/project-context'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
@@ -66,11 +67,7 @@ export function PermissionDialog(): JSX.Element {
     const projectsStore = useProjectsStore.getState()
     const paneStore = usePanesStore.getState()
     if (projectsStore.selectedProjectId !== session.projectId) {
-      projectsStore.selectProject(session.projectId)
-      const projectSessions = useSessionsStore.getState().sessions
-        .filter((s) => s.projectId === session.projectId)
-        .map((s) => s.id)
-      paneStore.switchProject(session.projectId, projectSessions, entry.sessionId)
+      switchProjectContext(session.projectId, entry.sessionId, session.worktreeId ?? null)
     }
     const paneId = paneStore.findPaneForSession(entry.sessionId)
     if (paneId) {

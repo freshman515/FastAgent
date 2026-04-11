@@ -52,7 +52,7 @@ export function TitleBar(): JSX.Element | null {
           {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
         </button>
         <Zap size={14} className="text-[var(--color-accent)]" />
-        <span className="text-xs font-medium text-[var(--color-text-secondary)]">FastAgents</span>
+        <span className="text-sm font-semibold text-[var(--color-text-secondary)]">FastAgents</span>
       </div>
 
       {/* Center: Music player or Project name */}
@@ -63,16 +63,16 @@ export function TitleBar(): JSX.Element | null {
           ) : (
             <div className="px-3">
               {selectedProject ? (
-                <span className="max-w-[260px] truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                <span className="max-w-[260px] truncate text-base font-semibold text-[var(--color-text-primary)]">
                   {selectedProject.name}
                   {selectedWorktree && !selectedWorktree.isMain && (
-                    <span className="ml-1.5 text-xs font-normal text-[var(--color-text-tertiary)]">
+                    <span className="ml-1.5 text-sm font-normal text-[var(--color-text-tertiary)]">
                       / {selectedWorktree.branch}
                     </span>
                   )}
                 </span>
               ) : (
-                <span className="text-xs text-[var(--color-text-tertiary)]">No project selected</span>
+                <span className="text-sm text-[var(--color-text-tertiary)]">No project selected</span>
               )}
             </div>
           )}

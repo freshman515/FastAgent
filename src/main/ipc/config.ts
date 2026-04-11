@@ -7,6 +7,9 @@ export function registerConfigHandlers(): void {
   })
 
   ipcMain.handle('config:write', (_event, key: string, value: unknown) => {
-    writeConfig(key as 'groups' | 'projects' | 'sessions' | 'ui', value)
+    writeConfig(
+      key as 'groups' | 'projects' | 'sessions' | 'worktrees' | 'templates' | 'activeTasks' | 'ui' | 'panes',
+      value,
+    )
   })
 }

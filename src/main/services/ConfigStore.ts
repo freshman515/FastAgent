@@ -9,6 +9,9 @@ interface ConfigData {
   groups: unknown[]
   projects: unknown[]
   sessions: unknown[]
+  worktrees: unknown[]
+  templates: unknown[]
+  activeTasks: unknown[]
   ui: Record<string, unknown>
   panes: Record<string, unknown>
 }
@@ -17,6 +20,9 @@ const DEFAULT_DATA: ConfigData = {
   groups: [],
   projects: [],
   sessions: [],
+  worktrees: [],
+  templates: [],
+  activeTasks: [],
   ui: {},
   panes: {},
 }
@@ -46,6 +52,9 @@ export function readConfig(): ConfigData {
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
       projects: Array.isArray(parsed.projects) ? parsed.projects : [],
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+      worktrees: Array.isArray(parsed.worktrees) ? parsed.worktrees : [],
+      templates: Array.isArray(parsed.templates) ? parsed.templates : [],
+      activeTasks: Array.isArray(parsed.activeTasks) ? parsed.activeTasks : [],
       ui: parsed.ui && typeof parsed.ui === 'object' ? parsed.ui : {},
       panes: parsed.panes && typeof parsed.panes === 'object' ? parsed.panes : {},
     }

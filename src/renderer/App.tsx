@@ -1,11 +1,14 @@
 import { TitleBar } from '@/components/layout/TitleBar'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MainPanel } from '@/components/layout/MainPanel'
+import { StatusBar } from '@/components/layout/StatusBar'
+import { RightPanel } from '@/components/layout/RightPanel'
 import { ToastContainer } from '@/components/notification/ToastContainer'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { DetachedApp } from '@/DetachedApp'
+import { switchProjectContext } from '@/lib/project-context'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
@@ -28,17 +31,39 @@ export function App(): JSX.Element {
   // Load config from file on startup
   useEffect(() => {
     window.api.config.read().then((data) => {
+      const rawWorktrees = (data as Record<string, unknown>).worktrees as unknown[] ?? []
+      const validWorktreeIds = new Set(
+        (Array.isArray(rawWorktrees) ? rawWorktrees : [])
+          .map((worktree) => (worktree && typeof worktree === 'object' && typeof (worktree as { id?: unknown }).id === 'string')
+            ? (worktree as { id: string }).id
+            : null)
+          .filter((id): id is string => id !== null),
+      )
+
+      const rawSessions = Array.isArray(data.sessions) ? data.sessions : []
+      const sanitizedSessions = rawSessions.filter((session) => {
+        if (!session || typeof session !== 'object') return true
+        const worktreeId = (session as { worktreeId?: unknown }).worktreeId
+        return typeof worktreeId !== 'string' || validWorktreeIds.has(worktreeId)
+      })
+      const removedInvalidSessions = sanitizedSessions.length !== rawSessions.length
+
       useGroupsStore.getState()._loadFromConfig(data.groups)
       useProjectsStore.getState()._loadFromConfig(data.projects)
-      useSessionsStore.getState()._loadFromConfig(data.sessions)
+      useSessionsStore.getState()._loadFromConfig(sanitizedSessions)
       useUIStore.getState()._loadSettings(data.ui)
       useTemplatesStore.getState()._loadFromConfig((data as Record<string, unknown>).templates as unknown[] ?? [])
       useTasksStore.getState()._loadFromConfig({ activeTasks: (data as Record<string, unknown>).activeTasks as unknown[] ?? [] })
-      useWorktreesStore.getState()._loadFromConfig((data as Record<string, unknown>).worktrees as unknown[] ?? [])
+      useWorktreesStore.getState()._loadFromConfig(rawWorktrees)
 
       // Restore pane layout if saved
-      if (data.panes && typeof data.panes === 'object') {
+      if (!removedInvalidSessions && data.panes && typeof data.panes === 'object') {
         usePanesStore.getState().loadFromConfig(data.panes as Record<string, unknown>)
+      }
+
+      if (removedInvalidSessions) {
+        window.api.config.write('sessions', sanitizedSessions)
+        window.api.config.write('panes', {})
       }
 
       // Auto-select the project of the first active session
@@ -67,11 +92,7 @@ export function App(): JSX.Element {
 
     // Switch project (restores pane layout) if needed
     if (projectsStore.selectedProjectId !== session.projectId) {
-      projectsStore.selectProject(session.projectId)
-      const projectSessions = useSessionsStore.getState().sessions
-        .filter((s) => s.projectId === session.projectId)
-        .map((s) => s.id)
-      paneStore.switchProject(session.projectId, projectSessions, sessionId)
+      switchProjectContext(session.projectId, sessionId, session.worktreeId ?? null)
     }
 
     // Now find and activate the session in the restored pane layout
@@ -289,7 +310,13 @@ export function App(): JSX.Element {
         <div className="flex-1 overflow-hidden">
           <MainPanel />
         </div>
+
+        {/* Right panel */}
+        <RightPanel />
       </div>
+
+      {/* Status bar */}
+      <StatusBar />
 
       {/* Settings dialog */}
       <SettingsDialog />

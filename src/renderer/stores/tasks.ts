@@ -28,6 +28,7 @@ function sanitizeActiveTask(t: unknown): ActiveTask | null {
 }
 
 function persist(activeTasks: ActiveTask[]): void {
+  if (window.api.detach.isDetached) return
   window.api.config.write('activeTasks', activeTasks)
 }
 

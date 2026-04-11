@@ -21,6 +21,7 @@ function basename(filePath: string): string {
 }
 
 function persist(projects: Project[]): void {
+  if (window.api.detach.isDetached) return
   window.api.config.write('projects', projects)
 }
 

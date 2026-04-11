@@ -37,6 +37,7 @@ function sanitizeTemplate(t: unknown): SessionTemplate | null {
 }
 
 function persist(templates: SessionTemplate[]): void {
+  if (window.api.detach.isDetached) return
   window.api.config.write('templates', templates)
 }
 

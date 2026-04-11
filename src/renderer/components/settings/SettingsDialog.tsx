@@ -1,8 +1,10 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore, type AppSettings } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
+import { useSessionsStore } from '@/stores/sessions'
+import { usePanesStore } from '@/stores/panes'
 import { TemplatesPage } from './TemplatesPage'
 
 type SettingsPage = 'general' | 'appearance' | 'terminal' | 'templates'
@@ -301,6 +303,41 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       />
         </>
       )}
+
+      {/* Clear all sessions */}
+      <div className="h-px bg-[var(--color-border)]" />
+      <div className="flex items-center gap-2 mb-1">
+        <Trash2 size={14} className="text-[var(--color-error)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          Data
+        </span>
+      </div>
+      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Clear all session tabs and pane layouts. Projects and groups are preserved.
+      </p>
+      <button
+        onClick={() => {
+          // Kill all PTYs
+          const sessions = useSessionsStore.getState().sessions
+          for (const s of sessions) {
+            if (s.ptyId) window.api.session.kill(s.ptyId).catch(() => {})
+          }
+          // Reset stores
+          useSessionsStore.setState({ sessions: [], activeSessionId: null, outputStates: {}, closedStack: [] })
+          usePanesStore.getState().initPane([], null)
+          // Persist
+          window.api.config.write('sessions', [])
+          window.api.config.write('panes', {})
+        }}
+        className={cn(
+          'flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-error)]/30 px-4 py-2',
+          'text-[var(--ui-font-sm)] text-[var(--color-error)]',
+          'hover:bg-[var(--color-error)]/10 transition-colors',
+        )}
+      >
+        <Trash2 size={13} />
+        Clear All Sessions
+      </button>
     </div>
   )
 }

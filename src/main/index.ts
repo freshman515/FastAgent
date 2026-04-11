@@ -66,6 +66,10 @@ app.whenReady().then(() => {
   const detachedSessionData = new Map<string, unknown[]>()
   // Track live session IDs per detached window (updated by the detached renderer)
   const detachedSessionIds = new Map<string, string[]>()
+  const tabDragState = new Map<string, {
+    payload: unknown
+    targetWindowId: string | null
+  }>()
 
   ipcMain.handle('detach:get-sessions', (_event, windowId: string) => {
     return detachedSessionData.get(windowId) ?? []
@@ -77,6 +81,40 @@ app.whenReady().then(() => {
 
   ipcMain.handle('detach:update-sessions', (_event, windowId: string, sessions: unknown[]) => {
     detachedSessionData.set(windowId, sessions)
+  })
+
+  ipcMain.on('detach:tab-drag-register', (event, token: string, payload: unknown) => {
+    tabDragState.set(token, { payload, targetWindowId: null })
+    event.returnValue = true
+  })
+
+  ipcMain.on('detach:tab-drag-claim', (event, token: string, targetWindowId: string) => {
+    const entry = tabDragState.get(token)
+    if (!entry) {
+      event.returnValue = null
+      return
+    }
+    entry.targetWindowId = targetWindowId
+    tabDragState.set(token, entry)
+    event.returnValue = entry.payload
+  })
+
+  ipcMain.on('detach:tab-drag-get-active', (event) => {
+    // Return the most recently registered (unclaimed) drag token
+    let activeToken: string | null = null
+    for (const [token, entry] of tabDragState) {
+      if (entry.targetWindowId === null) activeToken = token
+    }
+    event.returnValue = activeToken
+  })
+
+  ipcMain.on('detach:tab-drag-finish', (event, token: string) => {
+    const entry = tabDragState.get(token)
+    tabDragState.delete(token)
+    event.returnValue = {
+      claimed: entry?.targetWindowId !== null,
+      targetWindowId: entry?.targetWindowId ?? null,
+    }
   })
 
   ipcMain.handle('detach:create', (_event, sessionIds: string[], title: string, sessionData: unknown[], position?: { x: number; y: number }, size?: { width: number; height: number }) => {
@@ -139,6 +177,15 @@ app.whenReady().then(() => {
 
   ipcMain.handle('detach:close', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close()
+  })
+
+  ipcMain.handle('detach:set-position', (event, x: number, y: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    if (win.isMaximized()) {
+      win.unmaximize()
+    }
+    win.setPosition(Math.round(x), Math.round(y))
   })
 
   // Start hook server and register Claude Code hooks

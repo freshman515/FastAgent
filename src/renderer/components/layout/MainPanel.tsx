@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/session/EmptyState'
 export function MainPanel(): JSX.Element {
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectedWorktreeId = useWorktreesStore((s) => s.selectedWorktreeId)
+  const worktreesLoaded = useWorktreesStore((s) => s._loaded)
   const worktrees = useWorktreesStore((s) => s.worktrees)
   const sessions = useSessionsStore((s) => s.sessions)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
@@ -18,10 +19,16 @@ export function MainPanel(): JSX.Element {
   // an explicit switch that already restored the correct layout.
   useEffect(() => {
     if (!selectedProjectId) return
+    if (!worktreesLoaded) return
 
-    const selectedWorktree = selectedWorktreeId
-      ? worktrees.find((w) => w.id === selectedWorktreeId && w.projectId === selectedProjectId)
+    const projectWorktrees = worktrees.filter((w) => w.projectId === selectedProjectId)
+    const mainWorktree = projectWorktrees.find((w) => w.isMain)
+    const layoutWorktree = currentLayoutKey
+      ? projectWorktrees.find((w) => w.id === currentLayoutKey)
       : undefined
+    const selectedWorktree = selectedWorktreeId
+      ? projectWorktrees.find((w) => w.id === selectedWorktreeId)
+      : (layoutWorktree ?? mainWorktree)
 
     if (selectedWorktree) {
       const worktreeSessionIds = sessions
@@ -58,7 +65,8 @@ export function MainPanel(): JSX.Element {
         nextActiveSessionId,
       )
     }
-  }, [selectedProjectId, selectedWorktreeId, worktrees, sessions, activeSessionId, currentLayoutKey])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on project/worktree switch, not on session changes
+  }, [selectedProjectId, selectedWorktreeId, currentLayoutKey, worktreesLoaded, worktrees])
 
   // Dynamic window title
   const activeSession = sessions.find((s) => s.id === activeSessionId)

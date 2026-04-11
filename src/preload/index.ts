@@ -99,6 +99,16 @@ const api = {
     }>>,
     addWorktree: (cwd: string, path: string, branch: string) => ipcRenderer.invoke('git:worktree-add', cwd, path, branch) as Promise<void>,
     removeWorktree: (cwd: string, path: string) => ipcRenderer.invoke('git:worktree-remove', cwd, path) as Promise<void>,
+    status: (path: string) => ipcRenderer.invoke('git:file-status', path) as Promise<Array<{ path: string; status: string; staged: boolean }>>,
+    diff: (cwd: string, filePath: string) => ipcRenderer.invoke('git:diff', cwd, filePath) as Promise<string>,
+    stage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:stage', cwd, filePath) as Promise<void>,
+    unstage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:unstage', cwd, filePath) as Promise<void>,
+    commit: (cwd: string, message: string) => ipcRenderer.invoke('git:commit', cwd, message) as Promise<void>,
+    discard: (cwd: string, filePath: string) => ipcRenderer.invoke('git:discard', cwd, filePath) as Promise<void>,
+  },
+
+  fs: {
+    readDir: (path: string) => ipcRenderer.invoke('fs:read-dir', path) as Promise<Array<{ name: string; isDir: boolean }>>,
   },
 
   media: {
@@ -122,6 +132,9 @@ const api = {
         groups: unknown[]
         projects: unknown[]
         sessions: unknown[]
+        worktrees?: unknown[]
+        templates?: unknown[]
+        activeTasks?: unknown[]
         ui: Record<string, unknown>
         panes?: Record<string, unknown>
       }>,
@@ -157,6 +170,7 @@ const api = {
     minimize: () => ipcRenderer.invoke('detach:minimize'),
     maximize: () => ipcRenderer.invoke('detach:maximize'),
     close: () => ipcRenderer.invoke('detach:close'),
+    setPosition: (x: number, y: number) => ipcRenderer.invoke('detach:set-position', x, y),
     onClosed: (callback: (data: { id: string; sessionIds: string[]; sessions: Session[] }) => void) => {
       const handler = (_: unknown, data: { id: string; sessionIds: string[]; sessions: Session[] }) => callback(data)
       ipcRenderer.on('detach:closed', handler)
@@ -168,6 +182,18 @@ const api = {
       ipcRenderer.invoke('detach:update-session-ids', windowId, sessionIds),
     updateSessions: (windowId: string, sessions: Session[]) =>
       ipcRenderer.invoke('detach:update-sessions', windowId, sessions),
+    registerTabDrag: (token: string, payload: { session: Session; sourcePaneId: string; sourceWindowId: string }) =>
+      ipcRenderer.sendSync('detach:tab-drag-register', token, payload) as boolean,
+    claimTabDrag: (token: string, targetWindowId: string) =>
+      ipcRenderer.sendSync('detach:tab-drag-claim', token, targetWindowId) as
+        | { session: Session; sourcePaneId: string; sourceWindowId: string }
+        | null,
+    finishTabDrag: (token: string) =>
+      ipcRenderer.sendSync('detach:tab-drag-finish', token) as
+        | { claimed: boolean; targetWindowId: string | null }
+        | null,
+    getActiveTabDrag: () =>
+      ipcRenderer.sendSync('detach:tab-drag-get-active') as string | null,
     getWindowId: () => new URLSearchParams(window.location.search).get('windowId') ?? '',
     isDetached: new URLSearchParams(window.location.search).get('detached') === 'true',
     getSessionIds: () => {

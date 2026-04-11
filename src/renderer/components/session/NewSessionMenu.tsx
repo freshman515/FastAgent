@@ -1,9 +1,9 @@
 import { useCallback } from 'react'
 import type { SessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
-import { useWorktreesStore } from '@/stores/worktrees'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
@@ -37,7 +37,7 @@ export function NewSessionMenu({ projectId, paneId, onClose, position }: NewSess
 
   const handleSelect = useCallback(
     (type: SessionType) => {
-      const worktreeId = useWorktreesStore.getState().selectedWorktreeId ?? undefined
+      const worktreeId = getDefaultWorktreeIdForProject(projectId)
       const id = addSession(projectId, type, worktreeId)
       const targetPane = paneId ?? usePanesStore.getState().activePaneId
       addSessionToPane(targetPane, id)
