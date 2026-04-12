@@ -9,6 +9,8 @@ import { usePanesStore } from '@/stores/panes'
 import { useProjectSearchStore } from '@/stores/search'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { defineMonacoTheme, MONACO_THEME_NAME } from '@/lib/monacoTheme'
+import { registerEnhancedCSharpLanguage } from '@/lib/csharpLanguage'
 
 // Configure Monaco workers for Vite
 self.MonacoEnvironment = {
@@ -21,56 +23,17 @@ self.MonacoEnvironment = {
   },
 }
 
-// Define theme once
-let themeRegistered = false
-function ensureTheme(): void {
-  if (themeRegistered) return
-  themeRegistered = true
-  monaco.editor.defineTheme('fastagents-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '5e5e66', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'c084fc' },
-      { token: 'string', foreground: '3ecf7b' },
-      { token: 'number', foreground: 'f0a23b' },
-      { token: 'type', foreground: '45c8c8' },
-      { token: 'function', foreground: '5fa0f5' },
-      { token: 'variable', foreground: 'e8e8ec' },
-      { token: 'operator', foreground: 'ef5757' },
-    ],
-    colors: {
-      'editor.background': '#1a1a1e',
-      'editor.foreground': '#e8e8ec',
-      'editor.lineHighlightBackground': '#222226',
-      'editor.selectionBackground': '#7c6aef40',
-      'editor.inactiveSelectionBackground': '#7c6aef20',
-      'editorCursor.foreground': '#7c6aef',
-      'editorLineNumber.foreground': '#5e5e66',
-      'editorLineNumber.activeForeground': '#8e8e96',
-      'editor.selectionHighlightBackground': '#7c6aef20',
-      'editorIndentGuide.background': '#2a2a2e',
-      'editorIndentGuide.activeBackground': '#333338',
-      'editorBracketMatch.background': '#7c6aef25',
-      'editorBracketMatch.border': '#7c6aef60',
-      'scrollbarSlider.background': '#3333384d',
-      'scrollbarSlider.hoverBackground': '#44444966',
-      'scrollbarSlider.activeBackground': '#55555580',
-      'editorWidget.background': '#222226',
-      'editorWidget.border': '#333338',
-      'editorSuggestWidget.background': '#222226',
-      'editorSuggestWidget.border': '#333338',
-      'editorSuggestWidget.selectedBackground': '#7c6aef30',
-      'editorGutter.background': '#1a1a1e',
-      'minimap.background': '#1a1a1e',
-      'diffEditor.insertedTextBackground': '#3ecf7b18',
-      'diffEditor.removedTextBackground': '#ef575718',
-    },
-  })
+// Define theme once per terminal theme name
+let lastAppliedTheme = ''
+function ensureTheme(terminalThemeName: string): void {
+  registerEnhancedCSharpLanguage()
+  if (lastAppliedTheme === terminalThemeName) return
+  lastAppliedTheme = terminalThemeName
+  defineMonacoTheme(terminalThemeName)
 }
 
 const BASE_EDITOR_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
-  theme: 'fastagents-dark',
+  theme: MONACO_THEME_NAME,
   scrollBeyondLastLine: false,
   smoothScrolling: true,
   cursorBlinking: 'smooth',
@@ -138,16 +101,7 @@ export function clearPendingSend(): void {
 function buildSelectionInfo(
   selection: monaco.Selection | null,
   model: monaco.editor.ITextModel | null,
-): {
-  lines: number
-  chars: number
-  startLine: number
-  startColumn: number
-  endLine: number
-  endColumn: number
-  isEmpty: boolean
-  text: string
-} | null {
+): EditorCursorInfo['selection'] {
   if (!selection || !model || selection.isEmpty()) return null
   const text = model.getValueInRange(selection)
   return {
@@ -160,6 +114,16 @@ function buildSelectionInfo(
     isEmpty: false,
     text,
   }
+}
+
+function buildSelectionsInfo(
+  selections: monaco.Selection[] | null,
+  model: monaco.editor.ITextModel | null,
+): NonNullable<EditorCursorInfo['selections']> {
+  if (!selections || !model) return []
+  return selections
+    .map((selection) => buildSelectionInfo(selection, model))
+    .filter((selection): selection is NonNullable<EditorCursorInfo['selection']> => selection !== null)
 }
 
 function buildSelectionPrompt(
@@ -214,6 +178,10 @@ function buildSelectedLineRange(
 function formatDetailedCodePath(filePath: string, range: { startLine: number; endLine: number }): string {
   if (range.startLine === range.endLine) return `${filePath}:L${range.startLine}`
   return `${filePath}:L${range.startLine}-L${range.endLine}`
+}
+
+function normalizeEditorFilePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
 type AddToast = ReturnType<typeof useUIStore.getState>['addToast']
@@ -412,6 +380,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const tab = useEditorsStore((s) => s.tabs.find((t) => t.id === editorTabId))
   const setModified = useEditorsStore((s) => s.setModified)
   const setCursorInfo = useEditorsStore((s) => s.setCursorInfo)
+  const setLastFocusedTabId = useEditorsStore((s) => s.setLastFocusedTabId)
   const navigationTarget = useEditorsStore((s) => s.navigationTargets[editorTabId] ?? null)
   const clearNavigationTarget = useEditorsStore((s) => s.clearNavigationTarget)
   const editorFontFamily = useUIStore((s) => s.settings.editorFontFamily)
@@ -421,6 +390,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const editorLineNumbers = useUIStore((s) => s.settings.editorLineNumbers)
   const editorStickyScroll = useUIStore((s) => s.settings.editorStickyScroll)
   const editorFontLigatures = useUIStore((s) => s.settings.editorFontLigatures)
+  const terminalTheme = useUIStore((s) => s.settings.terminalTheme)
   const addToast = useUIStore((s) => s.addToast)
   const projectPath = useProjectsStore((s) => s.projects.find((p) => p.id === s.selectedProjectId)?.path ?? null)
   const selectedWorktreePath = useWorktreesStore((s) =>
@@ -453,7 +423,8 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     if (!container || !tab) return
 
     let disposed = false
-    ensureTheme()
+    let fileSavedListener: ((event: Event) => void) | null = null
+    ensureTheme(useUIStore.getState().settings.terminalTheme)
 
     const persistEditorValue = async (nextContent: string): Promise<void> => {
       await window.api.fs.writeFile(tab.filePath, nextContent)
@@ -463,6 +434,10 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
         detail: { filePath: tab.filePath },
       }))
     }
+
+    const isCurrentTabFile = (filePath: string): boolean => (
+      normalizeEditorFilePath(filePath) === normalizeEditorFilePath(tab.filePath)
+    )
 
     if (tab.isDiff) {
       // ── Diff editor ──
@@ -501,7 +476,9 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           const position = selection.getPosition()
           const model = modEditor.getModel()
           const selectionInfo = buildSelectionInfo(selection, model)
-          setCursorInfo({ line: position.lineNumber, column: position.column, selection: selectionInfo })
+          const selections = buildSelectionsInfo(modEditor.getSelections(), model)
+          setLastFocusedTabId(editorTabId)
+          setCursorInfo({ line: position.lineNumber, column: position.column, selection: selectionInfo, selections })
           window.api.ide.selectionChanged({
             text: selectionInfo?.text ?? '',
             filePath: tab.filePath,
@@ -556,18 +533,28 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
         registerEditorContextActions(modEditor, contextMenuEditorRef, setEditorContextMenu)
 
+        const syncModifiedEditorFromDisk = (): void => {
+          void window.api.fs.readFile(tab.filePath).then((diskContent) => {
+            if (disposed) return
+            if (diskContent === savedContentRef.current || get().modified) return
+            savedContentRef.current = diskContent
+            const viewState = modEditor.saveViewState()
+            modifiedModel.setValue(diskContent)
+            if (viewState) modEditor.restoreViewState(viewState)
+          }).catch(() => {})
+        }
+
         watchTimerRef.current = setInterval(() => {
           if (disposed) return
-          window.api.fs.readFile(tab.filePath).then((diskContent) => {
-            if (disposed) return
-            if (diskContent !== savedContentRef.current && !get().modified) {
-              savedContentRef.current = diskContent
-              const pos = modEditor.getPosition()
-              modifiedModel.setValue(diskContent)
-              if (pos) modEditor.setPosition(pos)
-            }
-          }).catch(() => {})
+          syncModifiedEditorFromDisk()
         }, 3000)
+
+        fileSavedListener = (event: Event) => {
+          const filePath = (event as CustomEvent<{ filePath?: string }>).detail?.filePath
+          if (!filePath || !isCurrentTabFile(filePath)) return
+          syncModifiedEditorFromDisk()
+        }
+        window.addEventListener('fastagents:file-saved', fileSavedListener as EventListener)
 
         setLoading(false)
       }).catch((err) => { if (!disposed) setError(String(err)) })
@@ -601,7 +588,9 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           const selection = e.selection
           const position = selection.getPosition()
           const selectionInfo = buildSelectionInfo(selection, editor.getModel())
-          setCursorInfo({ line: position.lineNumber, column: position.column, selection: selectionInfo })
+          const selections = buildSelectionsInfo(editor.getSelections(), editor.getModel())
+          setLastFocusedTabId(editorTabId)
+          setCursorInfo({ line: position.lineNumber, column: position.column, selection: selectionInfo, selections })
           window.api.ide.selectionChanged({
             text: selectionInfo?.text ?? '',
             filePath: tab.filePath,
@@ -652,20 +641,29 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
         registerEditorContextActions(editor, contextMenuEditorRef, setEditorContextMenu)
 
+        const syncEditorFromDisk = (): void => {
+          void window.api.fs.readFile(tab.filePath).then((diskContent) => {
+            if (disposed) return
+            if (diskContent === savedContentRef.current || get().modified) return
+            savedContentRef.current = diskContent
+            const viewState = editor.saveViewState()
+            editor.setValue(diskContent)
+            if (viewState) editor.restoreViewState(viewState)
+          }).catch(() => {})
+        }
+
         // File watch: auto-reload on external change
         watchTimerRef.current = setInterval(() => {
           if (disposed) return
-          window.api.fs.readFile(tab.filePath).then((diskContent) => {
-            if (disposed) return
-            // Only auto-sync if the user hasn't modified the file
-            if (diskContent !== savedContentRef.current && !get().modified) {
-              savedContentRef.current = diskContent
-              const pos = editor.getPosition()
-              editor.setValue(diskContent)
-              if (pos) editor.setPosition(pos)
-            }
-          }).catch(() => {})
+          syncEditorFromDisk()
         }, 3000)
+
+        fileSavedListener = (event: Event) => {
+          const filePath = (event as CustomEvent<{ filePath?: string }>).detail?.filePath
+          if (!filePath || !isCurrentTabFile(filePath)) return
+          syncEditorFromDisk()
+        }
+        window.addEventListener('fastagents:file-saved', fileSavedListener as EventListener)
 
         setLoading(false)
       }).catch((err) => { if (!disposed) setError(String(err)) })
@@ -677,6 +675,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     return () => {
       disposed = true
       if (watchTimerRef.current) clearInterval(watchTimerRef.current)
+      if (fileSavedListener) window.removeEventListener('fastagents:file-saved', fileSavedListener as EventListener)
       editorBindings.delete(editorTabId)
       editorRef.current?.dispose()
       editorRef.current = null
@@ -690,6 +689,11 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     if (!editor) return
     updateEditorOptions(editor, editorOptions)
   }, [editorOptions])
+
+  useEffect(() => {
+    defineMonacoTheme(terminalTheme)
+    lastAppliedTheme = terminalTheme
+  }, [terminalTheme])
 
   useEffect(() => {
     if (!navigationTarget || !editorRef.current) return
@@ -716,13 +720,14 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   // Focus editor when becoming active
   useEffect(() => {
     if (!isActive || !editorRef.current) return
+    setLastFocusedTabId(editorTabId)
     const ed = editorRef.current
     if ('getModifiedEditor' in ed) {
       (ed as monaco.editor.IStandaloneDiffEditor).getModifiedEditor().focus()
     } else {
       (ed as monaco.editor.IStandaloneCodeEditor).focus()
     }
-  }, [isActive])
+  }, [editorTabId, isActive, setLastFocusedTabId])
 
   if (error) {
     return (
@@ -801,11 +806,11 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
     useProjectSearchStore.getState().setQuery(query)
     void useProjectSearchStore.getState().searchInPath(searchRootPath, query)
-    useUIStore.getState().setRightPanelTab('search')
+    useUIStore.getState().activateDockPanel('search')
   }
 
   return (
-    <div className="h-full w-full relative bg-[#1a1a1e]">
+    <div className="h-full w-full relative bg-[var(--color-bg-primary)]">
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Loading...</span>

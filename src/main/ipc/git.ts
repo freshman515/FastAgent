@@ -1,16 +1,45 @@
 import { ipcMain } from 'electron'
 import { execFile } from 'node:child_process'
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gitService } from '../services/GitService'
 
-function execGit(cwd: string, args: string[]): Promise<string> {
+function execGit(cwd: string, args: string[], maxBuffer = 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+    execFile('git', args, { cwd, maxBuffer }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout)
     })
   })
+}
+
+async function buildUntrackedPreviews(cwd: string): Promise<string> {
+  let output = ''
+  try {
+    output = await execGit(cwd, ['ls-files', '--others', '--exclude-standard'], 1024 * 1024)
+  } catch {
+    return ''
+  }
+
+  const files = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 20)
+  if (files.length === 0) return ''
+
+  const sections: string[] = ['## Untracked file previews']
+  for (const filePath of files) {
+    try {
+      const content = await readFile(join(cwd, filePath), 'utf-8')
+      const preview = content.length > 20000
+        ? `${content.slice(0, 20000)}\n... [truncated ${content.length - 20000} chars]`
+        : content
+      sections.push(`### ${filePath}\n\`\`\`\n${preview}\n\`\`\``)
+    } catch {
+      sections.push(`### ${filePath}\n[Unable to preview this file]`)
+    }
+  }
+
+  return sections.join('\n\n')
 }
 
 export function registerGitHandlers(): void {
@@ -82,6 +111,26 @@ export function registerGitHandlers(): void {
     }
   })
 
+  ipcMain.handle('git:review-diff', async (_event, cwd: string) => {
+    try {
+      const [status, cachedDiff, worktreeDiff, untrackedPreviews] = await Promise.all([
+        execGit(cwd, ['status', '--porcelain', '-u'], 1024 * 1024),
+        execGit(cwd, ['diff', '--cached', '--no-ext-diff', '--unified=80'], 8 * 1024 * 1024),
+        execGit(cwd, ['diff', '--no-ext-diff', '--unified=80'], 8 * 1024 * 1024),
+        buildUntrackedPreviews(cwd),
+      ])
+
+      return [
+        `## Git status\n\`\`\`\n${status.trim() || 'clean'}\n\`\`\``,
+        cachedDiff.trim() ? `## Staged diff\n\`\`\`diff\n${cachedDiff.trim()}\n\`\`\`` : '',
+        worktreeDiff.trim() ? `## Worktree diff\n\`\`\`diff\n${worktreeDiff.trim()}\n\`\`\`` : '',
+        untrackedPreviews,
+      ].filter(Boolean).join('\n\n')
+    } catch {
+      return ''
+    }
+  })
+
   // Git stage
   ipcMain.handle('git:stage', async (_event, cwd: string, filePath: string) => {
     await execGit(cwd, ['add', '--', filePath])
@@ -143,5 +192,23 @@ export function registerGitHandlers(): void {
   // Filesystem: write file content
   ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string) => {
     await writeFile(filePath, content, 'utf-8')
+  })
+
+  // Filesystem: write a temporary file and return the absolute path
+  ipcMain.handle('fs:write-temp-file', async (_event, suggestedName: string, content: string, extension?: string) => {
+    const safeBaseName = (suggestedName || 'fastagents-temp')
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+      .trim()
+      .replace(/\s+/g, '-')
+      || 'fastagents-temp'
+    const safeExtension = (extension || 'txt').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'txt'
+    const tempDir = join(tmpdir(), 'fastagents')
+    await mkdir(tempDir, { recursive: true })
+    const filePath = join(
+      tempDir,
+      `${safeBaseName}-${Date.now()}-${randomUUID().slice(0, 8)}.${safeExtension}`,
+    )
+    await writeFile(filePath, content, 'utf-8')
+    return filePath
   })
 }

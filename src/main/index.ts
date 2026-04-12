@@ -10,6 +10,7 @@ import { registerHooks, unregisterHooks } from './services/HookInstaller'
 import { mediaMonitor } from './services/MediaMonitor'
 import { startIdeServer, stopIdeServer, registerIdeIPC } from './services/IdeServer'
 import { opencodeService } from './services/OpencodeService'
+import { claudeGuiService } from './services/ClaudeGuiService'
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
@@ -315,6 +316,7 @@ app.on('before-quit', async (e) => {
   unregisterHooks()
   mediaMonitor.stop()
   stopIdeServer()
+  void claudeGuiService.stop()
   opencodeService.disposeAll()
   ptyManager.destroyAll()
   app.quit()

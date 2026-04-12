@@ -24,7 +24,7 @@ export function isAnonymousProjectId(projectId: string): boolean {
   return projectId === ANONYMOUS_PROJECT_ID
 }
 
-export type SessionType = 'claude-code' | 'claude-code-yolo' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal'
+export type SessionType = 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal'
 
 /** Returns true for any Claude Code variant (normal or yolo mode) */
 export function isClaudeCodeType(type: SessionType): boolean {
@@ -77,6 +77,174 @@ export interface SessionExitEvent {
   ptyId: string
   exitCode: number
 }
+
+export type ClaudeGuiComputeMode = 'auto' | 'max'
+export type ClaudeGuiLanguage = 'zh' | 'es' | 'ar' | 'fr' | 'de' | 'ja' | 'ko'
+
+export interface ClaudeGuiImagePayload {
+  name: string
+  mediaType: string
+  data: string
+}
+
+export interface ClaudeGuiRequestOptions {
+  requestId: string
+  conversationId: string
+  cwd: string
+  text: string
+  sessionId?: string | null
+  model: string
+  computeMode?: ClaudeGuiComputeMode
+  planMode?: boolean
+  thinkingMode?: boolean
+  languageMode?: boolean
+  language?: ClaudeGuiLanguage | null
+  onlyCommunicate?: boolean
+  images?: ClaudeGuiImagePayload[]
+}
+
+export interface ClaudePromptOptimizeOptions {
+  prompt: string
+  instruction?: string
+  cwd?: string | null
+}
+
+export interface ClaudePromptOptimizeResult {
+  content: string
+}
+
+export interface ClaudeDiffReviewFile {
+  path: string
+  status: string
+  staged: boolean
+}
+
+export interface ClaudeDiffReviewOptions {
+  cwd: string
+  diff: string
+  files: ClaudeDiffReviewFile[]
+  branch?: string | null
+}
+
+export interface ClaudeDiffReviewResult {
+  content: string
+}
+
+export interface ClaudeGuiUsage {
+  totalTokensInput: number
+  totalTokensOutput: number
+  currentInputTokens: number
+  currentOutputTokens: number
+  cacheCreationTokens?: number
+  cacheReadTokens?: number
+}
+
+export interface ClaudeGuiResultPayload {
+  sessionId?: string
+  totalCost?: number
+  duration?: number
+  turns?: number
+  totalTokensInput: number
+  totalTokensOutput: number
+  requestCount: number
+  currentTokensInput: number
+  currentTokensOutput: number
+}
+
+export type ClaudeGuiEvent =
+  | {
+    requestId: string
+    conversationId: string
+    type: 'processing'
+    active: boolean
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'connected'
+    sessionId?: string
+    model?: string
+    tools?: string[]
+    skills?: string[]
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'assistant'
+    messageId: string
+    text: string
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'thinking'
+    messageId: string
+    text: string
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'system'
+    messageId: string
+    text: string
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'tool-use'
+    messageId: string
+    toolUseId: string
+    toolName: string
+    rawInput?: unknown
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'tool-status'
+    toolUseId?: string
+    toolName: string
+    status: string
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'tool-result'
+    toolUseId?: string
+    toolName?: string
+    text: string
+    isError?: boolean
+    hidden?: boolean
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'usage'
+    usage: ClaudeGuiUsage
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'result'
+    result: ClaudeGuiResultPayload
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'error'
+    error: string
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'plan-mode'
+    active: boolean
+  }
+  | {
+    requestId: string
+    conversationId: string
+    type: 'closed'
+    exitCode: number
+  }
 
 export interface ToastNotification {
   id: string
@@ -235,6 +403,13 @@ export const IPC = {
   SHELL_OPEN_PATH: 'shell:open-path',
   SHELL_OPEN_IN_IDE: 'shell:open-in-ide',
   SHELL_LIST_IDES: 'shell:list-ides',
+
+  CLAUDE_GUI_START: 'claude-gui:start',
+  CLAUDE_GUI_STOP: 'claude-gui:stop',
+  CLAUDE_GUI_EVENT: 'claude-gui:event',
+  CLAUDE_GUI_EXPORT: 'claude-gui:export',
+  CLAUDE_PROMPT_OPTIMIZE: 'claude-prompt:optimize',
+  CLAUDE_DIFF_REVIEW: 'claude-diff:review',
 } as const
 
 // ─── Session Type Labels ───
@@ -245,6 +420,7 @@ export const SESSION_TYPE_CONFIG: Record<
 > = {
   'claude-code': { label: 'Claude Code', command: 'claude', icon: 'brain' },
   'claude-code-yolo': { label: 'Claude Code YOLO', command: 'claude', icon: 'brain' },
+  'claude-gui': { label: 'Claude GUI', command: '', icon: 'brain' },
   codex: { label: 'Codex', command: 'codex', icon: 'cpu' },
   'codex-yolo': { label: 'Codex YOLO', command: 'codex', icon: 'cpu' },
   opencode: { label: 'OpenCode', command: 'opencode', icon: 'code' },

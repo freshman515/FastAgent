@@ -19,7 +19,7 @@ export function DetachedApp(): JSX.Element {
   useEffect(() => {
     const init = async (): Promise<void> => {
       const data = await window.api.config.read()
-      useUIStore.getState()._loadSettings(data.ui)
+      useUIStore.getState()._loadSettings(data.ui, (data as Record<string, unknown>).customThemes as Record<string, unknown> | undefined)
       useProjectsStore.getState()._loadFromConfig(data.projects)
       useWorktreesStore.getState()._loadFromConfig((data as Record<string, unknown>).worktrees as unknown[] ?? [])
 

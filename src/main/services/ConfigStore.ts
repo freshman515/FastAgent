@@ -15,6 +15,8 @@ interface ConfigData {
   activeTasks: unknown[]
   ui: Record<string, unknown>
   panes: Record<string, unknown>
+  claudeGui: Record<string, unknown>
+  customThemes: Record<string, unknown>
 }
 
 const DEFAULT_DATA: ConfigData = {
@@ -27,6 +29,8 @@ const DEFAULT_DATA: ConfigData = {
   activeTasks: [],
   ui: {},
   panes: {},
+  claudeGui: {},
+  customThemes: {},
 }
 
 let cache: ConfigData | null = null
@@ -60,6 +64,8 @@ export function readConfig(): ConfigData {
       activeTasks: Array.isArray(parsed.activeTasks) ? parsed.activeTasks : [],
       ui: parsed.ui && typeof parsed.ui === 'object' ? parsed.ui : {},
       panes: parsed.panes && typeof parsed.panes === 'object' ? parsed.panes : {},
+      claudeGui: parsed.claudeGui && typeof parsed.claudeGui === 'object' ? parsed.claudeGui : {},
+      customThemes: parsed.customThemes && typeof parsed.customThemes === 'object' && !Array.isArray(parsed.customThemes) ? parsed.customThemes : {},
     }
     return cache
   } catch {

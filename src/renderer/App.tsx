@@ -1,5 +1,5 @@
 import { TitleBar } from '@/components/layout/TitleBar'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { LeftPanel } from '@/components/layout/LeftPanel'
 import { MainPanel } from '@/components/layout/MainPanel'
 import { StatusBar } from '@/components/layout/StatusBar'
 import { RightPanel } from '@/components/layout/RightPanel'
@@ -18,12 +18,13 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useTemplatesStore } from '@/stores/templates'
 import { useTasksStore } from '@/stores/tasks'
 import { useWorktreesStore } from '@/stores/worktrees'
-import { type EditorTab, sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
+import { detectLanguage, type EditorTab, sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
 import { useLaunchesStore } from '@/stores/launches'
+import { useClaudeGuiStore } from '@/stores/claudeGui'
 import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ANONYMOUS_PROJECT_ID } from '@shared/types'
+import { useCallback, useEffect, useState } from 'react'
+import { ANONYMOUS_PROJECT_ID, type ClaudeGuiEvent } from '@shared/types'
 
 interface EditorPathContext {
   projectId: string
@@ -33,6 +34,56 @@ interface EditorPathContext {
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function toRelativePath(filePath: string, rootPath: string): string {
+  const normalizedFile = normalizePath(filePath)
+  const normalizedRoot = normalizePath(rootPath)
+  if (normalizedFile === normalizedRoot) return filePath.split(/[\\/]/).pop() ?? filePath
+  if (!normalizedFile.startsWith(`${normalizedRoot}/`)) return filePath
+  return filePath.slice(rootPath.length).replace(/^[/\\]/, '') || filePath
+}
+
+function isClaudeGuiFileMutatingTool(toolName: string | undefined): boolean {
+  return toolName === 'Edit' || toolName === 'Write' || toolName === 'MultiEdit' || toolName === 'NotebookEdit'
+}
+
+function collectFilePaths(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('/') ? [value] : []
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectFilePaths(item))
+  }
+
+  if (!value || typeof value !== 'object') return []
+
+  const record = value as Record<string, unknown>
+  const directKeys = ['file_path', 'filePath', 'path']
+  const nestedKeys = ['files', 'paths', 'edits', 'changes']
+
+  const directMatches = directKeys.flatMap((key) => collectFilePaths(record[key]))
+  const nestedMatches = nestedKeys.flatMap((key) => collectFilePaths(record[key]))
+
+  return [...directMatches, ...nestedMatches]
+}
+
+function extractClaudeGuiEditedFiles(event: ClaudeGuiEvent, pendingEditedFiles: Map<string, string[]>): string[] {
+  if (event.type === 'tool-use') {
+    if (!isClaudeGuiFileMutatingTool(event.toolName)) return []
+    const filePaths = Array.from(new Set(collectFilePaths(event.rawInput)))
+    if (event.toolUseId && filePaths.length > 0) {
+      pendingEditedFiles.set(event.toolUseId, filePaths)
+    }
+    return []
+  }
+
+  if (event.type !== 'tool-result' || !event.toolUseId) return []
+
+  const filePaths = pendingEditedFiles.get(event.toolUseId) ?? []
+  pendingEditedFiles.delete(event.toolUseId)
+  return event.isError ? [] : filePaths
 }
 
 function getEditorPathContexts(rawProjects: unknown[], rawWorktrees: unknown[]): EditorPathContext[] {
@@ -267,11 +318,12 @@ export function App(): JSX.Element {
       useProjectsStore.getState()._loadFromConfig(data.projects)
       useSessionsStore.getState()._loadFromConfig(sanitizedSessions)
       useEditorsStore.getState()._loadFromConfig(sanitizedEditors)
-      useUIStore.getState()._loadSettings(data.ui)
+      useUIStore.getState()._loadSettings(data.ui, (data as Record<string, unknown>).customThemes as Record<string, unknown> | undefined)
       useTemplatesStore.getState()._loadFromConfig((data as Record<string, unknown>).templates as unknown[] ?? [])
       useTasksStore.getState()._loadFromConfig({ activeTasks: (data as Record<string, unknown>).activeTasks as unknown[] ?? [] })
       useWorktreesStore.getState()._loadFromConfig(rawWorktrees)
       useLaunchesStore.getState()._loadFromConfig((data as Record<string, unknown>).launches as unknown[] ?? [])
+      useClaudeGuiStore.getState()._loadFromConfig((data as Record<string, unknown>).claudeGui as Record<string, unknown> ?? {})
 
       const hasAnonymousProjectData = sanitizedSessions.some((session) =>
         session && typeof session === 'object' && (session as { projectId?: unknown }).projectId === ANONYMOUS_PROJECT_ID,
@@ -367,6 +419,81 @@ export function App(): JSX.Element {
   }, [])
 
   useActivityMonitor()
+
+  useEffect(() => {
+    const pendingEditedFiles = new Map<string, string[]>()
+    return window.api.claudeGui.onEvent((event) => {
+      useClaudeGuiStore.getState().applyEvent(event)
+
+      if (event.type === 'tool-use' && event.toolUseId && isClaudeGuiFileMutatingTool(event.toolName)) {
+        const filePaths = Array.from(new Set(collectFilePaths(event.rawInput)))
+        const conversation = useClaudeGuiStore.getState().conversations.find((item) => item.id === event.conversationId)
+        if (conversation && filePaths.length > 0) {
+          void Promise.all(
+            filePaths.map(async (filePath) => {
+              try {
+                const beforeContent = await window.api.fs.readFile(filePath)
+                return {
+                  filePath,
+                  relativePath: toRelativePath(filePath, conversation.cwd),
+                  fileName: filePath.split(/[\\/]/).pop() ?? filePath,
+                  language: detectLanguage(filePath.split(/[\\/]/).pop() ?? filePath),
+                  beforeContent,
+                }
+              } catch {
+                return null
+              }
+            }),
+          ).then((files) => {
+            const snapshotFiles = files.filter((item): item is NonNullable<typeof item> => item !== null)
+            if (snapshotFiles.length === 0) return
+            useClaudeGuiStore.getState().capturePatchSnapshot({
+              conversationId: event.conversationId,
+              requestId: event.requestId,
+              toolUseId: event.toolUseId,
+              toolName: event.toolName,
+              createdAt: Date.now(),
+              files: snapshotFiles,
+            })
+          })
+        }
+      }
+
+      if (event.type === 'tool-result' && event.toolUseId) {
+        const snapshot = useClaudeGuiStore.getState().pendingPatchSnapshots[event.toolUseId]
+        if (snapshot) {
+          void Promise.all(
+            snapshot.files.map(async (file) => {
+              try {
+                const afterContent = await window.api.fs.readFile(file.filePath)
+                return {
+                  filePath: file.filePath,
+                  afterContent,
+                }
+              } catch {
+                return null
+              }
+            }),
+          ).then((files) => {
+            useClaudeGuiStore.getState().finalizePatchSnapshot({
+              conversationId: event.conversationId,
+              requestId: event.requestId,
+              toolUseId: event.toolUseId,
+              isError: event.isError === true,
+              files: files.filter((item): item is NonNullable<typeof item> => item !== null),
+            })
+          })
+        }
+      }
+
+      const editedFiles = extractClaudeGuiEditedFiles(event, pendingEditedFiles)
+      for (const filePath of editedFiles) {
+        window.dispatchEvent(new CustomEvent('fastagents:file-saved', {
+          detail: { filePath },
+        }))
+      }
+    })
+  }, [])
 
   // Listen for Claude Code status-line updates (model, context, cost)
   useEffect(() => {
@@ -561,34 +688,6 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const sidebarWidth = useUIStore((s) => s.sidebarWidth)
-  const setSidebarWidth = useUIStore((s) => s.setSidebarWidth)
-  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
-  const isDragging = useRef(false)
-
-  const handleMouseDown = useCallback(() => {
-    isDragging.current = true
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return
-      const width = Math.max(200, Math.min(400, e.clientX))
-      setSidebarWidth(width)
-    }
-
-    const handleMouseUp = () => {
-      isDragging.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }, [setSidebarWidth])
-
   if (!ready) {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--color-bg-primary)]">
@@ -601,21 +700,7 @@ export function App(): JSX.Element {
     <div className="flex h-full flex-col">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        {!sidebarCollapsed && (
-          <>
-            <div className="shrink-0" style={{ width: sidebarWidth }}>
-              <Sidebar />
-            </div>
-            {/* Resize handle */}
-            <div
-              onMouseDown={handleMouseDown}
-              className="group relative z-10 w-px shrink-0 cursor-col-resize bg-[var(--color-border)]"
-            >
-              <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-[var(--color-accent)]/20" />
-            </div>
-          </>
-        )}
+        <LeftPanel />
 
         {/* Main panel */}
         <div className="flex-1 overflow-hidden">

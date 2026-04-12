@@ -1,0 +1,62 @@
+{
+  "FastAgents Default": {
+    "name": "FastAgents Default",
+    "palette": [
+      "#1a1a1e", "#ef5757", "#3ecf7b", "#f0a23b",
+      "#5fa0f5", "#c084fc", "#45c8c8", "#e8e8ec",
+      "#5e5e66", "#f47070", "#5ddfa0", "#f5c070",
+      "#7c6aef", "#d4a0ff", "#6adada", "#ffffff"
+    ],
+    "background": "#1a1a1e",
+    "foreground": "#e8e8ec",
+    "cursorColor": "#7c6aef",
+    "cursorText": "#1a1a1e",
+    "selectionBackground": "#7c6aef40",
+    "selectionForeground": "#ffffff",
+    "ui": {
+      "titleBarBg": "#111114",
+      "panelBg": "#16161a",
+      "contentBg": "#1a1a1e",
+      "textPrimary": "#e8e8ec",
+      "textSecondary": "#9090a0",
+      "textTertiary": "#5e5e66",
+      "border": "#2c2c34",
+      "borderHover": "#3e3e4a",
+      "accent": "#7c6aef",
+      "accentHover": "#6a5adf",
+      "success": "#3ecf7b",
+      "warning": "#f0a23b",
+      "error": "#ef5757"
+    }
+  },
+  "FastAgents Light": {
+    "name": "FastAgents Light",
+    "palette": [
+      "#2e2e3a", "#c53030", "#276749", "#b45309",
+      "#1d4ed8", "#7c3aed", "#0891b2", "#64748b",
+      "#94a3b8", "#dc2626", "#16a34a", "#d97706",
+      "#5a4ad4", "#9333ea", "#0e7490", "#f8fafc"
+    ],
+    "background": "#f8fafc",
+    "foreground": "#1e1e2e",
+    "cursorColor": "#5a4ad4",
+    "cursorText": "#f8fafc",
+    "selectionBackground": "#5a4ad440",
+    "selectionForeground": "#1e1e2e",
+    "ui": {
+      "titleBarBg": "#dde3ee",
+      "panelBg": "#e8edf6",
+      "contentBg": "#f8fafc",
+      "textPrimary": "#1e1e2e",
+      "textSecondary": "#52526a",
+      "textTertiary": "#94a3b8",
+      "border": "#c8d0e0",
+      "borderHover": "#94a3b8",
+      "accent": "#5a4ad4",
+      "accentHover": "#4338ca",
+      "success": "#16a34a",
+      "warning": "#d97706",
+      "error": "#c53030"
+    }
+  }
+}

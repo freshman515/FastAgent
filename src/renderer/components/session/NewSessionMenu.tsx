@@ -19,6 +19,7 @@ const SESSION_OPTIONS: SessionOption[] = [
   { type: 'terminal', label: 'Terminal', icon: terminalIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
+  { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
   { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },

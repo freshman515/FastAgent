@@ -26,8 +26,8 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const reorderSessions = useSessionsStore((s) => s.reorderSessions)
-  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const sidebarCollapsed = useUIStore((s) => s.dockPanelCollapsed.left)
+  const toggleSidebar = useUIStore((s) => s.toggleDockPanel)
 
   const handleDragStart = useCallback((id: string, e: React.DragEvent) => {
     setDraggingId(id)
@@ -114,7 +114,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
         {/* Expand sidebar button (shown when collapsed) */}
         {sidebarCollapsed && (
           <button
-            onClick={toggleSidebar}
+            onClick={() => toggleSidebar('left')}
             className={cn(
               'flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] mr-1',
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',

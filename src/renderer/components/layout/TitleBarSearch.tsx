@@ -42,6 +42,7 @@ interface SessionResultItem {
 const TYPE_ICONS: Record<string, string> = {
   'claude-code': claudeIcon,
   'claude-code-yolo': claudeIcon,
+  'claude-gui': claudeIcon,
   codex: codexIcon,
   'codex-yolo': codexIcon,
   opencode: opencodeIcon,

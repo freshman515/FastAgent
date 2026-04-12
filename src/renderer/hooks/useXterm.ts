@@ -33,6 +33,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { usePanesStore } from '@/stores/panes'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { getXtermTheme, defaultDarkTheme } from '@/lib/ghosttyTheme'
 
 export function useXterm(
   session: Session,
@@ -74,6 +75,7 @@ export function useXterm(
     let ptyId: string | null = null
     let destroyed = false
 
+    const xtermTheme = getXtermTheme(settings.terminalTheme) ?? defaultDarkTheme
     const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
@@ -81,29 +83,7 @@ export function useXterm(
       fontFamily: settings.terminalFontFamily,
       fontWeight: 'normal',
       fontWeightBold: '500',
-      theme: {
-        background: '#1a1a1e',
-        foreground: '#e8e8ec',
-        cursor: '#7c6aef',
-        cursorAccent: '#1a1a1e',
-        selectionBackground: 'rgba(124, 106, 239, 0.3)',
-        black: '#1a1a1e',
-        red: '#ef5757',
-        green: '#3ecf7b',
-        yellow: '#f0a23b',
-        blue: '#5fa0f5',
-        magenta: '#c084fc',
-        cyan: '#45c8c8',
-        white: '#e8e8ec',
-        brightBlack: '#5e5e66',
-        brightRed: '#ff6b6b',
-        brightGreen: '#5edd9a',
-        brightYellow: '#ffbe5c',
-        brightBlue: '#7bb8ff',
-        brightMagenta: '#d4a5ff',
-        brightCyan: '#6eded8',
-        brightWhite: '#ffffff',
-      },
+      theme: xtermTheme,
       scrollback: 10000,
       allowProposedApi: true,
       rescaleOverlappingGlyphs: true,
@@ -340,6 +320,22 @@ export function useXterm(
       } catch {
         // ignore
       }
+    })
+  }, [])
+
+  // Live-update terminal theme when settings change
+  useEffect(() => {
+    let prevTheme = useUIStore.getState().settings.terminalTheme
+
+    return useUIStore.subscribe((state) => {
+      const { terminalTheme } = state.settings
+      if (terminalTheme === prevTheme) return
+      prevTheme = terminalTheme
+
+      const term = terminalRef.current
+      if (!term) return
+      const newTheme = getXtermTheme(terminalTheme) ?? defaultDarkTheme
+      term.options.theme = newTheme
     })
   }, [])
 

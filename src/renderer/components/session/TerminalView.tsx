@@ -72,7 +72,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     <div className="relative h-full w-full">
       {/* Search bar */}
       {searchOpen && (
-        <div className="terminal-search-bar absolute right-2.5 top-2.5 z-10 flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 shadow-lg">
+        <div className="terminal-search-bar absolute right-3 top-3 z-10 flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 shadow-lg">
           <input
             ref={inputRef}
             value={searchText}
@@ -101,7 +101,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         </div>
       )}
 
-      <div className="absolute inset-2.5">
+      <div className="absolute inset-0 p-[10px]">
         <div
           ref={containerRef}
           className="h-full w-full bg-[var(--color-bg-primary)]"

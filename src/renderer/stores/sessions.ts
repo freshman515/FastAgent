@@ -16,7 +16,7 @@ function sanitizeSession(s: unknown): Session | null {
   return {
     id: obj.id,
     projectId: obj.projectId,
-    type: (['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode', 'terminal'].includes(obj.type as string)
+    type: (['claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'opencode', 'terminal'].includes(obj.type as string)
       ? obj.type
       : 'terminal') as SessionType,
     name: typeof obj.name === 'string' ? obj.name : 'Session',

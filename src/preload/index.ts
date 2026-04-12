@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/types'
 import type {
+  ClaudeDiffReviewOptions,
+  ClaudeDiffReviewResult,
+  ClaudeGuiEvent,
+  ClaudePromptOptimizeOptions,
+  ClaudePromptOptimizeResult,
+  ClaudeGuiRequestOptions,
   ExternalIdeId,
   ExternalIdeOption,
   FileSearchResult,
@@ -105,6 +111,26 @@ const api = {
       ipcRenderer.invoke(IPC.PERMISSION_RESPOND, id, behavior, suggestionIndex),
   },
 
+  claudeGui: {
+    start: (options: ClaudeGuiRequestOptions) =>
+      ipcRenderer.invoke(IPC.CLAUDE_GUI_START, options) as Promise<void>,
+    stop: () => ipcRenderer.invoke(IPC.CLAUDE_GUI_STOP) as Promise<void>,
+    optimizePrompt: (options: ClaudePromptOptimizeOptions) =>
+      ipcRenderer.invoke(IPC.CLAUDE_PROMPT_OPTIMIZE, options) as Promise<ClaudePromptOptimizeResult>,
+    reviewDiff: (options: ClaudeDiffReviewOptions) =>
+      ipcRenderer.invoke(IPC.CLAUDE_DIFF_REVIEW, options) as Promise<ClaudeDiffReviewResult>,
+    exportConversation: (options: {
+      suggestedName: string
+      extension: 'md' | 'json'
+      content: string
+    }) => ipcRenderer.invoke(IPC.CLAUDE_GUI_EXPORT, options) as Promise<boolean>,
+    onEvent: (callback: (event: ClaudeGuiEvent) => void) => {
+      const handler = (_: unknown, event: ClaudeGuiEvent) => callback(event)
+      ipcRenderer.on(IPC.CLAUDE_GUI_EVENT, handler)
+      return () => ipcRenderer.removeListener(IPC.CLAUDE_GUI_EVENT, handler)
+    },
+  },
+
   notification: {
     show: (options: { title: string; body?: string; sessionId?: string; projectId?: string }) =>
       ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, options),
@@ -134,6 +160,7 @@ const api = {
     removeWorktree: (cwd: string, path: string) => ipcRenderer.invoke('git:worktree-remove', cwd, path) as Promise<void>,
     status: (path: string) => ipcRenderer.invoke('git:file-status', path) as Promise<Array<{ path: string; status: string; staged: boolean }>>,
     diff: (cwd: string, filePath: string) => ipcRenderer.invoke('git:diff', cwd, filePath) as Promise<string>,
+    reviewDiff: (cwd: string) => ipcRenderer.invoke('git:review-diff', cwd) as Promise<string>,
     stage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:stage', cwd, filePath) as Promise<void>,
     unstage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:unstage', cwd, filePath) as Promise<void>,
     commit: (cwd: string, message: string) => ipcRenderer.invoke('git:commit', cwd, message) as Promise<void>,
@@ -195,6 +222,8 @@ const api = {
     readDir: (path: string) => ipcRenderer.invoke('fs:read-dir', path) as Promise<Array<{ name: string; isDir: boolean }>>,
     readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path) as Promise<string>,
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:write-file', path, content) as Promise<void>,
+    writeTempFile: (suggestedName: string, content: string, extension = 'txt') =>
+      ipcRenderer.invoke('fs:write-temp-file', suggestedName, content, extension) as Promise<string>,
   },
 
   search: {
@@ -231,6 +260,7 @@ const api = {
         activeTasks?: unknown[]
         ui: Record<string, unknown>
         panes?: Record<string, unknown>
+        claudeGui?: Record<string, unknown>
       }>,
     getAnonymousWorkspace: () =>
       ipcRenderer.invoke('config:get-anonymous-workspace') as Promise<string>,

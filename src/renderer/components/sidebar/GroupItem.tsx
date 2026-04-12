@@ -79,7 +79,11 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
           dragOver && 'bg-[var(--color-accent-muted)] border border-dashed border-[var(--color-accent)]',
         )}
         onClick={handleToggle}
-        onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setContextMenu({ x: e.clientX, y: e.clientY })
+        }}
         onDragOver={(e) => {
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'

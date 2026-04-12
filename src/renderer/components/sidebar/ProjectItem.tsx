@@ -23,6 +23,7 @@ import terminalIcon from '@/assets/icons/terminal_white.png'
 const SESSION_OPTS: Array<{ type: SessionType; label: string; icon: string }> = [
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
+  { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
   { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },

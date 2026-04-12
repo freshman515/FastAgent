@@ -60,12 +60,12 @@ function detectUnixShell(): ShellInfo {
 }
 
 export function buildAgentCommand(
-  type: 'claude-code' | 'claude-code-yolo' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal',
+  type: 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal',
   _sessionId?: string,
   resume?: boolean,
   resumeUUID?: string,
 ): { command: string; args: string[] } | null {
-  if (type === 'terminal') {
+  if (type === 'terminal' || type === 'claude-gui') {
     return null
   }
 

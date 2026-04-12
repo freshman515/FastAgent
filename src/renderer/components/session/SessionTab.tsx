@@ -10,18 +10,20 @@ import { useProjectsStore } from '@/stores/projects'
 import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getTerminalPreviewText } from '@/hooks/useXterm'
+import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex.png'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
-import terminalIcon from '@/assets/icons/terminal_white.png'
+import terminalIconDark from '@/assets/icons/terminal_white.png'
+import terminalIconLight from '@/assets/icons/terminal.png'
 
 const TYPE_ICONS: Record<string, string> = {
   'claude-code': claudeIcon,
   'claude-code-yolo': claudeIcon,
+  'claude-gui': claudeIcon,
   codex: codexIcon,
   'codex-yolo': codexIcon,
   opencode: opencodeIcon,
-  terminal: terminalIcon,
 }
 
 interface SessionTabProps {
@@ -64,7 +66,9 @@ export function SessionTab({
   const dragTokenRef = useRef<string | null>(null)
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const iconSrc = TYPE_ICONS[session.type] ?? claudeIcon
+  const isDarkTheme = useIsDarkTheme()
+  const terminalIcon = isDarkTheme ? terminalIconDark : terminalIconLight
+  const iconSrc = session.type === 'terminal' ? terminalIcon : (TYPE_ICONS[session.type] ?? claudeIcon)
   const currentWindowId = window.api.detach.isDetached ? window.api.detach.getWindowId() : 'main'
 
   const handleClick = useCallback(() => {

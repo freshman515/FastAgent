@@ -7,6 +7,7 @@ import type { SessionType, SessionTemplateItem } from '@shared/types'
 const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'claude-code-yolo', label: 'Claude Code YOLO' },
+  { value: 'claude-gui', label: 'Claude GUI' },
   { value: 'codex', label: 'Codex' },
   { value: 'codex-yolo', label: 'Codex YOLO' },
   { value: 'opencode', label: 'OpenCode' },

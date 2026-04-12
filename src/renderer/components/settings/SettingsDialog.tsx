@@ -1,11 +1,14 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore, type AppSettings } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import { TemplatesPage } from './TemplatesPage'
+import { getThemeNames, getXtermTheme, getAllCustomThemeNames, getTheme, type GhosttyTheme } from '@/lib/ghosttyTheme'
+import { CustomThemeEditor } from './CustomThemeEditor'
+import { parseThemeAuto } from '@/lib/themeImport'
 
 type SettingsPage = 'general' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai'
 
@@ -186,6 +189,69 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         ))}
       </div>
 
+      {/* Git panel */}      
+      <div className="h-px bg-[var(--color-border)]" />
+      <div className="flex items-center gap-2 mb-1">
+        <GitBranch size={14} className="text-[var(--color-accent)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          Git Panel
+        </span>
+      </div>
+      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Choose how changed files are displayed in the Git side panel.
+      </p>
+      <div className="flex gap-2">
+        {([
+          { id: 'flat' as const, label: 'Flat List', desc: 'Keep the current simple file list' },
+          { id: 'tree' as const, label: 'Directory Tree', desc: 'Group changed files by folders' },
+        ]).map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => onUpdate('gitChangesViewMode', id)}
+            className={cn(
+              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
+              settings.gitChangesViewMode === id
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+            )}
+          >
+            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Choose how the <span className="font-medium text-[var(--color-text-secondary)]">Fix</span> button opens AI repair after a review report is generated.
+      </p>
+      <div className="flex gap-2">
+        {([
+          {
+            id: 'claude-gui' as const,
+            label: 'Claude GUI',
+            desc: 'Open a Claude GUI tab and show the full visible repair process',
+          },
+          {
+            id: 'claude-code-cli' as const,
+            label: 'Claude Code CLI',
+            desc: 'Open a Claude Code CLI tab with --dangerously-skip-permissions and send the review task file',
+          },
+        ]).map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => onUpdate('gitReviewFixMode', id)}
+            className={cn(
+              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors',
+              settings.gitReviewFixMode === id
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+            )}
+          >
+            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Pop-out window */}
       <div className="h-px bg-[var(--color-border)]" />
       <div className="flex items-center gap-2 mb-1">
@@ -261,6 +327,37 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           ))}
         </div>
       )}
+
+      <div className="h-px bg-[var(--color-border)]" />
+      <div className="flex items-center gap-2 mb-1">
+        <Eye size={14} className="text-[var(--color-accent)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          Title Bar Menus
+        </span>
+      </div>
+      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Control how the File / Edit / View / Help menus appear on the left side of the title bar.
+      </p>
+      <div className="flex gap-2">
+        {([
+          { id: 'always' as const, label: 'Always Visible', desc: 'Menus are shown all the time' },
+          { id: 'hover' as const, label: 'Reveal On Hover', desc: 'Hover the app title to fade menus in' },
+        ]).map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => onUpdate('titleBarMenuVisibility', id)}
+            className={cn(
+              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
+              settings.titleBarMenuVisibility === id
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+            )}
+          >
+            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+          </button>
+        ))}
+      </div>
 
       {/* Music player toggle + visualizer mode */}
       <div className="h-px bg-[var(--color-border)]" />
@@ -390,9 +487,299 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
   )
 }
 
+function ThemeSwatches({ themeName }: { themeName: string }): JSX.Element {
+  const t = getXtermTheme(themeName)
+  if (!t) return <div className="h-4 w-16 rounded bg-[var(--color-bg-surface)]" />
+  const swatches = [t.background, t.red, t.green, t.yellow, t.blue, t.magenta, t.cyan, t.foreground]
+  return (
+    <div className="flex gap-0.5 items-center">
+      {swatches.map((color, i) => (
+        <span key={i} className="inline-block h-3 w-3 rounded-[2px] shrink-0" style={{ backgroundColor: color }} />
+      ))}
+    </div>
+  )
+}
+
+type AppearanceView = 'list' | 'editor-new' | 'editor-edit' | 'import'
+
 function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const [view, setView] = useState<AppearanceView>('list')
+  const [editingThemeName, setEditingThemeName] = useState<string | undefined>()
+  const [editingBaseTheme, setEditingBaseTheme] = useState<{ theme: GhosttyTheme; suggested: string } | undefined>()
+  const [importText, setImportText] = useState('')
+  const [importName, setImportName] = useState('')
+  const [importError, setImportError] = useState('')
+
+  const allThemeNames = useMemo(() => getThemeNames(), [settings.customThemes])
+  const customThemeNames = useMemo(() => getAllCustomThemeNames(), [settings.customThemes])
+  const builtinThemeNames = useMemo(() => allThemeNames.filter((n) => !customThemeNames.includes(n)), [allThemeNames, customThemeNames])
+
+  function saveCustomTheme(name: string, theme: GhosttyTheme): void {
+    const next = { ...settings.customThemes, [name]: theme }
+    onUpdate('customThemes', next)
+    onUpdate('terminalTheme', name)
+    setView('list')
+    setEditingThemeName(undefined)
+  }
+
+  function deleteCustomTheme(name: string): void {
+    const next = { ...settings.customThemes }
+    delete next[name]
+    onUpdate('customThemes', next)
+    if (settings.terminalTheme === name) onUpdate('terminalTheme', 'FastAgents Default')
+  }
+
+  function handleImport(): void {
+    setImportError('')
+    const name = importName.trim()
+    if (!name) { setImportError('请输入主题名称'); return }
+    if (allThemeNames.includes(name)) { setImportError('该名称已存在，请换一个'); return }
+    const result = parseThemeAuto(importText, name)
+    if (!result.ok) { setImportError(result.error); return }
+    saveCustomTheme(name, result.theme)
+    setImportText('')
+    setImportName('')
+  }
+
+  async function handleImportFile(): Promise<void> {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,.jsonc,.conf,.theme'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const text = await file.text()
+      const guessedName = file.name.replace(/\.(json|jsonc|conf|theme)$/i, '').trim()
+      setImportName(guessedName)
+      setImportText(text)
+      setView('import')
+    }
+    input.click()
+  }
+
+  // ── Editor / Import views ─────────────────────────────────────────────────
+  if (view === 'editor-new' || view === 'editor-edit') {
+    const isEditExisting = view === 'editor-edit' && editingThemeName !== undefined
+    const editingTheme = isEditExisting
+      ? settings.customThemes[editingThemeName!]
+      : editingBaseTheme?.theme
+    const title = isEditExisting
+      ? `编辑「${editingThemeName}」`
+      : editingBaseTheme
+        ? `基于「${editingBaseTheme.suggested}」创建`
+        : '新建自定义主题'
+
+    function resetEditor(): void {
+      setView('list')
+      setEditingThemeName(undefined)
+      setEditingBaseTheme(undefined)
+    }
+
+    return (
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={resetEditor}
+          className="flex items-center gap-1.5 self-start text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+        >
+          ← 返回主题列表
+        </button>
+        <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">{title}</div>
+        <CustomThemeEditor
+          initialTheme={editingTheme}
+          initialName={isEditExisting ? editingThemeName : undefined}
+          suggestedName={editingBaseTheme?.suggested}
+          existingNames={allThemeNames}
+          onSave={saveCustomTheme}
+          onCancel={resetEditor}
+        />
+      </div>
+    )
+  }
+
+  if (view === 'import') {
+    return (
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={() => { setView('list'); setImportText(''); setImportName(''); setImportError('') }}
+          className="flex items-center gap-1.5 self-start text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+        >
+          ← 返回主题列表
+        </button>
+        <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">导入主题</div>
+        <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+          支持 VSCode 主题 JSON（.json）和 Ghostty 主题文件（.conf / .theme）。粘贴内容或通过文件选择器导入。
+        </p>
+        <input
+          type="text"
+          value={importName}
+          onChange={(e) => { setImportName(e.target.value); setImportError('') }}
+          placeholder="主题名称"
+          className={cn(
+            'rounded-[var(--radius-md)] border bg-[var(--color-bg-secondary)]',
+            'px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none',
+            importError && !importText ? 'border-[var(--color-error)]' : 'border-[var(--color-border)] focus:border-[var(--color-accent)]',
+          )}
+        />
+        <textarea
+          value={importText}
+          onChange={(e) => { setImportText(e.target.value); setImportError('') }}
+          placeholder={'粘贴 VSCode 主题 JSON 或 Ghostty 主题文件内容…'}
+          rows={10}
+          className={cn(
+            'rounded-[var(--radius-md)] border bg-[var(--color-bg-secondary)] font-mono resize-none',
+            'px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none',
+            importError && importText ? 'border-[var(--color-error)]' : 'border-[var(--color-border)] focus:border-[var(--color-accent)]',
+          )}
+        />
+        {importError && (
+          <span className="text-[var(--ui-font-2xs)] text-[var(--color-error)]">{importError}</span>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={handleImport}
+            className="flex-1 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 py-2 text-[var(--ui-font-sm)] font-medium text-white hover:opacity-90 transition-opacity"
+          >
+            导入
+          </button>
+          <button
+            onClick={() => void handleImportFile()}
+            className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-2 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] transition-colors"
+          >
+            选择文件…
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Main list view ────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
+      {/* Theme header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Palette size={14} className="text-[var(--color-accent)]" />
+          <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+            Color Theme
+          </span>
+        </div>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => void handleImportFile()}
+            className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2.5 py-1 text-[var(--ui-font-2xs)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] transition-colors"
+          >
+            导入…
+          </button>
+          <button
+            onClick={() => setView('editor-new')}
+            className="rounded-[var(--radius-sm)] bg-[var(--color-accent-muted)] border border-[var(--color-accent)]/30 px-2.5 py-1 text-[var(--ui-font-2xs)] text-[var(--color-accent)] hover:opacity-80 transition-opacity"
+          >
+            + 新建
+          </button>
+        </div>
+      </div>
+
+      {/* 当前主题 */}
+      <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-accent)] bg-[var(--color-accent-muted)] px-3 py-2">
+        <ThemeSwatches themeName={settings.terminalTheme} />
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-primary)] font-medium flex-1 truncate">{settings.terminalTheme}</span>
+        <button
+          onClick={() => {
+            const n = settings.terminalTheme
+            if (customThemeNames.includes(n)) {
+              setEditingThemeName(n)
+              setEditingBaseTheme(undefined)
+              setView('editor-edit')
+            } else {
+              const raw = getTheme(n)
+              if (!raw) return
+              setEditingBaseTheme({ theme: raw, suggested: n })
+              setEditingThemeName(undefined)
+              setView('editor-new')
+            }
+          }}
+          className="text-[var(--ui-font-2xs)] text-[var(--color-accent)] hover:opacity-70 shrink-0"
+        >
+          编辑
+        </button>
+      </div>
+
+      {/* 自定义主题区 */}
+      {customThemeNames.length > 0 && (
+        <>
+          <div className="text-[var(--ui-font-2xs)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+            自定义主题
+          </div>
+          <div className="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-1">
+            {customThemeNames.map((name) => (
+              <div key={name} className="flex items-center gap-2">
+                <button
+                  onClick={() => onUpdate('terminalTheme', name)}
+                  className={cn(
+                    'flex flex-1 items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-left transition-colors',
+                    settings.terminalTheme === name
+                      ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+                  )}
+                >
+                  <ThemeSwatches themeName={name} />
+                  <span className="text-[var(--ui-font-xs)] truncate">{name}</span>
+                </button>
+                <button
+                  onClick={() => { setEditingThemeName(name); setView('editor-edit') }}
+                  className="shrink-0 px-1.5 py-1 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)]"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => deleteCustomTheme(name)}
+                  className="shrink-0 px-1.5 py-1 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+                >
+                  删除
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* 内置主题 */}
+      <div className="text-[var(--ui-font-2xs)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+        内置主题
+      </div>
+      <div className="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-1">
+        {builtinThemeNames.map((name) => (
+          <div key={name} className="flex items-center gap-2">
+            <button
+              onClick={() => onUpdate('terminalTheme', name)}
+              className={cn(
+                'flex flex-1 items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-left transition-colors',
+                settings.terminalTheme === name
+                  ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              )}
+            >
+              <ThemeSwatches themeName={name} />
+              <span className="text-[var(--ui-font-xs)] truncate">{name}</span>
+            </button>
+            <button
+              onClick={() => {
+                const raw = getTheme(name)
+                if (!raw) return
+                setEditingBaseTheme({ theme: raw, suggested: name })
+                setEditingThemeName(undefined)
+                setView('editor-new')
+              }}
+              className="shrink-0 px-1.5 py-1 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)]"
+            >
+              基于此新建
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Interface */}
+      <div className="h-px bg-[var(--color-border)]" />
       <div className="flex items-center gap-2 mb-1">
         <Type size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
@@ -780,7 +1167,7 @@ export function SettingsDialog(): JSX.Element | null {
       <div
         className={cn(
           'fixed left-1/2 top-1/2 z-[101] flex -translate-x-1/2 -translate-y-1/2',
-          'h-[640px] w-[920px] max-h-[calc(100vh-40px)] max-w-[calc(100vw-40px)] overflow-hidden',
+          'w-[calc(100vw-40px)] h-[calc(100vh-40px)] overflow-hidden',
           'rounded-[var(--radius-xl)] border border-[var(--color-border)]',
           'bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/40',
           'animate-[fade-in_0.15s_ease-out]',

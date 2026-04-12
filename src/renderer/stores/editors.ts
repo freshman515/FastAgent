@@ -17,16 +17,19 @@ export interface EditorTab {
 export interface EditorCursorInfo {
   line: number
   column: number
-  selection: {
-    lines: number
-    chars: number
-    startLine: number
-    startColumn: number
-    endLine: number
-    endColumn: number
-    isEmpty: boolean
-    text: string
-  } | null
+  selection: EditorSelectionInfo | null
+  selections: EditorSelectionInfo[]
+}
+
+export interface EditorSelectionInfo {
+  lines: number
+  chars: number
+  startLine: number
+  startColumn: number
+  endLine: number
+  endColumn: number
+  isEmpty: boolean
+  text: string
 }
 
 export interface EditorNavigationTarget {
@@ -39,6 +42,7 @@ export interface EditorNavigationTarget {
 interface EditorsState {
   tabs: EditorTab[]
   cursorInfo: EditorCursorInfo | null
+  lastFocusedTabId: string | null
   navigationTargets: Record<string, EditorNavigationTarget>
   _loadFromConfig: (raw: unknown[]) => void
   upsertTabs: (tabs: EditorTab[]) => void
@@ -52,6 +56,7 @@ interface EditorsState {
   closeTab: (id: string) => void
   setModified: (id: string, modified: boolean) => void
   setCursorInfo: (info: EditorCursorInfo | null) => void
+  setLastFocusedTabId: (id: string | null) => void
   clearNavigationTarget: (id: string) => void
   getTab: (id: string) => EditorTab | undefined
 }
@@ -171,6 +176,7 @@ export const FILE_ICONS: Record<string, { icon: string; color: string }> = {
 export const useEditorsStore = create<EditorsState>((set, get) => ({
   tabs: [],
   cursorInfo: null,
+  lastFocusedTabId: null,
   navigationTargets: {},
 
   _loadFromConfig: (raw) => {
@@ -286,6 +292,8 @@ export const useEditorsStore = create<EditorsState>((set, get) => ({
   }),
 
   setCursorInfo: (info) => set({ cursorInfo: info }),
+
+  setLastFocusedTabId: (id) => set({ lastFocusedTabId: id }),
 
   clearNavigationTarget: (id) => set((state) => {
     if (!state.navigationTargets[id]) return state

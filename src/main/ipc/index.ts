@@ -6,6 +6,7 @@ import { registerConfigHandlers } from './config'
 import { registerMediaHandlers } from './media'
 import { registerGitHandlers } from './git'
 import { registerAiHandlers } from './ai'
+import { registerClaudeGuiHandlers } from './claudeGui'
 import { registerOpencodeHandlers } from './opencode'
 import { registerSearchHandlers } from './search'
 
@@ -18,6 +19,7 @@ export function registerAllHandlers(): void {
   registerMediaHandlers()
   registerGitHandlers()
   registerAiHandlers()
+  registerClaudeGuiHandlers()
   registerOpencodeHandlers()
   registerSearchHandlers()
 }

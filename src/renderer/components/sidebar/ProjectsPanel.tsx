@@ -1,16 +1,14 @@
-import { FolderPlus, Layers, PanelLeftClose, Plus, Search, Settings } from 'lucide-react'
+import { FolderPlus, Plus, Search, Settings, Terminal } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
-import terminalIcon from '@/assets/icons/terminal_white.png'
 import { createAnonymousTerminal } from '@/lib/anonymous-project'
 import { cn } from '@/lib/utils'
 import { useGroupsStore } from '@/stores/groups'
 import { useUIStore } from '@/stores/ui'
-import { GroupList } from '@/components/sidebar/GroupList'
+import { GroupList } from './GroupList'
 
-export function Sidebar(): JSX.Element {
+export function ProjectsPanel(): JSX.Element {
   const addGroup = useGroupsStore((s) => s.addGroup)
   const openSettings = useUIStore((s) => s.openSettings)
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -47,13 +45,9 @@ export function Sidebar(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      {/* Header */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
-        <div className="flex items-center gap-1.5">
-          <Layers size={13} className="text-[var(--color-accent)]" />
-          <span className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
-            Projects
-          </span>
+        <div className="text-[var(--ui-font-xs)] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
+          Workspace
         </div>
         <div className="flex items-center gap-0.5">
           <button
@@ -65,7 +59,7 @@ export function Sidebar(): JSX.Element {
             )}
             title="Anonymous Terminal"
           >
-            <img src={terminalIcon} alt="" className="h-3.5 w-3.5 opacity-85" draggable={false} />
+            <Terminal size={14} />
           </button>
           <button
             onClick={handleStartAdding}
@@ -78,21 +72,9 @@ export function Sidebar(): JSX.Element {
           >
             <Plus size={14} />
           </button>
-          <button
-            onClick={toggleSidebar}
-            className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
-              'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-              'transition-colors duration-100',
-            )}
-            title="Collapse Sidebar"
-          >
-            <PanelLeftClose size={14} />
-          </button>
         </div>
       </div>
 
-      {/* New group input */}
       {adding && (
         <div className="border-b border-[var(--color-border)] px-3 py-2">
           <div className="flex items-center gap-1.5">
@@ -114,7 +96,6 @@ export function Sidebar(): JSX.Element {
         </div>
       )}
 
-      {/* Search */}
       <div className="shrink-0 px-3 py-2">
         <div className="relative">
           {!searchQuery && (
@@ -136,12 +117,10 @@ export function Sidebar(): JSX.Element {
         </div>
       </div>
 
-      {/* Group list */}
       <div className="flex-1 overflow-y-auto py-1">
         <GroupList searchQuery={searchQuery} />
       </div>
 
-      {/* Footer: settings */}
       <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-1.5">
         <button
           onClick={openSettings}

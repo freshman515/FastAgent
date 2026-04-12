@@ -1,8 +1,10 @@
 @import 'tailwindcss';
 @import '@xterm/xterm/css/xterm.css';
 
-@theme {
-  /* ─── Neutral Warm Gray Palette (NOT AI-blue) ─── */
+/* ─── Default theme values (overridable at runtime by JS) ─── */
+:root {
+  --color-titlebar-bg: #111114;
+  --color-terminal-bg: #1a1a1e;
   --color-bg-primary: #1a1a1e;
   --color-bg-secondary: #222226;
   --color-bg-tertiary: #2a2a2e;
@@ -23,6 +25,30 @@
   --color-warning: #f0a23b;
   --color-error: #ef5757;
   --color-info: #5fa0f5;
+}
+
+@theme inline {
+  /* ─── Wire Tailwind to the overridable CSS variables ─── */
+  --color-bg-primary: var(--color-bg-primary);
+  --color-bg-secondary: var(--color-bg-secondary);
+  --color-bg-tertiary: var(--color-bg-tertiary);
+  --color-bg-surface: var(--color-bg-surface);
+
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+
+  --color-border: var(--color-border);
+  --color-border-hover: var(--color-border-hover);
+
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-muted: var(--color-accent-muted);
+
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+  --color-info: var(--color-info);
 
   /* ─── Typography ─── */
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -133,7 +159,7 @@ html, body, #root {
 .tab-active {
   position: relative;
   z-index: 2;
-  background: var(--color-bg-primary);
+  background: var(--color-terminal-bg);
   border-radius: 8px 8px 0 0;
   /* Extend 1px below to cover the tab-bar border line */
   padding-bottom: 1px;
@@ -154,13 +180,13 @@ html, body, #root {
 .tab-active::before {
   left: -8px;
   border-bottom-right-radius: 8px;
-  box-shadow: 4px 0 0 0 var(--color-bg-primary);
+  box-shadow: 4px 0 0 0 var(--color-terminal-bg);
 }
 
 .tab-active::after {
   right: -8px;
   border-bottom-left-radius: 8px;
-  box-shadow: -4px 0 0 0 var(--color-bg-primary);
+  box-shadow: -4px 0 0 0 var(--color-terminal-bg);
 }
 
 /* ─── AI Summary markdown rendering ─── */
@@ -200,6 +226,40 @@ html, body, #root {
   background: none;
   padding: 0;
   color: var(--color-text-secondary);
+}
+.ai-summary-content .md-token-comment {
+  color: #76839b;
+  font-style: italic;
+}
+.ai-summary-content .md-token-keyword {
+  color: #7aa2f7;
+}
+.ai-summary-content .md-token-string {
+  color: #9ece6a;
+}
+.ai-summary-content .md-token-number {
+  color: #ff9e64;
+}
+.ai-summary-content .md-token-type {
+  color: #e0af68;
+}
+.ai-summary-content .md-token-function {
+  color: #7dcfff;
+}
+.ai-summary-content .md-token-member {
+  color: #c0caf5;
+}
+.ai-summary-content .md-token-tag {
+  color: #7dcfff;
+}
+.ai-summary-content .md-token-attr {
+  color: #bb9af7;
+}
+.ai-summary-content .md-token-variable {
+  color: #f7768e;
+}
+.ai-summary-content .md-token-operator {
+  color: #89ddff;
 }
 .ai-summary-content a {
   color: var(--color-accent);

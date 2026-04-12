@@ -16,6 +16,7 @@ import { NewSessionMenu } from '@/components/session/NewSessionMenu'
 import { TerminalView } from '@/components/session/TerminalView'
 import { EditorView } from '@/components/session/EditorView'
 import { EmptyState } from '@/components/session/EmptyState'
+import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
 
 interface PaneViewProps {
   paneId: string
@@ -870,7 +871,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
                 pointerEvents: isActive ? 'auto' : 'none',
               }}
             >
-              <TerminalView session={session} isActive={isActive && isActivePane} />
+              {session.type === 'claude-gui'
+                ? <ClaudeCodePanel sessionId={session.id} />
+                : <TerminalView session={session} isActive={isActive && isActivePane} />}
             </div>
           )
         })}
