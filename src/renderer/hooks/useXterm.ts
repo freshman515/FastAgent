@@ -207,7 +207,8 @@ export function useXterm(
         || (e.ctrlKey && e.key === 'p')
         || (e.ctrlKey && e.key >= '1' && e.key <= '9')
         || (e.ctrlKey && e.key === 'f')
-        || (e.ctrlKey && e.shiftKey && e.key === 'T')) {
+        || (e.ctrlKey && e.shiftKey && e.key === 'T')
+        || e.key === 'F11') {
         return false
       }
 

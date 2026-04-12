@@ -398,6 +398,8 @@ export const IPC = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
   WINDOW_IS_MAXIMIZED: 'window:is-maximized',
+  WINDOW_SET_FULLSCREEN: 'window:set-fullscreen',
+  WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
 
   DIALOG_SELECT_FOLDER: 'dialog:select-folder',
   SHELL_OPEN_PATH: 'shell:open-path',

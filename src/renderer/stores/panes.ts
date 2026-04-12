@@ -21,11 +21,20 @@ export type PaneNode = PaneLeaf | PaneSplit
 
 export type SplitPosition = 'left' | 'right' | 'up' | 'down'
 
+interface StoredPaneLayout {
+  root: PaneNode
+  activePaneId: string
+  paneSessions: Record<string, string[]>
+  paneActiveSession: Record<string, string | null>
+  fullscreenPaneId: string | null
+}
+
 // ─── Store ───
 
 interface PanesState {
   root: PaneNode
   activePaneId: string
+  fullscreenPaneId: string | null
 
   // paneId → ordered session IDs in that pane
   paneSessions: Record<string, string[]>
@@ -33,7 +42,7 @@ interface PanesState {
   paneActiveSession: Record<string, string | null>
 
   // Per-project layout cache: projectId → saved layout
-  projectLayouts: Record<string, { root: PaneNode; activePaneId: string; paneSessions: Record<string, string[]>; paneActiveSession: Record<string, string | null> }>
+  projectLayouts: Record<string, StoredPaneLayout>
   currentProjectId: string | null
 
   // Actions
@@ -52,7 +61,11 @@ interface PanesState {
   reorderPaneSessions: (paneId: string, fromId: string, toId: string) => void
   findPaneForSession: (sessionId: string) => string | null
   getPaneIdForActiveSession: () => string
+  navigatePane: (direction: 'left' | 'right' | 'up' | 'down') => void
   mergeAllPanes: () => void
+  mergePane: (paneId: string) => void
+  togglePaneFullscreen: (paneId?: string) => void
+  exitPaneFullscreen: () => void
 }
 
 const DEFAULT_PANE_ID = 'pane-root'
@@ -101,6 +114,23 @@ function getFirstLeafId(node: PaneNode): string {
 function getLastLeafId(node: PaneNode): string {
   if (node.type === 'leaf') return node.id
   return getLastLeafId(node.second)
+}
+
+function hasLeaf(node: PaneNode, paneId: string): boolean {
+  if (node.type === 'leaf') return node.id === paneId
+  return hasLeaf(node.first, paneId) || hasLeaf(node.second, paneId)
+}
+
+function sanitizeFullscreenPaneId(
+  root: PaneNode,
+  paneSessions: Record<string, string[]>,
+  paneId: unknown,
+): string | null {
+  if (typeof paneId !== 'string' || !hasLeaf(root, paneId)) return null
+  const targetSessions = paneSessions[paneId] ?? []
+  const hasAnySessions = Object.values(paneSessions).some((sessions) => sessions.length > 0)
+  if (hasAnySessions && targetSessions.length === 0) return null
+  return paneId
 }
 
 // Registry of pane DOM elements for screen-position-based navigation
@@ -159,6 +189,7 @@ function persistPanes(state: PanesState): void {
   window.api.config.write('panes', {
     root: state.root,
     activePaneId: state.activePaneId,
+    fullscreenPaneId: state.fullscreenPaneId,
     paneSessions: state.paneSessions,
     paneActiveSession: state.paneActiveSession,
     currentProjectId: state.currentProjectId,
@@ -169,6 +200,7 @@ function persistPanes(state: PanesState): void {
 export const usePanesStore = create<PanesState>((set, get) => ({
   root: { type: 'leaf', id: DEFAULT_PANE_ID } as PaneNode,
   activePaneId: DEFAULT_PANE_ID,
+  fullscreenPaneId: null,
   paneSessions: { [DEFAULT_PANE_ID]: [] },
   paneActiveSession: { [DEFAULT_PANE_ID]: null },
   projectLayouts: {},
@@ -178,6 +210,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     set({
       root: { type: 'leaf', id: DEFAULT_PANE_ID },
       activePaneId: DEFAULT_PANE_ID,
+      fullscreenPaneId: null,
       paneSessions: { [DEFAULT_PANE_ID]: sessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
     })
@@ -194,6 +227,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         activePaneId: state.activePaneId,
         paneSessions: { ...state.paneSessions },
         paneActiveSession: { ...state.paneActiveSession },
+        fullscreenPaneId: state.fullscreenPaneId,
       }
     }
 
@@ -206,6 +240,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         set({
           root: saved.root,
           activePaneId: saved.activePaneId,
+          fullscreenPaneId: sanitizeFullscreenPaneId(saved.root, saved.paneSessions, saved.fullscreenPaneId),
           paneSessions: saved.paneSessions,
           paneActiveSession: saved.paneActiveSession,
           currentProjectId: projectId,
@@ -219,6 +254,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     set({
       root: { type: 'leaf', id: DEFAULT_PANE_ID },
       activePaneId: DEFAULT_PANE_ID,
+      fullscreenPaneId: null,
       paneSessions: { [DEFAULT_PANE_ID]: projectSessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
       currentProjectId: projectId,
@@ -238,6 +274,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         activePaneId: state.activePaneId,
         paneSessions: { ...state.paneSessions },
         paneActiveSession: { ...state.paneActiveSession },
+        fullscreenPaneId: state.fullscreenPaneId,
       }
     }
 
@@ -277,6 +314,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         set({
           root: saved.root,
           activePaneId: saved.activePaneId,
+          fullscreenPaneId: sanitizeFullscreenPaneId(saved.root, cleanedPaneSessions, saved.fullscreenPaneId),
           paneSessions: cleanedPaneSessions,
           paneActiveSession: cleanedPaneActive,
           currentProjectId: worktreeId,
@@ -290,6 +328,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     set({
       root: { type: 'leaf', id: DEFAULT_PANE_ID },
       activePaneId: DEFAULT_PANE_ID,
+      fullscreenPaneId: null,
       paneSessions: { [DEFAULT_PANE_ID]: worktreeSessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSessionId },
       currentProjectId: worktreeId,
@@ -300,10 +339,13 @@ export const usePanesStore = create<PanesState>((set, get) => ({
   loadFromConfig: (raw: Record<string, unknown>) => {
     if (!raw || typeof raw !== 'object') return
     if (raw.root && raw.paneSessions) {
+      const root = raw.root as PaneNode
+      const paneSessions = raw.paneSessions as Record<string, string[]>
       set({
-        root: raw.root as PaneNode,
+        root,
         activePaneId: (raw.activePaneId as string) ?? DEFAULT_PANE_ID,
-        paneSessions: raw.paneSessions as Record<string, string[]>,
+        fullscreenPaneId: sanitizeFullscreenPaneId(root, paneSessions, raw.fullscreenPaneId),
+        paneSessions,
         paneActiveSession: (raw.paneActiveSession as Record<string, string | null>) ?? {},
         currentProjectId: (raw.currentProjectId as string) ?? null,
         projectLayouts: (raw.projectLayouts ?? {}) as PanesState['projectLayouts'],
@@ -348,6 +390,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     set({
       root: newRoot,
       activePaneId: newPaneId,
+      fullscreenPaneId: state.fullscreenPaneId === paneId ? newPaneId : state.fullscreenPaneId,
       paneSessions: {
         ...state.paneSessions,
         [paneId]: oldSessions,
@@ -384,16 +427,23 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     if (state.activePaneId === paneId) {
       newActivePaneId = getFirstLeafId(sibling)
     }
+    const nextFullscreenPaneId = state.fullscreenPaneId === paneId
+      ? getFirstLeafId(sibling)
+      : sanitizeFullscreenPaneId(newRoot, restSessions, state.fullscreenPaneId)
 
     set({
       root: newRoot,
       activePaneId: newActivePaneId,
+      fullscreenPaneId: nextFullscreenPaneId,
       paneSessions: restSessions,
       paneActiveSession: restActive,
     })
   },
 
-  setActivePaneId: (paneId) => set({ activePaneId: paneId }),
+  setActivePaneId: (paneId) => set((state) => ({
+    activePaneId: paneId,
+    fullscreenPaneId: state.fullscreenPaneId ? paneId : null,
+  })),
 
   setPaneActiveSession: (paneId, sessionId) =>
     set((state) => ({
@@ -448,6 +498,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         [toPaneId]: sessionId,
       },
       activePaneId: toPaneId,
+      fullscreenPaneId: state.fullscreenPaneId === fromPaneId ? toPaneId : state.fullscreenPaneId,
     })
 
     // Auto-close empty pane
@@ -517,6 +568,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     set({
       root: { type: 'leaf', id: DEFAULT_PANE_ID },
       activePaneId: DEFAULT_PANE_ID,
+      fullscreenPaneId: state.fullscreenPaneId ? DEFAULT_PANE_ID : null,
       paneSessions: { [DEFAULT_PANE_ID]: allSessionIds },
       paneActiveSession: { [DEFAULT_PANE_ID]: activeSession },
     })
@@ -539,9 +591,22 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         ...state.paneActiveSession,
         [siblingLeafId]: sessionsToMove[0] ?? state.paneActiveSession[siblingLeafId],
       },
+      fullscreenPaneId: state.fullscreenPaneId === paneId ? siblingLeafId : state.fullscreenPaneId,
     })
     get().closePane(paneId)
   },
+
+  togglePaneFullscreen: (paneId) => {
+    const state = get()
+    const targetPaneId = paneId ?? state.activePaneId
+    if (!hasLeaf(state.root, targetPaneId)) return
+    set({
+      activePaneId: targetPaneId,
+      fullscreenPaneId: state.fullscreenPaneId === targetPaneId ? null : targetPaneId,
+    })
+  },
+
+  exitPaneFullscreen: () => set({ fullscreenPaneId: null }),
 }))
 
 // Auto-persist on state change (debounced)

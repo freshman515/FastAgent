@@ -25,6 +25,7 @@ import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useState } from 'react'
 import { ANONYMOUS_PROJECT_ID, type ClaudeGuiEvent } from '@shared/types'
+import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 
 interface EditorPathContext {
   projectId: string
@@ -614,6 +615,19 @@ export function App(): JSX.Element {
     })
   }, [])
 
+  // Capture F11 before focused terminals/editors consume it.
+  useEffect(() => {
+    const handleF11 = (e: KeyboardEvent): void => {
+      if (e.key !== 'F11') return
+      e.preventDefault()
+      e.stopPropagation()
+      void toggleCurrentSessionFullscreen()
+    }
+
+    window.addEventListener('keydown', handleF11, true)
+    return () => window.removeEventListener('keydown', handleF11, true)
+  }, [])
+
   // Global keyboard shortcuts — operate on the active pane
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -688,6 +702,21 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  useEffect(() => {
+    window.api.window.isFullscreen().then((fullscreen) => {
+      useUIStore.getState().setWindowFullscreen(fullscreen)
+    }).catch(() => {})
+  }, [])
+
+  const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
+  const windowFullscreen = useUIStore((s) => s.windowFullscreen)
+
+  useEffect(() => {
+    if (!windowFullscreen && fullscreenPaneId) {
+      usePanesStore.getState().exitPaneFullscreen()
+    }
+  }, [fullscreenPaneId, windowFullscreen])
+
   if (!ready) {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--color-bg-primary)]">
@@ -698,9 +727,9 @@ export function App(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
-      <TitleBar />
+      {!windowFullscreen && <TitleBar />}
       <div className="flex flex-1 overflow-hidden">
-        <LeftPanel />
+        {!fullscreenPaneId && <LeftPanel />}
 
         {/* Main panel */}
         <div className="flex-1 overflow-hidden">
@@ -708,11 +737,11 @@ export function App(): JSX.Element {
         </div>
 
         {/* Right panel */}
-        <RightPanel />
+        {!fullscreenPaneId && <RightPanel />}
       </div>
 
       {/* Status bar */}
-      <StatusBar />
+      {!fullscreenPaneId && <StatusBar />}
 
       {/* Settings dialog */}
       <SettingsDialog />

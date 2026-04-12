@@ -11,6 +11,7 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { MusicPlayer } from './MusicPlayer'
 import { TitleBarSearch } from './TitleBarSearch'
 import type { ExternalIdeOption } from '@shared/types'
+import { setCurrentSessionFullscreen, toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 
 type TitleMenuId = 'file' | 'edit' | 'view' | 'help'
 
@@ -116,6 +117,8 @@ export function TitleBar(): JSX.Element | null {
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
   const activateDockPanel = useUIStore((s) => s.activateDockPanel)
   const addToast = useUIStore((s) => s.addToast)
+  const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
+  const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
 
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectedProject = useProjectsStore((s) =>
@@ -307,6 +310,15 @@ export function TitleBar(): JSX.Element | null {
             onSelect: () => activateDockPanel('todo'),
           },
           {
+            icon: Square,
+            label: fullscreenPaneId ? '退出当前会话全屏' : '当前会话全屏',
+            onSelect: () => void (fullscreenPaneId
+              ? setCurrentSessionFullscreen(false)
+              : toggleCurrentSessionFullscreen()),
+            disabled: !activeTabId,
+            hint: 'F11',
+          },
+          {
             icon: Search,
             label: showTitleBarSearch ? '关闭标题栏搜索' : '开启标题栏搜索',
             onSelect: () => updateSettings({ showTitleBarSearch: !showTitleBarSearch }),
@@ -338,8 +350,10 @@ export function TitleBar(): JSX.Element | null {
   }, [
     activateDockPanel,
     activeProjectPath,
+    activeTabId,
     availableIdes,
     defaultSessionType,
+    fullscreenPaneId,
     handleCopyText,
     handleCreateDefaultSession,
     handleOpenInIde,

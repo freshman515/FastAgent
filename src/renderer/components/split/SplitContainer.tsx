@@ -31,11 +31,25 @@ function SplitNodeRenderer({ node, projectId }: SplitContainerProps): JSX.Elemen
   )
 }
 
+function findLeaf(node: PaneNode, paneId: string): PaneNode | null {
+  if (node.type === 'leaf') return node.id === paneId ? node : null
+  return findLeaf(node.first, paneId) ?? findLeaf(node.second, paneId)
+}
+
 interface Props {
   projectId: string
 }
 
 export function SplitContainer({ projectId }: Props): JSX.Element {
   const root = usePanesStore((s) => s.root)
+  const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
+
+  if (fullscreenPaneId) {
+    const fullscreenLeaf = findLeaf(root, fullscreenPaneId)
+    if (fullscreenLeaf?.type === 'leaf') {
+      return <PaneView paneId={fullscreenLeaf.id} projectId={projectId} />
+    }
+  }
+
   return <SplitNodeRenderer node={root} projectId={projectId} />
 }

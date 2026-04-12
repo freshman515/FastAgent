@@ -184,6 +184,9 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
 }
 
 interface UIState {
+  windowFullscreen: boolean
+  setWindowFullscreen: (fullscreen: boolean) => void
+
   dockPanelOrder: Record<DockSide, DockPanelId[]>
   dockPanelActiveTab: Record<DockSide, DockPanelId | null>
   dockPanelCollapsed: Record<DockSide, boolean>
@@ -692,6 +695,9 @@ function moveDockPanelLayout(
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
+  windowFullscreen: false,
+  setWindowFullscreen: (fullscreen) => set({ windowFullscreen: fullscreen }),
+
   ...getDefaultDockPanelsState(),
 
   setDockPanelWidth: (side, width) =>

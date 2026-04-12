@@ -38,6 +38,8 @@ const api = {
     maximize: () => ipcRenderer.invoke(IPC.WINDOW_MAXIMIZE),
     close: () => ipcRenderer.invoke(IPC.WINDOW_CLOSE),
     isMaximized: () => ipcRenderer.invoke(IPC.WINDOW_IS_MAXIMIZED) as Promise<boolean>,
+    setFullscreen: (fullscreen: boolean) => ipcRenderer.invoke(IPC.WINDOW_SET_FULLSCREEN, fullscreen) as Promise<boolean>,
+    isFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_IS_FULLSCREEN) as Promise<boolean>,
   },
 
   dialog: {
