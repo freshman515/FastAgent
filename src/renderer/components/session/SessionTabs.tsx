@@ -125,12 +125,13 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
             <PanelLeftOpen size={14} />
           </button>
         )}
-        {sessions.map((session) => (
+        {sessions.map((session, index) => (
           <SessionTab
             key={session.id}
             session={session}
             isActive={session.id === activeSessionId}
             isDragging={draggingId === session.id}
+            showDivider={index < sessions.length - 1}
             dropSide={dropTarget?.id === session.id ? dropTarget.side : null}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}

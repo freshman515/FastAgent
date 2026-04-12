@@ -5,6 +5,7 @@ import type { SessionCreateOptions } from '@shared/types'
 import { ptyManager } from '../services/PtyManager'
 import { activityMonitor } from '../services/ActivityMonitor'
 import { hookServer } from '../services/HookServer'
+import { claudeGuiService } from '../services/ClaudeGuiService'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSION_CREATE, (_event, options: SessionCreateOptions) => {
@@ -76,6 +77,9 @@ export function registerSessionHandlers(): void {
 
   // Permission response from renderer: respond to HTTP hook
   ipcMain.handle(IPC.PERMISSION_RESPOND, (_event, id: string, behavior: 'allow' | 'deny', suggestionIndex?: number) => {
+    if (claudeGuiService.resolvePermissionRequest(id, behavior, suggestionIndex)) {
+      return
+    }
     hookServer.resolvePermission(id, behavior, suggestionIndex)
   })
 }

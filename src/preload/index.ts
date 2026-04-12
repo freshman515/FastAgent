@@ -4,6 +4,7 @@ import type {
   ClaudeDiffReviewOptions,
   ClaudeDiffReviewResult,
   ClaudeGuiEvent,
+  ClaudeGuiSkillCatalogEntry,
   ClaudePromptOptimizeOptions,
   ClaudePromptOptimizeResult,
   ClaudeGuiRequestOptions,
@@ -99,8 +100,8 @@ const api = {
       ipcRenderer.on('agent:status-update', handler)
       return () => ipcRenderer.removeListener('agent:status-update', handler)
     },
-    onPermissionRequest: (callback: (event: { id: string; sessionId: string | null; toolName: string; detail: string; suggestions: string[] }) => void) => {
-      const handler = (_: unknown, event: { id: string; sessionId: string | null; toolName: string; detail: string; suggestions: string[] }) => callback(event)
+    onPermissionRequest: (callback: (event: { id: string; sessionId: string | null; conversationId?: string | null; toolName: string; detail: string; suggestions: string[] }) => void) => {
+      const handler = (_: unknown, event: { id: string; sessionId: string | null; conversationId?: string | null; toolName: string; detail: string; suggestions: string[] }) => callback(event)
       ipcRenderer.on(IPC.PERMISSION_REQUEST, handler)
       return () => ipcRenderer.removeListener(IPC.PERMISSION_REQUEST, handler)
     },
@@ -126,6 +127,8 @@ const api = {
       extension: 'md' | 'json'
       content: string
     }) => ipcRenderer.invoke(IPC.CLAUDE_GUI_EXPORT, options) as Promise<boolean>,
+    listSkills: (cwd: string) =>
+      ipcRenderer.invoke(IPC.CLAUDE_GUI_LIST_SKILLS, cwd) as Promise<ClaudeGuiSkillCatalogEntry[]>,
     onEvent: (callback: (event: ClaudeGuiEvent) => void) => {
       const handler = (_: unknown, event: ClaudeGuiEvent) => callback(event)
       ipcRenderer.on(IPC.CLAUDE_GUI_EVENT, handler)
@@ -224,6 +227,10 @@ const api = {
     readDir: (path: string) => ipcRenderer.invoke('fs:read-dir', path) as Promise<Array<{ name: string; isDir: boolean }>>,
     readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path) as Promise<string>,
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:write-file', path, content) as Promise<void>,
+    createFile: (path: string) => ipcRenderer.invoke('fs:create-file', path) as Promise<void>,
+    createDir: (path: string) => ipcRenderer.invoke('fs:create-dir', path) as Promise<void>,
+    move: (sourcePath: string, targetPath: string) => ipcRenderer.invoke('fs:move', sourcePath, targetPath) as Promise<void>,
+    delete: (path: string) => ipcRenderer.invoke('fs:delete', path) as Promise<void>,
     writeTempFile: (suggestedName: string, content: string, extension = 'txt') =>
       ipcRenderer.invoke('fs:write-temp-file', suggestedName, content, extension) as Promise<string>,
   },

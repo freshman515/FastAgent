@@ -5,6 +5,7 @@ import http from 'node:http'
 import { BrowserWindow } from 'electron'
 import { IPC } from '@shared/types'
 import { ptyManager } from './PtyManager'
+import { claudeGuiService } from './ClaudeGuiService'
 
 const DEFAULT_PORT = 24680
 const PORT_RANGE = 5
@@ -194,6 +195,17 @@ export class HookServer {
         // HTTP hooks don't pass env vars, so resolve session by CWD
         const cwd = typeof data.cwd === 'string' ? data.cwd : ''
         const faSessionId = cwd ? ptyManager.findClaudeSessionByCwd(cwd) : null
+        const conversationId = !faSessionId && cwd ? claudeGuiService.findConversationIdByCwd(cwd) : null
+
+        // Claude GUI handles can_use_tool permission prompts through the
+        // stream-json control_request/control_response channel. Return an
+        // empty hook result here so the hook path passes through instead of
+        // racing the GUI flow with an early deny/allow decision.
+        if (conversationId) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+          return
+        }
 
         // Auto-allow passthrough tools
         if (PASSTHROUGH_TOOLS.has(toolName)) {
@@ -240,6 +252,7 @@ export class HookServer {
             win.webContents.send(IPC.PERMISSION_REQUEST, {
               id,
               sessionId: faSessionId,
+              conversationId,
               toolName,
               detail,
               suggestions: suggestionLabels,

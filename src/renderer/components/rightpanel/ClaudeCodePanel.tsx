@@ -20,12 +20,22 @@ import {
   Search,
   Send,
   Settings2,
+  Shield,
+  Sparkles,
   Square,
   Trash2,
   X,
 } from 'lucide-react'
 import { type ReactNode, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { FileSearchResult } from '@shared/types'
+import type { ClaudeGuiSkillCatalogEntry, FileSearchResult } from '@shared/types'
+import claudeIcon from '@/assets/icons/Claude.png'
+import {
+  buildSlashSuggestions,
+  getSlashSuggestionContext,
+  mergeSkillCatalog,
+  parseComposerSlashCommand,
+  type ClaudeGuiSlashSuggestion,
+} from '@/lib/claudeSlashCommands'
 import { renderCodeFence, renderMarkdown } from '@/lib/markdown'
 import { cn, generateId } from '@/lib/utils'
 import { detectLanguage, useEditorsStore } from '@/stores/editors'
@@ -69,6 +79,14 @@ interface MentionMatch {
   end: number
 }
 
+interface ClaudeGuiPermissionRequest {
+  id: string
+  conversationId: string
+  toolName: string
+  detail: string
+  suggestions: string[]
+}
+
 type ActiveEditorTab = ReturnType<typeof useEditorsStore.getState>['tabs'][number]
 type ActiveCursorInfo = ReturnType<typeof useEditorsStore.getState>['cursorInfo']
 
@@ -101,6 +119,82 @@ const PROMPT_PRESETS = [
   { id: 'refactor', label: '风格重构', prompt: '请按当前项目的既有风格重构这段代码，优先改善可读性和命名，不要改变行为。' },
   { id: 'tests', label: '补测试', prompt: '请为当前代码补充测试思路和测试用例，优先覆盖边界条件和回归风险。' },
 ] as const
+const CLAUDE_SPINNER_VERBS = [
+  'Philosophising',
+  'Thinking',
+  'Contemplating',
+  'Pondering',
+  'Considering',
+  'Computing',
+  'Generating',
+  'Crafting',
+  'Processing',
+  'Percolating',
+  'Synthesizing',
+  'Musing',
+  'Working',
+] as const
+
+function hashString(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+function getSpinnerVerb(requestId: string | null): string {
+  if (!requestId) return 'Thinking'
+  return CLAUDE_SPINNER_VERBS[hashString(requestId) % CLAUDE_SPINNER_VERBS.length] ?? 'Thinking'
+}
+
+function normalizeProcessingDetail(detail: string): string {
+  return detail
+    .replace(/^⏳\s*/, '')
+    .replace(/\s*\(\d+s\)\s*$/, '')
+    .trim()
+}
+
+function getPermissionModeLabel(mode: ClaudeGuiPreferences['permissionMode']): string {
+  switch (mode) {
+    case 'plan':
+      return 'Plan mode'
+    case 'acceptEdits':
+      return 'Accept edits'
+    case 'bypassPermissions':
+      return 'Bypass permissions'
+    case 'dontAsk':
+      return "Don't ask"
+    case 'default':
+    default:
+      return 'Ask before edits'
+  }
+}
+
+function getMessageTypography(size: ClaudeGuiPreferences['messageTextSize']): { body: string; assistant: string; thinking: string } {
+  switch (size) {
+    case 'md':
+      return {
+        body: 'text-[13px] leading-7',
+        assistant: 'text-[14px] leading-7',
+        thinking: 'text-[13px] leading-7',
+      }
+    case 'xl':
+      return {
+        body: 'text-[15px] leading-8',
+        assistant: 'text-[17px] leading-8',
+        thinking: 'text-[14px] leading-7',
+      }
+    case 'lg':
+    default:
+      return {
+        body: 'text-[14px] leading-8',
+        assistant: 'text-[16px] leading-8',
+        thinking: 'text-[13px] leading-7',
+      }
+  }
+}
 
 function getClaudeSessionScopeKey(sessionId: string): string {
   return `session::${sessionId}`
@@ -181,6 +275,21 @@ function formatSelectionRange(selection: NonNullable<ActiveCursorInfo>['selectio
 
 function buildSelectionLabel(selection: NonNullable<ActiveCursorInfo>['selection']): string {
   return `${formatSelectionRange(selection)} · ${selection.lines} 行 / ${selection.chars} 字符`
+}
+
+function buildSelectionLineLabel(selection: NonNullable<ActiveCursorInfo>['selection']): string {
+  if (selection.startLine === selection.endLine) {
+    return `L${selection.startLine}`
+  }
+  return `L${selection.startLine}-${selection.endLine}`
+}
+
+function isCaretOnFirstLine(text: string, caret: number): boolean {
+  return !text.slice(0, Math.max(0, caret)).includes('\n')
+}
+
+function isCaretOnLastLine(text: string, caret: number): boolean {
+  return !text.slice(Math.max(0, caret)).includes('\n')
 }
 
 function joinPath(rootPath: string, relativePath: string): string {
@@ -665,6 +774,7 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
     : isSearchMatch
       ? 'ring-1 ring-[var(--color-accent)]/35 ring-offset-0'
       : ''
+  const typography = getMessageTypography(conversation.preferences.messageTextSize)
 
   if (entry.kind === 'tool') {
     const summary = buildToolSummary(entry.tool, entry.result)
@@ -785,24 +895,7 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
 
   const message = entry.message
   if (message.kind === 'stats') {
-    const meta = message.meta ?? {}
-    const inputTokens = Number(meta.inputTokens ?? conversation.lastRequestInputTokens ?? 0)
-    const outputTokens = Number(meta.outputTokens ?? conversation.lastRequestOutputTokens ?? 0)
-    const totalTokens = inputTokens + outputTokens
-    return (
-      <div className="flex gap-3 px-4 pb-4">
-        <TraceRail tone="bg-[var(--color-text-tertiary)]" isLast={isLast} />
-        <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-1.5 text-[10px] text-[var(--color-text-secondary)]">
-          <span>💰</span>
-          <span>{inputTokens.toLocaleString()} in</span>
-          <span>→</span>
-          <span>{outputTokens.toLocaleString()} out</span>
-          <span>({totalTokens.toLocaleString()} total)</span>
-          <span className="font-semibold text-[var(--color-warning)]">{formatMoney(Number(meta.cost ?? 0))}</span>
-          <span>{formatDuration(Number(meta.duration ?? 0))}</span>
-        </div>
-      </div>
-    )
+    return null
   }
 
   const tone =
@@ -829,7 +922,7 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
 
   const contentClass =
     message.kind === 'user'
-      ? 'overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-accent)]/25 bg-[var(--color-accent)]/8 px-4 py-3'
+      ? 'overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/78 px-4 py-3'
       : message.kind === 'error'
         ? 'overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-error)]/25 bg-[var(--color-error)]/10 px-4 py-3'
         : message.kind === 'system'
@@ -839,17 +932,14 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
   if (message.kind === 'user') {
     const requestId = typeof message.meta?.requestId === 'string' ? message.meta.requestId : null
     return (
-      <div id={`claude-trace-${entry.id}`} className="flex justify-end px-4 pb-4">
-        <div className={cn('max-w-[78%] min-w-0 rounded-[var(--radius-lg)]', matchClass)}>
-          <div className="mb-1 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)]">
-            {label}
-          </div>
+      <div id={`claude-trace-${entry.id}`} className={cn('mx-4 mb-4', matchClass)}>
+        <div className="min-w-0">
           <div className={contentClass}>
             {message.text && (
-              <div className="whitespace-pre-wrap break-words text-[13px] leading-7 text-[var(--color-text-primary)]">{message.text}</div>
+              <div className={cn('whitespace-pre-wrap break-words text-[var(--color-text-primary)]', typography.body)}>{message.text}</div>
             )}
             {message.attachments && message.attachments.length > 0 && (
-              <div className="mt-3 flex flex-wrap justify-end gap-1.5">
+              <div className="mt-3 flex flex-wrap gap-1.5">
                 {message.attachments.map((attachment) => (
                   <span
                     key={attachment}
@@ -887,6 +977,45 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
     )
   }
 
+  if (message.kind === 'thinking') {
+    const messageIndex = conversation.messages.findIndex((item) => item.id === message.id)
+    const nextTimestamp = messageIndex >= 0
+      ? conversation.messages.slice(messageIndex + 1).find((item) => item.kind !== 'thinking')?.createdAt ?? conversation.updatedAt
+      : conversation.updatedAt
+    const thoughtSeconds = Math.max(1, Math.floor((nextTimestamp - message.createdAt) / 1000))
+    const thoughtKey = `thinking-${message.id}`
+    const expanded = expandedSections[thoughtKey] === true
+
+    return (
+      <div id={`claude-trace-${entry.id}`} className={cn('mx-4 mb-3', matchClass)}>
+        <button
+          onClick={() => onToggleSection(thoughtKey)}
+          className="flex items-center gap-2 text-[12px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+        >
+          <span className="text-[16px] leading-none">•</span>
+          <span>{`Thought for ${thoughtSeconds}s`}</span>
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {expanded && message.text && (
+          <div className={cn('ai-summary-content mt-2 pl-5 text-[var(--color-text-secondary)]', typography.thinking)} dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
+        )}
+      </div>
+    )
+  }
+
+  if (message.kind === 'assistant') {
+    return (
+      <div id={`claude-trace-${entry.id}`} className={cn('mx-4 mb-5', matchClass)}>
+        {message.text && (
+          <div
+            className={cn('ai-summary-content text-[var(--color-text-primary)]', typography.assistant)}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div id={`claude-trace-${entry.id}`} className={cn('mx-4 mb-4 flex gap-3 rounded-[var(--radius-lg)] px-0 pb-0', matchClass)}>
       <TraceRail tone={tone} isLast={isLast} />
@@ -898,8 +1027,8 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
         <div className={contentClass}>
           {message.text && (
             message.kind === 'assistant' || message.kind === 'thinking' || message.kind === 'tool-result'
-              ? <div className="ai-summary-content text-[13px] leading-7 text-[var(--color-text-primary)]" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
-              : <div className="whitespace-pre-wrap break-words text-[13px] leading-7 text-[var(--color-text-primary)]">{message.text}</div>
+              ? <div className={cn('ai-summary-content text-[var(--color-text-primary)]', typography.body)} dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
+              : <div className={cn('whitespace-pre-wrap break-words text-[var(--color-text-primary)]', typography.body)}>{message.text}</div>
           )}
           {message.attachments && message.attachments.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
@@ -923,6 +1052,120 @@ interface ClaudeCodePanelProps {
   sessionId?: string
 }
 
+function normalizeSlashToken(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function canonicalLocalCommandName(value: string): string {
+  const normalized = normalizeSlashToken(value)
+  switch (normalized) {
+    case '?':
+      return 'help'
+    case 'chat':
+      return 'new'
+    case 'chats':
+      return 'history'
+    case 'config':
+      return 'settings'
+    case 'usage':
+      return 'stats'
+    case 'file':
+      return 'files'
+    case 'reset':
+      return 'clear'
+    case 'thinking':
+      return 'think'
+    case 'language':
+      return 'lang'
+    case 'skills':
+      return 'skill'
+    default:
+      return normalized
+  }
+}
+
+function findLanguageOption(query: string): NonNullable<ClaudeGuiPreferences['language']> | null {
+  const normalized = normalizeSlashToken(query)
+  if (!normalized) return null
+
+  const option = LANGUAGE_OPTIONS.find((item) => (
+    item.value === normalized
+    || item.label.toLowerCase() === normalized
+  ))
+  return option?.value ?? null
+}
+
+function findModelOption(query: string): string | null {
+  const normalized = normalizeSlashToken(query)
+  if (!normalized) return null
+
+  const compactQuery = normalized.replace(/\s+/g, '')
+  const option = MODEL_OPTIONS.find((item) => {
+    const compactLabel = item.label.toLowerCase().replace(/\s+/g, '')
+    return (
+      item.value.toLowerCase() === normalized
+      || item.label.toLowerCase() === normalized
+      || compactLabel === compactQuery
+      || item.value.toLowerCase().startsWith(normalized)
+      || compactLabel.startsWith(compactQuery)
+    )
+  })
+
+  return option?.value ?? null
+}
+
+function resolveToggleArg(value: string): boolean | null {
+  const normalized = normalizeSlashToken(value)
+  if (!normalized || normalized === 'toggle') return null
+  if (['on', 'true', '1', 'enable', 'enabled'].includes(normalized)) return true
+  if (['off', 'false', '0', 'disable', 'disabled'].includes(normalized)) return false
+  return null
+}
+
+function findSkillEntry(skills: ClaudeGuiSkillCatalogEntry[], skillName: string): ClaudeGuiSkillCatalogEntry | null {
+  const normalized = normalizeSlashToken(skillName)
+  if (!normalized) return null
+  return skills.find((skill) => normalizeSlashToken(skill.name) === normalized) ?? null
+}
+
+function extractSkillInvocation(
+  parsed: NonNullable<ReturnType<typeof parseComposerSlashCommand>>,
+  skills: ClaudeGuiSkillCatalogEntry[],
+): { skill: ClaudeGuiSkillCatalogEntry; request: string } | null {
+  if (parsed.normalizedName === 'skill' || parsed.normalizedName === 'skills') {
+    if (!parsed.args.trim()) return null
+    const [skillName, ...rest] = parsed.args.trim().split(/\s+/)
+    const skill = findSkillEntry(skills, skillName ?? '')
+    if (!skill) return null
+    return {
+      skill,
+      request: rest.join(' ').trim(),
+    }
+  }
+
+  const directSkill = findSkillEntry(skills, parsed.commandName)
+  if (!directSkill) return null
+  return {
+    skill: directSkill,
+    request: parsed.args.trim(),
+  }
+}
+
+function buildSkillPromptText(skill: ClaudeGuiSkillCatalogEntry, request: string): string {
+  const requestText = request.trim() || `Apply the ${skill.name} skill to the current task.`
+  const skillSummary = skill.description.replace(/\s+/g, ' ').trim().slice(0, 600)
+  return [
+    '[Requested skill]',
+    `The user intentionally invoked the "${skill.name}" skill from the GUI slash command palette.`,
+    skillSummary ? `Skill summary: ${skillSummary}` : '',
+    'If this skill is available in the current Claude environment, apply it faithfully.',
+    'If the exact skill is not available, say so explicitly and continue with the best equivalent workflow instead of failing silently.',
+    '',
+    '[User request]',
+    requestText,
+  ].filter(Boolean).join('\n')
+}
+
 export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.Element {
   const projects = useProjectsStore((state) => state.projects)
   const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
@@ -939,6 +1182,8 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   const conversations = useClaudeGuiStore((state) => state.conversations)
   const selectedConversationByScope = useClaudeGuiStore((state) => state.selectedConversationByScope)
   const defaultPreferences = useClaudeGuiStore((state) => state.preferences)
+  const slashCommandUsage = useClaudeGuiStore((state) => state.slashCommandUsage)
+  const recordSlashCommandUsage = useClaudeGuiStore((state) => state.recordSlashCommandUsage)
   const updatePreferences = useClaudeGuiStore((state) => state.updatePreferences)
   const updateConversationPreferences = useClaudeGuiStore((state) => state.updateConversationPreferences)
   const updateConversationMeta = useClaudeGuiStore((state) => state.updateConversationMeta)
@@ -953,11 +1198,11 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   const dismissPatchReviewFile = useClaudeGuiStore((state) => state.dismissPatchReviewFile)
   const applyEvent = useClaudeGuiStore((state) => state.applyEvent)
   const addToast = useUIStore((state) => state.addToast)
+  const openGlobalSettings = useUIStore((state) => state.openSettings)
 
   const [draft, setDraft] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [showHistory, setShowHistory] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [showStats, setShowStats] = useState(false)
   const [showFilePicker, setShowFilePicker] = useState(false)
   const [fileQuery, setFileQuery] = useState('')
@@ -971,8 +1216,12 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   const [mentionLoading, setMentionLoading] = useState(false)
   const [mentionError, setMentionError] = useState<string | null>(null)
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0)
+  const [composerCaret, setComposerCaret] = useState(0)
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
+  const [discoveredSkills, setDiscoveredSkills] = useState<ClaudeGuiSkillCatalogEntry[]>([])
+  const [skillCatalogLoading, setSkillCatalogLoading] = useState(false)
+  const [skillCatalogError, setSkillCatalogError] = useState<string | null>(null)
   const [referencedFiles, setReferencedFiles] = useState<ReferencedFile[]>([])
-  const [includeEditorContext, setIncludeEditorContext] = useState(true)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeSearchIndex, setActiveSearchIndex] = useState(0)
@@ -983,6 +1232,10 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   const [editingConversationTitle, setEditingConversationTitle] = useState('')
   const [editingConversationGroup, setEditingConversationGroup] = useState('')
   const [isDropActive, setIsDropActive] = useState(false)
+  const [processingNow, setProcessingNow] = useState(() => Date.now())
+  const [historyNavigationIndex, setHistoryNavigationIndex] = useState<number | null>(null)
+  const [historyNavigationDraft, setHistoryNavigationDraft] = useState<string | null>(null)
+  const [permissionRequests, setPermissionRequests] = useState<ClaudeGuiPermissionRequest[]>([])
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -990,6 +1243,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const messagesRef = useRef<HTMLDivElement | null>(null)
   const mentionResultRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const slashResultRefs = useRef<Array<HTMLButtonElement | null>>([])
   const fileSearchRunRef = useRef(0)
   const mentionSearchRunRef = useRef(0)
 
@@ -1034,6 +1288,26 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   }, [currentScopeKey, scopedConversations, selectedConversationByScope])
 
   const activePreferences = activeConversation?.preferences ?? defaultPreferences
+  const includeEditorContext = activePreferences.includeEditorContext
+  const availableSkills = activeConversation?.availableSkills ?? []
+  const mergedSkills = useMemo(
+    () => mergeSkillCatalog(discoveredSkills, availableSkills),
+    [availableSkills, discoveredSkills],
+  )
+  const slashContext = useMemo(
+    () => getSlashSuggestionContext(draft, composerCaret),
+    [composerCaret, draft],
+  )
+  const slashSuggestions = useMemo(
+    () => buildSlashSuggestions({
+      context: slashContext,
+      skills: mergedSkills,
+      usage: slashCommandUsage,
+    }),
+    [mergedSkills, slashCommandUsage, slashContext],
+  )
+  const discoveredSkillCount = mergedSkills.length
+  const runtimeSkillCount = availableSkills.length
 
   useEffect(() => {
     if (!sessionId || !rootPath || scopedConversations.length > 0) return
@@ -1064,8 +1338,77 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   }, [activeConversation, currentScopeKey, selectConversation, selectedConversationByScope])
 
   useEffect(() => {
+    const scopedConversationIds = new Set(scopedConversations.map((conversation) => conversation.id))
+
+    const offRequest = window.api.session.onPermissionRequest((event) => {
+      if (!event.conversationId || !scopedConversationIds.has(event.conversationId)) return
+      setPermissionRequests((current) => (
+        current.some((item) => item.id === event.id)
+          ? current
+          : [...current, {
+              id: event.id,
+              conversationId: event.conversationId,
+              toolName: event.toolName,
+              detail: event.detail,
+              suggestions: event.suggestions,
+            }]
+      ))
+    })
+
+    const offDismiss = window.api.session.onPermissionDismiss((event) => {
+      setPermissionRequests((current) => current.filter((item) => item.id !== event.id))
+    })
+
+    return () => {
+      offRequest()
+      offDismiss()
+    }
+  }, [scopedConversations])
+
+  useEffect(() => {
+    if (!rootPath) {
+      setDiscoveredSkills([])
+      setSkillCatalogError(null)
+      setSkillCatalogLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSkillCatalogLoading(true)
+    setSkillCatalogError(null)
+
+    void window.api.claudeGui.listSkills(rootPath)
+      .then((skills) => {
+        if (cancelled) return
+        setDiscoveredSkills(skills)
+        setSkillCatalogLoading(false)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setDiscoveredSkills([])
+        setSkillCatalogLoading(false)
+        setSkillCatalogError(error instanceof Error ? error.message : '技能目录读取失败')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [rootPath])
+
+  useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
   }, [activeConversation?.messages.length])
+
+  useEffect(() => {
+    if (activeConversation?.status !== 'running') return
+
+    setProcessingNow(Date.now())
+    const timer = window.setInterval(() => {
+      setProcessingNow(Date.now())
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [activeConversation?.currentRequestId, activeConversation?.status])
 
   useEffect(() => {
     setReferencedFiles([])
@@ -1077,6 +1420,8 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     setMentionResults([])
     setMentionError(null)
     setMentionSelectedIndex(0)
+    setComposerCaret(0)
+    setSlashSelectedIndex(0)
   }, [rootPath])
 
   useEffect(() => {
@@ -1180,6 +1525,23 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     target?.scrollIntoView({ block: 'nearest' })
   }, [mentionMatch, mentionResults, mentionSelectedIndex])
 
+  useEffect(() => {
+    setSlashSelectedIndex((current) => {
+      if (slashSuggestions.length === 0) return 0
+      return Math.min(current, slashSuggestions.length - 1)
+    })
+  }, [slashSuggestions])
+
+  useEffect(() => {
+    slashResultRefs.current = slashResultRefs.current.slice(0, slashSuggestions.length)
+  }, [slashSuggestions.length])
+
+  useEffect(() => {
+    if (!slashContext || slashSuggestions.length === 0) return
+    const target = slashResultRefs.current[slashSelectedIndex]
+    target?.scrollIntoView({ block: 'nearest' })
+  }, [slashContext, slashSelectedIndex, slashSuggestions])
+
   const activeSelection = activeEditorTab ? cursorInfo?.selection ?? null : null
   const activeSelections = activeEditorTab
     ? (cursorInfo?.selections?.filter((item) => !item.isEmpty) ?? [])
@@ -1205,10 +1567,22 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
   const editorContextLabel = useMemo(() => {
     if (!includeEditorContext) return null
     if (!editorContextItems || editorContextItems.length === 0) return null
-    if (editorContextItems.length === 1) return editorContextItems[0]?.label ?? null
-    const base = editorContextItems[0]?.label.split(' · ')[0] ?? 'Editor'
-    return `${base} · ${editorContextItems.length} selections`
-  }, [editorContextItems, includeEditorContext])
+    const displayPath = editorContextItems[0]?.label.split(' · ')[0] ?? 'Editor'
+
+    if (activeSelections.length > 0) {
+      const ranges = activeSelections
+        .slice(0, 2)
+        .map((selection) => buildSelectionLineLabel(selection))
+      const overflow = activeSelections.length > 2 ? ` +${activeSelections.length - 2} more` : ''
+      return `${displayPath} · ${ranges.join(', ')}${overflow}`
+    }
+
+    if (activeSelection && !activeSelection.isEmpty) {
+      return `${displayPath} · ${buildSelectionLineLabel(activeSelection)}`
+    }
+
+    return displayPath
+  }, [activeEditorTab, activeSelection, activeSelections, editorContextItems, includeEditorContext])
 
   const closeMentionPicker = useCallback(() => {
     setMentionMatch(null)
@@ -1264,12 +1638,15 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     const textarea = textareaRef.current
     if (!textarea) {
       setDraft((current) => `${current}${textToInsert}`)
+      setComposerCaret((current) => current + textToInsert.length)
       return
     }
 
     const selectionStart = textarea.selectionStart ?? draft.length
     const selectionEnd = textarea.selectionEnd ?? selectionStart
-    setDraft((current) => `${current.slice(0, selectionStart)}${textToInsert}${current.slice(selectionEnd)}`)
+    const nextValue = `${draft.slice(0, selectionStart)}${textToInsert}${draft.slice(selectionEnd)}`
+    setDraft(nextValue)
+    setComposerCaret(selectionStart + textToInsert.length)
 
     requestAnimationFrame(() => {
       const nextCaret = selectionStart + textToInsert.length
@@ -1277,6 +1654,34 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
       textarea.setSelectionRange(nextCaret, nextCaret)
     })
   }, [draft])
+
+  const replaceComposerRange = useCallback((start: number, end: number, replacement: string) => {
+    const safeStart = Math.max(0, start)
+    const safeEnd = Math.max(safeStart, end)
+    const nextValue = `${draft.slice(0, safeStart)}${replacement}${draft.slice(safeEnd)}`
+    const nextCaret = safeStart + replacement.length
+
+    setDraft(nextValue)
+    setComposerCaret(nextCaret)
+
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(nextCaret, nextCaret)
+    })
+  }, [draft])
+
+  const applyComposerTemplate = useCallback((value: string) => {
+    setDraft(value)
+    setComposerCaret(value.length)
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(value.length, value.length)
+    })
+  }, [])
 
   const addReferencedFile = useCallback(async (filePath: string, relativePath: string, fileName?: string): Promise<boolean> => {
     if (referencedFiles.some((item) => normalizePath(item.filePath) === normalizePath(filePath))) {
@@ -1333,6 +1738,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     const replacement = `@${result.relativePath} `
     setDraft((current) => `${current.slice(0, mentionMatch.start)}${replacement}${current.slice(mentionMatch.end)}`)
     closeMentionPicker()
+    setComposerCaret(mentionMatch.start + replacement.length)
 
     requestAnimationFrame(() => {
       const textarea = textareaRef.current
@@ -1342,6 +1748,88 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
       textarea.setSelectionRange(nextCaret, nextCaret)
     })
   }, [addReferencedFile, closeMentionPicker, mentionMatch])
+
+  const promptHistory = useMemo(() => {
+    const entries = scopedConversations
+      .flatMap((conversation) => conversation.messages)
+      .filter((message): message is ClaudeGuiMessage & { text: string } => (
+        message.kind === 'user'
+        && typeof message.text === 'string'
+        && message.text.trim().length > 0
+      ))
+      .sort((left, right) => right.createdAt - left.createdAt)
+
+    const seen = new Set<string>()
+    const history: string[] = []
+
+    for (const entry of entries) {
+      const normalized = entry.text.trim()
+      if (!normalized || seen.has(normalized)) continue
+      seen.add(normalized)
+      history.push(normalized)
+    }
+
+    return history
+  }, [scopedConversations])
+
+  const clearComposer = useCallback(() => {
+    setDraft('')
+    setComposerCaret(0)
+    setSlashSelectedIndex(0)
+    setHistoryNavigationIndex(null)
+    setHistoryNavigationDraft(null)
+    setPendingImages([])
+    setReferencedFiles([])
+    setShowFilePicker(false)
+    setFileQuery('')
+    setFileResults([])
+    setFileSearchError(null)
+    closeMentionPicker()
+  }, [closeMentionPicker])
+
+  const applyDraftValue = useCallback((value: string) => {
+    setDraft(value)
+    setComposerCaret(value.length)
+    closeMentionPicker()
+
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(value.length, value.length)
+    })
+  }, [closeMentionPicker])
+
+  const navigatePromptHistory = useCallback((direction: 'previous' | 'next') => {
+    if (promptHistory.length === 0) return false
+
+    if (direction === 'previous') {
+      const nextIndex = historyNavigationIndex === null
+        ? 0
+        : Math.min(historyNavigationIndex + 1, promptHistory.length - 1)
+
+      if (historyNavigationIndex === null) {
+        setHistoryNavigationDraft(draft)
+      }
+      setHistoryNavigationIndex(nextIndex)
+      applyDraftValue(promptHistory[nextIndex] ?? '')
+      return true
+    }
+
+    if (historyNavigationIndex === null) return false
+
+    const nextIndex = historyNavigationIndex - 1
+    if (nextIndex >= 0) {
+      setHistoryNavigationIndex(nextIndex)
+      applyDraftValue(promptHistory[nextIndex] ?? '')
+      return true
+    }
+
+    setHistoryNavigationIndex(null)
+    applyDraftValue(historyNavigationDraft ?? '')
+    setHistoryNavigationDraft(null)
+    return true
+  }, [applyDraftValue, draft, historyNavigationDraft, historyNavigationIndex, promptHistory])
 
   const handleNewConversation = (): void => {
     if (!rootPath) return
@@ -1355,6 +1843,162 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     selectConversation(currentScopeKey, id)
     setShowHistory(false)
   }
+
+  const handleSelectSlashSuggestion = useCallback((suggestion: ClaudeGuiSlashSuggestion) => {
+    if (!slashContext) return
+
+    const replacement = slashContext.kind === 'skill'
+      ? `${suggestion.name} `
+      : `/${suggestion.name} `
+
+    replaceComposerRange(slashContext.start, slashContext.end, replacement)
+    closeMentionPicker()
+    setSlashSelectedIndex(0)
+  }, [closeMentionPicker, replaceComposerRange, slashContext])
+
+  const handleLocalSlashCommand = useCallback(async (
+    parsed: NonNullable<ReturnType<typeof parseComposerSlashCommand>>,
+  ): Promise<boolean> => {
+    const commandName = parsed.normalizedName
+    const usageKey = `command:${canonicalLocalCommandName(commandName)}`
+
+    switch (commandName) {
+      case 'help':
+      case '?':
+        applyComposerTemplate('/')
+        recordSlashCommandUsage(usageKey)
+        addToast({
+          title: 'Slash 命令面板',
+          body: '继续输入命令名，或输入 /skill 后搜索已安装技能。',
+          type: 'info',
+        })
+        return true
+      case 'skills':
+        if (parsed.args) return false
+        applyComposerTemplate('/skill ')
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'skill':
+        if (parsed.args) return false
+        applyComposerTemplate('/skill ')
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'new':
+      case 'chat':
+        handleNewConversation()
+        clearComposer()
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'history':
+      case 'chats':
+        setShowHistory(true)
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'settings':
+      case 'config':
+        openGlobalSettings('claudeGui')
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'stats':
+      case 'usage':
+        setShowStats(true)
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'files':
+      case 'file':
+        setShowFilePicker(true)
+        setFileQuery(parsed.args)
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'clear':
+      case 'reset':
+        clearComposer()
+        recordSlashCommandUsage(usageKey)
+        return true
+      case 'plan': {
+        const nextValue = resolveToggleArg(parsed.args)
+        const planMode = nextValue === null ? !activePreferences.planMode : nextValue
+        updateActivePreferences({ planMode })
+        recordSlashCommandUsage(usageKey)
+        addToast({
+          title: `Plan mode ${planMode ? 'on' : 'off'}`,
+          body: '后续发送的普通请求会按当前 Plan First 偏好处理。',
+          type: 'info',
+        })
+        return true
+      }
+      case 'think':
+      case 'thinking': {
+        const nextValue = resolveToggleArg(parsed.args)
+        const thinkingMode = nextValue === null ? !activePreferences.thinkingMode : nextValue
+        updateActivePreferences({ thinkingMode })
+        recordSlashCommandUsage(usageKey)
+        addToast({
+          title: `Thinking ${thinkingMode ? 'on' : 'off'}`,
+          body: '后续发送的普通请求会按当前 Thinking 偏好处理。',
+          type: 'info',
+        })
+        return true
+      }
+      case 'lang':
+      case 'language': {
+        if (!parsed.args.trim()) {
+          const languageMode = !activePreferences.languageMode
+          updateActivePreferences({ languageMode })
+          recordSlashCommandUsage(usageKey)
+          return true
+        }
+
+        if (normalizeSlashToken(parsed.args) === 'off') {
+          updateActivePreferences({ languageMode: false })
+          recordSlashCommandUsage(usageKey)
+          return true
+        }
+
+        const language = findLanguageOption(parsed.args)
+        if (!language) {
+          addToast({
+            title: '无效语言',
+            body: '可用值包括 zh, ja, ko, es, fr, de, ar，或 /lang off。',
+            type: 'warning',
+          })
+          return true
+        }
+
+        updateActivePreferences({ languageMode: true, language })
+        recordSlashCommandUsage(usageKey)
+        return true
+      }
+      case 'model': {
+        const nextModel = findModelOption(parsed.args)
+        if (!nextModel) {
+          addToast({
+            title: '无效模型',
+            body: '例如 /model sonnet、/model opus 或 /model claude-sonnet-4-6。',
+            type: 'warning',
+          })
+          return true
+        }
+
+        updateActivePreferences({ selectedModel: nextModel })
+        recordSlashCommandUsage(usageKey)
+        return true
+      }
+      default:
+        return false
+    }
+  }, [
+    activePreferences.languageMode,
+    activePreferences.planMode,
+    activePreferences.thinkingMode,
+    addToast,
+    applyComposerTemplate,
+    clearComposer,
+    handleNewConversation,
+    openGlobalSettings,
+    recordSlashCommandUsage,
+    updateActivePreferences,
+  ])
 
   const handleOpenInTab = useCallback(() => {
     if (!rootPath || !resolvedProjectId || sessionId) return
@@ -1432,6 +2076,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         sessionId: activeConversation?.sessionId ?? null,
         model: payload.preferences.selectedModel,
         computeMode: payload.preferences.computeMode,
+        permissionMode: payload.preferences.permissionMode,
         planMode: payload.preferences.planMode,
         thinkingMode: payload.preferences.thinkingMode,
         languageMode: payload.preferences.languageMode,
@@ -1512,6 +2157,16 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     if (!draft.trim() && pendingImages.length === 0) return
     if (activeConversation?.status === 'running') return
 
+    const text = draft.trim()
+    const parsedSlash = text ? parseComposerSlashCommand(text) : null
+    if (parsedSlash) {
+      const handledLocally = await handleLocalSlashCommand(parsedSlash)
+      if (handledLocally) return
+    }
+
+    const skillInvocation = parsedSlash ? extractSkillInvocation(parsedSlash, mergedSkills) : null
+    const isRawSlashCommand = Boolean(parsedSlash) && !skillInvocation
+
     const conversationId = activeConversation?.id ?? createConversation({
       projectId: resolvedProjectId,
       worktreeId: worktreeScopeId,
@@ -1523,24 +2178,33 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     selectConversation(currentScopeKey, conversationId)
 
     const requestId = `claude-req-${generateId()}`
-    const text = draft.trim()
-    const resolvedReferencedFiles = await resolveTypedMentionFiles(draft, rootPath, referencedFiles)
+    const resolvedReferencedFiles = isRawSlashCommand
+      ? referencedFiles
+      : await resolveTypedMentionFiles(draft, rootPath, referencedFiles)
     if (resolvedReferencedFiles.length !== referencedFiles.length) {
       setReferencedFiles(resolvedReferencedFiles)
     }
-    const editorContextText = includeEditorContext
+    const editorContextText = !isRawSlashCommand && includeEditorContext
       ? buildEditorContextText(activeEditorTab, cursorInfo, rootPath)
       : null
-    const referencedFilesText = await buildReferencedFilesText(resolvedReferencedFiles)
+    const referencedFilesText = !isRawSlashCommand
+      ? await buildReferencedFilesText(resolvedReferencedFiles)
+      : null
     const promptText = [editorContextText, referencedFilesText].filter(Boolean)
-    const effectiveText = promptText.length > 0
-      ? [...promptText, '[User request]', text || 'Please analyze the attached images.'].join('\n\n')
-      : text
-    const attachmentNames = [
-      ...pendingImages.map((item) => item.name),
-      ...resolvedReferencedFiles.map((item) => `@${item.relativePath}`),
-      ...(editorContextLabel ? [`Editor: ${editorContextLabel}`] : []),
-    ]
+    const effectiveText = skillInvocation
+      ? [...promptText, buildSkillPromptText(skillInvocation.skill, skillInvocation.request)].filter(Boolean).join('\n\n')
+      : isRawSlashCommand
+        ? text
+        : (promptText.length > 0
+            ? [...promptText, '[User request]', text || 'Please analyze the attached images.'].join('\n\n')
+            : text)
+    const attachmentNames = isRawSlashCommand
+      ? pendingImages.map((item) => item.name)
+      : [
+          ...pendingImages.map((item) => item.name),
+          ...resolvedReferencedFiles.map((item) => `@${item.relativePath}`),
+          ...(editorContextLabel ? [`Editor: ${editorContextLabel}`] : []),
+        ]
     const images = pendingImages.map((item) => ({
       name: item.name,
       mediaType: item.mediaType,
@@ -1548,6 +2212,12 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     }))
 
     try {
+      if (skillInvocation) {
+        recordSlashCommandUsage(`skill:${skillInvocation.skill.name}`)
+      } else if (parsedSlash) {
+        recordSlashCommandUsage(`command:${canonicalLocalCommandName(parsedSlash.normalizedName)}`)
+      }
+
       await startClaudeRequest({
         requestId,
         conversationId,
@@ -1567,17 +2237,51 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
       return
     }
 
-    setDraft('')
-    setPendingImages([])
-    setReferencedFiles([])
-    setShowFilePicker(false)
-    setFileQuery('')
-    closeMentionPicker()
+    clearComposer()
   }
 
   const activeMessages = activeConversation?.messages ?? []
   const traceEntries = useMemo(() => buildTraceEntries(activeMessages), [activeMessages])
   const headerTitle = sessionId ? (hostSession?.name ?? 'Claude GUI') : 'Claude Code Chat'
+  const currentRequestId = activeConversation?.currentRequestId ?? null
+
+  const activeProcessingState = useMemo(() => {
+    if (!activeConversation || activeConversation.status !== 'running') return null
+
+    const requestMessages = currentRequestId
+      ? activeMessages.filter((message) => message.meta?.requestId === currentRequestId)
+      : activeMessages
+
+    const requestStart = [...requestMessages]
+      .reverse()
+      .find((message) => message.kind === 'user')
+      ?.createdAt ?? activeConversation.updatedAt
+
+    const latestToolUse = [...requestMessages]
+      .reverse()
+      .find((message) => message.kind === 'tool-use')
+
+    const hasAssistantOutput = requestMessages.some((message) => (
+      message.kind === 'assistant' || message.kind === 'thinking'
+    ))
+
+    const detail = latestToolUse?.status?.trim()
+      || (hasAssistantOutput ? 'Streaming response' : 'Waiting for first output')
+
+    return {
+      verb: getSpinnerVerb(currentRequestId),
+      elapsedSeconds: Math.max(0, Math.floor((processingNow - requestStart) / 1000)),
+      detail: normalizeProcessingDetail(detail),
+      stalled: processingNow - activeConversation.updatedAt > 3000,
+    }
+  }, [activeConversation, activeMessages, currentRequestId, processingNow])
+
+  const visiblePermissionRequests = useMemo(
+    () => activeConversation
+      ? permissionRequests.filter((entry) => entry.conversationId === activeConversation.id)
+      : [],
+    [activeConversation, permissionRequests],
+  )
 
   const requestFailureById = useMemo(() => {
     const failures: Record<string, string | null> = {}
@@ -1654,6 +2358,14 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
       contributors: contributors.slice(0, 5),
     }
   }, [activeSelection?.text.length, activeSelections, draft, includeEditorContext, pendingImages.length, referencedFiles])
+
+  const composerContextSummary = useMemo(() => {
+    const parts: string[] = []
+    if (includeEditorContext && editorContextLabel) parts.push(editorContextLabel)
+    if (referencedFiles.length > 0) parts.push(`${referencedFiles.length} file${referencedFiles.length === 1 ? '' : 's'}`)
+    if (pendingImages.length > 0) parts.push(`${pendingImages.length} image${pendingImages.length === 1 ? '' : 's'}`)
+    return parts
+  }, [editorContextLabel, includeEditorContext, pendingImages.length, referencedFiles.length])
 
   useEffect(() => {
     setActiveSearchIndex(0)
@@ -1834,8 +2546,8 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
-                <Bot size={16} />
+              <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent-muted)]">
+                <img src={claudeIcon} alt="Claude" className="h-5 w-5 object-contain" />
               </div>
               <div className="min-w-0">
                 <div className="truncate text-[var(--ui-font-md)] font-semibold text-[var(--color-text-primary)]">{headerTitle}</div>
@@ -1850,20 +2562,8 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
                 Open Tab
               </button>
             )}
-            <button onClick={() => setShowSearch((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="会话内搜索">
-              <Search size={14} />
-            </button>
-            <button onClick={() => void handleConversationExport('md')} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="导出 Markdown">
-              <FileText size={14} />
-            </button>
-            <button onClick={() => void handleConversationExport('json')} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="导出 JSON">
-              <FileJson size={14} />
-            </button>
-            <button onClick={() => setShowSettings(true)} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="设置">
+            <button onClick={() => openGlobalSettings('claudeGui')} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="设置">
               <Settings2 size={14} />
-            </button>
-            <button onClick={() => setShowStats(true)} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="统计">
-              <BarChart3 size={14} />
             </button>
             <button onClick={() => setShowHistory(true)} className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]" title="历史">
               <History size={14} />
@@ -1874,33 +2574,6 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
             </button>
           </div>
         </div>
-        {showSearch && (
-          <div className="mt-3 flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-2">
-            <Search size={13} className="text-[var(--color-text-tertiary)]" />
-            <input
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="搜索 tool、文件名或 Claude 回复..."
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
-            />
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">
-              {searchMatches.length === 0 ? '0' : `${Math.min(activeSearchIndex + 1, searchMatches.length)}/${searchMatches.length}`}
-            </span>
-            <button
-              onClick={() => setActiveSearchIndex((current) => (searchMatches.length === 0 ? 0 : (current - 1 + searchMatches.length) % searchMatches.length))}
-              className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] text-[var(--color-text-secondary)]"
-            >
-              <ChevronUp size={12} />
-            </button>
-            <button
-              onClick={() => setActiveSearchIndex((current) => (searchMatches.length === 0 ? 0 : (current + 1) % searchMatches.length))}
-              className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] text-[var(--color-text-secondary)]"
-            >
-              <ChevronDown size={12} />
-            </button>
-          </div>
-        )}
       </div>
 
       <div ref={messagesRef} className="flex-1 overflow-y-auto py-4">
@@ -1952,50 +2625,94 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
       </div>
 
       <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-3">
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => updateActivePreferences({ planMode: !activePreferences.planMode })}
+        {activeProcessingState && (
+          <div
             className={cn(
-              'rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors',
-              activePreferences.planMode
-                ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
+              'mb-3 rounded-[var(--radius-md)] border px-3 py-2.5 transition-colors',
+              activeProcessingState.stalled
+                ? 'border-[var(--color-warning)]/35 bg-[var(--color-warning)]/8'
+                : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)]',
             )}
           >
-            Plan First
-          </button>
-          <button
-            onClick={() => updateActivePreferences({ thinkingMode: !activePreferences.thinkingMode })}
-            className={cn(
-              'rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors',
-              activePreferences.thinkingMode
-                ? 'bg-[var(--color-warning)]/15 text-[var(--color-warning)]'
-                : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
-            )}
-          >
-            Thinking
-          </button>
-          <button
-            onClick={() => updateActivePreferences({ languageMode: !activePreferences.languageMode })}
-            className={cn(
-              'rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors',
-              activePreferences.languageMode
-                ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
-            )}
-          >
-            {activePreferences.languageMode ? `语言 ${activePreferences.language ?? 'off'}` : 'Language'}
-          </button>
-          {PROMPT_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => insertAtCursor(`${preset.prompt} `)}
-              className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1 text-[10px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Sparkles
+                  size={14}
+                  className={cn(
+                    'shrink-0',
+                    activeProcessingState.stalled
+                      ? 'animate-pulse text-[var(--color-warning)]'
+                      : 'animate-pulse text-[var(--color-accent)]',
+                  )}
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">
+                    {activeProcessingState.verb}...
+                  </div>
+                  <div className="truncate text-[10px] text-[var(--color-text-tertiary)]">
+                    {activeProcessingState.detail}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">
+                {activeProcessingState.elapsedSeconds}s
+              </div>
+            </div>
+          </div>
+        )}
+
+        {visiblePermissionRequests.length > 0 && (
+          <div className="mb-3 flex flex-col gap-2">
+            {visiblePermissionRequests.map((entry) => (
+              <div key={entry.id} className="rounded-[var(--radius-md)] border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/8 p-3">
+                <div className="flex items-center gap-2">
+                  <Shield size={13} className="text-[var(--color-warning)]" />
+                  <span className="text-[var(--ui-font-xs)] font-semibold text-[var(--color-text-primary)]">Permission Request</span>
+                  <span className="ml-auto rounded-full bg-[var(--color-bg-primary)] px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+                    {entry.toolName}
+                  </span>
+                </div>
+                {entry.detail && (
+                  <div className="mt-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-2 font-mono text-[11px] leading-5 text-[var(--color-text-secondary)] break-all">
+                    {entry.detail}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      void window.api.session.respondPermission(entry.id, 'allow')
+                      setPermissionRequests((current) => current.filter((item) => item.id !== entry.id))
+                    }}
+                    className="rounded-[var(--radius-sm)] bg-[var(--color-accent)]/12 px-2.5 py-1 text-[10px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/18"
+                  >
+                    本次允许
+                  </button>
+                  <button
+                    onClick={() => {
+                      void window.api.session.respondPermission(entry.id, 'deny')
+                      setPermissionRequests((current) => current.filter((item) => item.id !== entry.id))
+                    }}
+                    className="rounded-[var(--radius-sm)] bg-[var(--color-error)]/12 px-2.5 py-1 text-[10px] text-[var(--color-error)] hover:bg-[var(--color-error)]/18"
+                  >
+                    拒绝
+                  </button>
+                  {entry.suggestions.map((label, index) => (
+                    <button
+                      key={`${entry.id}-${index}`}
+                      onClick={() => {
+                        void window.api.session.respondPermission(entry.id, 'allow', index)
+                        setPermissionRequests((current) => current.filter((item) => item.id !== entry.id))
+                      }}
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-[10px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {showFilePicker && (
           <div className="mb-2 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/25">
@@ -2079,52 +2796,25 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
           </div>
         )}
 
-        <div className="mb-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Context</div>
-            <div className="flex items-center gap-2">
-              {activeEditorTab && (
-                <button
-                  type="button"
-                  onClick={() => setIncludeEditorContext((value) => !value)}
-                  className={cn(
-                    'rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors',
-                    includeEditorContext
-                      ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent)]/12 text-[var(--color-text-primary)]'
-                      : 'border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]',
-                  )}
-                  title={includeEditorContext ? 'Send current editor context with the prompt' : 'Do not send current editor context'}
-                >
-                  Editor {includeEditorContext ? 'On' : 'Off'}
-                </button>
-              )}
-              <div className="text-[10px] text-[var(--color-text-tertiary)]">~{contextBudget.estimatedTokens.toLocaleString()} tokens</div>
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {includeEditorContext && editorContextItems?.map((item) => (
-              <span key={item.key} className="inline-flex max-w-full rounded-[var(--radius-lg)] border border-[var(--color-accent)]/25 bg-[var(--color-accent)]/8 px-2.5 py-1 text-[10px] text-[var(--color-text-primary)]">
-                {item.label}
+        {(composerContextSummary.length > 0 || referencedFiles.length > 0 || pendingImages.length > 0) && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]">
+            {composerContextSummary.map((item) => (
+              <span key={item} className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1">
+                {item}
               </span>
             ))}
-            {!includeEditorContext && activeEditorTab && (
-              <span className="inline-flex max-w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-[10px] text-[var(--color-text-tertiary)]">
-                Editor context off
-              </span>
-            )}
             {referencedFiles.map((file) => (
               <div
                 key={file.id}
-                className="inline-flex max-w-full items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1 text-[10px] text-[var(--color-text-secondary)]"
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1"
               >
                 <button
                   onClick={() => openFileFromTrace(file.filePath, { line: 1, column: 1 })}
-                  className="truncate text-left hover:text-[var(--color-accent)]"
+                  className="truncate text-left text-[var(--color-text-secondary)] hover:text-[var(--color-accent)]"
                   title={file.filePath}
                 >
                   @{file.relativePath}
                 </button>
-                <span className="text-[var(--color-text-tertiary)]">{Math.ceil(file.includedChars / 4).toLocaleString()} tok</span>
                 <button
                   onClick={() => setReferencedFiles((current) => current.filter((item) => item.filePath !== file.filePath))}
                   className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
@@ -2134,34 +2824,18 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
               </div>
             ))}
             {pendingImages.map((image) => (
-              <div key={image.id} className="relative h-14 w-14 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+              <div key={image.id} className="relative h-10 w-10 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
                 <img src={image.preview} alt={image.name} className="h-full w-full object-cover" />
                 <button
                   onClick={() => setPendingImages((current) => current.filter((item) => item.id !== image.id))}
-                  className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white"
+                  className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white"
                 >
-                  <X size={10} />
+                  <X size={9} />
                 </button>
               </div>
             ))}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-[var(--color-text-tertiary)]">
-            <span>{referencedFiles.length} files</span>
-            <span>{pendingImages.length} images</span>
-            <span>{contextBudget.editorChars.toLocaleString()} editor chars</span>
-            <span>{contextBudget.fileChars.toLocaleString()} file chars</span>
-          </div>
-          {contextBudget.contributors.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {contextBudget.contributors.map((item) => (
-                <div key={item.key} className="flex items-center justify-between gap-3 text-[10px] text-[var(--color-text-secondary)]">
-                  <span className="truncate">{item.label}</span>
-                  <span>{item.chars.toLocaleString()} chars</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        )}
 
         <div
           className={cn(
@@ -2186,10 +2860,16 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
             value={draft}
             onChange={(event) => {
               setDraft(event.target.value)
-              updateMentionPicker(event.target.value, event.target.selectionStart ?? event.target.value.length)
+              setHistoryNavigationIndex(null)
+              setHistoryNavigationDraft(null)
+              const nextCaret = event.target.selectionStart ?? event.target.value.length
+              setComposerCaret(nextCaret)
+              updateMentionPicker(event.target.value, nextCaret)
             }}
             onSelect={(event) => {
-              updateMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)
+              const nextCaret = event.currentTarget.selectionStart ?? event.currentTarget.value.length
+              setComposerCaret(nextCaret)
+              updateMentionPicker(event.currentTarget.value, nextCaret)
             }}
             onKeyDown={(event) => {
               if (mentionMatch) {
@@ -2227,14 +2907,141 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
                 }
               }
 
+              if (slashContext && !mentionMatch) {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  if (slashSuggestions.length > 0) {
+                    setSlashSelectedIndex((current) => (current + 1) % slashSuggestions.length)
+                  }
+                  return
+                }
+
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  if (slashSuggestions.length > 0) {
+                    setSlashSelectedIndex((current) => (current - 1 + slashSuggestions.length) % slashSuggestions.length)
+                  }
+                  return
+                }
+
+                if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey) {
+                  event.preventDefault()
+                  const suggestion = slashSuggestions[slashSelectedIndex]
+                  if (suggestion) {
+                    handleSelectSlashSuggestion(suggestion)
+                  }
+                  return
+                }
+
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setDraft((current) => `${current.slice(0, slashContext.start)}${current.slice(slashContext.end)}`)
+                  setComposerCaret(slashContext.start)
+                  return
+                }
+              }
+
+              if (
+                (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+                && !event.altKey
+                && !event.ctrlKey
+                && !event.metaKey
+                && !event.shiftKey
+              ) {
+                const textarea = event.currentTarget
+                const selectionStart = textarea.selectionStart ?? 0
+                const selectionEnd = textarea.selectionEnd ?? selectionStart
+                const hasSelection = selectionStart !== selectionEnd
+
+                if (!hasSelection) {
+                  const shouldHandle = event.key === 'ArrowUp'
+                    ? (historyNavigationIndex !== null || isCaretOnFirstLine(textarea.value, selectionStart))
+                    : (historyNavigationIndex !== null || isCaretOnLastLine(textarea.value, selectionStart))
+
+                  if (shouldHandle) {
+                    const moved = navigatePromptHistory(event.key === 'ArrowUp' ? 'previous' : 'next')
+                    if (moved) {
+                      event.preventDefault()
+                      return
+                    }
+                  }
+                }
+              }
+
+              if (event.key === 'Escape' && activeConversation?.status === 'running') {
+                event.preventDefault()
+                void window.api.claudeGui.stop()
+                return
+              }
+
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
                 void handleSend()
               }
             }}
-            placeholder="Type your message to Claude Code... 输入 @ 可联想文件，也可以直接把文件拖进来。"
+            placeholder="Type your message to Claude Code... 输入 / 打开命令与技能联想，输入 @ 联想文件，也可以直接把文件拖进来。"
             className="min-h-24 w-full resize-none rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none transition-colors placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]"
           />
+
+          {slashContext && !mentionMatch && (
+            <div className="absolute inset-x-0 bottom-[calc(100%+8px)] z-30 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-xl shadow-black/35">
+              <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
+                  {slashContext.kind === 'skill' ? '/skill' : 'Slash'}
+                </div>
+                {skillCatalogLoading && <LoaderCircle size={12} className="animate-spin text-[var(--color-accent)]" />}
+              </div>
+              <div className="max-h-56 overflow-y-auto p-2">
+                {!slashContext.query.trim() && slashContext.kind === 'command' && (
+                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-3 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                    输入命令名，或继续输入 `/skill ` 搜索已安装技能。
+                  </div>
+                )}
+                {!slashContext.query.trim() && slashContext.kind === 'skill' && (
+                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-3 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                    搜索已安装技能，回车插入，发送后会按技能语义转译为 Claude 请求。
+                  </div>
+                )}
+                {skillCatalogError && slashContext.kind === 'skill' && (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-error)]">
+                    {skillCatalogError}
+                  </div>
+                )}
+                {!skillCatalogError && slashSuggestions.length === 0 && slashContext.query.trim() && (
+                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-3 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                    没找到匹配的命令或技能。
+                  </div>
+                )}
+                {slashSuggestions.map((suggestion, index) => (
+                  <button
+                    key={suggestion.id}
+                    ref={(node) => {
+                      slashResultRefs.current[index] = node
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      handleSelectSlashSuggestion(suggestion)
+                    }}
+                    onMouseEnter={() => setSlashSelectedIndex(index)}
+                    className={cn(
+                      'mb-1 w-full rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors last:mb-0',
+                      index === slashSelectedIndex
+                        ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent)]/10'
+                        : 'border-[var(--color-border)] bg-[var(--color-bg-primary)] hover:border-[var(--color-accent)]/30 hover:bg-[var(--color-bg-secondary)]',
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-[var(--ui-font-xs)] font-medium text-[var(--color-text-primary)]">{suggestion.displayText}</div>
+                      <span className="rounded-full bg-[var(--color-bg-secondary)] px-2 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+                        {suggestion.sourceLabel ? `${suggestion.tag} · ${suggestion.sourceLabel}` : suggestion.tag}
+                      </span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[10px] text-[var(--color-text-tertiary)]">{suggestion.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {mentionMatch && (
             <div className="absolute inset-x-0 bottom-[calc(100%+8px)] z-30 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-xl shadow-black/35">
@@ -2286,27 +3093,10 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <select
-            value={activePreferences.selectedModel}
-            onChange={(event) => updateActivePreferences({ selectedModel: event.target.value })}
-            className={INPUT}
-          >
-            {MODEL_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <select
-            value={activePreferences.computeMode}
-            onChange={(event) => updateActivePreferences({ computeMode: event.target.value as ClaudeGuiPreferences['computeMode'] })}
-            className={INPUT}
-          >
-            <option value="auto">Auto</option>
-            <option value="max">Max</option>
-          </select>
           <button
             onClick={() => setShowFilePicker((current) => !current)}
             className={cn(
-              'flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[10px] transition-colors',
+              'flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border transition-colors',
               showFilePicker
                 ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
                 : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
@@ -2314,7 +3104,19 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
             title="插入文件引用"
           >
             <AtSign size={12} />
-            Files
+          </button>
+          <button
+            type="button"
+            onClick={() => updateActivePreferences({ includeEditorContext: !includeEditorContext })}
+            className={cn(
+              'flex h-8 items-center rounded-[var(--radius-md)] border px-2.5 text-[10px] transition-colors',
+              includeEditorContext
+                ? 'border-[var(--color-accent)]/35 bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
+                : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]',
+            )}
+            title={includeEditorContext ? 'Disable editor context' : 'Enable editor context'}
+          >
+            Editor
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -2323,7 +3125,21 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
           >
             <ImagePlus size={14} />
           </button>
+          <button
+            onClick={() => applyComposerTemplate('/')}
+            className="flex h-8 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] text-[var(--color-text-secondary)]"
+            title="Slash commands"
+          >
+            /
+          </button>
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => openGlobalSettings('claudeGui')}
+              className="flex h-8 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] text-[var(--color-text-secondary)]"
+              title="Permission mode and model settings"
+            >
+              {getPermissionModeLabel(activePreferences.permissionMode)}
+            </button>
             {activeConversation?.status === 'running' ? (
               <button
                 onClick={() => void window.api.claudeGui.stop()}
@@ -2344,23 +3160,6 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
           </div>
         </div>
 
-        <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--color-text-tertiary)]">
-          <div className="flex items-center gap-2">
-            <span>{activePreferences.computeMode === 'max' ? 'Max mode' : 'Auto mode'}</span>
-            {activePreferences.languageMode && activePreferences.language && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-2 py-0.5">
-                <Languages size={10} />
-                {LANGUAGE_OPTIONS.find((item) => item.value === activePreferences.language)?.label ?? activePreferences.language}
-              </span>
-            )}
-          </div>
-          <div>
-            {activeConversation?.liveUsage
-              ? `${activeConversation.liveUsage.totalTokensInput.toLocaleString()} in / ${activeConversation.liveUsage.totalTokensOutput.toLocaleString()} out`
-              : `Ready • ${formatMoney(activeConversation?.totalCost ?? 0)}`}
-          </div>
-        </div>
-
         <input
           ref={fileInputRef}
           type="file"
@@ -2374,11 +3173,10 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         />
       </div>
 
-      {(showHistory || showSettings || showStats) && (
+      {(showHistory || showStats) && (
         <>
           <div className="absolute inset-0 z-20 bg-black/35" onClick={() => {
             setShowHistory(false)
-            setShowSettings(false)
             setShowStats(false)
           }} />
           {showHistory && (
@@ -2500,44 +3298,6 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
                     )}
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {showSettings && (
-            <div className="absolute inset-x-3 top-3 z-30 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3 shadow-lg shadow-black/30">
-              <div className="flex items-center justify-between">
-                <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">Claude GUI Settings</div>
-                <button onClick={() => setShowSettings(false)} className="text-[var(--color-text-secondary)]"><X size={14} /></button>
-              </div>
-              <div className="mt-3 grid gap-3">
-                <label className="grid gap-1">
-                  <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Model</span>
-                  <select value={activePreferences.selectedModel} onChange={(event) => updateActivePreferences({ selectedModel: event.target.value })} className={INPUT}>
-                    {MODEL_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Compute Mode</span>
-                  <select value={activePreferences.computeMode} onChange={(event) => updateActivePreferences({ computeMode: event.target.value as ClaudeGuiPreferences['computeMode'] })} className={INPUT}>
-                    <option value="auto">Auto</option>
-                    <option value="max">Max</option>
-                  </select>
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Language</span>
-                  <select value={activePreferences.language ?? 'zh'} onChange={(event) => updateActivePreferences({ language: event.target.value as NonNullable<ClaudeGuiPreferences['language']> })} className={INPUT}>
-                    {LANGUAGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
-                  <span>Only communicate in target language</span>
-                  <input type="checkbox" checked={activePreferences.onlyCommunicate} onChange={(event) => updateActivePreferences({ onlyCommunicate: event.target.checked })} />
-                </label>
               </div>
             </div>
           )}

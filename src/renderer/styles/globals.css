@@ -164,7 +164,15 @@ html, body, #root {
   /* Extend 1px below to cover the tab-bar border line */
   padding-bottom: 1px;
   margin-bottom: -1px;
-  border-top: 2px solid var(--color-accent);
+  border-top: 2px solid transparent;
+}
+
+.tab-active-focused {
+  border-top-color: var(--color-accent);
+}
+
+.tab-active-muted {
+  border-top-color: color-mix(in srgb, var(--color-accent) 38%, transparent);
 }
 
 .tab-active::before,

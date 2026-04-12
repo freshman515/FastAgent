@@ -7,6 +7,7 @@ import {
   type ClaudePromptOptimizeOptions,
 } from '@shared/types'
 import { claudeGuiService } from '../services/ClaudeGuiService'
+import { listClaudeGuiSkills } from '../services/ClaudeSkillCatalogService'
 
 export function registerClaudeGuiHandlers(): void {
   ipcMain.handle(IPC.CLAUDE_GUI_START, async (event, options: ClaudeGuiRequestOptions) => {
@@ -15,6 +16,10 @@ export function registerClaudeGuiHandlers(): void {
 
   ipcMain.handle(IPC.CLAUDE_GUI_STOP, async () => {
     await claudeGuiService.stop()
+  })
+
+  ipcMain.handle(IPC.CLAUDE_GUI_LIST_SKILLS, async (_event, cwd: string) => {
+    return await listClaudeGuiSkills(cwd)
   })
 
   ipcMain.handle(IPC.CLAUDE_PROMPT_OPTIMIZE, async (_event, options: ClaudePromptOptimizeOptions) => {

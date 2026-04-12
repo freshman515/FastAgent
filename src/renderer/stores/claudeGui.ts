@@ -5,6 +5,7 @@ import type {
   ClaudeGuiEvent,
   ClaudeGuiImagePayload,
   ClaudeGuiLanguage,
+  ClaudeGuiPermissionMode,
   ClaudeGuiUsage,
 } from '@shared/types'
 
@@ -37,8 +38,11 @@ export interface ClaudeGuiMessage {
 export interface ClaudeGuiPreferences {
   selectedModel: string
   computeMode: ClaudeGuiComputeMode
+  permissionMode: ClaudeGuiPermissionMode
   planMode: boolean
   thinkingMode: boolean
+  messageTextSize: 'md' | 'lg' | 'xl'
+  includeEditorContext: boolean
   languageMode: boolean
   language: ClaudeGuiLanguage | null
   onlyCommunicate: boolean
@@ -105,6 +109,11 @@ export interface ClaudeGuiRequestPayload {
   createdAt: number
 }
 
+export interface ClaudeGuiSlashCommandUsage {
+  count: number
+  lastUsedAt: number
+}
+
 interface PendingPatchSnapshotFile {
   filePath: string
   relativePath: string
@@ -125,8 +134,11 @@ interface PendingPatchSnapshot {
 const DEFAULT_PREFERENCES: ClaudeGuiPreferences = {
   selectedModel: 'claude-sonnet-4-6',
   computeMode: 'auto',
+  permissionMode: 'default',
   planMode: false,
   thinkingMode: false,
+  messageTextSize: 'lg',
+  includeEditorContext: true,
   languageMode: true,
   language: 'zh',
   onlyCommunicate: false,
@@ -136,15 +148,26 @@ const MAX_CONVERSATIONS = 40
 const MAX_MESSAGES = 500
 const MAX_PATCH_REVIEWS = 20
 
-type PersistedState = Pick<ClaudeGuiState, 'conversations' | 'selectedConversationByScope' | 'preferences'>
+type PersistedState = {
+  conversations: ClaudeGuiConversation[]
+  selectedConversationByScope: Record<string, string>
+  preferences: ClaudeGuiPreferences
+  slashCommandUsage?: Record<string, ClaudeGuiSlashCommandUsage>
+}
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
+let lastPersistedSlashCommandUsage: Record<string, ClaudeGuiSlashCommandUsage> = {}
 
 function persist(state: PersistedState): void {
   if (window.api.detach.isDetached) return
   if (persistTimer) clearTimeout(persistTimer)
+  const payload: PersistedState = {
+    ...state,
+    slashCommandUsage: state.slashCommandUsage ?? lastPersistedSlashCommandUsage,
+  }
+  lastPersistedSlashCommandUsage = payload.slashCommandUsage ?? {}
   persistTimer = setTimeout(() => {
-    window.api.config.write('claudeGui', state)
+    window.api.config.write('claudeGui', payload)
   }, 150)
 }
 
@@ -171,12 +194,43 @@ function sanitizePreferences(raw: unknown, fallback: ClaudeGuiPreferences): Clau
   return {
     selectedModel: typeof value.selectedModel === 'string' ? value.selectedModel : fallback.selectedModel,
     computeMode: value.computeMode === 'max' ? 'max' : fallback.computeMode,
+    permissionMode: value.permissionMode === 'plan'
+      || value.permissionMode === 'acceptEdits'
+      || value.permissionMode === 'bypassPermissions'
+      || value.permissionMode === 'dontAsk'
+      ? value.permissionMode
+      : fallback.permissionMode,
     planMode: value.planMode === true,
     thinkingMode: value.thinkingMode === true,
+    messageTextSize: value.messageTextSize === 'md' || value.messageTextSize === 'xl'
+      ? value.messageTextSize
+      : fallback.messageTextSize,
+    includeEditorContext: typeof value.includeEditorContext === 'boolean'
+      ? value.includeEditorContext
+      : fallback.includeEditorContext,
     languageMode: typeof value.languageMode === 'boolean' ? value.languageMode : fallback.languageMode,
     language: typeof value.language === 'string' ? value.language : fallback.language,
     onlyCommunicate: value.onlyCommunicate === true,
   }
+}
+
+function sanitizeSlashCommandUsage(raw: unknown): Record<string, ClaudeGuiSlashCommandUsage> {
+  if (!raw || typeof raw !== 'object') return {}
+
+  const usageEntries = Object.entries(raw as Record<string, unknown>)
+    .filter((entry): entry is [string, Record<string, unknown>] => (
+      typeof entry[0] === 'string'
+      && entry[1] !== null
+      && typeof entry[1] === 'object'
+    ))
+    .map(([key, value]) => {
+      const count = typeof value.count === 'number' && Number.isFinite(value.count) ? Math.max(0, value.count) : 0
+      const lastUsedAt = typeof value.lastUsedAt === 'number' && Number.isFinite(value.lastUsedAt) ? value.lastUsedAt : 0
+      return [key, { count, lastUsedAt }] as const
+    })
+    .filter(([, value]) => value.count > 0 && value.lastUsedAt > 0)
+
+  return Object.fromEntries(usageEntries)
 }
 
 function sanitizePatchFile(raw: unknown): ClaudeGuiPatchFile | null {
@@ -342,9 +396,11 @@ interface ClaudeGuiState {
   conversations: ClaudeGuiConversation[]
   selectedConversationByScope: Record<string, string>
   preferences: ClaudeGuiPreferences
+  slashCommandUsage: Record<string, ClaudeGuiSlashCommandUsage>
   requestPayloads: Record<string, ClaudeGuiRequestPayload>
   pendingPatchSnapshots: Record<string, PendingPatchSnapshot>
   _loadFromConfig: (raw: Record<string, unknown>) => void
+  recordSlashCommandUsage: (usageKey: string) => void
   updatePreferences: (updates: Partial<ClaudeGuiPreferences>) => void
   updateConversationPreferences: (conversationId: string, updates: Partial<ClaudeGuiPreferences>) => void
   updateConversationMeta: (conversationId: string, updates: { title?: string; pinned?: boolean; group?: string | null }) => void
@@ -392,6 +448,7 @@ export const useClaudeGuiStore = create<ClaudeGuiState>((set, get) => ({
   conversations: [],
   selectedConversationByScope: {},
   preferences: DEFAULT_PREFERENCES,
+  slashCommandUsage: {},
   requestPayloads: {},
   pendingPatchSnapshots: {},
 
@@ -414,15 +471,41 @@ export const useClaudeGuiStore = create<ClaudeGuiState>((set, get) => ({
           .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
       )
       : {}
+    const slashCommandUsage = sanitizeSlashCommandUsage(raw.slashCommandUsage)
+    lastPersistedSlashCommandUsage = slashCommandUsage
 
     set({
       conversations: conversations.slice(0, MAX_CONVERSATIONS),
       selectedConversationByScope,
       preferences,
+      slashCommandUsage,
       requestPayloads: {},
       pendingPatchSnapshots: {},
     })
   },
+
+  recordSlashCommandUsage: (usageKey) => set((state) => {
+    const normalizedKey = usageKey.trim()
+    if (!normalizedKey) return state
+
+    const existing = state.slashCommandUsage[normalizedKey]
+    const slashCommandUsage = {
+      ...state.slashCommandUsage,
+      [normalizedKey]: {
+        count: (existing?.count ?? 0) + 1,
+        lastUsedAt: Date.now(),
+      },
+    }
+
+    persist({
+      conversations: state.conversations,
+      selectedConversationByScope: state.selectedConversationByScope,
+      preferences: state.preferences,
+      slashCommandUsage,
+    })
+
+    return { slashCommandUsage }
+  }),
 
   updatePreferences: (updates) => set((state) => {
     const preferences = { ...state.preferences, ...updates }

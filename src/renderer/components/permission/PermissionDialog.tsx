@@ -10,6 +10,7 @@ import { useProjectsStore } from '@/stores/projects'
 interface PermissionEntry {
   id: string
   sessionId: string | null
+  conversationId?: string | null
   toolName: string
   detail: string
   suggestions: string[]
@@ -30,6 +31,7 @@ export function PermissionDialog(): JSX.Element {
 
   useEffect(() => {
     const offRequest = window.api.session.onPermissionRequest((event) => {
+      if (event.conversationId) return
       setQueue((q) => {
         if (q.some((e) => e.id === event.id)) return q
         return [...q, event]

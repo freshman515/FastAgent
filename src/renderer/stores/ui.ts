@@ -204,7 +204,9 @@ interface UIState {
   resetDockPanels: () => void
 
   settingsOpen: boolean
-  openSettings: () => void
+  settingsPage: string
+  openSettings: (page?: string) => void
+  setSettingsPage: (page: string) => void
   closeSettings: () => void
 
   settings: AppSettings
@@ -804,7 +806,9 @@ export const useUIStore = create<UIState>((set, get) => ({
     }),
 
   settingsOpen: false,
-  openSettings: () => set({ settingsOpen: true }),
+  settingsPage: 'general',
+  openSettings: (page) => set({ settingsOpen: true, ...(page ? { settingsPage: page } : {}) }),
+  setSettingsPage: (page) => set({ settingsPage: page }),
   closeSettings: () => set({ settingsOpen: false }),
 
   settings: { ...DEFAULT_SETTINGS },

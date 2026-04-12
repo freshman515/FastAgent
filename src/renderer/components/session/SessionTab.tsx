@@ -30,7 +30,9 @@ interface SessionTabProps {
   session: Session
   isActive: boolean
   paneId: string
+  isPaneFocused?: boolean
   isDragging: boolean
+  showDivider?: boolean
   dropSide: 'left' | 'right' | null
   onDragStart: (id: string, e: React.DragEvent) => void
   onDragOver: (id: string, e: React.DragEvent) => void
@@ -47,7 +49,7 @@ const SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
 ]
 
 export function SessionTab({
-  session, isActive, paneId, isDragging, dropSide,
+  session, isActive, paneId, isPaneFocused = true, isDragging, showDivider = false, dropSide,
   onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
 }: SessionTabProps): JSX.Element {
   const removeSession = useSessionsStore((s) => s.removeSession)
@@ -139,6 +141,12 @@ export function SessionTab({
   const paneSessions = usePanesStore((s) => s.paneSessions[paneId] ?? [])
   const canSplit = paneSessions.length >= 2
   const isSplit = usePanesStore((s) => s.root.type === 'split')
+  const activeTabClass = isActive
+    ? cn(
+      'tab-active text-[var(--color-text-primary)]',
+      isPaneFocused ? 'tab-active-focused' : 'tab-active-muted',
+    )
+    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]'
 
   return (
     <>
@@ -217,9 +225,7 @@ export function SessionTab({
         className={cn(
           'no-drag group flex h-[34px] cursor-pointer items-center gap-1.5 px-2.5',
           'max-w-[180px]',
-          isActive
-            ? 'tab-active text-[var(--color-text-primary)]'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]',
+          activeTabClass,
           isDragging && 'opacity-40',
         )}
         onClick={handleClick}
@@ -277,6 +283,10 @@ export function SessionTab({
           </button>
         )}
       </div>
+
+      {showDivider && dropSide !== 'right' && (
+        <div className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--color-border-hover)]/85" />
+      )}
 
       {dropSide === 'right' && (
         <div className="h-5 w-0.5 shrink-0 rounded-full bg-[var(--color-accent)]" />

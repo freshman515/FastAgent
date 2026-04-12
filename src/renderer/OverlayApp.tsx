@@ -34,6 +34,7 @@ const TYPE_COLORS = {
 interface PermissionEntry {
   id: string
   sessionId: string | null
+  conversationId?: string | null
   toolName: string
   detail: string
   suggestions: string[]
@@ -78,6 +79,7 @@ export function OverlayApp(): JSX.Element {
 
     // Permission IPC events are broadcast to all windows by the main process
     const offPermReq = window.api.session.onPermissionRequest((event) => {
+      if (event.conversationId) return
       setPermissions((q) => {
         if (q.some((e) => e.id === event.id)) return q
         return [...q, event]

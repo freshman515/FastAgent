@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Activity, Bot, Command, FolderTree, GitBranch, History, Layers3, ListTodo, MessageSquareText, Search, Sparkles } from 'lucide-react'
+import { Activity, Bot, Command, Files, GitBranch, History, Layers3, ListTodo, MessageSquareText, Search, Sparkles } from 'lucide-react'
 import type { DockPanelId } from '@/stores/ui'
 import claudeIcon from '@/assets/icons/Claude.png'
 import { ProjectsPanel } from '@/components/sidebar/ProjectsPanel'
@@ -66,7 +66,7 @@ export const DOCK_PANEL_DEFINITIONS: Record<DockPanelId, DockPanelDefinition> = 
   files: {
     id: 'files',
     label: 'Files',
-    icon: FolderTree,
+    icon: Files,
     render: () => <FileTree />,
   },
   search: {

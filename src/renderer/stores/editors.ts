@@ -53,6 +53,8 @@ interface EditorsState {
     context?: { projectId?: string | null; worktreeId?: string | null },
   ) => string
   openDiff: (filePath: string, originalContent: string, context?: { projectId?: string | null; worktreeId?: string | null }) => string
+  relocatePath: (sourcePath: string, targetPath: string) => void
+  removePath: (targetPath: string) => void
   closeTab: (id: string) => void
   setModified: (id: string, modified: boolean) => void
   setCursorInfo: (info: EditorCursorInfo | null) => void
@@ -87,6 +89,14 @@ function resolveStoredLanguage(fileName: string, storedLanguage: unknown): strin
     return detectedLanguage
   }
   return storedLanguage
+}
+
+function normalizeFilePath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function renameDisplayName(fileName: string, nextBaseName: string, isDiff: boolean): string {
+  return isDiff ? `${nextBaseName} (diff)` : nextBaseName
 }
 
 function resolveEditorContext(context?: { projectId?: string | null; worktreeId?: string | null }): { projectId: string; worktreeId?: string } | null {
@@ -275,6 +285,54 @@ export const useEditorsStore = create<EditorsState>((set, get) => ({
     })
     return id
   },
+
+  relocatePath: (sourcePath, targetPath) => set((state) => {
+    const normalizedSource = normalizeFilePath(sourcePath)
+    const normalizedTarget = normalizeFilePath(targetPath)
+    const sourcePrefix = `${normalizedSource}/`
+    let changed = false
+
+    const tabs = state.tabs.map((tab) => {
+      const normalizedTabPath = normalizeFilePath(tab.filePath)
+      let nextPath: string | null = null
+      if (normalizedTabPath === normalizedSource) {
+        nextPath = normalizedTarget
+      } else if (normalizedTabPath.startsWith(sourcePrefix)) {
+        nextPath = `${normalizedTarget}${normalizedTabPath.slice(normalizedSource.length)}`
+      }
+
+      if (!nextPath || nextPath === normalizedTabPath) return tab
+      changed = true
+      const nextBaseName = nextPath.split('/').pop() ?? nextPath
+      return {
+        ...tab,
+        filePath: nextPath,
+        fileName: renameDisplayName(tab.fileName, nextBaseName, tab.isDiff),
+      }
+    })
+
+    if (!changed) return state
+    schedulePersist(tabs)
+    return { tabs }
+  }),
+
+  removePath: (targetPath) => set((state) => {
+    const normalizedTarget = normalizeFilePath(targetPath)
+    const targetPrefix = `${normalizedTarget}/`
+    const tabs = state.tabs.filter((tab) => {
+      const normalizedTabPath = normalizeFilePath(tab.filePath)
+      return normalizedTabPath !== normalizedTarget && !normalizedTabPath.startsWith(targetPrefix)
+    })
+
+    if (tabs.length === state.tabs.length) return state
+
+    const remainingIds = new Set(tabs.map((tab) => tab.id))
+    const navigationTargets = Object.fromEntries(
+      Object.entries(state.navigationTargets).filter(([id]) => remainingIds.has(id)),
+    )
+    schedulePersist(tabs)
+    return { tabs, navigationTargets }
+  }),
 
   closeTab: (id) => set((s) => {
     const tabs = s.tabs.filter((t) => t.id !== id)

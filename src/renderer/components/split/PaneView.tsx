@@ -72,13 +72,15 @@ function getRelativePath(filePath: string, basePath: string | null): string | nu
   return normalizedFile.slice(prefix.length)
 }
 
-function EditorTabButton({ tab, isActive, paneId, projectId, currentWindowId, isDragging, dropSide, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onSelect }: {
+function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, currentWindowId, isDragging, showDivider, dropSide, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onSelect }: {
   tab: EditorTabItem
   isActive: boolean
+  isPaneFocused: boolean
   paneId: string
   projectId: string
   currentWindowId: string
   isDragging: boolean
+  showDivider: boolean
   dropSide: 'left' | 'right' | null
   onDragStart: (id: string, e: React.DragEvent) => void
   onDragOver: (id: string, e: React.DragEvent) => void
@@ -119,6 +121,12 @@ function EditorTabButton({ tab, isActive, paneId, projectId, currentWindowId, is
   )
   const canSplit = paneTabIds.length >= 2
   const isSplit = rootType === 'split'
+  const activeTabClass = isActive
+    ? cn(
+      'tab-active text-[var(--color-text-primary)]',
+      isPaneFocused ? 'tab-active-focused' : 'tab-active-muted',
+    )
+    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]'
 
   const closeEditorTabs = useCallback((ids: string[]) => {
     const targets = [...new Set(ids)].filter((id) => fileTabIds.includes(id))
@@ -256,9 +264,7 @@ function EditorTabButton({ tab, isActive, paneId, projectId, currentWindowId, is
         }}
         className={cn(
           'no-drag group flex h-[34px] cursor-pointer items-center gap-1.5 px-2.5 max-w-[200px]',
-          isActive
-            ? 'tab-active text-[var(--color-text-primary)]'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]',
+          activeTabClass,
           isDragging && 'opacity-40',
         )}
       >
@@ -289,6 +295,10 @@ function EditorTabButton({ tab, isActive, paneId, projectId, currentWindowId, is
           </button>
         )}
       </div>
+
+      {showDivider && dropSide !== 'right' && (
+        <div className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--color-border-hover)]/85" />
+      )}
 
       {dropSide === 'right' && (
         <div className="h-5 w-0.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
@@ -608,8 +618,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       ref={paneRootRef}
       className={cn(
         'flex h-full flex-col',
-        isActivePane && isMultiPane && 'border border-[var(--color-accent)]/40',
-        !isActivePane && isMultiPane && 'border border-transparent',
+        isMultiPane && 'border border-transparent',
       )}
       onMouseDown={handleFocus}
     >
@@ -691,13 +700,15 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               </span>
             )
           })()}
-          {orderedTabs.map((tab) => tab.kind === 'session' ? (
+          {orderedTabs.map((tab, index) => tab.kind === 'session' ? (
             <SessionTab
               key={tab.id}
               session={tab.session}
               isActive={tab.id === paneActiveSessionId}
+              isPaneFocused={isActivePane}
               paneId={paneId}
               isDragging={dragTabId === tab.id}
+              showDivider={index < orderedTabs.length - 1}
               dropSide={dropTargetId === tab.id ? dropSide : null}
               onDragStart={(id) => setDragTabId(id)}
               onDragOver={(id, e) => {
@@ -720,10 +731,12 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               key={tab.id}
               tab={tab.tab}
               isActive={tab.id === paneActiveSessionId}
+              isPaneFocused={isActivePane}
               paneId={paneId}
               projectId={projectId}
               currentWindowId={currentWindowId}
               isDragging={dragTabId === tab.id}
+              showDivider={index < orderedTabs.length - 1}
               dropSide={dropTargetId === tab.id ? dropSide : null}
               onDragStart={(id) => setDragTabId(id)}
               onDragOver={(id, e) => {

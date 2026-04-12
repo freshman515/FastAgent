@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gitService } from '../services/GitService'
@@ -192,6 +192,26 @@ export function registerGitHandlers(): void {
   // Filesystem: write file content
   ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string) => {
     await writeFile(filePath, content, 'utf-8')
+  })
+
+  // Filesystem: create an empty file
+  ipcMain.handle('fs:create-file', async (_event, filePath: string) => {
+    await writeFile(filePath, '', { encoding: 'utf-8', flag: 'wx' })
+  })
+
+  // Filesystem: create a directory
+  ipcMain.handle('fs:create-dir', async (_event, dirPath: string) => {
+    await mkdir(dirPath)
+  })
+
+  // Filesystem: move/rename a file or directory
+  ipcMain.handle('fs:move', async (_event, sourcePath: string, targetPath: string) => {
+    await rename(sourcePath, targetPath)
+  })
+
+  // Filesystem: delete a file or directory
+  ipcMain.handle('fs:delete', async (_event, targetPath: string) => {
+    await rm(targetPath, { recursive: true, force: false })
   })
 
   // Filesystem: write a temporary file and return the absolute path

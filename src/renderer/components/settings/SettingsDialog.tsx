@@ -2,6 +2,7 @@ import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLin
 import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore, type AppSettings } from '@/stores/ui'
+import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui'
 import { useGroupsStore } from '@/stores/groups'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
@@ -10,7 +11,7 @@ import { getThemeNames, getXtermTheme, getAllCustomThemeNames, getTheme, type Gh
 import { CustomThemeEditor } from './CustomThemeEditor'
 import { parseThemeAuto } from '@/lib/themeImport'
 
-type SettingsPage = 'general' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai'
+type SettingsPage = 'general' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; icon: typeof Settings }> = [
   { id: 'general', label: 'General', icon: Settings },
@@ -19,6 +20,7 @@ const NAV_ITEMS: Array<{ id: SettingsPage; label: string; icon: typeof Settings 
   { id: 'editor', label: 'Editor', icon: FileCode2 },
   { id: 'templates', label: 'Templates', icon: Layers },
   { id: 'ai', label: 'AI', icon: Bot },
+  { id: 'claudeGui', label: 'Claude GUI', icon: Bot },
 ]
 
 const UI_FONT_OPTIONS = [
@@ -1143,14 +1145,128 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
   )
 }
 
+function ClaudeGuiSettingsPage(): JSX.Element {
+  const preferences = useClaudeGuiStore((state) => state.preferences)
+  const conversations = useClaudeGuiStore((state) => state.conversations)
+  const updatePreferences = useClaudeGuiStore((state) => state.updatePreferences)
+  const updateConversationPreferences = useClaudeGuiStore((state) => state.updateConversationPreferences)
+
+  const applyPreferenceUpdate = useCallback((updates: Partial<ClaudeGuiPreferences>) => {
+    updatePreferences(updates)
+    for (const conversation of conversations) {
+      updateConversationPreferences(conversation.id, updates)
+    }
+  }, [conversations, updateConversationPreferences, updatePreferences])
+
+  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Bot size={14} className="text-[var(--color-accent)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          Claude GUI
+        </span>
+      </div>
+      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Configure the built-in Claude GUI panel. These settings are applied immediately and synchronized to existing Claude GUI conversations.
+      </p>
+
+      <label className="grid gap-1">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Permission Mode</span>
+        <select value={preferences.permissionMode} onChange={(event) => applyPreferenceUpdate({ permissionMode: event.target.value as ClaudeGuiPreferences['permissionMode'] })} className={INPUT}>
+          <option value="default">Ask before edits</option>
+          <option value="acceptEdits">Accept edits</option>
+          <option value="plan">Plan mode</option>
+          <option value="dontAsk">Don't ask</option>
+          <option value="bypassPermissions">Bypass permissions</option>
+        </select>
+      </label>
+
+      <label className="grid gap-1">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Message Size</span>
+        <select value={preferences.messageTextSize} onChange={(event) => applyPreferenceUpdate({ messageTextSize: event.target.value as ClaudeGuiPreferences['messageTextSize'] })} className={INPUT}>
+          <option value="md">Medium</option>
+          <option value="lg">Large</option>
+          <option value="xl">Extra Large</option>
+        </select>
+      </label>
+
+      <label className="grid gap-1">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Model</span>
+        <select value={preferences.selectedModel} onChange={(event) => applyPreferenceUpdate({ selectedModel: event.target.value })} className={INPUT}>
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-opus-4-6">Opus 4.6</option>
+          <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+          <option value="sonnet">Sonnet</option>
+          <option value="opus">Opus</option>
+          <option value="default">Default</option>
+        </select>
+      </label>
+
+      <label className="grid gap-1">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Compute Mode</span>
+        <select value={preferences.computeMode} onChange={(event) => applyPreferenceUpdate({ computeMode: event.target.value as ClaudeGuiPreferences['computeMode'] })} className={INPUT}>
+          <option value="auto">Auto</option>
+          <option value="max">Max</option>
+        </select>
+      </label>
+
+      <label className="grid gap-1">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Language</span>
+        <select value={preferences.language ?? 'zh'} onChange={(event) => applyPreferenceUpdate({ language: event.target.value as NonNullable<ClaudeGuiPreferences['language']> })} className={INPUT}>
+          <option value="zh">中文</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="ar">العربية</option>
+        </select>
+      </label>
+
+      <ToggleRow
+        label="Only communicate in target language"
+        description="Keep Claude replies in the selected language."
+        checked={preferences.onlyCommunicate}
+        onChange={(value) => applyPreferenceUpdate({ onlyCommunicate: value })}
+      />
+      <ToggleRow
+        label="Plan first"
+        description="Default new requests to planning mode."
+        checked={preferences.planMode}
+        onChange={(value) => applyPreferenceUpdate({ planMode: value })}
+      />
+      <ToggleRow
+        label="Thinking mode"
+        description="Request deeper reasoning by default."
+        checked={preferences.thinkingMode}
+        onChange={(value) => applyPreferenceUpdate({ thinkingMode: value })}
+      />
+      <ToggleRow
+        label="Include editor context by default"
+        description="Automatically attach the active editor selection or file context."
+        checked={preferences.includeEditorContext}
+        onChange={(value) => applyPreferenceUpdate({ includeEditorContext: value })}
+      />
+
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+        Active conversations synced: {conversations.length}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Dialog ───
 
 export function SettingsDialog(): JSX.Element | null {
   const open = useUIStore((s) => s.settingsOpen)
   const close = useUIStore((s) => s.closeSettings)
+  const settingsPage = useUIStore((s) => s.settingsPage)
+  const setSettingsPage = useUIStore((s) => s.setSettingsPage)
   const settings = useUIStore((s) => s.settings)
   const updateSettings = useUIStore((s) => s.updateSettings)
-  const [page, setPage] = useState<SettingsPage>('general')
+  const page = (settingsPage || 'general') as SettingsPage
 
   const handleUpdate = useCallback(
     (key: keyof AppSettings, value: unknown) => {
@@ -1182,7 +1298,7 @@ export function SettingsDialog(): JSX.Element | null {
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setPage(item.id)}
+                onClick={() => setSettingsPage(item.id)}
                 className={cn(
                   'flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-1.5 text-[var(--ui-font-sm)] transition-colors',
                   page === item.id
@@ -1217,6 +1333,7 @@ export function SettingsDialog(): JSX.Element | null {
             {page === 'editor' && <EditorPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'templates' && <TemplatesPage />}
             {page === 'ai' && <AiSettingsPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'claudeGui' && <ClaudeGuiSettingsPage />}
           </div>
           <div className="border-t border-[var(--color-border)] px-5 py-2">
             <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">

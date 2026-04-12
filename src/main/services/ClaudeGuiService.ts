@@ -99,6 +99,73 @@ interface RequestState {
   lastToolName?: string
 }
 
+interface PendingControlPermissionRequest {
+  id: string
+  conversationId: string
+  toolName: string
+  toolUseId?: string
+  suggestions: unknown[]
+}
+
+function normalizeCwd(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function formatPermissionDetail(toolName: string, input: Record<string, unknown>, description?: string): string {
+  if (typeof description === 'string' && description.trim()) return description.trim()
+  if ((toolName === 'Edit' || toolName === 'Write' || toolName === 'Read') && typeof input.file_path === 'string') {
+    return input.file_path
+  }
+  if (toolName === 'Bash' && typeof input.command === 'string') {
+    return input.command
+  }
+  if ((toolName === 'Glob' || toolName === 'Grep') && typeof input.pattern === 'string') {
+    return input.pattern
+  }
+  for (const value of Object.values(input)) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return ''
+}
+
+function formatPermissionSuggestionLabel(toolName: string, suggestion: unknown): string {
+  if (!suggestion || typeof suggestion !== 'object') return `Allow ${toolName}`
+  const value = suggestion as {
+    type?: unknown
+    mode?: unknown
+    ruleContent?: unknown
+    toolName?: unknown
+    rules?: unknown
+  }
+
+  if (value.type === 'setMode' && typeof value.mode === 'string') {
+    return value.mode === 'acceptEdits' ? 'Auto-accept edits' : `Switch to ${value.mode}`
+  }
+
+  if (value.type === 'addRules') {
+    const firstRule = Array.isArray(value.rules) && value.rules[0] && typeof value.rules[0] === 'object'
+      ? value.rules[0] as { ruleContent?: unknown; toolName?: unknown }
+      : null
+    const ruleContent = typeof firstRule?.ruleContent === 'string'
+      ? firstRule.ruleContent
+      : (typeof value.ruleContent === 'string' ? value.ruleContent : '')
+    const suggestionTool = typeof firstRule?.toolName === 'string'
+      ? firstRule.toolName
+      : (typeof value.toolName === 'string' ? value.toolName : toolName)
+
+    if (ruleContent.includes('**')) {
+      const dir = ruleContent.split('**')[0]?.replace(/[\\/]$/, '').split(/[\\/]/).pop() || ruleContent
+      return `Allow ${suggestionTool} in ${dir}/`
+    }
+
+    if (ruleContent) {
+      return `Always allow ${suggestionTool}`
+    }
+  }
+
+  return `Allow ${toolName}`
+}
+
 function emit(sender: WebContents | null, payload: ClaudeGuiEvent): void {
   if (!sender || sender.isDestroyed()) return
   sender.send(IPC.CLAUDE_GUI_EVENT, payload)
@@ -141,6 +208,10 @@ function formatResultContent(content: unknown): string {
 }
 
 function buildPromptText(options: ClaudeGuiRequestOptions): string {
+  if (options.text.trim().startsWith('/')) {
+    return options.text.trim()
+  }
+
   let actualMessage = options.text
 
   if (options.planMode) {
@@ -399,6 +470,69 @@ function runClaudeOneShot(promptText: string, cwd: string, emptyMessage: string)
 export class ClaudeGuiService {
   private currentProcess: ChildProcessWithoutNullStreams | null = null
   private currentSender: WebContents | null = null
+  private currentConversationId: string | null = null
+  private currentCwd: string | null = null
+  private stdinClosed = false
+  private readonly pendingControlPermissionRequests = new Map<string, PendingControlPermissionRequest>()
+
+  findConversationIdByCwd(cwd: string): string | null {
+    if (!this.currentConversationId || !this.currentCwd) return null
+    return normalizeCwd(this.currentCwd) === normalizeCwd(cwd) ? this.currentConversationId : null
+  }
+
+  resolvePermissionRequest(id: string, behavior: 'allow' | 'deny', suggestionIndex?: number): boolean {
+    const request = this.pendingControlPermissionRequests.get(id)
+    const proc = this.currentProcess
+    const sender = this.currentSender
+    if (!request || !proc || this.stdinClosed || proc.stdin.destroyed) return false
+
+    this.pendingControlPermissionRequests.delete(id)
+    const selectedSuggestion = typeof suggestionIndex === 'number' ? request.suggestions[suggestionIndex] : undefined
+    const response =
+      behavior === 'allow'
+        ? {
+            behavior: 'allow',
+            ...(request.toolUseId ? { toolUseID: request.toolUseId } : {}),
+            ...(selectedSuggestion ? { updatedPermissions: [selectedSuggestion], decisionClassification: 'user_permanent' } : { decisionClassification: 'user_temporary' }),
+          }
+        : {
+            behavior: 'deny',
+            message: 'Denied by user',
+            ...(request.toolUseId ? { toolUseID: request.toolUseId } : {}),
+            decisionClassification: 'user_reject',
+          }
+
+    proc.stdin.write(JSON.stringify({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: id,
+        response,
+      },
+    }) + '\n')
+
+    if (sender && !sender.isDestroyed()) {
+      sender.send(IPC.PERMISSION_DISMISS, { id })
+    }
+
+    return true
+  }
+
+  private closeStdin(): void {
+    if (this.stdinClosed) return
+    if (!this.currentProcess || this.currentProcess.stdin.destroyed) return
+    this.stdinClosed = true
+    this.currentProcess.stdin.end()
+  }
+
+  private dismissPendingControlPermissions(sender: WebContents | null): void {
+    for (const id of this.pendingControlPermissionRequests.keys()) {
+      if (sender && !sender.isDestroyed()) {
+        sender.send(IPC.PERMISSION_DISMISS, { id })
+      }
+    }
+    this.pendingControlPermissionRequests.clear()
+  }
 
   async optimizePrompt(options: ClaudePromptOptimizeOptions): Promise<ClaudePromptOptimizeResult> {
     const prompt = options.prompt?.trim()
@@ -442,8 +576,15 @@ export class ClaudeGuiService {
       '--input-format',
       'stream-json',
       '--verbose',
-      '--dangerously-skip-permissions',
     ]
+
+    if (options.permissionMode) {
+      args.push('--permission-mode', options.permissionMode)
+    }
+
+    if (options.permissionMode === 'bypassPermissions') {
+      args.push('--dangerously-skip-permissions')
+    }
 
     if (options.sessionId) {
       args.push('--resume', options.sessionId)
@@ -473,6 +614,10 @@ export class ClaudeGuiService {
 
     this.currentProcess = proc
     this.currentSender = sender
+    this.currentConversationId = options.conversationId
+    this.currentCwd = options.cwd
+    this.stdinClosed = false
+    this.pendingControlPermissionRequests.clear()
 
     const state: RequestState = {
       requestId: options.requestId,
@@ -494,7 +639,6 @@ export class ClaudeGuiService {
 
     const userMessage = buildUserMessage(buildPromptText(options), options.images)
     proc.stdin.write(JSON.stringify(userMessage) + '\n')
-    proc.stdin.end()
 
     let stdoutBuffer = ''
     let stderrBuffer = ''
@@ -556,8 +700,12 @@ export class ClaudeGuiService {
       }
 
       if (this.currentProcess === proc) {
+        this.dismissPendingControlPermissions(sender)
         this.currentProcess = null
         this.currentSender = null
+        this.currentConversationId = null
+        this.currentCwd = null
+        this.stdinClosed = true
       }
 
       emit(sender, {
@@ -577,10 +725,15 @@ export class ClaudeGuiService {
 
   async stop(): Promise<void> {
     const proc = this.currentProcess
+    const sender = this.currentSender
     if (!proc) return
 
+    this.dismissPendingControlPermissions(sender)
     this.currentProcess = null
     this.currentSender = null
+    this.currentConversationId = null
+    this.currentCwd = null
+    this.stdinClosed = true
     await killProcessTree(proc)
   }
 
@@ -629,6 +782,47 @@ export class ClaudeGuiService {
         toolName: typeof payload.tool_name === 'string' ? payload.tool_name : 'unknown',
         status: `⏳ ${getToolStatusText(payload.tool_name ?? 'unknown')} (${Math.floor(payload.elapsed_time_seconds ?? 0)}s)`,
       })
+      return
+    }
+
+    if (payload.type === 'control_request') {
+      const request = payload.request && typeof payload.request === 'object'
+        ? payload.request as Record<string, unknown>
+        : null
+      const requestId = typeof payload.request_id === 'string' ? payload.request_id : null
+      if (requestId && request?.subtype === 'can_use_tool') {
+        const toolName = typeof request.tool_name === 'string' ? request.tool_name : 'Unknown'
+        const input = request.input && typeof request.input === 'object' ? request.input as Record<string, unknown> : {}
+        const description = typeof request.description === 'string' ? request.description : undefined
+        const suggestions = Array.isArray(request.permission_suggestions) ? request.permission_suggestions : []
+
+        this.pendingControlPermissionRequests.set(requestId, {
+          id: requestId,
+          conversationId: state.conversationId,
+          toolName,
+          toolUseId: typeof request.tool_use_id === 'string' ? request.tool_use_id : undefined,
+          suggestions,
+        })
+
+        if (!sender.isDestroyed()) {
+          sender.send(IPC.PERMISSION_REQUEST, {
+            id: requestId,
+            sessionId: null,
+            conversationId: state.conversationId,
+            toolName,
+            detail: formatPermissionDetail(toolName, input, description),
+            suggestions: suggestions.map((suggestion) => formatPermissionSuggestionLabel(toolName, suggestion)),
+          })
+        }
+        return
+      }
+    }
+
+    if (payload.type === 'control_cancel_request' && typeof payload.request_id === 'string') {
+      this.pendingControlPermissionRequests.delete(payload.request_id)
+      if (!sender.isDestroyed()) {
+        sender.send(IPC.PERMISSION_DISMISS, { id: payload.request_id })
+      }
       return
     }
 
@@ -796,6 +990,7 @@ export class ClaudeGuiService {
 
     state.requestCount += 1
     state.totalCost += Number(payload.total_cost_usd ?? 0)
+    this.closeStdin()
 
     emit(sender, {
       requestId: state.requestId,

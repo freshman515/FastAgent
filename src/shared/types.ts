@@ -80,11 +80,22 @@ export interface SessionExitEvent {
 
 export type ClaudeGuiComputeMode = 'auto' | 'max'
 export type ClaudeGuiLanguage = 'zh' | 'es' | 'ar' | 'fr' | 'de' | 'ja' | 'ko'
+export type ClaudeGuiPermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions' | 'dontAsk'
+export type ClaudeGuiSkillSource = 'project-claude' | 'project-codex' | 'user-claude' | 'user-codex' | 'runtime'
 
 export interface ClaudeGuiImagePayload {
   name: string
   mediaType: string
   data: string
+}
+
+export interface ClaudeGuiSkillCatalogEntry {
+  id: string
+  name: string
+  description: string
+  path: string
+  source: ClaudeGuiSkillSource
+  scope: 'project' | 'user' | 'runtime'
 }
 
 export interface ClaudeGuiRequestOptions {
@@ -95,6 +106,7 @@ export interface ClaudeGuiRequestOptions {
   sessionId?: string | null
   model: string
   computeMode?: ClaudeGuiComputeMode
+  permissionMode?: ClaudeGuiPermissionMode
   planMode?: boolean
   thinkingMode?: boolean
   languageMode?: boolean
@@ -410,6 +422,7 @@ export const IPC = {
   CLAUDE_GUI_STOP: 'claude-gui:stop',
   CLAUDE_GUI_EVENT: 'claude-gui:event',
   CLAUDE_GUI_EXPORT: 'claude-gui:export',
+  CLAUDE_GUI_LIST_SKILLS: 'claude-gui:list-skills',
   CLAUDE_PROMPT_OPTIMIZE: 'claude-prompt:optimize',
   CLAUDE_DIFF_REVIEW: 'claude-diff:review',
 } as const
