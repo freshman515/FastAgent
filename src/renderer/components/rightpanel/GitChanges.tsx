@@ -574,7 +574,7 @@ export function GitChanges(): JSX.Element {
   if (!projectPath) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">No project selected</span>
+        <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">未选择项目</span>
       </div>
     )
   }

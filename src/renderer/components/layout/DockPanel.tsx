@@ -176,7 +176,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
           <button
             onClick={() => toggle(side)}
             className={cn(TAB_BUTTON, 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]')}
-            title={collapsed ? (side === 'left' ? 'Expand Left Panel' : 'Expand Right Panel') : (side === 'left' ? 'Collapse Left Panel' : 'Collapse Right Panel')}
+            title={collapsed ? (side === 'left' ? '展开左侧面板' : '展开右侧面板') : (side === 'left' ? '收起左侧面板' : '收起右侧面板')}
           >
             {side === 'left'
               ? (collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />)
@@ -236,7 +236,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
 
       {panelIds.length === 0 && (
         <div className="mt-2 rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] px-2 py-4 text-center text-[10px] text-[var(--color-text-tertiary)] [writing-mode:vertical-rl]">
-          Drop
+          拖放
         </div>
       )}
     </div>
@@ -274,7 +274,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       {isAppendDropTarget && (
         <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-[var(--color-accent)]/60 bg-[var(--color-accent)]/7">
           <div className="rounded-full bg-[var(--color-bg-primary)]/92 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)] shadow-lg">
-            Drop To {side === 'left' ? 'Left Panel' : 'Right Panel'}
+            拖放到{side === 'left' ? '左侧面板' : '右侧面板'}
           </div>
         </div>
       )}

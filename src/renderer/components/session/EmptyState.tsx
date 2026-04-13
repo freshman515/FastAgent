@@ -7,13 +7,14 @@ interface EmptyStateProps {
 
 export function EmptyState({ title, description }: EmptyStateProps): JSX.Element {
   return (
-    <div className="flex flex-col items-center gap-3 px-8 text-center">
-      <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-bg-tertiary)]">
-        <Zap size={18} className="text-[var(--color-text-tertiary)]" />
+    <div className="flex flex-col items-center gap-4 px-8 text-center">
+      <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--color-bg-tertiary),color-mix(in_srgb,var(--color-accent)_8%,var(--color-bg-tertiary)))] border border-[var(--color-border)]/50 shadow-lg shadow-black/10">
+        <Zap size={22} className="text-[var(--color-accent)]/60" />
+        <div className="absolute -inset-px rounded-2xl bg-[var(--color-accent)]/[0.03]" />
       </div>
-      <div className="flex flex-col gap-1">
-        <h3 className="text-[var(--ui-font-md)] font-medium text-[var(--color-text-secondary)]">{title}</h3>
-        <p className="max-w-[240px] text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">{description}</p>
+      <div className="flex flex-col gap-1.5">
+        <h3 className="text-[var(--ui-font-md)] font-semibold text-[var(--color-text-primary)]">{title}</h3>
+        <p className="max-w-[260px] text-[var(--ui-font-sm)] leading-relaxed text-[var(--color-text-tertiary)]">{description}</p>
       </div>
     </div>
   )

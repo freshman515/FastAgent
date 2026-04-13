@@ -1381,13 +1381,13 @@ export function SettingsDialog(): JSX.Element | null {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-bg-secondary)_88%,var(--color-bg-primary)),var(--color-bg-secondary))] px-6 py-5">
-            {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'appearance' && <AppearancePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'terminal' && <TerminalPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'editor' && <EditorPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'templates' && <TemplatesPage />}
             {page === 'ai' && <AiSettingsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'claudeGui' && <ClaudeGuiSettingsPage />}
+            {!['appearance', 'terminal', 'editor', 'templates', 'ai', 'claudeGui'].includes(page) && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
           </div>
           <div className="border-t border-[var(--color-border)] px-5 py-2">
             <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">

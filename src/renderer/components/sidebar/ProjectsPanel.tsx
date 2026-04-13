@@ -96,7 +96,7 @@ export function ProjectsPanel(): JSX.Element {
         </div>
       )}
 
-      <div className="shrink-0 px-3 py-2">
+      <div className="shrink-0 px-2.5 py-2">
         <div className="relative">
           {!searchQuery && (
             <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center gap-1.5">
@@ -109,9 +109,10 @@ export function ProjectsPanel(): JSX.Element {
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ outline: 'none', boxShadow: 'none' }}
             className={cn(
-              'h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
+              'h-7 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/60 bg-[var(--color-bg-primary)] px-2.5',
               'text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
-              'transition-colors focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-tertiary)]',
+              'transition-all duration-150 focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-tertiary)]',
+              'focus:shadow-[0_0_0_2px_var(--color-accent)/8]',
             )}
           />
         </div>
@@ -121,17 +122,20 @@ export function ProjectsPanel(): JSX.Element {
         <GroupList searchQuery={searchQuery} />
       </div>
 
-      <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-1.5">
+      <div className="shrink-0 border-t border-[var(--color-border)] px-2 py-1.5">
         <button
           onClick={openSettings}
           className={cn(
-            'flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2',
-            'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-            'transition-colors duration-100',
+            'group flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2',
+            'text-[var(--color-text-tertiary)]',
+            'hover:bg-[linear-gradient(135deg,var(--color-bg-tertiary),color-mix(in_srgb,var(--color-accent)_6%,var(--color-bg-tertiary)))]',
+            'hover:text-[var(--color-text-secondary)]',
+            'transition-all duration-150',
           )}
         >
-          <Settings size={14} />
+          <Settings size={14} className="transition-transform duration-300 group-hover:rotate-90" />
           <span className="text-[var(--ui-font-sm)] font-medium">设置</span>
+          <span className="ml-auto text-[10px] text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-60 transition-opacity">⌘,</span>
         </button>
       </div>
     </div>

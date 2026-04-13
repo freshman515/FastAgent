@@ -146,7 +146,7 @@ export function ProjectSearch(): JSX.Element {
             onClick={clear}
             disabled={!query && !fileFilter && results.length === 0}
             className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border-hover)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-primary)] disabled:opacity-40"
-            title="Clear"
+            title="清除"
           >
             <X size={13} />
           </button>

@@ -809,7 +809,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   settingsPage: 'general',
   openSettings: (page) => set({ settingsOpen: true, settingsPage: page ?? 'general' }),
   setSettingsPage: (page) => set({ settingsPage: page }),
-  closeSettings: () => set({ settingsOpen: false }),
+  closeSettings: () => set({ settingsOpen: false, settingsPage: 'general' }),
 
   settings: { ...DEFAULT_SETTINGS },
 

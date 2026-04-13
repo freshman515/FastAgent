@@ -432,7 +432,7 @@ export function AgentMonitor(): JSX.Element {
   if (!activeSession) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">No active session</span>
+        <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">无活跃会话</span>
       </div>
     )
   }
@@ -504,8 +504,8 @@ export function AgentMonitor(): JSX.Element {
             {cwd}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[var(--color-text-tertiary)]">
-            <span>Last input {formatRelativeTime(stats?.lastInputAt, now)}</span>
-            <span>Last output {formatRelativeTime(stats?.lastOutputAt, now)}</span>
+            <span>最后输入 {formatRelativeTime(stats?.lastInputAt, now)}</span>
+            <span>最后输出 {formatRelativeTime(stats?.lastOutputAt, now)}</span>
           </div>
         </div>
       </div>

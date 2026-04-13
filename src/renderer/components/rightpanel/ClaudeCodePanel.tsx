@@ -2589,7 +2589,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
 
         {activeConversation && traceEntries.length === 0 && (
           <div className="px-6 py-8 text-center">
-            <div className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Ready to chat with Claude Code</div>
+            <div className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">准备与 Claude Code 对话</div>
             <div className="mt-1 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">消息会通过 Claude CLI 的 stream-json 输出实时渲染成 trace 风格的 GUI 视图。</div>
           </div>
         )}

@@ -342,7 +342,7 @@ export function SessionTab({
             <div className="h-px my-0.5 bg-[var(--color-border)]" />
             <div className="px-3 py-1.5">
               <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">Color</span>
+                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">颜色</span>
                 {session.color && (
                   <button
                     onClick={() => updateSession(session.id, { color: undefined })}
@@ -368,7 +368,7 @@ export function SessionTab({
             </div>
             <div className="px-3 pb-1.5">
               <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">Label</span>
+                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">标签</span>
                 {session.label && (
                   <button
                     onClick={() => updateSession(session.id, { label: undefined })}
