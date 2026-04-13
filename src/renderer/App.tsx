@@ -420,6 +420,23 @@ export function App(): JSX.Element {
   }, [])
 
   useActivityMonitor()
+  const activePaneTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
+
+  useEffect(() => {
+    const sessionStore = useSessionsStore.getState()
+
+    if (!activePaneTabId || activePaneTabId.startsWith('editor-')) {
+      if (sessionStore.activeSessionId !== null) {
+        sessionStore.setActive(null)
+      }
+      return
+    }
+
+    if (sessionStore.activeSessionId !== activePaneTabId) {
+      sessionStore.setActive(activePaneTabId)
+    }
+    sessionStore.markAsRead(activePaneTabId)
+  }, [activePaneTabId])
 
   useEffect(() => {
     const pendingEditedFiles = new Map<string, string[]>()
@@ -636,17 +653,6 @@ export function App(): JSX.Element {
       const activePaneId = paneStore.activePaneId
       const paneSessions = paneStore.paneSessions[activePaneId] ?? []
       const activeSessionId = paneStore.paneActiveSession[activePaneId] ?? null
-      const activeIdx = paneSessions.indexOf(activeSessionId ?? '')
-
-      // Ctrl+Tab / Ctrl+Shift+Tab — cycle tabs in active pane
-      if (e.ctrlKey && e.key === 'Tab') {
-        e.preventDefault()
-        if (paneSessions.length === 0) return
-        const dir = e.shiftKey ? -1 : 1
-        const next = (activeIdx + dir + paneSessions.length) % paneSessions.length
-        paneStore.setPaneActiveSession(activePaneId, paneSessions[next])
-        return
-      }
 
       // Ctrl+Shift+T — restore last closed
       if (e.ctrlKey && e.shiftKey && e.key === 'T') {
