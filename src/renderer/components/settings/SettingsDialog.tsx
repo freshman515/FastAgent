@@ -13,15 +13,17 @@ import { parseThemeAuto } from '@/lib/themeImport'
 
 type SettingsPage = 'general' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
-const NAV_ITEMS: Array<{ id: SettingsPage; label: string; icon: typeof Settings }> = [
-  { id: 'general', label: 'General', icon: Settings },
-  { id: 'appearance', label: 'Appearance', icon: Type },
-  { id: 'terminal', label: 'Terminal', icon: Terminal },
-  { id: 'editor', label: 'Editor', icon: FileCode2 },
-  { id: 'templates', label: 'Templates', icon: Layers },
-  { id: 'ai', label: 'AI', icon: Bot },
-  { id: 'claudeGui', label: 'Claude GUI', icon: Bot },
+const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
+  { id: 'general', label: '通用', description: '工作区、搜索与窗口行为', icon: Settings },
+  { id: 'appearance', label: '外观', description: '主题、字体与界面观感', icon: Type },
+  { id: 'terminal', label: '终端', description: '终端字号与字体预览', icon: Terminal },
+  { id: 'editor', label: '编辑器', description: '代码编辑体验与排版', icon: FileCode2 },
+  { id: 'templates', label: '模板', description: '批量启动会话的预设', icon: Layers },
+  { id: 'ai', label: 'AI 摘要', description: '终端摘要模型与提示词', icon: Bot },
+  { id: 'claudeGui', label: 'Claude GUI', description: '内置 Claude 面板偏好', icon: Bot },
 ]
+
+const PAGE_STACK = 'mx-auto flex w-full max-w-[980px] flex-col gap-5 pb-8'
 
 const UI_FONT_OPTIONS = [
   "'Inter', 'Segoe UI', system-ui, sans-serif",
@@ -44,6 +46,16 @@ const EDITOR_FONT_OPTIONS = TERMINAL_FONT_OPTIONS
 const EDITOR_FONT_LABELS = TERMINAL_FONT_LABELS
 
 // ─── Shared components ───
+
+function PageIntro({ title, description }: { title: string; description: string }): JSX.Element {
+  return (
+    <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_12%,var(--color-bg-primary)),var(--color-bg-primary))] px-5 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">设置中心</div>
+      <h3 className="mt-2 text-[22px] font-semibold tracking-tight text-[var(--color-text-primary)]">{title}</h3>
+      <p className="mt-2 max-w-[720px] text-[var(--ui-font-sm)] leading-6 text-[var(--color-text-secondary)]">{description}</p>
+    </div>
+  )
+}
 
 function FontSizeSlider({ label, value, min, max, onChange }: {
   label: string; value: number; min: number; max: number; onChange: (v: number) => void
@@ -123,15 +135,19 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
   const groups = useGroupsStore((s) => s.groups)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={PAGE_STACK}>
+      <PageIntro
+        title="通用设置"
+        description="调整默认工作流、标题栏交互、窗口弹出方式和数据清理策略。"
+      />
       <div className="flex items-center gap-2 mb-1">
         <Layers size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Group Visibility
+          分组显示
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Choose which group to display in the sidebar, or show all groups.
+        选择左侧边栏默认展示的分组，或者始终显示全部分组。
       </p>
       <div className="flex flex-col gap-1">
         <button
@@ -144,7 +160,7 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           )}
         >
           <div className="h-2.5 w-2.5 rounded-full bg-[var(--color-text-tertiary)]" />
-          All Groups
+          全部分组
         </button>
         {groups.map((g) => (
           <button
@@ -168,11 +184,11 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <Settings size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Default Session
+          默认会话
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Session type created when double-clicking the tab bar.
+        双击标签栏时默认创建的会话类型。
       </p>
       <div className="flex flex-wrap gap-1">
         {(['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode', 'terminal'] as const).map((t) => (
@@ -186,7 +202,17 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
                 : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
             )}
           >
-            {t === 'claude-code' ? 'Claude Code' : t === 'claude-code-yolo' ? 'Claude Code YOLO' : t === 'codex-yolo' ? 'Codex YOLO' : t === 'opencode' ? 'OpenCode' : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'claude-code'
+              ? 'Claude Code'
+              : t === 'claude-code-yolo'
+                ? 'Claude Code YOLO'
+                : t === 'codex-yolo'
+                  ? 'Codex YOLO'
+                  : t === 'opencode'
+                    ? 'OpenCode'
+                    : t === 'terminal'
+                      ? '终端'
+                      : 'Codex'}
           </button>
         ))}
       </div>
@@ -196,16 +222,16 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <GitBranch size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Git Panel
+          Git 面板
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Choose how changed files are displayed in the Git side panel.
+        选择 Git 侧栏中改动文件的展示方式。
       </p>
       <div className="flex gap-2">
         {([
-          { id: 'flat' as const, label: 'Flat List', desc: 'Keep the current simple file list' },
-          { id: 'tree' as const, label: 'Directory Tree', desc: 'Group changed files by folders' },
+          { id: 'flat' as const, label: '平铺列表', desc: '保持当前简洁的文件列表' },
+          { id: 'tree' as const, label: '目录树', desc: '按文件夹层级组织改动文件' },
         ]).map(({ id, label, desc }) => (
           <button
             key={id}
@@ -223,19 +249,19 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         ))}
       </div>
       <p className="mt-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Choose how the <span className="font-medium text-[var(--color-text-secondary)]">Fix</span> button opens AI repair after a review report is generated.
+        选择生成审查报告后，<span className="font-medium text-[var(--color-text-secondary)]">修复</span> 按钮如何打开 AI 修复流程。
       </p>
       <div className="flex gap-2">
         {([
           {
             id: 'claude-gui' as const,
             label: 'Claude GUI',
-            desc: 'Open a Claude GUI tab and show the full visible repair process',
+            desc: '在 Claude GUI 标签页中展示完整、可见的修复过程',
           },
           {
             id: 'claude-code-cli' as const,
             label: 'Claude Code CLI',
-            desc: 'Open a Claude Code CLI tab with --dangerously-skip-permissions and send the review task file',
+            desc: '打开 Claude Code CLI 标签页并发送审查任务文件',
           },
         ]).map(({ id, label, desc }) => (
           <button
@@ -259,20 +285,20 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <ExternalLink size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Pop-out Window
+          弹出窗口
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Default size and position when popping out a session tab.
+        会话标签弹出为独立窗口时的默认尺寸与位置。
       </p>
       <div className="flex gap-3">
-        <FontSizeSlider label="Width" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
-        <FontSizeSlider label="Height" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
+        <FontSizeSlider label="宽度" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
+        <FontSizeSlider label="高度" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
       </div>
       <div className="flex gap-2">
         {([
-          { id: 'cursor' as const, label: 'Follow Cursor', desc: 'Window appears at mouse position' },
-          { id: 'center' as const, label: 'Screen Center', desc: 'Window always opens centered' },
+          { id: 'cursor' as const, label: '跟随鼠标', desc: '在鼠标位置附近打开窗口' },
+          { id: 'center' as const, label: '屏幕居中', desc: '总是在屏幕中央打开窗口' },
         ]).map(({ id, label, desc }) => (
           <button
             key={id}
@@ -295,23 +321,23 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <Search size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Title Bar Search
+          标题栏搜索
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Show a long search box in the title bar for files and sessions. When enabled, it replaces the center music player / project name area.
+        在标题栏显示长搜索框，用于搜索文件和会话。启用后会替换中间的音乐播放器或项目名称区域。
       </p>
       <ToggleRow
-        label="Enable title bar search"
-        description={settings.showTitleBarSearch ? 'Files + sessions are searchable from the top bar' : 'Center area shows the music player or current project name'}
+        label="启用标题栏搜索"
+        description={settings.showTitleBarSearch ? '可直接从顶部搜索文件与会话' : '中间区域显示音乐播放器或当前项目名'}
         checked={settings.showTitleBarSearch}
         onChange={(v) => onUpdate('showTitleBarSearch', v)}
       />
       {settings.showTitleBarSearch && (
         <div className="flex gap-2">
           {([
-            { id: 'project' as const, label: 'Current Project', desc: 'Search only the selected project / worktree' },
-            { id: 'all-projects' as const, label: 'All Projects', desc: 'Search files and sessions across every project' },
+            { id: 'project' as const, label: '当前项目', desc: '只搜索当前项目 / worktree' },
+            { id: 'all-projects' as const, label: '全部项目', desc: '跨所有项目搜索文件和会话' },
           ]).map(({ id, label, desc }) => (
             <button
               key={id}
@@ -334,16 +360,16 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <Eye size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Title Bar Menus
+          标题栏菜单
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Control how the File / Edit / View / Help menus appear on the left side of the title bar.
+        控制标题栏左侧的文件 / 编辑 / 视图 / 帮助菜单如何出现。
       </p>
       <div className="flex gap-2">
         {([
-          { id: 'always' as const, label: 'Always Visible', desc: 'Menus are shown all the time' },
-          { id: 'hover' as const, label: 'Reveal On Hover', desc: 'Hover the app title to fade menus in' },
+          { id: 'always' as const, label: '始终显示', desc: '菜单一直可见' },
+          { id: 'hover' as const, label: '悬停显示', desc: '鼠标移到标题区域时再显示菜单' },
         ]).map(({ id, label, desc }) => (
           <button
             key={id}
@@ -366,18 +392,18 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <AudioLines size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Music Player
+          音乐播放器
         </span>
       </div>
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
-          <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Show in title bar</span>
+          <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">在标题栏显示</span>
           <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
             {settings.showTitleBarSearch
-              ? 'Hidden while title bar search is enabled'
+              ? '标题栏搜索启用时会自动隐藏'
               : settings.showMusicPlayer
-                ? 'Music player with visualizer'
-                : 'Current project name'}
+                ? '显示播放器与可视化效果'
+                : '显示当前项目名称'}
           </span>
         </div>
         <button
@@ -398,12 +424,12 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       {settings.showMusicPlayer && (
         <>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Visualizer style for the title bar music player.
+        选择标题栏音乐播放器的可视化风格。
       </p>
       <div className="flex gap-2">
         {([
-          { id: 'melody' as const, label: 'Melody', icon: AudioLines, desc: 'Flowing curves & particles' },
-          { id: 'bars' as const, label: 'Bars', icon: BarChart3, desc: 'Spectrum bar chart' },
+          { id: 'melody' as const, label: '旋律流线', icon: AudioLines, desc: '更柔和的曲线和粒子效果' },
+          { id: 'bars' as const, label: '频谱柱状', icon: BarChart3, desc: '经典的频谱柱状图' },
         ]).map(({ id, label, icon: Icon, desc }) => (
           <button
             key={id}
@@ -426,7 +452,7 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
 
       {/* Visualizer width */}
       <FontSizeSlider
-        label="Visualizer Width"
+        label="可视化宽度"
         value={settings.visualizerWidth}
         min={80}
         max={Math.max(400, window.innerWidth)}
@@ -435,16 +461,16 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
 
       {/* Show controls toggle */}
       <ToggleRow
-        label="Play Controls"
-        description="Previous / Play-Pause / Next buttons"
+        label="播放控制按钮"
+        description="上一首 / 播放暂停 / 下一首"
         checked={settings.showPlayerControls}
         onChange={(v) => onUpdate('showPlayerControls', v)}
       />
 
       {/* Show track info toggle */}
       <ToggleRow
-        label="Track Info"
-        description="Song title, artist name and artwork"
+        label="歌曲信息"
+        description="显示歌曲名、歌手名和封面"
         checked={settings.showTrackInfo}
         onChange={(v) => onUpdate('showTrackInfo', v)}
       />
@@ -456,11 +482,11 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       <div className="flex items-center gap-2 mb-1">
         <Trash2 size={14} className="text-[var(--color-error)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Data
+          数据清理
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Clear all session tabs and pane layouts. Projects and groups are preserved.
+        清空全部会话标签和分栏布局。项目、分组与主题配置会被保留。
       </p>
       <button
         onClick={() => {
@@ -483,7 +509,7 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         )}
       >
         <Trash2 size={13} />
-        Clear All Sessions
+        清空全部会话
       </button>
     </div>
   )
@@ -515,6 +541,9 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
   const allThemeNames = useMemo(() => getThemeNames(), [settings.customThemes])
   const customThemeNames = useMemo(() => getAllCustomThemeNames(), [settings.customThemes])
   const builtinThemeNames = useMemo(() => allThemeNames.filter((n) => !customThemeNames.includes(n)), [allThemeNames, customThemeNames])
+  const displayThemeName = useCallback((name: string): string => (
+    name === 'FastAgents Default' ? 'FastAgents 默认' : name
+  ), [])
 
   function saveCustomTheme(name: string, theme: GhosttyTheme): void {
     const next = { ...settings.customThemes, [name]: theme }
@@ -578,7 +607,8 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
     }
 
     return (
-      <div className="flex flex-col gap-3">
+      <div className={PAGE_STACK}>
+        <PageIntro title="外观设置" description="创建、导入和切换主题，并统一调整应用界面的主字体风格。" />
         <button
           onClick={resetEditor}
           className="flex items-center gap-1.5 self-start text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
@@ -600,7 +630,8 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
   if (view === 'import') {
     return (
-      <div className="flex flex-col gap-3">
+      <div className={PAGE_STACK}>
+        <PageIntro title="导入主题" description="支持粘贴或直接导入 VSCode / Ghostty 主题内容，快速生成可编辑的自定义主题。" />
         <button
           onClick={() => { setView('list'); setImportText(''); setImportName(''); setImportError('') }}
           className="flex items-center gap-1.5 self-start text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
@@ -656,13 +687,14 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
   // ── Main list view ────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4">
+    <div className={PAGE_STACK}>
+      <PageIntro title="外观设置" description="主题决定整体视觉气质，字体决定日常阅读手感。这里可以一起调顺。"/>
       {/* Theme header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Palette size={14} className="text-[var(--color-accent)]" />
           <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-            Color Theme
+            颜色主题
           </span>
         </div>
         <div className="flex gap-1.5">
@@ -684,7 +716,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
       {/* 当前主题 */}
       <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-accent)] bg-[var(--color-accent-muted)] px-3 py-2">
         <ThemeSwatches themeName={settings.terminalTheme} />
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-primary)] font-medium flex-1 truncate">{settings.terminalTheme}</span>
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-primary)] font-medium flex-1 truncate">{displayThemeName(settings.terminalTheme)}</span>
         <button
           onClick={() => {
             const n = settings.terminalTheme
@@ -725,7 +757,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
                   )}
                 >
                   <ThemeSwatches themeName={name} />
-                  <span className="text-[var(--ui-font-xs)] truncate">{name}</span>
+                  <span className="text-[var(--ui-font-xs)] truncate">{displayThemeName(name)}</span>
                 </button>
                 <button
                   onClick={() => { setEditingThemeName(name); setView('editor-edit') }}
@@ -762,7 +794,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
               )}
             >
               <ThemeSwatches themeName={name} />
-              <span className="text-[var(--ui-font-xs)] truncate">{name}</span>
+              <span className="text-[var(--ui-font-xs)] truncate">{displayThemeName(name)}</span>
             </button>
             <button
               onClick={() => {
@@ -785,16 +817,16 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
       <div className="flex items-center gap-2 mb-1">
         <Type size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Interface
+          界面字体
         </span>
       </div>
-      <FontSizeSlider label="Font Size" value={settings.uiFontSize} min={11} max={18} onChange={(v) => onUpdate('uiFontSize', v)} />
-      <FontSelect label="Font Family" value={settings.uiFontFamily} options={UI_FONT_OPTIONS} labels={UI_FONT_LABELS} onChange={(v) => onUpdate('uiFontFamily', v)} />
+      <FontSizeSlider label="字号" value={settings.uiFontSize} min={11} max={18} onChange={(v) => onUpdate('uiFontSize', v)} />
+      <FontSelect label="字体" value={settings.uiFontFamily} options={UI_FONT_OPTIONS} labels={UI_FONT_LABELS} onChange={(v) => onUpdate('uiFontFamily', v)} />
       <div
         className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2"
         style={{ fontSize: settings.uiFontSize, fontFamily: settings.uiFontFamily }}
       >
-        <span className="text-[var(--color-text-secondary)]">Preview: The quick brown fox jumps 你好世界</span>
+        <span className="text-[var(--color-text-secondary)]">预览：界面层级、按钮标题和说明文字都会使用这里的设置。</span>
       </div>
     </div>
   )
@@ -802,15 +834,16 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
 function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   return (
-    <div className="flex flex-col gap-4">
+    <div className={PAGE_STACK}>
+      <PageIntro title="终端设置" description="统一终端的字号与字体，确保长时间阅读输出时依然紧凑、清晰。" />
       <div className="flex items-center gap-2 mb-1">
         <Terminal size={14} className="text-[var(--color-success)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Terminal
+          终端排版
         </span>
       </div>
-      <FontSizeSlider label="Font Size" value={settings.terminalFontSize} min={10} max={24} onChange={(v) => onUpdate('terminalFontSize', v)} />
-      <FontSelect label="Font Family" value={settings.terminalFontFamily} options={TERMINAL_FONT_OPTIONS} labels={TERMINAL_FONT_LABELS} onChange={(v) => onUpdate('terminalFontFamily', v)} />
+      <FontSizeSlider label="字号" value={settings.terminalFontSize} min={10} max={24} onChange={(v) => onUpdate('terminalFontSize', v)} />
+      <FontSelect label="字体" value={settings.terminalFontFamily} options={TERMINAL_FONT_OPTIONS} labels={TERMINAL_FONT_LABELS} onChange={(v) => onUpdate('terminalFontFamily', v)} />
       <div
         className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[#1a1a1e] px-3 py-2"
         style={{ fontSize: settings.terminalFontSize, fontFamily: settings.terminalFontFamily }}
@@ -818,7 +851,7 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
         <span style={{ color: '#3ecf7b' }}>$</span>
         <span style={{ color: '#e8e8ec' }}> git status</span>
         <br />
-        <span style={{ color: '#8e8e96' }}>On branch main 你好世界</span>
+        <span style={{ color: '#8e8e96' }}>当前分支为 main，输出内容在这里预览</span>
       </div>
     </div>
   )
@@ -826,18 +859,19 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
 
 function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   return (
-    <div className="flex flex-col gap-5">
+    <div className={PAGE_STACK}>
+      <PageIntro title="编辑器设置" description="控制代码阅读与编辑体验，包括字体、辅助信息、换行和预览效果。" />
       <div className="flex items-center gap-2 mb-1">
         <FileCode2 size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Editor
+          编辑器排版
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <FontSizeSlider label="Font Size" value={settings.editorFontSize} min={11} max={28} onChange={(v) => onUpdate('editorFontSize', v)} />
+        <FontSizeSlider label="字号" value={settings.editorFontSize} min={11} max={28} onChange={(v) => onUpdate('editorFontSize', v)} />
         <FontSelect
-          label="Font Family"
+          label="字体"
           value={settings.editorFontFamily}
           options={EDITOR_FONT_OPTIONS}
           labels={EDITOR_FONT_LABELS}
@@ -847,39 +881,39 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
 
       <div className="grid grid-cols-2 gap-3">
         <ToggleRow
-          label="Word Wrap"
-          description="Long lines wrap instead of horizontal scrolling"
+          label="自动换行"
+          description="超长代码行自动换行，不再横向滚动"
           checked={settings.editorWordWrap}
           onChange={(v) => onUpdate('editorWordWrap', v)}
         />
         <ToggleRow
-          label="Minimap"
-          description="Show the code overview map on the right"
+          label="缩略图"
+          description="在右侧显示代码概览缩略图"
           checked={settings.editorMinimap}
           onChange={(v) => onUpdate('editorMinimap', v)}
         />
         <ToggleRow
-          label="Line Numbers"
-          description="Show line numbers on the left gutter"
+          label="行号"
+          description="在左侧边栏显示行号"
           checked={settings.editorLineNumbers}
           onChange={(v) => onUpdate('editorLineNumbers', v)}
         />
         <ToggleRow
-          label="Sticky Scroll"
-          description="Pin the current scope header while scrolling"
+          label="粘性滚动"
+          description="滚动时固定当前作用域标题"
           checked={settings.editorStickyScroll}
           onChange={(v) => onUpdate('editorStickyScroll', v)}
         />
         <ToggleRow
-          label="Font Ligatures"
-          description="Render combined glyphs like => and ==="
+          label="连字"
+          description="渲染 =>、=== 之类的组合字形"
           checked={settings.editorFontLigatures}
           onChange={(v) => onUpdate('editorFontLigatures', v)}
         />
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Preview</span>
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">预览</span>
         <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[#1a1a1e]">
           {settings.editorStickyScroll && (
             <div
@@ -924,7 +958,7 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
               {'\n'}{'}'}
               {'\n\n'}
               <span style={{ color: '#5e5e66', fontStyle: 'italic' }}>
-                // Previewing typical editor options with your current typography
+                // 这里会根据当前设置预览常见的编辑器效果
               </span>
               {'\n'}
               <span style={{ color: '#45c8c8' }}>const</span> path =
@@ -950,11 +984,11 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
   )
 }
 
-const DEFAULT_AI_PROMPT = `You are a concise terminal output analyzer. Summarize the terminal output in 3-5 bullet points:
-- What commands were run
-- Key results or errors
-- Current status
-Keep it brief and actionable. Use the same language as the terminal output.`
+const DEFAULT_AI_PROMPT = `你是一个简洁的终端输出分析助手。请用 3 到 5 条要点总结终端输出：
+- 执行了哪些命令
+- 关键结果或错误
+- 当前状态与下一步建议
+保持简短、可执行，并尽量与终端输出使用同一种语言。`
 
 const AI_PROVIDERS = [
   { id: 'openai' as const, label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'] },
@@ -975,7 +1009,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
     setTestResult(null)
     try {
       const { aiProvider, aiBaseUrl, aiApiKey, aiModel } = settings
-      if (!aiApiKey) { setTestResult({ ok: false, msg: 'API key is empty' }); setTesting(false); return }
+      if (!aiApiKey) { setTestResult({ ok: false, msg: 'API Key 不能为空' }); setTesting(false); return }
 
       const result = await window.api.ai.chat({
         baseUrl: aiBaseUrl,
@@ -986,7 +1020,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
         maxTokens: 32,
       })
       if (result.error) setTestResult({ ok: false, msg: result.error })
-      else setTestResult({ ok: true, msg: `Connected! Model: ${aiModel}` })
+      else setTestResult({ ok: true, msg: `连接成功，当前模型：${aiModel}` })
     } catch (err) {
       setTestResult({ ok: false, msg: err instanceof Error ? err.message : String(err) })
     }
@@ -996,20 +1030,21 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
   const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none focus:border-[var(--color-accent)]'
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={PAGE_STACK}>
+      <PageIntro title="AI 摘要设置" description="配置终端输出摘要使用的模型、接口地址和系统提示词。" />
       <div className="flex items-center gap-2 mb-1">
         <Bot size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          AI API Configuration
+          AI 接口配置
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Configure the AI provider for terminal output summaries. Supports OpenAI, Anthropic, and any OpenAI-compatible API.
+        为终端输出摘要配置 AI 服务，支持 OpenAI、Anthropic 以及兼容 OpenAI 协议的接口。
       </p>
 
       {/* Provider */}
       <div className="flex flex-col gap-1.5">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Provider</span>
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">服务商</span>
         <div className="flex gap-1.5">
           {AI_PROVIDERS.map((p) => (
             <button
@@ -1034,7 +1069,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
       {/* Base URL */}
       <div className="flex flex-col gap-1.5">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Base URL</span>
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">接口地址</span>
         <input
           value={settings.aiBaseUrl}
           onChange={(e) => onUpdate('aiBaseUrl', e.target.value)}
@@ -1045,7 +1080,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
       {/* API Key */}
       <div className="flex flex-col gap-1.5">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">API Key</span>
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">API 密钥</span>
         <div className="relative">
           <input
             type={showKey ? 'text' : 'password'}
@@ -1065,7 +1100,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
       {/* Model */}
       <div className="flex flex-col gap-1.5">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">Model</span>
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">模型</span>
         {provider.models.length > 0 ? (
           <div className="flex flex-col gap-1">
             <div className="flex flex-wrap gap-1">
@@ -1087,7 +1122,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
             <input
               value={settings.aiModel}
               onChange={(e) => onUpdate('aiModel', e.target.value)}
-              placeholder="Or type a custom model name..."
+              placeholder="也可以直接输入自定义模型名…"
               className={cn(INPUT, 'mt-1')}
             />
           </div>
@@ -1095,7 +1130,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
           <input
             value={settings.aiModel}
             onChange={(e) => onUpdate('aiModel', e.target.value)}
-            placeholder="model name"
+            placeholder="模型名称"
             className={INPUT}
           />
         )}
@@ -1105,12 +1140,12 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
       <div className="h-px bg-[var(--color-border)]" />
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">System Prompt</span>
+          <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">系统提示词</span>
           <button
             onClick={() => onUpdate('aiSystemPrompt', DEFAULT_AI_PROMPT)}
             className="text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)]"
           >
-            Reset to default
+            恢复默认
           </button>
         </div>
         <textarea
@@ -1118,7 +1153,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
           onChange={(e) => onUpdate('aiSystemPrompt', e.target.value)}
           rows={5}
           className={cn(INPUT, 'resize-y min-h-[80px] text-[var(--ui-font-xs)] font-mono leading-relaxed')}
-          placeholder="You are a concise terminal output analyzer..."
+          placeholder="请输入用于生成终端摘要的系统提示词…"
         />
       </div>
 
@@ -1161,7 +1196,8 @@ function ClaudeGuiSettingsPage(): JSX.Element {
   const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={PAGE_STACK}>
+      <PageIntro title="Claude GUI 设置" description="统一调整内置 Claude GUI 的消息样式、模型与默认交互方式。" />
       <div className="flex items-center gap-2 mb-1">
         <Bot size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
@@ -1169,51 +1205,51 @@ function ClaudeGuiSettingsPage(): JSX.Element {
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Configure the built-in Claude GUI panel. These settings are applied immediately and synchronized to existing Claude GUI conversations.
+        这些设置会立即生效，并同步到现有的 Claude GUI 对话中。
       </p>
 
       <label className="grid gap-1">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Permission Mode</span>
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">权限模式</span>
         <select value={preferences.permissionMode} onChange={(event) => applyPreferenceUpdate({ permissionMode: event.target.value as ClaudeGuiPreferences['permissionMode'] })} className={INPUT}>
-          <option value="default">Ask before edits</option>
-          <option value="acceptEdits">Accept edits</option>
-          <option value="plan">Plan mode</option>
-          <option value="dontAsk">Don't ask</option>
-          <option value="bypassPermissions">Bypass permissions</option>
+          <option value="default">编辑前询问</option>
+          <option value="acceptEdits">直接接受编辑</option>
+          <option value="plan">规划模式</option>
+          <option value="dontAsk">不再询问</option>
+          <option value="bypassPermissions">绕过权限限制</option>
         </select>
       </label>
 
       <label className="grid gap-1">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Message Size</span>
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">消息字号</span>
         <select value={preferences.messageTextSize} onChange={(event) => applyPreferenceUpdate({ messageTextSize: event.target.value as ClaudeGuiPreferences['messageTextSize'] })} className={INPUT}>
-          <option value="md">Medium</option>
-          <option value="lg">Large</option>
-          <option value="xl">Extra Large</option>
+          <option value="md">中</option>
+          <option value="lg">大</option>
+          <option value="xl">超大</option>
         </select>
       </label>
 
       <label className="grid gap-1">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Model</span>
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">模型</span>
         <select value={preferences.selectedModel} onChange={(event) => applyPreferenceUpdate({ selectedModel: event.target.value })} className={INPUT}>
           <option value="claude-sonnet-4-6">Sonnet 4.6</option>
           <option value="claude-opus-4-6">Opus 4.6</option>
           <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
           <option value="sonnet">Sonnet</option>
           <option value="opus">Opus</option>
-          <option value="default">Default</option>
+          <option value="default">默认</option>
         </select>
       </label>
 
       <label className="grid gap-1">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Compute Mode</span>
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">计算模式</span>
         <select value={preferences.computeMode} onChange={(event) => applyPreferenceUpdate({ computeMode: event.target.value as ClaudeGuiPreferences['computeMode'] })} className={INPUT}>
-          <option value="auto">Auto</option>
-          <option value="max">Max</option>
+          <option value="auto">自动</option>
+          <option value="max">最大</option>
         </select>
       </label>
 
       <label className="grid gap-1">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Language</span>
+        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">语言</span>
         <select value={preferences.language ?? 'zh'} onChange={(event) => applyPreferenceUpdate({ language: event.target.value as NonNullable<ClaudeGuiPreferences['language']> })} className={INPUT}>
           <option value="zh">中文</option>
           <option value="ja">日本語</option>
@@ -1226,32 +1262,32 @@ function ClaudeGuiSettingsPage(): JSX.Element {
       </label>
 
       <ToggleRow
-        label="Only communicate in target language"
-        description="Keep Claude replies in the selected language."
+        label="只使用目标语言交流"
+        description="让 Claude 尽量只用选中的语言回复。"
         checked={preferences.onlyCommunicate}
         onChange={(value) => applyPreferenceUpdate({ onlyCommunicate: value })}
       />
       <ToggleRow
-        label="Plan first"
-        description="Default new requests to planning mode."
+        label="默认先规划"
+        description="让新请求默认进入规划模式。"
         checked={preferences.planMode}
         onChange={(value) => applyPreferenceUpdate({ planMode: value })}
       />
       <ToggleRow
-        label="Thinking mode"
-        description="Request deeper reasoning by default."
+        label="思考模式"
+        description="默认请求更深入的推理过程。"
         checked={preferences.thinkingMode}
         onChange={(value) => applyPreferenceUpdate({ thinkingMode: value })}
       />
       <ToggleRow
-        label="Include editor context by default"
-        description="Automatically attach the active editor selection or file context."
+        label="默认附带编辑器上下文"
+        description="自动附带当前编辑器选区或文件上下文。"
         checked={preferences.includeEditorContext}
         onChange={(value) => applyPreferenceUpdate({ includeEditorContext: value })}
       />
 
       <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Active conversations synced: {conversations.length}
+        已同步到现有对话：{conversations.length} 个
       </div>
     </div>
   )
@@ -1267,6 +1303,7 @@ export function SettingsDialog(): JSX.Element | null {
   const settings = useUIStore((s) => s.settings)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const page = (settingsPage || 'general') as SettingsPage
+  const activeNavItem = NAV_ITEMS.find((item) => item.id === page) ?? NAV_ITEMS[0]
 
   const handleUpdate = useCallback(
     (key: keyof AppSettings, value: unknown) => {
@@ -1290,24 +1327,38 @@ export function SettingsDialog(): JSX.Element | null {
         )}
       >
         {/* Left nav */}
-        <div className="flex w-[184px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-primary)] py-3">
-          <div className="px-4 pb-3">
-            <h2 className="text-[var(--ui-font-md)] font-semibold text-[var(--color-text-primary)]">Settings</h2>
+        <div className="flex w-[220px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-bg-primary),color-mix(in_srgb,var(--color-bg-primary)_80%,var(--color-bg-secondary)))] p-3">
+          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">FastAgents</div>
+            <h2 className="mt-2 text-[20px] font-semibold tracking-tight text-[var(--color-text-primary)]">设置中心</h2>
+            <p className="mt-2 text-[var(--ui-font-xs)] leading-6 text-[var(--color-text-tertiary)]">
+              调整界面、终端、编辑器与 AI 的默认行为。
+            </p>
           </div>
-          <div className="flex flex-col gap-0.5 px-2">
+          <div className="mt-3 flex flex-col gap-1">
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setSettingsPage(item.id)}
                 className={cn(
-                  'flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-1.5 text-[var(--ui-font-sm)] transition-colors',
+                  'flex items-start gap-3 rounded-[var(--radius-lg)] border px-3 py-2.5 text-left transition-colors',
                   page === item.id
-                    ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)]'
-                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]/50',
+                    ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                    : 'border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-tertiary)]/50',
                 )}
               >
-                <item.icon size={13} />
-                {item.label}
+                <div className={cn(
+                  'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)]',
+                  page === item.id
+                    ? 'bg-[var(--color-bg-primary)] text-[var(--color-accent)]'
+                    : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]',
+                )}>
+                  <item.icon size={14} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[var(--ui-font-sm)] font-medium">{item.label}</div>
+                  <div className="mt-1 text-[10px] leading-5 text-[var(--color-text-tertiary)]">{item.description}</div>
+                </div>
               </button>
             ))}
           </div>
@@ -1315,18 +1366,21 @@ export function SettingsDialog(): JSX.Element | null {
 
         {/* Right content */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex items-center justify-end px-4 py-2.5">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
+            <div className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
+              当前页：{activeNavItem.label}
+            </div>
             <button
               onClick={close}
               className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+                'flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)]',
                 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               )}
             >
               <X size={14} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto px-5 pb-4">
+          <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-bg-secondary)_88%,var(--color-bg-primary)),var(--color-bg-secondary))] px-6 py-5">
             {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'appearance' && <AppearancePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'terminal' && <TerminalPage settings={settings} onUpdate={handleUpdate} />}
@@ -1337,7 +1391,7 @@ export function SettingsDialog(): JSX.Element | null {
           </div>
           <div className="border-t border-[var(--color-border)] px-5 py-2">
             <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-              Changes apply immediately.
+              所有改动都会立即生效。
             </span>
           </div>
         </div>

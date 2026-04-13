@@ -47,7 +47,7 @@ export function ProjectsPanel(): JSX.Element {
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
         <div className="text-[var(--ui-font-xs)] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
-          Workspace
+          工作区
         </div>
         <div className="flex items-center gap-0.5">
           <button
@@ -57,7 +57,7 @@ export function ProjectsPanel(): JSX.Element {
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               'transition-colors duration-100',
             )}
-            title="Anonymous Terminal"
+            title="匿名终端"
           >
             <Terminal size={14} />
           </button>
@@ -68,7 +68,7 @@ export function ProjectsPanel(): JSX.Element {
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               'transition-colors duration-100',
             )}
-            title="New Group"
+            title="新建分组"
           >
             <Plus size={14} />
           </button>
@@ -85,7 +85,7 @@ export function ProjectsPanel(): JSX.Element {
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={handleCommit}
-              placeholder="Group name..."
+              placeholder="分组名称..."
               className={cn(
                 'h-6 w-full rounded-[var(--radius-sm)] bg-[var(--color-bg-tertiary)] px-2 text-[var(--ui-font-sm)]',
                 'text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
@@ -101,7 +101,7 @@ export function ProjectsPanel(): JSX.Element {
           {!searchQuery && (
             <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center gap-1.5">
               <Search size={12} className="text-[var(--color-text-tertiary)]" />
-              <span className="text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">Search...</span>
+              <span className="text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">搜索...</span>
             </div>
           )}
           <input
@@ -131,7 +131,7 @@ export function ProjectsPanel(): JSX.Element {
           )}
         >
           <Settings size={14} />
-          <span className="text-[var(--ui-font-sm)] font-medium">Settings</span>
+          <span className="text-[var(--ui-font-sm)] font-medium">设置</span>
         </button>
       </div>
     </div>

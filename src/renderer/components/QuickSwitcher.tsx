@@ -98,7 +98,7 @@ function renderStatusBadge(item: SwitcherItem): JSX.Element | null {
   if (item.kind === 'editor' && item.modified) {
     return (
       <span className="rounded-full bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-warning)]">
-        Modified
+        已修改
       </span>
     )
   }
@@ -107,14 +107,14 @@ function renderStatusBadge(item: SwitcherItem): JSX.Element | null {
     if (item.outputState === 'unread') {
       return (
         <span className="rounded-full bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-warning)]">
-          Unread
+          未读
         </span>
       )
     }
     if (item.outputState === 'outputting') {
       return (
         <span className="rounded-full bg-[var(--color-accent)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
-          Live
+          输出中
         </span>
       )
     }
@@ -405,7 +405,7 @@ export function QuickSwitcher(): JSX.Element | null {
                 setSelectedIdx(0)
               }}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Switch to a session, file, project, or worktree..."
+              placeholder="切换到会话、文件、项目或工作树..."
               className={cn(
                 'w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2.5',
                 'text-[var(--ui-font-base)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
@@ -418,14 +418,14 @@ export function QuickSwitcher(): JSX.Element | null {
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
-                Recent In Pane
+                窗格最近标签
               </div>
               <div className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
                 释放 <span className="font-semibold text-[var(--color-text-primary)]">Ctrl</span> 切换到高亮标签
               </div>
             </div>
             <div className="rounded-full bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-[11px] text-[var(--color-text-tertiary)]">
-              {visibleItems.length} tabs
+              {visibleItems.length} 个标签
             </div>
           </div>
         )}
@@ -433,7 +433,7 @@ export function QuickSwitcher(): JSX.Element | null {
         <div className="max-h-[420px] overflow-y-auto py-1.5">
           {visibleItems.length === 0 && (
             <div className="px-4 py-5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
-              {mode === 'search' ? 'No open sessions or files matched.' : 'No recent tabs in this pane.'}
+              {mode === 'search' ? '没有匹配的会话或文件。' : '此窗格无最近标签。'}
             </div>
           )}
 
@@ -472,7 +472,7 @@ export function QuickSwitcher(): JSX.Element | null {
                     <span className="truncate text-[13px] font-medium">{item.title}</span>
                     {item.isCurrent && (
                       <span className="rounded-full bg-[var(--color-accent)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
-                        Current
+                        当前
                       </span>
                     )}
                     {renderStatusBadge(item)}

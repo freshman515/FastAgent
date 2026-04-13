@@ -79,7 +79,7 @@ export function StatusBar(): JSX.Element {
             {selectedProject.name}
           </span>
         ) : (
-          <span className={cn(ITEM, 'text-[var(--color-text-tertiary)]')}>No project</span>
+          <span className={cn(ITEM, 'text-[var(--color-text-tertiary)]')}>无项目</span>
         )}
 
         {/* Git branch */}
@@ -104,11 +104,11 @@ export function StatusBar(): JSX.Element {
           <Layers size={11} />
           <span>
             {runningSessions.length > 0 && (
-              <span className="text-[var(--color-success)]">{runningSessions.length} running</span>
+              <span className="text-[var(--color-success)]">{runningSessions.length} 运行中</span>
             )}
             {runningSessions.length > 0 && projectSessions.length > runningSessions.length && ' / '}
             {(runningSessions.length === 0 || projectSessions.length > runningSessions.length) && (
-              <span>{projectSessions.length} total</span>
+              <span>{projectSessions.length} 个会话</span>
             )}
           </span>
         </span>
@@ -123,9 +123,9 @@ export function StatusBar(): JSX.Element {
                 setLaunchMenuPos({ x: rect.left, y: rect.top - 8 })
               }}
               className={cn(ITEM, 'cursor-pointer text-[var(--color-success)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-[var(--radius-sm)]')}
-              title="Run"
+              title="运行"
             >
-              <Play size={11} fill="currentColor" /> Run
+              <Play size={11} fill="currentColor" /> 运行
             </button>
           </>
         )}
@@ -146,10 +146,10 @@ export function StatusBar(): JSX.Element {
               </span>
               <div className="mx-0.5 h-3 w-px bg-[var(--color-border)]" />
               <span className={cn(ITEM, 'text-[var(--color-text-tertiary)] tabular-nums')}>
-                Ln {cursorInfo.line}, Col {cursorInfo.column}
+                行 {cursorInfo.line}, 列 {cursorInfo.column}
                 {cursorInfo.selection && (
                   <span className="text-[var(--color-accent)] ml-1">
-                    ({cursorInfo.selection.chars} selected)
+                    (已选 {cursorInfo.selection.chars} 字符)
                   </span>
                 )}
               </span>

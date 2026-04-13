@@ -30,7 +30,7 @@ export function AddProject({ groupId }: AddProjectProps): JSX.Element {
       )}
     >
       <Plus size={12} />
-      <span className="text-[var(--ui-font-xs)]">Add project</span>
+      <span className="text-[var(--ui-font-xs)]">添加项目</span>
     </button>
   )
 }

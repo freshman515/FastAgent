@@ -194,13 +194,13 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
               }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
             >
-              <Edit3 size={12} /> Rename
+              <Edit3 size={12} /> 重命名
             </button>
             <button
               onClick={handleDelete}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]"
             >
-              <Trash2 size={12} /> Delete
+              <Trash2 size={12} /> 删除
             </button>
           </div>
         </>
@@ -231,13 +231,13 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
               }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
             >
-              <FolderPlus size={12} /> Browse...
+              <FolderPlus size={12} /> 浏览...
             </button>
             {useUIStore.getState().settings.recentPaths.length > 0 && (
               <>
                 <div className="px-3 py-0.5 flex items-center gap-1.5">
                   <Clock size={10} className="text-[var(--color-text-tertiary)]" />
-                  <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">Recent</span>
+                  <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">最近</span>
                 </div>
                 {useUIStore.getState().settings.recentPaths.slice(0, 5).map((p) => (
                   <button
@@ -265,13 +265,13 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
               }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
             >
-              <Edit3 size={12} /> Rename
+              <Edit3 size={12} /> 重命名
             </button>
             {/* Color picker */}
             <div className="px-3 py-1.5 border-t border-[var(--color-border)]">
               <div className="flex items-center gap-1.5 mb-1">
                 <Palette size={12} className="text-[var(--color-text-tertiary)]" />
-                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">Color</span>
+                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">颜色</span>
               </div>
               <div className="flex gap-1.5 flex-wrap">
                 {['#7c6aef', '#5fa0f5', '#45c8c8', '#3ecf7b', '#f0a23b', '#ef5757', '#c084fc', '#f472b6', '#8e8e96'].map((c) => (
@@ -291,7 +291,7 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
               onClick={() => { setContextMenu(null); handleDelete() }}
               className="flex w-full items-center gap-2 px-3 py-1.5 border-t border-[var(--color-border)] text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]"
             >
-              <Trash2 size={12} /> Delete
+              <Trash2 size={12} /> 删除
             </button>
           </div>
         </>

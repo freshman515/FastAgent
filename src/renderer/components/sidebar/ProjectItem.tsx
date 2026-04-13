@@ -21,13 +21,13 @@ import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 
 const SESSION_OPTS: Array<{ type: SessionType; label: string; icon: string }> = [
+  { type: 'terminal', label: '终端', icon: terminalIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
   { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
   { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
-  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
 ]
 
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
@@ -65,10 +65,10 @@ function NewBranchInput({ project, onClose }: { project: Project; onClose: () =>
     <>
       <div className="fixed inset-0 z-50" onClick={onClose} />
       <div className={OVERLAY_PANEL} style={{ width: 280 }}>
-        <p className="mb-2 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">New branch from current HEAD</p>
+        <p className="mb-2 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">从当前 HEAD 新建分支</p>
         <input ref={ref} value={value} onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose() }}
-          placeholder="branch-name" className={INPUT_CLS} />
+          placeholder="分支名称" className={INPUT_CLS} />
       </div>
     </>, document.body,
   )
@@ -108,16 +108,16 @@ function NewWorktreeDialog({ project, onClose }: { project: Project; onClose: ()
     <>
       <div className="fixed inset-0 z-50" onClick={onClose} />
       <div className={OVERLAY_PANEL} style={{ width: 340 }}>
-        <p className="mb-2 text-[var(--ui-font-sm)] font-medium text-[var(--color-text-primary)]">New Worktree</p>
+        <p className="mb-2 text-[var(--ui-font-sm)] font-medium text-[var(--color-text-primary)]">新建工作树</p>
         <input ref={ref} value={branch} onChange={(e) => setBranch(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose() }}
-          placeholder="branch-name" className={cn(INPUT_CLS, 'mb-2')} />
+          placeholder="分支名称" className={cn(INPUT_CLS, 'mb-2')} />
         {targetPath && (
           <p className="mb-3 truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{targetPath}</p>
         )}
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">Cancel</button>
-          <button onClick={submit} disabled={!branch.trim()} className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90 disabled:opacity-40">Create</button>
+          <button onClick={onClose} className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">取消</button>
+          <button onClick={submit} disabled={!branch.trim()} className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90 disabled:opacity-40">创建</button>
         </div>
       </div>
     </>, document.body,
@@ -196,12 +196,12 @@ function TaskStartDialog({ bundle, project, onClose }: { bundle: TaskBundle; pro
         <p className="mb-3 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{bundle.description}</p>
         <input ref={ref} value={desc} onChange={(e) => setDesc(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') start(); if (e.key === 'Escape') onClose() }}
-          placeholder="Task description..." className={cn(INPUT_CLS, 'mb-2')} />
+          placeholder="任务描述..." className={cn(INPUT_CLS, 'mb-2')} />
         <input value={branchVal} onChange={(e) => setBranchVal(e.target.value)}
-          placeholder="Branch name (optional)" className={cn(INPUT_CLS, 'mb-3')} />
+          placeholder="分支名称（可选）" className={cn(INPUT_CLS, 'mb-3')} />
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">Cancel</button>
-          <button onClick={start} className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90">Start</button>
+          <button onClick={onClose} className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">取消</button>
+          <button onClick={start} className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90">开始</button>
         </div>
       </div>
     </>, document.body,
@@ -244,7 +244,7 @@ function BranchSubmenu({ project, branchInfo, anchorRect, onClose, onMouseEnter,
         onMouseLeave={onMouseLeave}
       >
         <button className={MENU_ITEM} onClick={() => { setShowNewBranch(true) }}>
-          <PlusIcon size={12} /> New Branch...
+          <PlusIcon size={12} /> 新建分支...
         </button>
         <div className="border-t border-[var(--color-border)] my-0.5" />
         {branchInfo.branches.map((b) => (
@@ -252,7 +252,7 @@ function BranchSubmenu({ project, branchInfo, anchorRect, onClose, onMouseEnter,
             className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] hover:bg-[var(--color-bg-surface)]',
               b === branchInfo.current ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]')}>
             <GitBranch size={11} /><span className="truncate">{b}</span>
-            {b === branchInfo.current && <span className="ml-auto text-[var(--ui-font-2xs)]">current</span>}
+            {b === branchInfo.current && <span className="ml-auto text-[var(--ui-font-2xs)]">当前</span>}
           </button>
         ))}
       </div>
@@ -261,18 +261,18 @@ function BranchSubmenu({ project, branchInfo, anchorRect, onClose, onMouseEnter,
         <>
           <div className="fixed inset-0 z-[200]" onClick={() => setConfirmSwitch(null)} />
           <div className={cn(OVERLAY_PANEL, 'z-[201]')} style={{ width: 340 }}>
-            <p className="mb-1 text-[var(--ui-font-sm)] font-medium text-[var(--color-warning)]">Uncommitted Changes</p>
+            <p className="mb-1 text-[var(--ui-font-sm)] font-medium text-[var(--color-warning)]">未提交的更改</p>
             <p className="mb-3 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
-              You have uncommitted changes on <strong>{branchInfo.current}</strong>. Switching to <strong>{confirmSwitch}</strong> may cause conflicts or loss of changes.
+              分支 <strong>{branchInfo.current}</strong> 上有未提交的更改。切换到 <strong>{confirmSwitch}</strong> 可能导致冲突或丢失更改。
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmSwitch(null)}
                 className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">
-                Cancel
+                取消
               </button>
               <button onClick={() => { doCheckout(confirmSwitch) }}
                 className="rounded-[var(--radius-sm)] bg-[var(--color-warning)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90">
-                Switch Anyway
+                仍然切换
               </button>
             </div>
           </div>
@@ -360,9 +360,9 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
           <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setWtContextMenu(null)} />
           <div style={{ top: wtContextMenu.y, left: wtContextMenu.x, zIndex: 9999 }}
             className="fixed min-w-[160px] rounded-[var(--radius-md)] py-1 border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30">
-            {/* New Session */}
+            {/* 新建会话 */}
             <div className="px-3 py-1 border-b border-[var(--color-border)]">
-              <p className={SECTION_HEADER}>New Session</p>
+              <p className={SECTION_HEADER}>新建会话</p>
             </div>
             {SESSION_OPTS.map((opt) => (
               <button key={opt.type} className={MENU_ITEM} onClick={() => {
@@ -377,11 +377,11 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
             ))}
             <div className="border-t border-[var(--color-border)] mt-0.5" />
             <button onClick={() => { setWtContextMenu(null); window.api.shell.openPath(wt.path) }} className={MENU_ITEM}>
-              <ExternalLink size={12} /> Open in Explorer
+              <ExternalLink size={12} /> 在资源管理器中打开
             </button>
             <button onClick={() => { setWtContextMenu(null); setConfirmRemove(true) }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]">
-              <Trash2 size={12} /> Remove Worktree
+              <Trash2 size={12} /> 移除工作树
             </button>
           </div>
         </>, document.body,
@@ -391,19 +391,19 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
         <>
           <div className="fixed inset-0 z-[200]" onClick={() => setConfirmRemove(false)} />
           <div className={cn(OVERLAY_PANEL, 'z-[201]')} style={{ width: 340 }}>
-            <p className="mb-1 text-[var(--ui-font-sm)] font-medium text-[var(--color-error)]">Remove Worktree</p>
+            <p className="mb-1 text-[var(--ui-font-sm)] font-medium text-[var(--color-error)]">移除工作树</p>
             <p className="mb-1 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
-              This will delete the directory and all sessions for <strong>{wt.branch}</strong>.
+              这将删除 <strong>{wt.branch}</strong> 的目录及其所有会话。
             </p>
             <p className="mb-3 truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{wt.path}</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmRemove(false)}
                 className="rounded-[var(--radius-sm)] px-3 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]">
-                Cancel
+                取消
               </button>
               <button onClick={() => { setConfirmRemove(false); handleRemoveWorktree() }}
                 className="rounded-[var(--radius-sm)] bg-[var(--color-error)] px-3 py-1 text-[var(--ui-font-sm)] text-white hover:opacity-90">
-                Remove
+                移除
               </button>
             </div>
           </div>
@@ -631,11 +631,11 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               <p className="truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{project.path}</p>
             </div>
             <button onClick={() => { setShowMenu(null); window.api.shell.openPath(project.path) }} className={MENU_ITEM}>
-              <ExternalLink size={12} /> Open in Explorer
+              <ExternalLink size={12} /> 在资源管理器中打开
             </button>
             <button onClick={() => { setShowMenu(null); handleRemove() }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]">
-              <Trash2 size={12} /> Remove
+              <Trash2 size={12} /> 移除
             </button>
           </div>
         </>, document.body,
@@ -657,9 +657,9 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             style={{ top: contextMenu.y, left: contextMenu.x }}
             className={cn('fixed z-50 w-52 rounded-[var(--radius-md)] py-1', 'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30 max-h-[80vh] overflow-y-auto')}>
 
-            {/* New Session */}
+            {/* 新建会话 */}
             <div className="px-3 py-1 border-b border-[var(--color-border)]">
-              <p className={SECTION_HEADER}>New Session</p>
+              <p className={SECTION_HEADER}>新建会话</p>
             </div>
             {SESSION_OPTS.map((opt) => (
               <button key={opt.type} className={MENU_ITEM} onClick={() => {
@@ -684,11 +684,11 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                       onMouseEnter={openBranchSub}
                       onMouseLeave={scheduleBranchClose}
                     >
-                      <span className="flex items-center gap-2"><GitBranch size={11} /> Branches</span>
+                      <span className="flex items-center gap-2"><GitBranch size={11} /> 分支</span>
                       <ChevronRight size={12} />
                     </button>
                     <button className={MENU_ITEM} onClick={() => { setContextMenu(null); setShowNewWorktree(true) }}>
-                      <PlusIcon size={12} /> New Worktree...
+                      <PlusIcon size={12} /> 新建工作树...
                     </button>
                   </>
                 ) : (
@@ -697,25 +697,25 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                     await window.api.git.init(project.path)
                     await useGitStore.getState().fetchStatus(project.id, project.path)
                   }}>
-                    <PlusIcon size={12} /> Initialize Repository
+                    <PlusIcon size={12} /> 初始化仓库
                   </button>
                 )}
               </>
             )}
 
             {/* Run */}
-            <SectionDivider icon={Play} label="Run" />
+            <SectionDivider icon={Play} label="运行" />
             <button className={MENU_ITEM} onClick={() => {
               setContextMenu(null)
               setShowLaunchMenu(contextMenu)
             }}>
-              <Play size={11} /> Launch Profiles...
+              <Play size={11} /> 启动配置...
             </button>
 
             {/* Apply Template */}
             {matchingTemplates.length > 0 && (
               <>
-                <SectionDivider icon={Layers} label="Apply Template" />
+                <SectionDivider icon={Layers} label="应用模板" />
                 {matchingTemplates.map((t) => (
                   <button key={t.id} className={MENU_ITEM} onClick={() => handleApplyTemplate(t.id)}>
                     <Layers size={11} /><span className="truncate">{t.name}</span>
@@ -728,11 +728,11 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {/* Start Task */}
             {bundles.length > 0 && (
               <>
-                <SectionDivider icon={Rocket} label="Start Task" />
+                <SectionDivider icon={Rocket} label="启动任务" />
                 {bundles.map((b) => (
                   <button key={b.id} className={MENU_ITEM} onClick={() => { setContextMenu(null); setTaskDialog(b) }}>
                     <Rocket size={11} /><span className="truncate">{b.name}</span>
-                    <span className="ml-auto text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{b.steps.length} steps</span>
+                    <span className="ml-auto text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{b.steps.length} 步</span>
                   </button>
                 ))}
               </>
@@ -741,7 +741,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {/* Move to */}
             {!isAnonymous && otherGroups.length > 0 && (
               <>
-                <SectionDivider icon={ArrowRightLeft} label="Move to" />
+                <SectionDivider icon={ArrowRightLeft} label="移动到" />
                 {otherGroups.map((g) => (
                   <button key={g.id} className={MENU_ITEM} onClick={() => {
                     removeProjectFromGroupFn(project.groupId, project.id); addProjectToGroup(g.id, project.id)
@@ -753,14 +753,14 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               </>
             )}
 
-            {/* Remove + Open in Explorer */}
+            {/* Remove + 在资源管理器中打开 */}
             <div className="border-t border-[var(--color-border)] mt-0.5" />
             <button onClick={() => { setContextMenu(null); window.api.shell.openPath(project.path) }} className={MENU_ITEM}>
-              <ExternalLink size={12} /> Open in Explorer
+              <ExternalLink size={12} /> 在资源管理器中打开
             </button>
             <button onClick={() => { setContextMenu(null); handleRemove() }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]">
-              <Trash2 size={12} /> Remove
+              <Trash2 size={12} /> 移除
             </button>
           </div>
 

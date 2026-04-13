@@ -415,7 +415,7 @@ export function CustomThemeEditor({
           type="text"
           value={name}
           onChange={(e) => { setName(e.target.value); setNameError('') }}
-          placeholder="My Custom Theme"
+          placeholder="我的自定义主题"
           disabled={isEditing}
           className={cn(
             'rounded-[var(--radius-md)] border bg-[var(--color-bg-secondary)]',

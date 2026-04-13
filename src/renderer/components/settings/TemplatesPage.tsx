@@ -11,7 +11,7 @@ const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'codex', label: 'Codex' },
   { value: 'codex-yolo', label: 'Codex YOLO' },
   { value: 'opencode', label: 'OpenCode' },
-  { value: 'terminal', label: 'Terminal' },
+  { value: 'terminal', label: '终端' },
 ]
 
 function TemplateItemRow({
@@ -39,7 +39,7 @@ function TemplateItemRow({
           type="text"
           value={item.name}
           onChange={(e) => onUpdate({ name: e.target.value })}
-          placeholder="Session name"
+          placeholder="会话名称"
           className="flex-1 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-[var(--radius-sm)] px-2 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
         />
         <button
@@ -52,7 +52,7 @@ function TemplateItemRow({
       <textarea
         value={item.prompt ?? ''}
         onChange={(e) => onUpdate({ prompt: e.target.value || undefined })}
-        placeholder="Prompt (optional)"
+        placeholder="提示词（可选）"
         rows={2}
         className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-[var(--radius-sm)] px-2 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none resize-none"
       />
@@ -96,7 +96,7 @@ function TemplateCard({
   }
 
   const handleAddItem = (): void => {
-    const newItem: SessionTemplateItem = { type: 'claude-code', name: 'New Session' }
+    const newItem: SessionTemplateItem = { type: 'claude-code', name: '新会话' }
     updateTemplate(id, { items: [...items, newItem] })
   }
 
@@ -121,10 +121,10 @@ function TemplateCard({
             ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
             : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)]',
         )}>
-          {projectId ? 'project' : 'global'}
+          {projectId ? '项目级' : '全局'}
         </span>
         <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-          {items.length} {items.length === 1 ? 'item' : 'items'}
+          {items.length} 项
         </span>
         <button
           onClick={() => removeTemplate(id)}
@@ -148,7 +148,7 @@ function TemplateCard({
             className="flex items-center gap-1.5 self-start rounded-[var(--radius-sm)] px-2 py-1 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
           >
             <Plus size={12} />
-            Add Item
+            添加条目
           </button>
         </div>
       )}
@@ -161,19 +161,26 @@ export function TemplatesPage(): JSX.Element {
   const addTemplate = useTemplatesStore((s) => s.addTemplate)
 
   const handleAddTemplate = (): void => {
-    addTemplate('New Template', null, [{ type: 'claude-code', name: 'Session 1' }])
+    addTemplate('新模板', null, [{ type: 'claude-code', name: '会话 1' }])
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5 pb-8">
+      <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_12%,var(--color-bg-primary)),var(--color-bg-primary))] px-5 py-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">会话模板</div>
+        <h3 className="mt-2 text-[22px] font-semibold tracking-tight text-[var(--color-text-primary)]">模板设置</h3>
+        <p className="mt-2 text-[var(--ui-font-sm)] leading-6 text-[var(--color-text-secondary)]">
+          把常用会话组合保存成模板，后续可以一次性快速拉起。
+        </p>
+      </div>
       <div className="flex items-center gap-2 mb-1">
         <Layers size={14} className="text-[var(--color-accent)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Session Templates
+          模板列表
         </span>
       </div>
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        Create reusable templates to quickly launch multiple sessions at once.
+        创建可复用模板，用来一次性快速启动多个会话。
       </p>
 
       <div className="flex flex-col gap-2">
@@ -193,7 +200,7 @@ export function TemplatesPage(): JSX.Element {
         className="flex items-center gap-1.5 self-start rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-secondary)]"
       >
         <Plus size={13} />
-        Add Template
+        新建模板
       </button>
     </div>
   )

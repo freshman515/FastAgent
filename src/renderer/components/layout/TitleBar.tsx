@@ -449,7 +449,7 @@ export function TitleBar(): JSX.Element | null {
                   )}
                 </span>
               ) : (
-                <span className="text-sm text-[var(--color-text-tertiary)]">No project selected</span>
+                <span className="text-sm text-[var(--color-text-tertiary)]">未选择项目</span>
               )}
             </div>
           )}

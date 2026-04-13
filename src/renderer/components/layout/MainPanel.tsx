@@ -108,8 +108,8 @@ export function MainPanel(): JSX.Element {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--color-bg-primary)]">
         <EmptyState
-          title="Select a project"
-          description="Choose a project from the sidebar to manage its agent sessions."
+          title="选择项目"
+          description="从侧栏选择一个项目来管理其代理会话。"
         />
       </div>
     )

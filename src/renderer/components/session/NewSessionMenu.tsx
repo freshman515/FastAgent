@@ -16,7 +16,7 @@ interface SessionOption {
 }
 
 const SESSION_OPTIONS: SessionOption[] = [
-  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
+  { type: 'terminal', label: '终端', icon: terminalIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
   { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },

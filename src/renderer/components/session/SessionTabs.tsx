@@ -120,7 +120,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
               'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
               'transition-colors duration-100',
             )}
-            title="Expand Sidebar"
+            title="展开侧栏"
           >
             <PanelLeftOpen size={14} />
           </button>
@@ -150,7 +150,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
             'hover:bg-[var(--color-accent)]/15 hover:border-[var(--color-accent)]/50 hover:text-[var(--color-accent)]',
             'transition-all duration-150',
           )}
-          title="New Session"
+          title="新建会话"
         >
           <Plus size={14} strokeWidth={2.5} />
         </button>
