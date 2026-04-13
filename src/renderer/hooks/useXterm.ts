@@ -195,6 +195,10 @@ export function useXterm(
       }
     })
 
+    // Undo stack for software undo (used by non-terminal sessions).
+    // Each entry is a "chunk" that was added in one action (paste = one chunk, keystroke = one char).
+    let undoStack: string[] = []
+
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true
 
@@ -230,11 +234,117 @@ export function useXterm(
         return true
       }
 
-      // Ctrl+V in claude-code session: remap to Alt+V (image paste)
-      if (e.ctrlKey && e.key === 'v' && (sessionType === 'claude-code' || sessionType === 'claude-code-yolo')) {
+      // Ctrl+Z: undo last input
+      // - terminal (bash): send Ctrl+_ (\x1f) — readline undo
+      // - claude-code / codex: pop last undo-stack entry and send that many backspaces
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'z') {
         if (ptyId) {
-          window.api.session.write(ptyId, '\x1bv')
+          if (sessionType === 'terminal') {
+            window.api.session.write(ptyId, '\x1f')
+          } else if (undoStack.length > 0) {
+            const last = undoStack.pop()!
+            // Send one \x7f per code point (handles multi-byte unicode)
+            window.api.session.write(ptyId, '\x7f'.repeat([...last].length))
+          }
         }
+        return false
+      }
+
+      // Codex Ctrl+V: smart paste — image → Alt+V (Codex native), text → inject
+      if ((sessionType === 'codex' || sessionType === 'codex-yolo')
+        && (e.ctrlKey || e.metaKey)
+        && !e.altKey
+        && e.key.toLowerCase() === 'v') {
+        e.preventDefault()
+        e.stopPropagation()
+        void (async () => {
+          try {
+            const items = await navigator.clipboard.read()
+            const hasImage = items.some((item) =>
+              item.types.some((t) => t.startsWith('image/'))
+            )
+            if (hasImage) {
+              if (ptyId) {
+                // Capture what Codex echoes back (e.g. "[Image #1]") so Ctrl+Z can undo it
+                let echoed = ''
+                const offCapture = window.api.session.onData((event: { ptyId: string | null; data: string }) => {
+                  if (event.ptyId === ptyId) echoed += event.data
+                })
+                setTimeout(() => {
+                  offCapture()
+                  // Strip ANSI escape sequences and keep only printable ASCII
+                  // eslint-disable-next-line no-control-regex
+                  const printable = echoed.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/[^\x20-\x7e]/g, '')
+                  if (printable.length > 0) undoStack.push(printable)
+                }, 400)
+                window.api.session.write(ptyId, '\x1bv')
+              }
+              return
+            }
+          } catch {
+            // clipboard.read() may be unavailable; fall through to text paste
+          }
+          // Text paste
+          try {
+            const text = await navigator.clipboard.readText()
+            if (!text) return
+            // Track entire paste as one undo chunk (at call site, not in onData,
+            // to avoid double-counting and bracketed-paste escape sequences)
+            const printable = [...text].filter((ch) => {
+              const c = ch.charCodeAt(0)
+              return c >= 32 && c !== 127
+            }).join('')
+            if (printable.length > 0) undoStack.push(printable)
+            terminal.focus()
+            terminal.paste(text)
+            trackSessionInput(sessionId)
+            addTimelineEvent(sessionId, 'input', 'Clipboard paste')
+          } catch {}
+        })()
+        return false
+      }
+
+      // Claude Code Ctrl+V: smart paste — image → Alt+V, text → inject
+      if (e.ctrlKey && e.key === 'v' && (sessionType === 'claude-code' || sessionType === 'claude-code-yolo')) {
+        e.preventDefault()
+        e.stopPropagation()
+        void (async () => {
+          try {
+            const items = await navigator.clipboard.read()
+            const hasImage = items.some((item) => item.types.some((t) => t.startsWith('image/')))
+            if (hasImage) {
+              if (ptyId) {
+                // Same echo-capture as Codex for undo
+                let echoed = ''
+                const offCapture = window.api.session.onData((event: { ptyId: string | null; data: string }) => {
+                  if (event.ptyId === ptyId) echoed += event.data
+                })
+                setTimeout(() => {
+                  offCapture()
+                  // eslint-disable-next-line no-control-regex
+                  const printable = echoed.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/[^\x20-\x7e]/g, '')
+                  if (printable.length > 0) undoStack.push(printable)
+                }, 400)
+                window.api.session.write(ptyId, '\x1bv')
+              }
+              return
+            }
+          } catch {}
+          // Text paste
+          try {
+            const text = await navigator.clipboard.readText()
+            if (!text) return
+            const printable = [...text].filter((ch) => {
+              const c = ch.charCodeAt(0)
+              return c >= 32 && c !== 127
+            }).join('')
+            if (printable.length > 0) undoStack.push(printable)
+            terminal.focus()
+            terminal.paste(text)
+            trackSessionInput(sessionId)
+            addTimelineEvent(sessionId, 'input', 'Clipboard paste')
+          } catch {}
+        })()
         return false
       }
 
@@ -244,6 +354,26 @@ export function useXterm(
     // xterm → PTY
     const onDataDisposable = terminal.onData((data) => {
       if (ptyId) {
+        // Track individual keystrokes for non-terminal sessions (pastes are tracked at call site)
+        if (sessionType !== 'terminal' && data.length === 1) {
+          const code = data.charCodeAt(0)
+          if (code >= 32 && code !== 127) {
+            undoStack.push(data)
+          } else if (code === 127 || code === 8) {
+            // Backspace — trim tail of last chunk, remove if empty
+            if (undoStack.length > 0) {
+              const last = undoStack[undoStack.length - 1]
+              const trimmed = [...last].slice(0, -1).join('')
+              if (trimmed.length > 0) {
+                undoStack[undoStack.length - 1] = trimmed
+              } else {
+                undoStack.pop()
+              }
+            }
+          } else if (code === 13 || code === 10) {
+            undoStack = []
+          }
+        }
         window.api.session.write(ptyId, data)
         if (data === '\r' || data === '\n') {
           trackSessionInput(sessionId)
