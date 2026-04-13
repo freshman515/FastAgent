@@ -387,6 +387,14 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         ))}
       </div>
 
+      <div className="h-px bg-[var(--color-border)]" />
+      <ToggleRow
+        label="活动分屏高亮"
+        description={settings.showActivePaneBorder ? '当前选中的分屏显示高亮边框' : '不显示分屏高亮边框'}
+        checked={settings.showActivePaneBorder}
+        onChange={(v) => onUpdate('showActivePaneBorder', v)}
+      />
+
       {/* Music player toggle + visualizer mode */}
       <div className="h-px bg-[var(--color-border)]" />
       <div className="flex items-center gap-2 mb-1">

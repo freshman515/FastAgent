@@ -122,22 +122,6 @@ export function ProjectsPanel(): JSX.Element {
         <GroupList searchQuery={searchQuery} />
       </div>
 
-      <div className="shrink-0 border-t border-[var(--color-border)] px-2 py-1.5">
-        <button
-          onClick={openSettings}
-          className={cn(
-            'group flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2',
-            'text-[var(--color-text-tertiary)]',
-            'hover:bg-[linear-gradient(135deg,var(--color-bg-tertiary),color-mix(in_srgb,var(--color-accent)_6%,var(--color-bg-tertiary)))]',
-            'hover:text-[var(--color-text-secondary)]',
-            'transition-all duration-150',
-          )}
-        >
-          <Settings size={14} className="transition-transform duration-300 group-hover:rotate-90" />
-          <span className="text-[var(--ui-font-sm)] font-medium">设置</span>
-          <span className="ml-auto text-[10px] text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-60 transition-opacity">⌘,</span>
-        </button>
-      </div>
     </div>
   )
 }

@@ -59,6 +59,10 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+  --radius-panel: 14px;
+
+  /* ─── Layout gap (space between rounded panels) ─── */
+  --layout-gap: 6px;
 
   /* ─── Animations ─── */
   --animate-toast-in: toast-in 0.2s ease-out;

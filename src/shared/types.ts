@@ -328,8 +328,8 @@ export interface FileSearchResult {
 }
 
 export const EXTERNAL_IDE_OPTIONS: ExternalIdeOption[] = [
-  { id: 'cursor', label: 'Cursor' },
   { id: 'vscode', label: 'VS Code' },
+  { id: 'cursor', label: 'Cursor' },
   { id: 'trae', label: 'Trae' },
   { id: 'rider', label: 'Rider' },
 ]

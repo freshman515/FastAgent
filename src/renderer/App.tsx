@@ -26,6 +26,7 @@ import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useState } from 'react'
 import { ANONYMOUS_PROJECT_ID, type ClaudeGuiEvent } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
+import { cn } from '@/lib/utils'
 
 interface EditorPathContext {
   projectId: string
@@ -732,13 +733,19 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-[var(--color-titlebar-bg)]">
       {!windowFullscreen && <TitleBar />}
-      <div className="flex flex-1 overflow-hidden">
+      <div className={cn(
+        'flex flex-1 overflow-hidden',
+        !fullscreenPaneId && 'gap-[var(--layout-gap)] p-[var(--layout-gap)]',
+      )}>
         {!fullscreenPaneId && <LeftPanel />}
 
         {/* Main panel */}
-        <div className="flex-1 overflow-hidden">
+        <div className={cn(
+          'flex-1 overflow-hidden',
+          !fullscreenPaneId && 'rounded-[var(--radius-panel)]',
+        )}>
           <MainPanel />
         </div>
 
@@ -747,7 +754,11 @@ export function App(): JSX.Element {
       </div>
 
       {/* Status bar */}
-      {!fullscreenPaneId && <StatusBar />}
+      {!fullscreenPaneId && (
+        <div className="px-[var(--layout-gap)] pb-[var(--layout-gap)]">
+          <StatusBar />
+        </div>
+      )}
 
       {/* Settings dialog */}
       <SettingsDialog />

@@ -67,8 +67,8 @@ export function ResizeHandle({ splitId, direction, currentRatio }: ResizeHandleP
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        'group shrink-0 bg-[var(--color-border)]',
-        isHorizontal ? 'w-px cursor-col-resize' : 'h-px cursor-row-resize',
+        'group shrink-0 bg-[var(--color-titlebar-bg)]',
+        isHorizontal ? 'w-[var(--layout-gap)] cursor-col-resize' : 'h-[var(--layout-gap)] cursor-row-resize',
         'relative',
       )}
     >

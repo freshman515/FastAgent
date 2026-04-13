@@ -108,6 +108,7 @@ export interface AppSettings {
   visualizerMode: VisualizerMode
   showMusicPlayer: boolean
   showTitleBarSearch: boolean
+  showActivePaneBorder: boolean
   titleBarMenuVisibility: 'always' | 'hover'
   titleBarSearchScope: 'project' | 'all-projects'
   gitChangesViewMode: GitChangesViewMode
@@ -156,6 +157,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   visualizerMode: 'melody',
   showMusicPlayer: true,
   showTitleBarSearch: false,
+  showActivePaneBorder: true,
   titleBarMenuVisibility: 'always',
   titleBarSearchScope: 'project',
   gitChangesViewMode: 'flat',
@@ -834,6 +836,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
       if (typeof raw.showMusicPlayer === 'boolean') s.showMusicPlayer = raw.showMusicPlayer
       if (typeof raw.showTitleBarSearch === 'boolean') s.showTitleBarSearch = raw.showTitleBarSearch
+      if (typeof raw.showActivePaneBorder === 'boolean') s.showActivePaneBorder = raw.showActivePaneBorder
       if (raw.titleBarMenuVisibility === 'always' || raw.titleBarMenuVisibility === 'hover') {
         s.titleBarMenuVisibility = raw.titleBarMenuVisibility
       }

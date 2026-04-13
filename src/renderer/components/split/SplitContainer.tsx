@@ -17,14 +17,14 @@ function SplitNodeRenderer({ node, projectId }: SplitContainerProps): JSX.Elemen
 
   return (
     <div
-      className="flex h-full w-full"
+      className="flex h-full w-full bg-[var(--color-titlebar-bg)]"
       style={{ flexDirection: isHorizontal ? 'row' : 'column' }}
     >
-      <div style={{ flex: `0 0 ${ratio * 100}%`, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+      <div className="rounded-[var(--radius-panel)] overflow-hidden" style={{ flex: `0 0 ${ratio * 100}%`, minWidth: 0, minHeight: 0 }}>
         <SplitNodeRenderer node={first} projectId={projectId} />
       </div>
       <ResizeHandle splitId={node.id} direction={direction} currentRatio={ratio} />
-      <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+      <div className="rounded-[var(--radius-panel)] overflow-hidden" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
         <SplitNodeRenderer node={second} projectId={projectId} />
       </div>
     </div>

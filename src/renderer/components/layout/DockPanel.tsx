@@ -161,30 +161,14 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       onDragLeave={handleDragLeave}
       onContextMenu={(event) => openContextMenu(event)}
       className={cn(
-        'relative flex shrink-0 flex-col items-center bg-[var(--color-bg-primary)] py-2 px-1.5 gap-1.5 transition-colors',
-        side === 'left'
-          ? 'border-r border-[var(--color-border)]'
-          : 'border-l border-[var(--color-border)]',
+        'relative flex h-full shrink-0 flex-col items-center bg-[var(--color-bg-primary)] pt-4 pb-2 px-2.5 gap-1.5 transition-colors',
         isAppendDropTarget && 'bg-[var(--color-accent)]/12',
       )}
     >
       {isAppendDropTarget && (
         <div className="pointer-events-none absolute inset-x-1 inset-y-1 rounded-[var(--radius-md)] border border-dashed border-[var(--color-accent)]/55 bg-[var(--color-accent)]/8" />
       )}
-      {panelIds.length > 0 ? (
-        <>
-          <button
-            onClick={() => toggle(side)}
-            className={cn(TAB_BUTTON, 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]')}
-            title={collapsed ? (side === 'left' ? '展开左侧面板' : '展开右侧面板') : (side === 'left' ? '收起左侧面板' : '收起右侧面板')}
-          >
-            {side === 'left'
-              ? (collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />)
-              : (collapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />)}
-          </button>
-          <div className="h-px w-6 bg-[var(--color-border)] my-1" />
-        </>
-      ) : (
+      {panelIds.length === 0 && (
         <div className="mb-1 mt-0.5 text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
           {side}
         </div>
@@ -243,7 +227,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
   )
 
   if (collapsed || !activePanel) {
-    return strip
+    return <div className="shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
   }
 
   const content = (
@@ -258,14 +242,14 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       <div
         onDragOver={handleStripDragOver}
         onDrop={handleStripDrop}
-        className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3"
+        className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3 mx-1.5 mt-1.5"
       >
         <span className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
           {activePanel.label}
         </span>
       </div>
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-1.5"
         onDragOver={handleStripDragOver}
         onDrop={handleStripDrop}
       >
@@ -284,7 +268,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
   const resizeHandle = (
     <div
       onMouseDown={handleResizeMouseDown}
-      className="group relative z-10 w-px shrink-0 cursor-col-resize bg-[var(--color-border)]"
+      className="group relative z-10 w-0 shrink-0 cursor-col-resize"
     >
       <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-[var(--color-accent)]/20" />
     </div>
@@ -293,24 +277,31 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
   return (
     <>
       <div
-        className={cn(
-          'flex h-full shrink-0 bg-[var(--color-bg-secondary)] transition-colors',
-          isAppendDropTarget && 'bg-[var(--color-accent)]/6',
-        )}
+        className="flex h-full shrink-0 gap-[var(--layout-gap)] transition-colors"
         style={{ width }}
         onDragLeave={handleDragLeave}
       >
       {side === 'left' ? (
         <>
-          {strip}
-          {content}
+          <div className="shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
+          <div className={cn(
+            'flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
+            isAppendDropTarget && 'bg-[var(--color-accent)]/6',
+          )}>
+            {content}
+          </div>
           {resizeHandle}
         </>
       ) : (
         <>
           {resizeHandle}
-          {content}
-          {strip}
+          <div className={cn(
+            'flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
+            isAppendDropTarget && 'bg-[var(--color-accent)]/6',
+          )}>
+            {content}
+          </div>
+          <div className="shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
         </>
       )}
       </div>

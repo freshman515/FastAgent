@@ -448,6 +448,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const isActivePane = activePaneId === paneId
   const rootType = usePanesStore((s) => s.root.type)
   const isMultiPane = rootType === 'split'
+  const showActivePaneBorder = useUIStore((s) => s.settings.showActivePaneBorder)
 
   // Get full session objects for this pane, in pane order
   const sessions = useMemo(() => {
@@ -617,11 +618,15 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     <div
       ref={paneRootRef}
       className={cn(
-        'flex h-full flex-col',
-        isMultiPane && 'border border-transparent',
+        'relative flex h-full flex-col',
+        isMultiPane && !showActivePaneBorder && 'border border-transparent',
       )}
       onMouseDown={handleFocus}
     >
+      {/* Active pane highlight overlay */}
+      {isMultiPane && showActivePaneBorder && isActivePane && (
+        <div className="pointer-events-none absolute inset-0 z-50 rounded-[var(--radius-panel)] border-2 border-[var(--color-accent)]/60" />
+      )}
       {/* Tab bar */}
       <div
         className={cn(

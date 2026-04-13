@@ -380,7 +380,7 @@ export function TitleBar(): JSX.Element | null {
   if (window.api.platform === 'darwin') return null
 
   return (
-    <div className="titlebar-fixed drag-region relative flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-titlebar-bg)]">
+    <div className="titlebar-fixed drag-region relative flex h-10 shrink-0 items-center justify-between bg-[var(--color-titlebar-bg)]">
       <div
         ref={titleMenuRef}
         className="no-drag flex items-center pl-3"
@@ -457,13 +457,15 @@ export function TitleBar(): JSX.Element | null {
       </div>
 
       <div className="no-drag flex h-full items-center">
-        <div ref={ideMenuRef} className="relative mr-1">
+        <div ref={ideMenuRef} className="relative mr-1 flex h-7 items-center">
           <button
-            ref={ideMenuButtonRef}
-            onClick={() => setIdeMenuOpen((open) => !open)}
+            onClick={() => {
+              const primaryIde = availableIdes[0]
+              if (primaryIde) void handleOpenInIde(primaryIde)
+            }}
             disabled={!activeProjectPath || availableIdes.length === 0}
             className={cn(
-              'flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[var(--ui-font-xs)]',
+              'flex h-7 items-center gap-1.5 rounded-l-[var(--radius-md)] border border-r-0 pl-2.5 pr-2 text-[var(--ui-font-xs)]',
               'transition-colors duration-100',
               activeProjectPath && availableIdes.length > 0
                 ? 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]'
@@ -474,15 +476,40 @@ export function TitleBar(): JSX.Element | null {
                 ? '请先选择项目'
                 : availableIdes.length === 0
                   ? '未检测到已安装的 IDE'
-                  : '用其他 IDE 打开当前项目'
+                  : `用 ${availableIdes[0]?.label ?? 'IDE'} 打开`
             }
           >
             <ExternalLink size={12} />
-            <span>IDE 打开</span>
+            <span>{availableIdes[0]?.label ?? 'IDE 打开'}</span>
+          </button>
+          <button
+            ref={ideMenuButtonRef}
+            onClick={() => setIdeMenuOpen((open) => !open)}
+            disabled={!activeProjectPath || availableIdes.length === 0}
+            className={cn(
+              'flex h-7 items-center rounded-r-[var(--radius-md)] border border-l-0 px-1.5 text-[var(--ui-font-xs)]',
+              'transition-colors duration-100',
+              activeProjectPath && availableIdes.length > 0
+                ? 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]'
+                : 'cursor-not-allowed border-[var(--color-border)]/60 text-[var(--color-text-tertiary)] opacity-60',
+            )}
+            title="选择其他 IDE"
+          >
             <ChevronDown size={12} className={cn('transition-transform', ideMenuOpen && 'rotate-180')} />
           </button>
         </div>
 
+        <button
+          onClick={openSettings}
+          className={cn(
+            'flex h-full w-11 items-center justify-center',
+            'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+            'transition-colors duration-100',
+          )}
+          title="设置"
+        >
+          <Settings size={14} />
+        </button>
         <button
           onClick={handleMinimize}
           className={cn(
@@ -552,28 +579,31 @@ export function TitleBar(): JSX.Element | null {
       )}
 
       {ideMenuOpen && ideMenuRect && createPortal(
-        <div
-          ref={ideMenuPopupRef}
-          className="no-drag fixed z-[120] w-48 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 shadow-xl shadow-black/35"
-          style={{
-            top: ideMenuRect.bottom + 6,
-            left: Math.min(ideMenuRect.right - 192, window.innerWidth - 200),
-          }}
-        >
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-            用其他 IDE 打开
+        <>
+          <div className="no-drag fixed inset-0 z-[119]" onClick={() => setIdeMenuOpen(false)} />
+          <div
+            ref={ideMenuPopupRef}
+            className="no-drag fixed z-[120] w-48 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 shadow-xl shadow-black/35"
+            style={{
+              top: ideMenuRect.bottom + 6,
+              left: Math.min(ideMenuRect.right - 192, window.innerWidth - 200),
+            }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+              用其他 IDE 打开
+            </div>
+            {availableIdes.map((ide) => (
+              <button
+                key={ide.id}
+                onClick={() => void handleOpenInIde(ide)}
+                className="no-drag flex w-full items-center justify-between px-3 py-2 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+              >
+                <span>{ide.label}</span>
+                <ExternalLink size={12} className="text-[var(--color-text-tertiary)]" />
+              </button>
+            ))}
           </div>
-          {availableIdes.map((ide) => (
-            <button
-              key={ide.id}
-              onClick={() => void handleOpenInIde(ide)}
-              className="no-drag flex w-full items-center justify-between px-3 py-2 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
-            >
-              <span>{ide.label}</span>
-              <ExternalLink size={12} className="text-[var(--color-text-tertiary)]" />
-            </button>
-          ))}
-        </div>,
+        </>,
         document.body,
       )}
     </div>
