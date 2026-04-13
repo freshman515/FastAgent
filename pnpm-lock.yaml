@@ -14,6 +14,9 @@ importers:
       '@lydell/node-pty':
         specifier: 1.2.0-beta.12
         version: 1.2.0-beta.12
+      '@lydell/node-pty-win32-x64':
+        specifier: 1.2.0-beta.12
+        version: 1.2.0-beta.12
       '@xterm/addon-fit':
         specifier: ^0.12.0-beta.141
         version: 0.12.0-beta.197(@xterm/xterm@6.1.0-beta.197)
@@ -2828,8 +2831,7 @@ snapshots:
   '@lydell/node-pty-win32-arm64@1.2.0-beta.12':
     optional: true
 
-  '@lydell/node-pty-win32-x64@1.2.0-beta.12':
-    optional: true
+  '@lydell/node-pty-win32-x64@1.2.0-beta.12': {}
 
   '@lydell/node-pty@1.2.0-beta.12':
     optionalDependencies:
