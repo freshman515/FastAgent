@@ -1,11 +1,11 @@
-import { ChevronDown, ChevronRight, GitBranch, RefreshCw, Circle, Plus, Minus, Undo2, Check, ExternalLink, Folder, FolderOpen, Loader2, Trash2, Wrench } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, RefreshCw, Circle, Plus, Minus, Undo2, Check, ExternalLink, File, Folder, FolderOpen, Loader2, Trash2, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn, generateId } from '@/lib/utils'
 import claudeIcon from '@/assets/icons/Claude.png'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { useGitStore } from '@/stores/git'
-import { useEditorsStore } from '@/stores/editors'
+import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
 import { useGitReviewStore } from '@/stores/gitReview'
@@ -961,6 +961,27 @@ function GitFileTree({
   )
 }
 
+function FileTypeIcon({ name }: { name: string }): JSX.Element {
+  const iconInfo = FILE_ICONS[detectLanguage(name)]
+
+  if (!iconInfo) {
+    return <File size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+  }
+
+  return (
+    <span
+      className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded px-1 text-[9px] font-semibold leading-none"
+      style={{
+        color: iconInfo.color,
+        backgroundColor: `${iconInfo.color}18`,
+        border: `1px solid ${iconInfo.color}33`,
+      }}
+    >
+      {iconInfo.icon}
+    </span>
+  )
+}
+
 function FileRow({
   file,
   onClick,
@@ -986,6 +1007,7 @@ function FileRow({
       className="group flex w-full cursor-pointer items-center gap-1.5 py-[3px] pr-3 text-[var(--ui-font-xs)] transition-colors hover:bg-[var(--color-bg-tertiary)]"
       style={{ paddingLeft: `${depth === undefined ? 28 : 22 + depth * 14}px` }}
     >
+      <FileTypeIcon name={fileName} />
       <span className="flex-1 truncate text-[var(--color-text-secondary)] text-left">
         {fileName}
         {showDirectory && dirName && <span className="ml-1.5 text-[var(--color-text-tertiary)] text-[10px]">{dirName}</span>}

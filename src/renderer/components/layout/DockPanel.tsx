@@ -161,7 +161,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       onDragLeave={handleDragLeave}
       onContextMenu={(event) => openContextMenu(event)}
       className={cn(
-        'relative flex h-full shrink-0 flex-col items-center bg-[var(--color-bg-primary)] pt-4 pb-2 px-2.5 gap-1.5 transition-colors',
+        'relative flex h-full shrink-0 flex-col items-center pt-4 pb-2 px-2.5 gap-1.5 transition-colors',
         isAppendDropTarget && 'bg-[var(--color-accent)]/12',
       )}
     >

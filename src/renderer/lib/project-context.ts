@@ -66,29 +66,42 @@ export function switchProjectContext(
 
   const worktree = resolveProjectWorktree(projectId, preferredWorktreeId)
   const tabIds = getContextTabIds(projectId, worktree)
-  const nextActiveSessionId = preferredSessionId && tabIds.includes(preferredSessionId)
+  // Only override the restored per-pane active session when the caller explicitly
+  // asked for one. Otherwise rely on the layout cached in pane store (which
+  // preserves the last-active tab per pane for this project/worktree).
+  const explicitActiveSessionId = preferredSessionId && tabIds.includes(preferredSessionId)
     ? preferredSessionId
-    : (tabIds[0] ?? null)
+    : null
+  const fallbackActiveSessionId = tabIds[0] ?? null
 
   projectStore.selectProject(projectId)
   wtStore.selectWorktree(worktree?.id ?? null)
 
   if (worktree) {
-    paneStore.switchWorktree(worktree.id, tabIds, nextActiveSessionId)
+    paneStore.switchWorktree(worktree.id, tabIds, explicitActiveSessionId ?? fallbackActiveSessionId)
   } else {
-    paneStore.switchProject(projectId, tabIds, nextActiveSessionId)
+    paneStore.switchProject(projectId, tabIds, explicitActiveSessionId ?? fallbackActiveSessionId)
   }
 
-  if (nextActiveSessionId) {
-    const refreshedPaneStore = usePanesStore.getState()
-    const paneId = refreshedPaneStore.findPaneForSession(nextActiveSessionId)
+  // Resolve the session that should actually be active after the switch.
+  // If the caller requested one explicitly, honor it; otherwise read back from
+  // the pane store so the restored per-pane selection is respected.
+  const refreshedPaneStore = usePanesStore.getState()
+  let effectiveActiveSessionId: string | null = explicitActiveSessionId
+  if (!effectiveActiveSessionId) {
+    const activePaneId = refreshedPaneStore.activePaneId
+    effectiveActiveSessionId = refreshedPaneStore.paneActiveSession[activePaneId] ?? fallbackActiveSessionId
+  }
+
+  if (effectiveActiveSessionId) {
+    const paneId = refreshedPaneStore.findPaneForSession(effectiveActiveSessionId)
     if (paneId) {
       refreshedPaneStore.setActivePaneId(paneId)
-      refreshedPaneStore.setPaneActiveSession(paneId, nextActiveSessionId)
+      refreshedPaneStore.setPaneActiveSession(paneId, effectiveActiveSessionId)
     }
   }
 
-  if (nextActiveSessionId && !nextActiveSessionId.startsWith('editor-')) {
-    sessionStore.setActive(nextActiveSessionId)
+  if (effectiveActiveSessionId && !effectiveActiveSessionId.startsWith('editor-')) {
+    sessionStore.setActive(effectiveActiveSessionId)
   }
 }
