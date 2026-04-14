@@ -235,7 +235,7 @@ export function SessionTab({
         {session.color && (
           <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.color }} />
         )}
-        <img src={iconSrc} alt="" className="h-3.5 w-3.5 shrink-0" draggable={false} />
+        <img src={iconSrc} alt="" className="h-[18px] w-[18px] shrink-0" draggable={false} />
 
         {isRenaming ? (
           <input
@@ -299,7 +299,7 @@ export function SessionTab({
         >
           <div className="px-2.5 py-1 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex items-center gap-1.5">
-              <img src={iconSrc} alt="" className="h-3.5 w-3.5" />
+              <img src={iconSrc} alt="" className="h-[18px] w-[18px]" />
               <span className="text-[11px] font-medium text-[var(--color-text-secondary)] truncate">{session.name}</span>
             </div>
           </div>

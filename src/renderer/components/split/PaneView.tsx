@@ -270,7 +270,7 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
       >
         {/* File type icon */}
         <span
-          className="shrink-0 rounded px-[3px] py-px text-[8px] font-bold leading-none"
+          className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded px-1 text-[10px] font-bold leading-none"
           style={{ backgroundColor: iconInfo.color + '20', color: iconInfo.color }}
         >
           {tab.isDiff ? '⇄' : iconInfo.icon}

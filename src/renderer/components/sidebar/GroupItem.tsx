@@ -74,8 +74,8 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
           e.dataTransfer.effectAllowed = 'move'
         }}
         className={cn(
-          'group flex h-8 cursor-pointer items-center gap-1.5 px-2',
-          'hover:bg-[var(--color-bg-tertiary)] transition-colors duration-75',
+          'group relative flex h-7 cursor-pointer items-center gap-2 px-2 mt-1 mb-0.5',
+          'transition-colors duration-75 hover:bg-[var(--color-bg-tertiary)]/50 rounded-[var(--radius-sm)]',
           dragOver && 'bg-[var(--color-accent-muted)] border border-dashed border-[var(--color-accent)]',
         )}
         onClick={handleToggle}
@@ -113,17 +113,20 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
           }
         }}
       >
-        {/* Collapse indicator */}
+        {/* Collapse chevron — muted, stays out of the way of the brand mark */}
         {group.collapsed ? (
-          <ChevronRight size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
+          <ChevronRight size={11} className="shrink-0 text-[var(--color-text-tertiary)]" />
         ) : (
-          <ChevronDown size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
+          <ChevronDown size={11} className="shrink-0 text-[var(--color-text-tertiary)]" />
         )}
 
-        {/* Color dot */}
-        <div
-          className="h-2.5 w-2.5 shrink-0 rounded-full shadow-sm"
-          style={{ backgroundColor: group.color, boxShadow: `0 0 6px ${group.color}40` }}
+        {/* Brand mark — small filled rounded bar acts as the group identity chip.
+            Typography + this tiny chip together make the row read as a "section label"
+            rather than a "selectable row", which visually separates it from the
+            selected-project accent style. */}
+        <span
+          className="inline-block h-3 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: group.color, boxShadow: `0 0 6px ${group.color}55` }}
         />
 
         {/* Name */}
@@ -145,14 +148,23 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
             )}
           />
         ) : (
-          <span className="flex-1 truncate text-[var(--ui-font-sm)] font-semibold tracking-wide text-[var(--color-text-primary)]">
+          <span
+            className="flex-1 truncate text-[var(--ui-font-sm)] font-semibold"
+            style={{ color: group.color }}
+          >
             {group.name}
           </span>
         )}
 
-        {/* Project count */}
+        {/* Project count — tinted to the group color for a cohesive look */}
         {!editing && projects.length > 0 && (
-          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-bg-surface)] px-1 text-[9px] font-medium text-[var(--color-text-tertiary)]">
+          <span
+            className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-medium"
+            style={{
+              backgroundColor: `${group.color}22`,
+              color: group.color,
+            }}
+          >
             {projects.length}
           </span>
         )}

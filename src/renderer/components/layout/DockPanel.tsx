@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { DOCK_PANEL_IDS, type DockPanelId, type DockSide, useUIStore } from '@/stores/ui'
 import { DOCK_PANEL_DEFINITIONS } from './dockPanels'
 
-const TAB_BUTTON = 'flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] transition-colors'
+const TAB_BUTTON = 'flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] transition-colors'
 const DRAG_MIME = 'application/x-fastagents-dock-panel'
 const DRAG_TEXT_PREFIX = 'fastagents-dock-panel:'
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
@@ -213,7 +213,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
                 <span className="absolute -bottom-2.5 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-[var(--color-bg-primary)] bg-[var(--color-accent)]" />
               </>
             )}
-            <panel.icon size={16} />
+            <panel.icon size={20} />
           </button>
         )
       })}

@@ -26,8 +26,8 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
 ]
 
 export const DEFAULT_DOCK_PANEL_ORDER: Record<DockSide, DockPanelId[]> = {
-  left: ['projects'],
-  right: ['agent', 'commands', 'prompts', 'promptOptimizer', 'todo', 'files', 'search', 'timeline', 'git', 'ai', 'claude'],
+  left: ['projects', 'git', 'files'],
+  right: ['agent', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
 }
 
 const DEFAULT_DOCK_PANEL_ACTIVE: Record<DockSide, DockPanelId | null> = {
@@ -113,6 +113,8 @@ export interface AppSettings {
   titleBarSearchScope: 'project' | 'all-projects'
   gitChangesViewMode: GitChangesViewMode
   gitReviewFixMode: GitReviewFixMode
+  /** Last visited settings dialog page — persisted so reopening lands on the previous tab */
+  lastSettingsPage: string
   /** Visualizer canvas width in px (shared by melody and bars) */
   visualizerWidth: number
   /** Show play/pause/prev/next control buttons */
@@ -140,7 +142,7 @@ export interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  uiFontSize: 13,
+  uiFontSize: 15,
   uiFontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
   terminalFontSize: 18,
   terminalFontFamily: "'JetBrainsMono Nerd Font', ui-monospace, SF Mono, Menlo, Monaco, Consolas, monospace",
@@ -160,8 +162,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   showActivePaneBorder: true,
   titleBarMenuVisibility: 'always',
   titleBarSearchScope: 'project',
-  gitChangesViewMode: 'flat',
+  gitChangesViewMode: 'tree',
   gitReviewFixMode: 'claude-gui',
+  lastSettingsPage: 'general',
   visualizerWidth: 192,
   showPlayerControls: true,
   showTrackInfo: true,
@@ -809,9 +812,36 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   settingsOpen: false,
   settingsPage: 'general',
-  openSettings: (page) => set({ settingsOpen: true, settingsPage: page ?? 'general' }),
-  setSettingsPage: (page) => set({ settingsPage: page }),
-  closeSettings: () => set({ settingsOpen: false, settingsPage: 'general' }),
+  openSettings: (page) => {
+    const resolved = page ?? get().settings.lastSettingsPage ?? 'general'
+    set({ settingsOpen: true, settingsPage: resolved })
+    if (!page) return
+    // Explicit page request — remember it for next time
+    const settings = { ...get().settings, lastSettingsPage: resolved }
+    set({ settings })
+    persistUI({
+      settings,
+      dockPanelOrder: get().dockPanelOrder,
+      dockPanelActiveTab: get().dockPanelActiveTab,
+      dockPanelCollapsed: get().dockPanelCollapsed,
+      dockPanelWidth: get().dockPanelWidth,
+    })
+  },
+  setSettingsPage: (page) => {
+    set({ settingsPage: page })
+    const current = get().settings
+    if (current.lastSettingsPage === page) return
+    const settings = { ...current, lastSettingsPage: page }
+    set({ settings })
+    persistUI({
+      settings,
+      dockPanelOrder: get().dockPanelOrder,
+      dockPanelActiveTab: get().dockPanelActiveTab,
+      dockPanelCollapsed: get().dockPanelCollapsed,
+      dockPanelWidth: get().dockPanelWidth,
+    })
+  },
+  closeSettings: () => set({ settingsOpen: false }),
 
   settings: { ...DEFAULT_SETTINGS },
 
@@ -848,6 +878,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       }
       if (raw.gitReviewFixMode === 'claude-gui' || raw.gitReviewFixMode === 'claude-code-cli') {
         s.gitReviewFixMode = raw.gitReviewFixMode
+      }
+      if (typeof raw.lastSettingsPage === 'string' && raw.lastSettingsPage) {
+        s.lastSettingsPage = raw.lastSettingsPage
       }
       if (typeof raw.visualizerWidth === 'number') s.visualizerWidth = Math.max(80, Math.min(7680, raw.visualizerWidth))
       if (typeof raw.showPlayerControls === 'boolean') s.showPlayerControls = raw.showPlayerControls
