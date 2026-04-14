@@ -1,6 +1,46 @@
-import { existsSync } from 'node:fs'
+import { existsSync, accessSync, constants as fsConstants } from 'node:fs'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
+
+/**
+ * Returns a list of filesystem roots Claude Code should be allowed to touch
+ * when the user has explicitly opted into `bypassPermissions` mode.
+ *
+ * Claude Code's built-in "allowed working directories" restriction is NOT
+ * removed by `--dangerously-skip-permissions` alone — the CLI still refuses
+ * to operate on paths outside cwd / additional directories. The user-facing
+ * expectation of "bypass" mode is full-disk write access, so when enabled we
+ * also pass `--add-dir` for every drive root we can read.
+ */
+function collectBypassDirectories(cwd: string): string[] {
+  const roots = new Set<string>()
+
+  // Always include the user's home directory as a safe baseline
+  try { roots.add(homedir()) } catch { /* ignore */ }
+
+  if (process.platform === 'win32') {
+    // Enumerate accessible drive letters (A-Z); cheap existsSync probe
+    for (let code = 'A'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code += 1) {
+      const drive = `${String.fromCharCode(code)}:\\`
+      try {
+        accessSync(drive, fsConstants.F_OK)
+        roots.add(drive)
+      } catch {
+        // Drive not present / not accessible — skip silently
+      }
+    }
+  } else {
+    // On POSIX, a single `/` is enough to cover everything
+    roots.add('/')
+  }
+
+  // Never add cwd itself (Claude Code already has it) — avoid duplicate flags
+  roots.delete(cwd)
+  roots.delete(cwd.replace(/[/\\]+$/, ''))
+
+  return [...roots]
+}
 import { StringDecoder } from 'node:string_decoder'
 import type { WebContents } from 'electron'
 import {
@@ -584,6 +624,11 @@ export class ClaudeGuiService {
 
     if (options.permissionMode === 'bypassPermissions') {
       args.push('--dangerously-skip-permissions')
+      // Expand the "allowed working directories" set so Claude Code's
+      // hardcoded cwd check doesn't block operations on other drives/paths.
+      for (const dir of collectBypassDirectories(options.cwd)) {
+        args.push('--add-dir', dir)
+      }
     }
 
     if (options.sessionId) {

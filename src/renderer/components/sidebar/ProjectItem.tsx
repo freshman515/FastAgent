@@ -594,14 +594,14 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         {/* Branch badge */}
         {!isAnonymous && branchInfo && (
           <span className={cn(
-            'flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5',
-            'text-[9px] leading-none',
+            'flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5',
+            'text-[var(--ui-font-xs)] font-medium leading-none',
             branchInfo.isDirty
               ? 'bg-[var(--color-warning)]/15 text-[var(--color-warning)]'
-              : 'bg-[var(--color-bg-surface)] text-[var(--color-text-tertiary)]',
+              : 'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]',
           )}>
-            <GitBranch size={9} />
-            <span className="max-w-[60px] truncate">{branchInfo.current}</span>
+            <GitBranch size={11} />
+            <span className="max-w-[90px] truncate">{branchInfo.current}</span>
           </span>
         )}
 

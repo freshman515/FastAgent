@@ -190,7 +190,7 @@ function findRuleIndex(match: RegExpExecArray, rules: HighlightRule[]): number {
   return -1
 }
 
-function highlightCode(code: string, language?: string): string {
+export function highlightCode(code: string, language?: string): string {
   const rules = RULES[normalizeLanguage(language)] ?? RULES.generic
   const source = rules.map((rule) => `(${rule.pattern.source})`).join('|')
   const flags = Array.from(new Set(rules.flatMap((rule) => rule.pattern.flags.split('')))).join('')

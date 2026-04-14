@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/types'
 import type {
+  ClaudeCodeContext,
+  ClaudeCodeLocalUsage,
   ClaudeDiffReviewOptions,
   ClaudeDiffReviewResult,
   ClaudeGuiEvent,
@@ -8,6 +10,7 @@ import type {
   ClaudePromptOptimizeOptions,
   ClaudePromptOptimizeResult,
   ClaudeGuiRequestOptions,
+  ClaudeUtilization,
   ExternalIdeId,
   ExternalIdeOption,
   FileSearchResult,
@@ -129,6 +132,12 @@ const api = {
     }) => ipcRenderer.invoke(IPC.CLAUDE_GUI_EXPORT, options) as Promise<boolean>,
     listSkills: (cwd: string) =>
       ipcRenderer.invoke(IPC.CLAUDE_GUI_LIST_SKILLS, cwd) as Promise<ClaudeGuiSkillCatalogEntry[]>,
+    fetchUsage: () =>
+      ipcRenderer.invoke(IPC.CLAUDE_GUI_FETCH_USAGE) as Promise<ClaudeUtilization>,
+    fetchContext: (payload: { cwd: string; sessionStartedAt?: number }) =>
+      ipcRenderer.invoke(IPC.CLAUDE_CODE_FETCH_CONTEXT, payload) as Promise<ClaudeCodeContext>,
+    fetchLocalUsage: () =>
+      ipcRenderer.invoke(IPC.CLAUDE_CODE_FETCH_LOCAL_USAGE) as Promise<ClaudeCodeLocalUsage>,
     onEvent: (callback: (event: ClaudeGuiEvent) => void) => {
       const handler = (_: unknown, event: ClaudeGuiEvent) => callback(event)
       ipcRenderer.on(IPC.CLAUDE_GUI_EVENT, handler)

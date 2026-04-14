@@ -732,29 +732,34 @@ export function App(): JSX.Element {
     )
   }
 
+  // In fullscreen mode (F11 or OS fullscreen) AND when no single pane is
+  // specifically maximized, we hide all chrome but keep the main panel —
+  // including any splits — stretched to the whole window.
+  const hideChrome = windowFullscreen || Boolean(fullscreenPaneId)
+
   return (
     <div className="flex h-full flex-col bg-[var(--color-titlebar-bg)]">
-      {!windowFullscreen && <TitleBar />}
+      {!hideChrome && <TitleBar />}
       <div className={cn(
         'flex flex-1 overflow-hidden',
-        !fullscreenPaneId && 'gap-[var(--layout-gap)] p-[var(--layout-gap)]',
+        !hideChrome && 'gap-[var(--layout-gap)] p-[var(--layout-gap)]',
       )}>
-        {!fullscreenPaneId && <LeftPanel />}
+        {!hideChrome && <LeftPanel />}
 
         {/* Main panel */}
         <div className={cn(
           'flex-1 overflow-hidden',
-          !fullscreenPaneId && 'rounded-[var(--radius-panel)]',
+          !hideChrome && 'rounded-[var(--radius-panel)]',
         )}>
           <MainPanel />
         </div>
 
         {/* Right panel */}
-        {!fullscreenPaneId && <RightPanel />}
+        {!hideChrome && <RightPanel />}
       </div>
 
       {/* Status bar */}
-      {!fullscreenPaneId && (
+      {!hideChrome && (
         <div className="px-[var(--layout-gap)] pb-[var(--layout-gap)]">
           <StatusBar />
         </div>

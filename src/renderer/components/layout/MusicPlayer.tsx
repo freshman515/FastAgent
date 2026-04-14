@@ -116,34 +116,41 @@ export function MusicPlayer(): JSX.Element {
     <div className="flex items-center gap-2 pl-1.5 pr-3 py-0.5">
       {/* Controls group */}
       {showControls && (
-      <div className="no-drag flex items-center gap-0.5">
+      <div className="no-drag flex items-center gap-1">
         {/* Prev */}
         <button
           onClick={handlePrev}
           disabled={!hasMedia}
           className={cn(
-            'flex h-6 w-6 items-center justify-center rounded-full',
-            'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-white/5',
+            'flex h-7 w-7 items-center justify-center rounded-full',
+            'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
+            'hover:bg-white/8 hover:-translate-x-px',
             'transition-all duration-150 active:scale-90',
             !hasMedia && 'opacity-30 pointer-events-none',
           )}
+          aria-label="上一首"
         >
-          <SkipBack size={11} fill="currentColor" />
+          <SkipBack size={13} fill="currentColor" strokeWidth={0} />
         </button>
 
-        {/* Play/Pause */}
+        {/* Play/Pause — gradient ring + soft halo when playing */}
         <button
           onClick={handlePlayPause}
           disabled={!hasMedia}
           className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-full',
-            'bg-[var(--color-accent)] text-white shadow-sm shadow-[var(--color-accent)]/30',
-            'hover:shadow-md hover:shadow-[var(--color-accent)]/40 hover:brightness-110',
+            'relative flex h-8 w-8 items-center justify-center rounded-full',
+            'bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-hover)] text-white',
+            'shadow-[0_2px_8px_-2px_var(--color-accent)]',
+            'hover:brightness-110 hover:scale-105 hover:shadow-[0_3px_12px_-2px_var(--color-accent)]',
             'transition-all duration-150 active:scale-90',
+            playing && 'ring-2 ring-[var(--color-accent)]/35 ring-offset-0',
             !hasMedia && 'opacity-30 pointer-events-none',
           )}
+          aria-label={playing ? '暂停' : '播放'}
         >
-          {playing ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" className="ml-0.5" />}
+          {playing
+            ? <Pause size={14} fill="currentColor" strokeWidth={0} />
+            : <Play size={14} fill="currentColor" strokeWidth={0} className="ml-0.5" />}
         </button>
 
         {/* Next */}
@@ -151,13 +158,15 @@ export function MusicPlayer(): JSX.Element {
           onClick={handleNext}
           disabled={!hasMedia}
           className={cn(
-            'flex h-6 w-6 items-center justify-center rounded-full',
-            'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-white/5',
+            'flex h-7 w-7 items-center justify-center rounded-full',
+            'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
+            'hover:bg-white/8 hover:translate-x-px',
             'transition-all duration-150 active:scale-90',
             !hasMedia && 'opacity-30 pointer-events-none',
           )}
+          aria-label="下一首"
         >
-          <SkipForward size={11} fill="currentColor" />
+          <SkipForward size={13} fill="currentColor" strokeWidth={0} />
         </button>
       </div>
       )}
@@ -167,19 +176,22 @@ export function MusicPlayer(): JSX.Element {
         <canvas ref={canvasRef} className="h-7 rounded" style={{ width: vizWidth }} />
       </div>
 
-      {/* Track info with artwork */}
+      {/* Track info with artwork — inherits `drag` region from the parent
+          title bar (no `.no-drag`), so clicking the track name grabs the
+          window like the surrounding title bar. */}
       {showTrackInfo && (
         hasMedia ? (
-          <div className="no-drag flex items-center gap-1.5 min-w-0 max-w-[180px]">
+          <div className="flex items-center gap-2 min-w-0 max-w-[240px] select-none">
             {media.artwork && (
               <img
                 src={media.artwork}
                 alt=""
-                className="h-6 w-6 shrink-0 rounded object-cover shadow-sm"
+                className="h-7 w-7 shrink-0 rounded object-cover shadow-sm"
+                draggable={false}
               />
             )}
             <span
-              className="truncate text-xs font-medium text-[var(--color-text-primary)]"
+              className="truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]"
               title={displayText}
             >
               {displayText}

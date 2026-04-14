@@ -119,6 +119,7 @@ export function TitleBar(): JSX.Element | null {
   const addToast = useUIStore((s) => s.addToast)
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
+  const windowFullscreen = useUIStore((s) => s.windowFullscreen)
 
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectedProject = useProjectsStore((s) =>
@@ -311,11 +312,8 @@ export function TitleBar(): JSX.Element | null {
           },
           {
             icon: Square,
-            label: fullscreenPaneId ? '退出当前会话全屏' : '当前会话全屏',
-            onSelect: () => void (fullscreenPaneId
-              ? setCurrentSessionFullscreen(false)
-              : toggleCurrentSessionFullscreen()),
-            disabled: !activeTabId,
+            label: windowFullscreen ? '退出全屏' : '全屏',
+            onSelect: () => void toggleCurrentSessionFullscreen(),
             hint: 'F11',
           },
           {
@@ -354,6 +352,7 @@ export function TitleBar(): JSX.Element | null {
     availableIdes,
     defaultSessionType,
     fullscreenPaneId,
+    windowFullscreen,
     handleCopyText,
     handleCreateDefaultSession,
     handleOpenInIde,

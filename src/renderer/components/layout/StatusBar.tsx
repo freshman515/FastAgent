@@ -111,7 +111,7 @@ export function StatusBar(): JSX.Element {
   const ITEM = 'flex items-center gap-1.5 px-2 py-0.5 text-[var(--ui-font-sm)] transition-colors duration-75'
 
   return (
-    <div className="flex h-8 shrink-0 items-center justify-between rounded-[var(--radius-panel)] px-1 select-none">
+    <div className="flex h-10 shrink-0 items-center justify-between rounded-[var(--radius-panel)] px-1 select-none">
       {/* Left section */}
       <div className="flex items-center gap-0 min-w-0">
         {/* Project name */}
@@ -130,7 +130,7 @@ export function StatusBar(): JSX.Element {
             isDirty ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-tertiary)]',
           )}>
             <GitBranch size={11} />
-            <span className="max-w-[120px] truncate">{branch}</span>
+            <span className="max-w-[260px] truncate">{branch}</span>
             {isDirty && <Circle size={6} fill="currentColor" />}
           </span>
         )}
@@ -142,7 +142,7 @@ export function StatusBar(): JSX.Element {
             title={`当前工作树：${worktreeName}`}
           >
             <TreeDeciduous size={11} />
-            <span className="max-w-[120px] truncate">{worktreeName}</span>
+            <span className="max-w-[260px] truncate">{worktreeName}</span>
           </span>
         )}
 

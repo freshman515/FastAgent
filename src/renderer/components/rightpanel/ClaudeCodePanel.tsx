@@ -27,7 +27,8 @@ import {
   X,
 } from 'lucide-react'
 import { type ReactNode, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { ClaudeGuiSkillCatalogEntry, FileSearchResult } from '@shared/types'
+import { structuredPatch, type StructuredPatchHunk } from 'diff'
+import type { ClaudeGuiSkillCatalogEntry, ClaudeUtilization, FileSearchResult } from '@shared/types'
 import claudeIcon from '@/assets/icons/Claude.png'
 import {
   buildSlashSuggestions,
@@ -36,7 +37,7 @@ import {
   parseComposerSlashCommand,
   type ClaudeGuiSlashSuggestion,
 } from '@/lib/claudeSlashCommands'
-import { renderCodeFence, renderMarkdown } from '@/lib/markdown'
+import { highlightCode, renderMarkdown } from '@/lib/markdown'
 import { cn, generateId } from '@/lib/utils'
 import { detectLanguage, useEditorsStore } from '@/stores/editors'
 import {
@@ -172,26 +173,74 @@ function getPermissionModeLabel(mode: ClaudeGuiPreferences['permissionMode']): s
   }
 }
 
+function formatResetTimestamp(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return raw
+  const now = Date.now()
+  const diff = date.getTime() - now
+  const days = Math.round(diff / (24 * 60 * 60 * 1000))
+  const hours = Math.round(diff / (60 * 60 * 1000))
+  const minutes = Math.round(diff / (60 * 1000))
+  const abs = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (diff <= 0) return `${abs}（已重置）`
+  if (minutes < 60) return `${abs}（约 ${minutes} 分钟后）`
+  if (hours < 24) return `${abs}（约 ${hours} 小时后）`
+  return `${abs}（约 ${days} 天后）`
+}
+
+function renderUsageBar(label: string, rate: { utilization: number | null; resetsAt: string | null } | null | undefined): ReactNode {
+  if (!rate) return null
+  const pct = rate.utilization != null ? Math.max(0, Math.min(100, rate.utilization)) : null
+  const barColor = pct == null
+    ? 'bg-[var(--color-text-tertiary)]'
+    : pct >= 85
+      ? 'bg-[var(--color-error)]'
+      : pct >= 60
+        ? 'bg-[var(--color-warning)]'
+        : 'bg-[var(--color-accent)]'
+  const reset = formatResetTimestamp(rate.resetsAt)
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[12px]">
+        <span className="font-semibold text-[var(--color-text-primary)]">{label}</span>
+        <span className="tabular-nums text-[var(--color-text-secondary)]">
+          {pct != null ? `${Math.round(pct)}%` : '—'}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--color-bg-primary)]">
+        <div
+          className={cn('h-full rounded-full transition-all', barColor)}
+          style={{ width: `${pct ?? 0}%` }}
+        />
+      </div>
+      {reset && (
+        <div className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">重置时间 {reset}</div>
+      )}
+    </div>
+  )
+}
+
 function getMessageTypography(size: ClaudeGuiPreferences['messageTextSize']): { body: string; assistant: string; thinking: string } {
   switch (size) {
     case 'md':
       return {
         body: 'text-[13px] leading-7',
         assistant: 'text-[14px] leading-7',
-        thinking: 'text-[13px] leading-7',
+        thinking: 'text-[12px] leading-6',
       }
     case 'xl':
       return {
-        body: 'text-[15px] leading-8',
+        body: 'text-[16px] leading-8',
         assistant: 'text-[17px] leading-8',
         thinking: 'text-[14px] leading-7',
       }
     case 'lg':
     default:
       return {
-        body: 'text-[14px] leading-8',
-        assistant: 'text-[16px] leading-8',
-        thinking: 'text-[13px] leading-7',
+        body: 'text-[14px] leading-7',
+        assistant: 'text-[15px] leading-[26px]',
+        thinking: 'text-[13px] leading-6',
       }
   }
 }
@@ -601,68 +650,166 @@ function getTraceSearchText(entry: TraceEntry): string {
   ].filter(Boolean).join('\n')
 }
 
-function ToolChangePreview({ rawInput }: { rawInput: unknown }): JSX.Element | null {
+// ─── Inline diff rendering (Claude Code CLI style) ──────────────────────────
+//
+// Shows a unified line-level diff inline under Edit / Write / MultiEdit tool
+// calls. Layout mirrors claude-code's StructuredDiff: right-aligned line
+// number gutter + sigil (+/-) + code content, tinted green/red for adds/
+// removes. Between hunks we draw a dotted separator (claude-code uses "...").
+
+interface InlineEdit {
+  oldString: string
+  newString: string
+}
+
+/** Extract line-diffable edits from a tool's rawInput across Edit variants. */
+function extractInlineEdits(rawInput: unknown): InlineEdit[] {
   const record = asRecord(rawInput)
-  const oldText = getRecordString(record, 'old_string', 'oldText')
-  const newText = getRecordString(record, 'new_string', 'newText')
-  const replaceAll = getRecordBoolean(record, 'replace_all', 'replaceAll')
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
+  if (!record) return []
 
-  const language = buildToolLanguage(rawInput)
-  const oldPreview = truncateContent(oldText ?? '', 800).text
-  const newPreview = truncateContent(newText ?? '', 800).text
-  const showComparison = Boolean(oldText) && containerWidth >= 760
-
-  useEffect(() => {
-    const element = containerRef.current
-    if (!element) return
-
-    const updateWidth = (width: number): void => {
-      setContainerWidth((current) => (current === width ? current : width))
+  // MultiEdit — sequence of { old_string, new_string } applied in order
+  const edits = record.edits
+  if (Array.isArray(edits) && edits.length > 0) {
+    const out: InlineEdit[] = []
+    for (const item of edits) {
+      const rec = asRecord(item)
+      if (!rec) continue
+      const o = getRecordString(rec, 'old_string', 'oldText')
+      const n = getRecordString(rec, 'new_string', 'newText')
+      if (o === null && n === null) continue
+      out.push({ oldString: o ?? '', newString: n ?? '' })
     }
+    return out
+  }
 
-    updateWidth(element.clientWidth)
+  // Edit — single old_string / new_string
+  const oldStr = getRecordString(record, 'old_string', 'oldText')
+  const newStr = getRecordString(record, 'new_string', 'newText')
+  if (oldStr !== null || newStr !== null) {
+    return [{ oldString: oldStr ?? '', newString: newStr ?? '' }]
+  }
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      updateWidth(Math.round(entry.contentRect.width))
-    })
-    observer.observe(element)
+  // Write — full-file content (all new lines)
+  const content = getRecordString(record, 'content', 'file_text')
+  if (content !== null) {
+    return [{ oldString: '', newString: content }]
+  }
 
-    return () => observer.disconnect()
-  }, [])
+  return []
+}
 
-  if (!oldText && !newText) return null
+function buildHunks(edits: InlineEdit[]): StructuredPatchHunk[] {
+  const hunks: StructuredPatchHunk[] = []
+  for (const edit of edits) {
+    // 2 lines of context before/after each change region — matches claude-code
+    const patch = structuredPatch('a', 'b', edit.oldString, edit.newString, '', '', { context: 2 })
+    hunks.push(...patch.hunks)
+  }
+  return hunks
+}
+
+interface DiffLineRow {
+  sigil: '+' | '-' | ' '
+  oldNum: number | null
+  newNum: number | null
+  code: string
+}
+
+function materializeHunk(hunk: StructuredPatchHunk): DiffLineRow[] {
+  const rows: DiffLineRow[] = []
+  let oldCursor = hunk.oldStart
+  let newCursor = hunk.newStart
+  for (const rawLine of hunk.lines) {
+    if (rawLine === '\\ No newline at end of file') continue
+    const sigilChar = rawLine.charAt(0)
+    const code = rawLine.slice(1)
+    if (sigilChar === '+') {
+      rows.push({ sigil: '+', oldNum: null, newNum: newCursor, code })
+      newCursor += 1
+    } else if (sigilChar === '-') {
+      rows.push({ sigil: '-', oldNum: oldCursor, newNum: null, code })
+      oldCursor += 1
+    } else {
+      rows.push({ sigil: ' ', oldNum: oldCursor, newNum: newCursor, code })
+      oldCursor += 1
+      newCursor += 1
+    }
+  }
+  return rows
+}
+
+function InlineDiff({ rawInput }: { rawInput: unknown }): JSX.Element | null {
+  const edits = useMemo(() => extractInlineEdits(rawInput), [rawInput])
+  const hunks = useMemo(() => buildHunks(edits), [edits])
+  const language = useMemo(() => buildToolLanguage(rawInput), [rawInput])
+
+  if (hunks.length === 0) return null
+
+  const allRows = hunks.map(materializeHunk)
+  let added = 0
+  let removed = 0
+  let maxLineNum = 1
+  for (const rows of allRows) {
+    for (const r of rows) {
+      if (r.sigil === '+') added += 1
+      if (r.sigil === '-') removed += 1
+      const biggest = Math.max(r.oldNum ?? 0, r.newNum ?? 0)
+      if (biggest > maxLineNum) maxLineNum = biggest
+    }
+  }
+  const gutterWidth = String(maxLineNum).length
+
+  const summaryParts: string[] = []
+  if (added > 0) summaryParts.push(`Added ${added} ${added === 1 ? 'line' : 'lines'}`)
+  if (removed > 0) summaryParts.push(`removed ${removed} ${removed === 1 ? 'line' : 'lines'}`)
+  const summary = summaryParts.join(', ')
 
   return (
-    <div ref={containerRef} className="mt-3 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/80">
-      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
-          {replaceAll ? 'Replace File' : 'Pending Edit'}
+    <div className="mt-2 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border)]/50 bg-[var(--color-bg-primary)]/50">
+      {summary && (
+        <div className="border-b border-[var(--color-border)]/40 px-3 py-1 text-[11px] text-[var(--color-text-tertiary)]">
+          {summary}
         </div>
-        <div className="text-[10px] text-[var(--color-text-tertiary)]">{language}</div>
-      </div>
-      <div className={cn('grid grid-cols-1', showComparison && 'xl:grid-cols-2')}>
-        {showComparison && (
-          <div className="border-b border-[var(--color-border)] xl:border-b-0 xl:border-r xl:border-[var(--color-border)]">
-            <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Before</div>
-            <div
-              className="ai-summary-content overflow-x-auto bg-black/10 px-3 py-2 text-[11px] leading-5 text-[var(--color-text-secondary)]"
-              dangerouslySetInnerHTML={{ __html: renderCodeFence(oldPreview || '// empty', language) }}
-            />
+      )}
+      <div className="ai-summary-content overflow-x-auto font-mono text-[13px] leading-[20px]">
+        {allRows.map((rows, hunkIdx) => (
+          <div key={hunkIdx}>
+            {hunkIdx > 0 && (
+              <div className="select-none px-3 py-0.5 text-center text-[10px] text-[var(--color-text-tertiary)]/70">
+                ⋯
+              </div>
+            )}
+            {rows.map((row, rowIdx) => {
+              const lineNum = row.sigil === '-' ? row.oldNum : row.newNum
+              const numText = (lineNum != null ? String(lineNum) : '').padStart(gutterWidth, ' ')
+              // Claude Code CLI uses a slightly saturated bg for changed lines
+              // so the syntax-highlighted tokens still have enough contrast.
+              const rowBg = row.sigil === '+'
+                ? 'bg-[#7cd992]/18'
+                : row.sigil === '-'
+                  ? 'bg-[#f38ba8]/18'
+                  : ''
+              const highlighted = highlightCode(row.code || ' ', language)
+              return (
+                <div key={`${hunkIdx}-${rowIdx}`} className={cn('flex whitespace-pre', rowBg)}>
+                  <span className="select-none shrink-0 px-2 text-[var(--color-text-tertiary)]/60">{numText}</span>
+                  <span
+                    className={cn(
+                      'select-none shrink-0 pr-1 w-3 font-semibold',
+                      row.sigil === '+' ? 'text-[#7cd992]' : row.sigil === '-' ? 'text-[#f38ba8]' : '',
+                    )}
+                  >
+                    {row.sigil === ' ' ? '' : row.sigil}
+                  </span>
+                  <span
+                    className="pr-3 text-[var(--color-text-primary)]"
+                    dangerouslySetInnerHTML={{ __html: highlighted }}
+                  />
+                </div>
+              )
+            })}
           </div>
-        )}
-        <div className="bg-[#87d5a0]/8">
-          <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[#87d5a0]">
-            {showComparison ? 'After' : 'Updated'}
-          </div>
-          <div
-            className="ai-summary-content overflow-x-auto bg-[#87d5a0]/10 px-3 py-2 text-[11px] leading-5 text-[var(--color-text-primary)]"
-            dangerouslySetInnerHTML={{ __html: renderCodeFence(newPreview || '// empty', language) }}
-          />
-        </div>
+        ))}
       </div>
     </div>
   )
@@ -782,22 +929,15 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
     const isError = entry.result?.isError === true
     const targetPath = getToolTargetPath(entry.tool.rawInput)
     const targetLocation = getToolNavigationTarget(entry.tool.rawInput)
-    const rawInputKey = `${entry.tool.id}:input`
-    const changeKey = `${entry.tool.id}:change`
-    const resultKey = `${entry.tool.id}:result`
-    const record = asRecord(entry.tool.rawInput)
-    const hasChangePreview = Boolean(getRecordString(record, 'old_string', 'oldText') || getRecordString(record, 'new_string', 'newText'))
     const patchReview = entry.tool.toolUseId
       ? conversation.patchReviews.find((review) => review.toolUseId === entry.tool.toolUseId) ?? null
       : null
-    const hasRawInput = entry.tool.rawInput !== undefined
-    const hasResult = Boolean(entry.result?.text?.trim())
 
     return (
       <div id={`claude-trace-${entry.id}`} className={cn('mx-4 mb-4 flex gap-3 rounded-[var(--radius-lg)] px-0 pb-0', matchClass)}>
         <TraceRail tone={isError ? 'bg-[var(--color-error)]' : 'bg-[#7cd992]'} isLast={isLast} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--color-text-primary)]">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-[var(--color-text-primary)]">
             {targetPath ? (
               <button
                 onClick={() => onOpenFile(targetPath, targetLocation)}
@@ -826,67 +966,54 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
           </div>
           {summary && (
             <div className={cn(
-              'mt-1 text-[11px] leading-5',
+              'mt-1 text-[12px] leading-5',
               isError ? 'text-[var(--color-error)]' : 'text-[var(--color-text-secondary)]',
             )}>
               {summary}
             </div>
           )}
-          {(hasChangePreview || patchReview) && (
-            <ToolSection id={changeKey} label="Before / After" expanded collapsible={false} onToggle={onToggleSection}>
-              {hasChangePreview && <ToolChangePreview rawInput={entry.tool.rawInput} />}
-              {patchReview && (
-                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2">
-                  <div className="mb-2 text-[10px] text-[var(--color-text-tertiary)]">
-                    已写入文件。这里可以查看实际 diff，或只回滚这个工具修改过的具体文件。
-                  </div>
-                  <div className="space-y-1.5">
-                    {patchReview.files.map((file) => (
-                      <div key={file.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5">
-                        <button
-                          type="button"
-                          onClick={() => onOpenFile(file.filePath, { line: 1, column: 1 })}
-                          className="min-w-0 truncate text-left text-[11px] font-medium text-[var(--color-text-primary)] hover:text-[var(--color-accent)]"
-                          title={file.filePath}
-                        >
-                          {file.relativePath}
-                        </button>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onOpenPatchDiff(file)}
-                            className="flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 text-[10px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                          >
-                            <Diff size={10} />
-                            Diff
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onRevertPatchFile(patchReview, file.filePath)}
-                            className="flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-error)]/35 px-2 text-[10px] text-[var(--color-error)] hover:bg-[var(--color-error)]/10"
-                          >
-                            <RotateCcw size={10} />
-                            Revert File
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+          {/* Inline unified diff — rendered directly under Edit / Write /
+              MultiEdit tool calls so users can see changes without expanding
+              a collapsible section. Mirrors Claude Code CLI's diff layout. */}
+          <InlineDiff rawInput={entry.tool.rawInput} />
+          {/* Patch review (revert/diff buttons) — kept compact, no wrapping
+              ToolSection. Useful actions stay one click away; the noisy
+              Before/After diff column, Raw Input JSON dump, and Tool Result
+              markdown rendering have all been removed per user feedback to
+              match Claude Code CLI's minimal tool output style. */}
+          {patchReview && (
+            <div className="mt-1.5 space-y-1">
+              {patchReview.files.map((file) => (
+                <div key={file.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)]/60 bg-[var(--color-bg-secondary)]/40 px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => onOpenFile(file.filePath, { line: 1, column: 1 })}
+                    className="min-w-0 truncate text-left text-[10px] text-[var(--color-text-secondary)] hover:text-[var(--color-accent)]"
+                    title={file.filePath}
+                  >
+                    {file.relativePath}
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onOpenPatchDiff(file)}
+                      className="flex h-5 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[10px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+                      title="查看 diff"
+                    >
+                      <Diff size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRevertPatchFile(patchReview, file.filePath)}
+                      className="flex h-5 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[10px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-error)]/10 hover:text-[var(--color-error)]"
+                      title="回滚此文件改动"
+                    >
+                      <RotateCcw size={10} />
+                    </button>
                   </div>
                 </div>
-              )}
-            </ToolSection>
-          )}
-          {hasRawInput && (
-            <ToolSection id={rawInputKey} label="Raw Input" expanded={expandedSections[rawInputKey] === true} onToggle={onToggleSection}>
-              <pre className="overflow-x-auto px-3 py-2 text-[11px] leading-5 text-[var(--color-text-secondary)]">
-                {stringifyInput(entry.tool.rawInput)}
-              </pre>
-            </ToolSection>
-          )}
-          {hasResult && (
-            <ToolSection id={resultKey} label={entry.result?.hidden ? 'Tool Result (Hidden by CLI)' : 'Tool Result'} expanded={expandedSections[resultKey] === true} onToggle={onToggleSection}>
-              <div className="ai-summary-content px-3 py-2 text-[12px] leading-6 text-[var(--color-text-primary)]" dangerouslySetInnerHTML={{ __html: renderMarkdown(entry.result?.text ?? '') }} />
-            </ToolSection>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -1202,6 +1329,15 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
 
   const [draft, setDraft] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [permissionMenuOpen, setPermissionMenuOpen] = useState(false)
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  // Claude subscription usage panel (real /usage data from Anthropic API)
+  const [usagePanel, setUsagePanel] = useState<
+    | { status: 'idle' }
+    | { status: 'loading' }
+    | { status: 'ready'; data: ClaudeUtilization }
+    | null
+  >(null)
   const [showHistory, setShowHistory] = useState(false)
   const [showStats, setShowStats] = useState(false)
   const [showFilePicker, setShowFilePicker] = useState(false)
@@ -1900,10 +2036,24 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         recordSlashCommandUsage(usageKey)
         return true
       case 'stats':
-      case 'usage':
+      case 'cost':
         setShowStats(true)
         recordSlashCommandUsage(usageKey)
         return true
+      case 'usage': {
+        recordSlashCommandUsage(usageKey)
+        setUsagePanel({ status: 'loading' })
+        try {
+          const data = await window.api.claudeGui.fetchUsage()
+          setUsagePanel({ status: 'ready', data })
+        } catch (err) {
+          setUsagePanel({
+            status: 'ready',
+            data: { error: err instanceof Error ? err.message : String(err) },
+          })
+        }
+        return true
+      }
       case 'files':
       case 'file':
         setShowFilePicker(true)
@@ -2576,7 +2726,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         </div>
       </div>
 
-      <div ref={messagesRef} className="flex-1 overflow-y-auto py-4">
+      <div ref={messagesRef} className="flex-1 overflow-y-auto py-4 select-text">
         {!activeConversation && (
           <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 px-6 text-center">
             <Bot size={28} className="text-[var(--color-text-tertiary)]" />
@@ -2626,37 +2776,28 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
 
       <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-3">
         {activeProcessingState && (
-          <div
-            className={cn(
-              'mb-3 rounded-[var(--radius-md)] border px-3 py-2.5 transition-colors',
-              activeProcessingState.stalled
-                ? 'border-[var(--color-warning)]/35 bg-[var(--color-warning)]/8'
-                : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)]',
-            )}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <Sparkles
-                  size={14}
-                  className={cn(
-                    'shrink-0',
-                    activeProcessingState.stalled
-                      ? 'animate-pulse text-[var(--color-warning)]'
-                      : 'animate-pulse text-[var(--color-accent)]',
-                  )}
-                />
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">
-                    {activeProcessingState.verb}...
-                  </div>
-                  <div className="truncate text-[10px] text-[var(--color-text-tertiary)]">
-                    {activeProcessingState.detail}
-                  </div>
+          <div className="mb-3 flex items-center justify-between gap-3 px-1 transition-colors">
+            <div className="flex min-w-0 items-center gap-2">
+              <Sparkles
+                size={14}
+                className={cn(
+                  'shrink-0 animate-pulse',
+                  activeProcessingState.stalled
+                    ? 'text-[var(--color-warning)]'
+                    : 'text-[var(--color-accent)]',
+                )}
+              />
+              <div className="min-w-0">
+                <div className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">
+                  {activeProcessingState.verb}...
+                </div>
+                <div className="truncate text-[10px] text-[var(--color-text-tertiary)]">
+                  {activeProcessingState.detail}
                 </div>
               </div>
-              <div className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">
-                {activeProcessingState.elapsedSeconds}s
-              </div>
+            </div>
+            <div className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">
+              {activeProcessingState.elapsedSeconds}s
             </div>
           </div>
         )}
@@ -3133,13 +3274,113 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
             /
           </button>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => openGlobalSettings('claudeGui')}
-              className="flex h-8 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] text-[var(--color-text-secondary)]"
-              title="Permission mode and model settings"
-            >
-              {getPermissionModeLabel(activePreferences.permissionMode)}
-            </button>
+            {/* Model picker — quick-switch between Sonnet / Opus / Haiku / default */}
+            <div className="relative">
+              <button
+                onClick={() => setModelMenuOpen((v) => !v)}
+                className="flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)]"
+                title="切换 Claude 模型"
+              >
+                <Bot size={12} />
+                {(MODEL_OPTIONS.find((item) => item.value === activePreferences.selectedModel)?.label)
+                  ?? activePreferences.selectedModel}
+                <ChevronDown size={10} className="opacity-70" />
+              </button>
+
+              {modelMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-[60]" onClick={() => setModelMenuOpen(false)} />
+                  <div className="absolute bottom-full right-0 mb-1.5 z-[61] w-[220px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-1 shadow-lg shadow-black/40">
+                    {MODEL_OPTIONS.map((item) => {
+                      const active = activePreferences.selectedModel === item.value
+                      return (
+                        <button
+                          key={item.value}
+                          onClick={() => {
+                            updateActivePreferences({ selectedModel: item.value })
+                            setModelMenuOpen(false)
+                          }}
+                          className={cn(
+                            'flex w-full items-center justify-between gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-left transition-colors',
+                            active
+                              ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+                          )}
+                        >
+                          <span className="text-[11px] font-medium">{item.label}</span>
+                          <span className="text-[9px] text-[var(--color-text-tertiary)] tabular-nums">{item.value}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                onClick={() => setPermissionMenuOpen((v) => !v)}
+                className={cn(
+                  'flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-[10px] font-medium transition-colors',
+                  activePreferences.permissionMode === 'bypassPermissions'
+                    ? 'border-[var(--color-warning)]/45 bg-[var(--color-warning)]/12 text-[var(--color-warning)]'
+                    : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+                )}
+                title="切换权限模式"
+              >
+                {activePreferences.permissionMode === 'bypassPermissions' && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse" />
+                )}
+                {getPermissionModeLabel(activePreferences.permissionMode)}
+              </button>
+
+              {permissionMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-[60]" onClick={() => setPermissionMenuOpen(false)} />
+                  <div className="absolute bottom-full right-0 mb-1.5 z-[61] w-[260px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-1 shadow-lg shadow-black/40">
+                    {([
+                      { mode: 'default' as const, label: 'Ask before edits', desc: '默认：所有改动需确认' },
+                      { mode: 'acceptEdits' as const, label: 'Accept edits', desc: '文件修改自动通过，其他仍询问' },
+                      { mode: 'plan' as const, label: 'Plan mode', desc: '只做规划，不实际执行' },
+                      { mode: 'bypassPermissions' as const, label: 'Bypass permissions', desc: '跳过所有权限检查（可操作沙箱外文件）', danger: true },
+                    ]).map((item) => {
+                      const active = activePreferences.permissionMode === item.mode
+                      return (
+                        <button
+                          key={item.mode}
+                          onClick={() => {
+                            updateActivePreferences({ permissionMode: item.mode })
+                            setPermissionMenuOpen(false)
+                          }}
+                          className={cn(
+                            'flex w-full flex-col items-start gap-0.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left transition-colors',
+                            active
+                              ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+                          )}
+                        >
+                          <span className={cn('flex items-center gap-1.5 text-[11px] font-semibold', item.danger && !active && 'text-[var(--color-warning)]')}>
+                            {item.danger && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />}
+                            {item.label}
+                            {active && <span className="ml-auto text-[9px] opacity-70">当前</span>}
+                          </span>
+                          <span className="text-[10px] leading-tight text-[var(--color-text-tertiary)]">{item.desc}</span>
+                        </button>
+                      )
+                    })}
+                    <button
+                      onClick={() => {
+                        openGlobalSettings('claudeGui')
+                        setPermissionMenuOpen(false)
+                      }}
+                      className="mt-1 flex w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[10px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-secondary)]"
+                    >
+                      高级设置…
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             {activeConversation?.status === 'running' ? (
               <button
                 onClick={() => void window.api.claudeGui.stop()}
@@ -3173,11 +3414,12 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
         />
       </div>
 
-      {(showHistory || showStats) && (
+      {(showHistory || showStats || usagePanel) && (
         <>
           <div className="absolute inset-0 z-20 bg-black/35" onClick={() => {
             setShowHistory(false)
             setShowStats(false)
+            setUsagePanel(null)
           }} />
           {showHistory && (
             <div className="absolute inset-x-3 top-3 z-30 max-h-[70%] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30">
@@ -3298,6 +3540,65 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {usagePanel && (
+            <div className="absolute inset-x-3 top-3 z-40 max-h-[85%] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-4 shadow-lg shadow-black/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart3 size={14} className="text-[var(--color-accent)]" />
+                  <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">Claude 订阅使用量</div>
+                </div>
+                <button onClick={() => setUsagePanel(null)} className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"><X size={14} /></button>
+              </div>
+
+              {usagePanel.status === 'loading' && (
+                <div className="mt-4 flex items-center gap-2 text-[12px] text-[var(--color-text-tertiary)]">
+                  <LoaderCircle size={14} className="animate-spin text-[var(--color-accent)]" />
+                  正在向 Anthropic API 查询使用量…
+                </div>
+              )}
+
+              {usagePanel.status === 'ready' && usagePanel.data.error && (
+                <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-[12px] text-[var(--color-text-primary)]">
+                  {usagePanel.data.error}
+                </div>
+              )}
+
+              {usagePanel.status === 'ready' && !usagePanel.data.error && (
+                <div className="mt-4 space-y-4">
+                  {renderUsageBar('本次会话（5 小时窗口）', usagePanel.data.fiveHour)}
+                  {renderUsageBar('本周（全部模型，7 天窗口）', usagePanel.data.sevenDay)}
+                  {renderUsageBar('本周（Opus，7 天窗口）', usagePanel.data.sevenDayOpus)}
+                  {renderUsageBar('本周（Sonnet，7 天窗口）', usagePanel.data.sevenDaySonnet)}
+                  {usagePanel.data.extraUsage && usagePanel.data.extraUsage.isEnabled && (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between text-[12px]">
+                        <span className="font-semibold text-[var(--color-text-primary)]">额外用量（按量付费）</span>
+                        <span className="tabular-nums text-[var(--color-text-secondary)]">
+                          {usagePanel.data.extraUsage.utilization != null ? `${Math.round(usagePanel.data.extraUsage.utilization)}%` : '—'}
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--color-bg-primary)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--color-warning)] transition-all"
+                          style={{ width: `${Math.max(0, Math.min(100, usagePanel.data.extraUsage.utilization ?? 0))}%` }}
+                        />
+                      </div>
+                      <div className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
+                        {usagePanel.data.extraUsage.usedCredits != null && usagePanel.data.extraUsage.monthlyLimit != null
+                          ? `$${usagePanel.data.extraUsage.usedCredits.toFixed(2)} / $${usagePanel.data.extraUsage.monthlyLimit.toFixed(2)} 已使用`
+                          : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-4 border-t border-[var(--color-border)] pt-3 text-[10px] text-[var(--color-text-tertiary)]">
+                数据来自 Anthropic 官方 OAuth usage 接口，和 Claude Code CLI 里的 <code>/usage</code> 同源。
               </div>
             </div>
           )}

@@ -161,7 +161,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       onDragLeave={handleDragLeave}
       onContextMenu={(event) => openContextMenu(event)}
       className={cn(
-        'relative flex h-full shrink-0 flex-col items-center pt-4 pb-2 px-2.5 gap-1.5 transition-colors',
+        'relative flex h-full w-10 shrink-0 flex-col items-center pt-3 pb-2 px-0 gap-1.5 transition-colors',
         isAppendDropTarget && 'bg-[var(--color-accent)]/12',
       )}
     >
@@ -242,14 +242,18 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       <div
         onDragOver={handleStripDragOver}
         onDrop={handleStripDrop}
-        className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3 mx-1.5 mt-1.5"
+        className="flex h-9 shrink-0 items-center gap-2 px-3 relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(90deg, var(--color-accent-muted) 0%, transparent 75%)',
+        }}
       >
-        <span className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+        <activePanel.icon size={15} className="shrink-0 text-[var(--color-accent)]" />
+        <span className="flex-1 truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)] tracking-tight">
           {activePanel.label}
         </span>
       </div>
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden p-1.5"
+        className="flex-1 overflow-y-auto overflow-x-hidden"
         onDragOver={handleStripDragOver}
         onDrop={handleStripDrop}
       >

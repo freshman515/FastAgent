@@ -1,39 +1,33 @@
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
 
+// F11 behavior: hide window chrome (title bar / side panels / status bar) and
+// let the entire MainPanel — including any splits — occupy the full window.
+// We intentionally do NOT set fullscreenPaneId here, so split layouts stay
+// intact in fullscreen mode.
+
 export function canToggleCurrentSessionFullscreen(): boolean {
-  const paneStore = usePanesStore.getState()
-  const activePaneId = paneStore.activePaneId
-  return Boolean(paneStore.paneActiveSession[activePaneId] ?? paneStore.fullscreenPaneId)
+  // Fullscreen is always allowed; the check is kept for menu-visibility API
+  // compatibility but no longer requires an active session.
+  return true
 }
 
 export async function setCurrentSessionFullscreen(enabled: boolean): Promise<void> {
+  const uiStore = useUIStore.getState()
   const paneStore = usePanesStore.getState()
-  const activePaneId = paneStore.activePaneId
-  const activeTabId = paneStore.paneActiveSession[activePaneId] ?? null
 
-  if (enabled) {
-    if (!activeTabId) return
-    if (paneStore.fullscreenPaneId !== activePaneId) {
-      paneStore.togglePaneFullscreen(activePaneId)
-    }
-    useUIStore.getState().setWindowFullscreen(true)
-    const fullscreen = await window.api.window.setFullscreen(true)
-    useUIStore.getState().setWindowFullscreen(fullscreen)
-    return
-  }
-
+  // Clean up any stale single-pane fullscreen state left over from previous
+  // versions — F11 now always means "whole main panel fullscreen".
   if (paneStore.fullscreenPaneId) {
     paneStore.exitPaneFullscreen()
   }
-  useUIStore.getState().setWindowFullscreen(false)
-  const fullscreen = await window.api.window.setFullscreen(false)
+
+  uiStore.setWindowFullscreen(enabled)
+  const fullscreen = await window.api.window.setFullscreen(enabled)
   useUIStore.getState().setWindowFullscreen(fullscreen)
 }
 
 export async function toggleCurrentSessionFullscreen(): Promise<void> {
-  const paneStore = usePanesStore.getState()
-  const currentlyEnabled = Boolean(paneStore.fullscreenPaneId)
-  if (!currentlyEnabled && !canToggleCurrentSessionFullscreen()) return
+  const currentlyEnabled = useUIStore.getState().windowFullscreen
   await setCurrentSessionFullscreen(!currentlyEnabled)
 }

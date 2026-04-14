@@ -142,6 +142,63 @@ export interface ClaudeDiffReviewResult {
   content: string
 }
 
+// ─── Claude Code `/usage` response ───
+// Mirrors the `Utilization` shape from the official Claude CLI's
+// `GET /api/oauth/usage` endpoint so we can render the same bars locally.
+
+export interface ClaudeRateLimit {
+  utilization: number | null
+  resetsAt: string | null
+}
+
+export interface ClaudeExtraUsage {
+  isEnabled: boolean
+  monthlyLimit: number | null
+  usedCredits: number | null
+  utilization: number | null
+}
+
+/** Local-only usage aggregation from `~/.claude/projects/**` transcripts.
+ *  Mirrors the approach used by Claude-Code-Usage-Monitor: no OAuth, no API
+ *  calls, pure file-walking. Stable across refresh-token churn. */
+export interface ClaudeCodeLocalUsage {
+  /** Tokens consumed in the current 5-hour session block (active or most recent). */
+  fiveHourTokens: number
+  /** Soft upper-bound for the active plan (see `plan` field). */
+  fiveHourLimit: number
+  /** Block end timestamp (ISO string) — when the 5h window resets. */
+  fiveHourResetsAt: string | null
+  /** Tokens across all blocks in the last 7 days. */
+  sevenDayTokens: number
+  /** Inferred subscription plan. */
+  plan: 'pro' | 'max5' | 'max20' | 'unknown'
+  /** Model attribution for the latest transcript entry (optional hint). */
+  latestModel: string | null
+  error?: string
+}
+
+export interface ClaudeCodeContext {
+  /** Total tokens present in the current model context (input + cache_create + cache_read). */
+  contextTokens: number
+  /** Model id from the latest assistant message (used to pick 200k vs 1M limits). */
+  model: string | null
+  /** Absolute path of the session file we pulled the numbers from. */
+  sessionFile: string | null
+  error?: string
+}
+
+export interface ClaudeUtilization {
+  fiveHour?: ClaudeRateLimit | null
+  sevenDay?: ClaudeRateLimit | null
+  sevenDayOpus?: ClaudeRateLimit | null
+  sevenDaySonnet?: ClaudeRateLimit | null
+  extraUsage?: ClaudeExtraUsage | null
+  /** Present when the token file was found but the API call failed or auth is missing. */
+  error?: string
+  /** True when no credentials.json was found (user hasn't logged in via `claude login`). */
+  notAuthenticated?: boolean
+}
+
 export interface ClaudeGuiUsage {
   totalTokensInput: number
   totalTokensOutput: number
@@ -423,6 +480,9 @@ export const IPC = {
   CLAUDE_GUI_EVENT: 'claude-gui:event',
   CLAUDE_GUI_EXPORT: 'claude-gui:export',
   CLAUDE_GUI_LIST_SKILLS: 'claude-gui:list-skills',
+  CLAUDE_GUI_FETCH_USAGE: 'claude-gui:fetch-usage',
+  CLAUDE_CODE_FETCH_CONTEXT: 'claude-code:fetch-context',
+  CLAUDE_CODE_FETCH_LOCAL_USAGE: 'claude-code:fetch-local-usage',
   CLAUDE_PROMPT_OPTIMIZE: 'claude-prompt:optimize',
   CLAUDE_DIFF_REVIEW: 'claude-diff:review',
 } as const

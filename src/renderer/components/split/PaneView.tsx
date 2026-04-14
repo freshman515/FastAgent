@@ -123,10 +123,10 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
   const isSplit = rootType === 'split'
   const activeTabClass = isActive
     ? cn(
-      'tab-active text-[var(--color-text-primary)]',
+      'tab-active font-medium text-[var(--color-text-primary)]',
       isPaneFocused ? 'tab-active-focused' : 'tab-active-muted',
     )
-    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]'
+    : 'tab-inactive text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-t-[10px]'
 
   const closeEditorTabs = useCallback((ids: string[]) => {
     const targets = [...new Set(ids)].filter((id) => fileTabIds.includes(id))
@@ -263,7 +263,8 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
           setContextMenu({ x: e.clientX, y: e.clientY })
         }}
         className={cn(
-          'no-drag group flex h-[34px] cursor-pointer items-center gap-1.5 px-2.5 max-w-[200px]',
+          'no-drag group flex h-[32px] cursor-pointer items-center gap-1.5 px-3 max-w-[220px] min-w-[100px]',
+          'transition-colors duration-75',
           activeTabClass,
           isDragging && 'opacity-40',
         )}
@@ -295,10 +296,6 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
           </button>
         )}
       </div>
-
-      {showDivider && dropSide !== 'right' && (
-        <div className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--color-border-hover)]/85" />
-      )}
 
       {dropSide === 'right' && (
         <div className="h-5 w-0.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
@@ -633,7 +630,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           'tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]',
           dropHighlight && 'ring-2 ring-inset ring-[var(--color-accent)]',
         )}
-        style={{ height: 39 }}
+        style={{ height: 38 }}
         onWheel={(e) => {
           if (orderedTabs.length === 0) return
           const activeIdx = orderedTabs.findIndex((tab) => tab.id === paneActiveSessionId)
@@ -680,7 +677,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       >
         {/* Scrollable tabs + buttons area */}
         <div
-          className="flex min-w-0 flex-1 items-end gap-0 overflow-x-auto px-1 scrollbar-none"
+          className="flex min-w-0 flex-1 items-end gap-0 overflow-x-auto px-2 scrollbar-none"
           style={{ position: 'relative', zIndex: 1 }}
           onMouseDown={handleTopBarBlankMouseDown}
           onDoubleClick={handleTopBarBlankDoubleClick}

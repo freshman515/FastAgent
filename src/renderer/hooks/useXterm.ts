@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal, type IBufferLine } from '@xterm/xterm'
 import { addTimelineEvent } from '@/components/rightpanel/SessionTimeline'
 import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/agentRuntime'
@@ -46,8 +46,38 @@ export function useXterm(
   const sessionRef = useRef(session)
   sessionRef.current = session
 
-  // Create terminal + PTY once on mount
+  // Track when project/worktree stores have enough data to resolve cwd.
+  // On startup the stores may hydrate a microtask after this hook mounts;
+  // without this signal the Claude Code tab shows blank until the user
+  // switches projects to force a re-mount.
+  const [cwdReady, setCwdReady] = useState(() => {
+    const s = sessionRef.current
+    if (s.ptyId && s.status === 'running') return true
+    const project = useProjectsStore.getState().projects.find((p) => p.id === s.projectId)
+    const wt = s.worktreeId
+      ? useWorktreesStore.getState().worktrees.find((w) => w.id === s.worktreeId)
+      : useWorktreesStore.getState().getMainWorktree(s.projectId)
+    return Boolean(wt?.path ?? project?.path)
+  })
+
   useEffect(() => {
+    if (cwdReady) return
+    const check = (): void => {
+      const s = sessionRef.current
+      const project = useProjectsStore.getState().projects.find((p) => p.id === s.projectId)
+      const wt = s.worktreeId
+        ? useWorktreesStore.getState().worktrees.find((w) => w.id === s.worktreeId)
+        : useWorktreesStore.getState().getMainWorktree(s.projectId)
+      if (wt?.path ?? project?.path) setCwdReady(true)
+    }
+    const un1 = useProjectsStore.subscribe(check)
+    const un2 = useWorktreesStore.subscribe(check)
+    return () => { un1(); un2() }
+  }, [cwdReady])
+
+  // Create terminal + PTY once cwd is resolvable
+  useEffect(() => {
+    if (!cwdReady) return
     const container = containerRef.current
     if (!container) return
 
@@ -416,7 +446,7 @@ export function useXterm(
       // NOTE: Do NOT kill PTY here. PTY lifecycle is independent of the React component.
       // PTY is killed explicitly via session.kill() when user closes a tab.
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cwdReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fit and focus when becoming active (switching tabs/projects/panes)
   useEffect(() => {

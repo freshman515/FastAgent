@@ -1,4 +1,4 @@
-import { FolderPlus, Plus, Search, Settings, Terminal } from 'lucide-react'
+import { FolderPlus, Plus, Search, Settings, Terminal, X } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { createAnonymousTerminal } from '@/lib/anonymous-project'
 import { cn } from '@/lib/utils'
@@ -97,24 +97,38 @@ export function ProjectsPanel(): JSX.Element {
       )}
 
       <div className="shrink-0 px-2.5 py-2">
-        <div className="relative">
-          {!searchQuery && (
-            <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center gap-1.5">
-              <Search size={12} className="text-[var(--color-text-tertiary)]" />
-              <span className="text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">搜索...</span>
-            </div>
-          )}
+        <div className="group/search relative">
+          {/* Leading search icon — always visible, tints to accent on focus */}
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
+            <Search size={14} strokeWidth={2.25} />
+          </div>
+
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ outline: 'none', boxShadow: 'none' }}
+            placeholder="搜索项目…"
+            spellCheck={false}
             className={cn(
-              'h-7 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/60 bg-[var(--color-bg-primary)] px-2.5',
-              'text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
-              'transition-all duration-150 focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-tertiary)]',
-              'focus:shadow-[0_0_0_2px_var(--color-accent)/8]',
+              'peer h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/70 bg-[var(--color-bg-tertiary)]/45 pl-8 pr-8',
+              'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
+              'outline-none transition-all duration-150',
+              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]/70',
+              'focus:border-[var(--color-accent)]/70 focus:bg-[var(--color-bg-primary)]',
+              'focus:shadow-[0_0_0_3px_var(--color-accent-muted)]',
             )}
           />
+
+          {/* Trailing clear button — only shown when there's content */}
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute inset-y-0 right-1 my-auto flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              title="清除搜索"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
       </div>
 

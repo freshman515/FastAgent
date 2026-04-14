@@ -143,10 +143,10 @@ export function SessionTab({
   const isSplit = usePanesStore((s) => s.root.type === 'split')
   const activeTabClass = isActive
     ? cn(
-      'tab-active text-[var(--color-text-primary)]',
+      'tab-active font-medium text-[var(--color-text-primary)]',
       isPaneFocused ? 'tab-active-focused' : 'tab-active-muted',
     )
-    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-[var(--radius-sm)]'
+    : 'tab-inactive text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] rounded-t-[10px]'
 
   return (
     <>
@@ -223,8 +223,8 @@ export function SessionTab({
           setPreview(null)
         }}
         className={cn(
-          'no-drag group flex h-[34px] cursor-pointer items-center gap-1.5 px-2.5',
-          'max-w-[180px]',
+          'no-drag group flex h-[32px] cursor-pointer items-center gap-1.5 px-3',
+          'max-w-[200px] min-w-[100px] transition-colors duration-75',
           activeTabClass,
           isDragging && 'opacity-40',
         )}
@@ -283,10 +283,6 @@ export function SessionTab({
           </button>
         )}
       </div>
-
-      {showDivider && dropSide !== 'right' && (
-        <div className="mx-0.5 h-4 w-px shrink-0 self-center bg-[var(--color-border-hover)]/85" />
-      )}
 
       {dropSide === 'right' && (
         <div className="h-5 w-0.5 shrink-0 rounded-full bg-[var(--color-accent)]" />

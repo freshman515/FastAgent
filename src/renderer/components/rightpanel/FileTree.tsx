@@ -55,7 +55,7 @@ const IGNORED = new Set([
 ])
 
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
-const ACTION_BUTTON = 'inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)]'
+const ACTION_BUTTON = 'inline-flex flex-1 h-[30px] items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)]'
 const FILE_TREE_DRAG_MIME = 'application/x-fastagents-file-tree-node'
 
 function joinPath(basePath: string, name: string): string {
@@ -514,12 +514,6 @@ export function FileTree(): JSX.Element {
       .catch(() => setEntries([]))
   }, [projectPath, refreshToken])
 
-  const targetDirectory = useMemo(() => {
-    if (!projectPath) return null
-    if (!selectedEntry) return projectPath
-    return selectedEntry.isDir ? selectedEntry.path : getParentPath(selectedEntry.path)
-  }, [projectPath, selectedEntry])
-
   const beginCreation = useCallback((kind: PendingCreation['kind'], selection?: TreeSelection | null) => {
     if (!projectPath) return
     const baseSelection = selection ?? selectedEntry
@@ -643,21 +637,21 @@ export function FileTree(): JSX.Element {
 
   return (
     <div className="py-1">
-      <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)] truncate" title={projectPath}>
-        {selectedProject?.name ?? projectPath.split(/[/\\]/).pop()}
+      <div
+        className="flex items-center gap-1.5 px-3 py-1.5 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)] truncate"
+        title={projectPath}
+      >
+        <Folder size={14} className="shrink-0 text-[var(--color-accent)]" />
+        <span className="truncate">{selectedProject?.name ?? projectPath.split(/[/\\]/).pop()}</span>
       </div>
 
-      <div className="flex items-center gap-1.5 px-3 pb-2">
+      <div className="flex items-stretch gap-1.5 px-3 pb-2">
         <button type="button" onClick={() => beginCreation('file')} className={ACTION_BUTTON} title="在当前选中位置新建文件">
-          <FilePlus size={12} /> 新建文件
+          <FilePlus size={14} /> 新建文件
         </button>
         <button type="button" onClick={() => beginCreation('folder')} className={ACTION_BUTTON} title="在当前选中位置新建文件夹">
-          <FolderPlus size={12} /> 新建文件夹
+          <FolderPlus size={14} /> 新建文件夹
         </button>
-      </div>
-
-      <div className="px-3 pb-2 text-[10px] text-[var(--color-text-tertiary)] truncate" title={targetDirectory ?? undefined}>
-        目标位置：{targetDirectory ?? projectPath}
       </div>
 
       {pendingCreation?.directoryPath === projectPath && pendingCreation.afterPath === null && (
