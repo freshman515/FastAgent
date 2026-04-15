@@ -11,6 +11,7 @@ import { mediaMonitor } from './services/MediaMonitor'
 import { startIdeServer, stopIdeServer, registerIdeIPC } from './services/IdeServer'
 import { opencodeService } from './services/OpencodeService'
 import { claudeGuiService } from './services/ClaudeGuiService'
+import { updaterService } from './services/UpdaterService'
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
@@ -64,6 +65,11 @@ app.whenReady().then(() => {
   registerAllHandlers()
   createWindow()
   mediaMonitor.start()
+
+  // Auto-updater: register listeners first, then check after a short delay
+  // so the renderer has time to mount its dialog listener.
+  updaterService.init()
+  setTimeout(() => { void updaterService.checkNow() }, 3000)
 
   // Start IDE bridge for Claude Code /ide integration (lock file + WebSocket)
   registerIdeIPC()

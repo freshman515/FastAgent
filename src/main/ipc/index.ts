@@ -9,6 +9,7 @@ import { registerAiHandlers } from './ai'
 import { registerClaudeGuiHandlers } from './claudeGui'
 import { registerOpencodeHandlers } from './opencode'
 import { registerSearchHandlers } from './search'
+import { registerUpdaterHandlers } from './updater'
 
 export function registerAllHandlers(): void {
   registerWindowHandlers()
@@ -22,4 +23,5 @@ export function registerAllHandlers(): void {
   registerClaudeGuiHandlers()
   registerOpencodeHandlers()
   registerSearchHandlers()
+  registerUpdaterHandlers()
 }

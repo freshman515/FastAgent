@@ -177,6 +177,16 @@ export interface ClaudeCodeLocalUsage {
   error?: string
 }
 
+// ─── App auto-updater ────────────────────────────────────────────────────
+
+export type UpdaterEvent =
+  | { type: 'checking' }
+  | { type: 'available'; version: string; releaseNotes: string | null; releaseDate?: string }
+  | { type: 'not-available'; currentVersion: string; latestVersion: string; dev?: boolean }
+  | { type: 'progress'; percent: number; bytesPerSecond: number; transferred: number; total: number }
+  | { type: 'downloaded'; version: string }
+  | { type: 'error'; error: string }
+
 export interface ClaudeCodeContext {
   /** Total tokens present in the current model context (input + cache_create + cache_read). */
   contextTokens: number
@@ -483,6 +493,11 @@ export const IPC = {
   CLAUDE_GUI_FETCH_USAGE: 'claude-gui:fetch-usage',
   CLAUDE_CODE_FETCH_CONTEXT: 'claude-code:fetch-context',
   CLAUDE_CODE_FETCH_LOCAL_USAGE: 'claude-code:fetch-local-usage',
+
+  UPDATER_CHECK: 'updater:check',
+  UPDATER_DOWNLOAD: 'updater:download',
+  UPDATER_INSTALL: 'updater:install',
+  UPDATER_EVENT: 'updater:event',
   CLAUDE_PROMPT_OPTIMIZE: 'claude-prompt:optimize',
   CLAUDE_DIFF_REVIEW: 'claude-diff:review',
 } as const

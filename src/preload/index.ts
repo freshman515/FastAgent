@@ -3,6 +3,7 @@ import { IPC } from '@shared/types'
 import type {
   ClaudeCodeContext,
   ClaudeCodeLocalUsage,
+  UpdaterEvent,
   ClaudeDiffReviewOptions,
   ClaudeDiffReviewResult,
   ClaudeGuiEvent,
@@ -142,6 +143,17 @@ const api = {
       const handler = (_: unknown, event: ClaudeGuiEvent) => callback(event)
       ipcRenderer.on(IPC.CLAUDE_GUI_EVENT, handler)
       return () => ipcRenderer.removeListener(IPC.CLAUDE_GUI_EVENT, handler)
+    },
+  },
+
+  updater: {
+    check: () => ipcRenderer.invoke(IPC.UPDATER_CHECK) as Promise<void>,
+    download: () => ipcRenderer.invoke(IPC.UPDATER_DOWNLOAD) as Promise<void>,
+    install: () => ipcRenderer.invoke(IPC.UPDATER_INSTALL) as Promise<void>,
+    onEvent: (callback: (event: UpdaterEvent) => void) => {
+      const handler = (_: unknown, event: UpdaterEvent) => callback(event)
+      ipcRenderer.on(IPC.UPDATER_EVENT, handler)
+      return () => ipcRenderer.removeListener(IPC.UPDATER_EVENT, handler)
     },
   },
 

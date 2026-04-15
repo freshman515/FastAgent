@@ -7,6 +7,7 @@ import { ToastContainer } from '@/components/notification/ToastContainer'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
+import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
@@ -773,6 +774,9 @@ export function App(): JSX.Element {
 
       {/* Permission dialogs */}
       <PermissionDialog />
+
+      {/* Auto-updater dialog */}
+      <UpdateDialog />
 
       {/* Toast notifications */}
       <ToastContainer />

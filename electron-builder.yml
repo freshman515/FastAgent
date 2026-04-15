@@ -46,3 +46,12 @@ linux:
     - target: AppImage
       arch: [x64]
   category: Development
+
+# Auto-updater: pull release metadata + installer from this repo's GitHub
+# Releases. Requires `latest.yml` to be uploaded alongside the .exe when
+# publishing — electron-builder generates it automatically and the release
+# workflow should upload both.
+publish:
+  - provider: github
+    owner: freshman515
+    repo: FastAgent
