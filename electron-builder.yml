@@ -22,6 +22,7 @@ asarUnpack:
   - "node_modules/@lydell/node-pty/**"
   - "node_modules/@lydell/node-pty-*/**"
 compression: maximum
+artifactName: "${productName}-Setup-${version}.${ext}"
 
 win:
   target:
