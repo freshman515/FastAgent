@@ -34,7 +34,7 @@ export function useActivityMonitor(): void {
               setOutputState(session.id, isViewing ? 'idle' : 'unread')
               updateStatus(session.id, 'idle')
 
-              if (!isViewing) {
+              if (!isViewing && useUIStore.getState().settings.notificationToastEnabled) {
                 const project = useProjectsStore
                   .getState()
                   .projects.find((p) => p.id === session.projectId)
@@ -90,7 +90,7 @@ export function useActivityMonitor(): void {
       if (!session) return
 
       const isViewing = activeSessionId === session.id
-      if (!isViewing) {
+      if (!isViewing && useUIStore.getState().settings.notificationToastEnabled) {
         const project = useProjectsStore
           .getState()
           .projects.find((p) => p.id === session.projectId)

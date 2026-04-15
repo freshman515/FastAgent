@@ -1,7 +1,8 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useUIStore, type AppSettings } from '@/stores/ui'
+import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui'
 import { useGroupsStore } from '@/stores/groups'
 import { useSessionsStore } from '@/stores/sessions'
@@ -102,6 +103,56 @@ function FontSelect({ label, value, options, labels, onChange }: {
   )
 }
 
+function SettingsSection({ icon: Icon, title, description, children }: {
+  icon: typeof Settings
+  title: string
+  description?: string
+  children: React.ReactNode
+}): JSX.Element {
+  return (
+    <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/40 px-5 py-4">
+      <header className="mb-3 flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
+          <Icon size={14} />
+        </span>
+        <div className="flex flex-col">
+          <h4 className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">{title}</h4>
+          {description && (
+            <p className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{description}</p>
+          )}
+        </div>
+      </header>
+      <div className="flex flex-col gap-3">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function PercentSlider({ label, value, onChange, trailing }: {
+  label: string
+  value: number // 0..1
+  onChange: (v: number) => void
+  trailing?: React.ReactNode
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{label}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[var(--ui-font-sm)] font-mono text-[var(--color-text-primary)]">{Math.round(value * 100)}%</span>
+          {trailing}
+        </div>
+      </div>
+      <input
+        type="range" min={0} max={100} step={1} value={Math.round(value * 100)}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[var(--color-bg-surface)] accent-[var(--color-accent)]"
+      />
+    </div>
+  )
+}
+
 function ToggleRow({ label, description, checked, onChange }: {
   label: string; description: string; checked: boolean; onChange: (v: boolean) => void
 }): JSX.Element {
@@ -131,6 +182,46 @@ function ToggleRow({ label, description, checked, onChange }: {
 
 // ─── Pages ───
 
+function SegmentedChoice<T extends string>({ value, options, onChange }: {
+  value: T
+  options: Array<{ id: T; label: string; desc?: string; icon?: typeof Settings }>
+  onChange: (v: T) => void
+}): JSX.Element {
+  return (
+    <div className="flex gap-2">
+      {options.map(({ id, label, desc, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          className={cn(
+            'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors',
+            value === id
+              ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+          )}
+        >
+          <span className="flex items-center gap-1.5 text-[var(--ui-font-sm)] font-medium">
+            {Icon && <Icon size={13} />}
+            {label}
+          </span>
+          {desc && (
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const SESSION_TYPE_OPTIONS = [
+  { id: 'claude-code', label: 'Claude Code' },
+  { id: 'claude-code-yolo', label: 'Claude Code YOLO' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'codex-yolo', label: 'Codex YOLO' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'terminal', label: '终端' },
+] as const
+
 function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   const groups = useGroupsStore((s) => s.groups)
 
@@ -138,387 +229,259 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
     <div className={PAGE_STACK}>
       <PageIntro
         title="通用设置"
-        description="调整默认工作流、标题栏交互、窗口弹出方式和数据清理策略。"
+        description="调整默认工作流、通知提醒、窗口行为与数据清理策略。"
       />
-      <div className="flex items-center gap-2 mb-1">
-        <Layers size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          分组显示
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        选择左侧边栏默认展示的分组，或者始终显示全部分组。
-      </p>
-      <div className="flex flex-col gap-1">
-        <button
-          onClick={() => onUpdate('visibleGroupId', null)}
-          className={cn(
-            'flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-[var(--ui-font-sm)] transition-colors',
-            settings.visibleGroupId === null
-              ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)] border border-[var(--color-accent)]'
-              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] border border-transparent',
-          )}
-        >
-          <div className="h-2.5 w-2.5 rounded-full bg-[var(--color-text-tertiary)]" />
-          全部分组
-        </button>
-        {groups.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => onUpdate('visibleGroupId', g.id)}
-            className={cn(
-              'flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-[var(--ui-font-sm)] transition-colors',
-              settings.visibleGroupId === g.id
-                ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)] border border-[var(--color-accent)]'
-                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] border border-transparent',
-            )}
-          >
-            <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: g.color }} />
-            {g.name}
-          </button>
-        ))}
-      </div>
 
-      {/* Default session type */}
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <Settings size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          默认会话
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        双击标签栏时默认创建的会话类型。
-      </p>
-      <div className="flex flex-wrap gap-1">
-        {(['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode', 'terminal'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => onUpdate('defaultSessionType', t)}
-            className={cn(
-              'rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--ui-font-sm)] transition-colors',
-              settings.defaultSessionType === t
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-            )}
-          >
-            {t === 'claude-code'
-              ? 'Claude Code'
-              : t === 'claude-code-yolo'
-                ? 'Claude Code YOLO'
-                : t === 'codex-yolo'
-                  ? 'Codex YOLO'
-                  : t === 'opencode'
-                    ? 'OpenCode'
-                    : t === 'terminal'
-                      ? '终端'
-                      : 'Codex'}
-          </button>
-        ))}
-      </div>
-
-      {/* Git panel */}      
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <GitBranch size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          Git 面板
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        选择 Git 侧栏中改动文件的展示方式。
-      </p>
-      <div className="flex gap-2">
-        {([
-          { id: 'flat' as const, label: '平铺列表', desc: '保持当前简洁的文件列表' },
-          { id: 'tree' as const, label: '目录树', desc: '按文件夹层级组织改动文件' },
-        ]).map(({ id, label, desc }) => (
-          <button
-            key={id}
-            onClick={() => onUpdate('gitChangesViewMode', id)}
-            className={cn(
-              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
-              settings.gitChangesViewMode === id
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-            )}
-          >
-            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
-          </button>
-        ))}
-      </div>
-      <p className="mt-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        选择生成审查报告后，<span className="font-medium text-[var(--color-text-secondary)]">修复</span> 按钮如何打开 AI 修复流程。
-      </p>
-      <div className="flex gap-2">
-        {([
-          {
-            id: 'claude-gui' as const,
-            label: 'Claude GUI',
-            desc: '在 Claude GUI 标签页中展示完整、可见的修复过程',
-          },
-          {
-            id: 'claude-code-cli' as const,
-            label: 'Claude Code CLI',
-            desc: '打开 Claude Code CLI 标签页并发送审查任务文件',
-          },
-        ]).map(({ id, label, desc }) => (
-          <button
-            key={id}
-            onClick={() => onUpdate('gitReviewFixMode', id)}
-            className={cn(
-              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors',
-              settings.gitReviewFixMode === id
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-            )}
-          >
-            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Pop-out window */}
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <ExternalLink size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          弹出窗口
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        会话标签弹出为独立窗口时的默认尺寸与位置。
-      </p>
-      <div className="flex gap-3">
-        <FontSizeSlider label="宽度" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
-        <FontSizeSlider label="高度" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
-      </div>
-      <div className="flex gap-2">
-        {([
-          { id: 'cursor' as const, label: '跟随鼠标', desc: '在鼠标位置附近打开窗口' },
-          { id: 'center' as const, label: '屏幕居中', desc: '总是在屏幕中央打开窗口' },
-        ]).map(({ id, label, desc }) => (
-          <button
-            key={id}
-            onClick={() => onUpdate('popoutPosition', id)}
-            className={cn(
-              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
-              settings.popoutPosition === id
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-            )}
-          >
-            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Title bar search */}
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <Search size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          标题栏搜索
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        在标题栏显示长搜索框，用于搜索文件和会话。启用后会替换中间的音乐播放器或项目名称区域。
-      </p>
-      <ToggleRow
-        label="启用标题栏搜索"
-        description={settings.showTitleBarSearch ? '可直接从顶部搜索文件与会话' : '中间区域显示音乐播放器或当前项目名'}
-        checked={settings.showTitleBarSearch}
-        onChange={(v) => onUpdate('showTitleBarSearch', v)}
-      />
-      {settings.showTitleBarSearch && (
-        <div className="flex gap-2">
-          {([
-            { id: 'project' as const, label: '当前项目', desc: '只搜索当前项目 / worktree' },
-            { id: 'all-projects' as const, label: '全部项目', desc: '跨所有项目搜索文件和会话' },
-          ]).map(({ id, label, desc }) => (
+      {/* ───── 工作区 ───── */}
+      <SettingsSection icon={Briefcase} title="工作区" description="侧边栏分组与默认会话类型。">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">默认显示的分组</span>
+          <div className="flex flex-wrap gap-1">
             <button
-              key={id}
-              onClick={() => onUpdate('titleBarSearchScope', id)}
+              onClick={() => onUpdate('visibleGroupId', null)}
               className={cn(
-                'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
-                settings.titleBarSearchScope === id
+                'flex items-center gap-2 rounded-[var(--radius-md)] border px-2.5 py-1 text-[var(--ui-font-sm)] transition-colors',
+                settings.visibleGroupId === null
                   ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
                   : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
               )}
             >
-              <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
-              <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
+              <div className="h-2 w-2 rounded-full bg-[var(--color-text-tertiary)]" />
+              全部分组
             </button>
-          ))}
+            {groups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => onUpdate('visibleGroupId', g.id)}
+                className={cn(
+                  'flex items-center gap-2 rounded-[var(--radius-md)] border px-2.5 py-1 text-[var(--ui-font-sm)] transition-colors',
+                  settings.visibleGroupId === g.id
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+                )}
+              >
+                <div className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+                {g.name}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">双击标签栏创建的默认会话</span>
+          <div className="flex flex-wrap gap-1">
+            {SESSION_TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => onUpdate('defaultSessionType', opt.id)}
+                className={cn(
+                  'rounded-[var(--radius-md)] border px-3 py-1 text-[var(--ui-font-sm)] transition-colors',
+                  settings.defaultSessionType === opt.id
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </SettingsSection>
 
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <Eye size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          标题栏菜单
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        控制标题栏左侧的文件 / 编辑 / 视图 / 帮助菜单如何出现。
-      </p>
-      <div className="flex gap-2">
-        {([
-          { id: 'always' as const, label: '始终显示', desc: '菜单一直可见' },
-          { id: 'hover' as const, label: '悬停显示', desc: '鼠标移到标题区域时再显示菜单' },
-        ]).map(({ id, label, desc }) => (
-          <button
-            key={id}
-            onClick={() => onUpdate('titleBarMenuVisibility', id)}
-            className={cn(
-              'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 transition-colors',
-              settings.titleBarMenuVisibility === id
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+      {/* ───── 通知提醒 ───── */}
+      <SettingsSection icon={Bell} title="通知提醒" description="会话任务完成时的桌面通知与音效。">
+        <ToggleRow
+          label="弹出通知"
+          description="在右下角弹出 toast 和系统桌面通知（仅当未在查看该会话时）"
+          checked={settings.notificationToastEnabled}
+          onChange={(v) => onUpdate('notificationToastEnabled', v)}
+        />
+        <ToggleRow
+          label="完成音效"
+          description="播放像素风提示音（正在查看时也会响）"
+          checked={settings.notificationSoundEnabled}
+          onChange={(v) => onUpdate('notificationSoundEnabled', v)}
+        />
+        {settings.notificationSoundEnabled && (
+          <PercentSlider
+            label="音量"
+            value={settings.notificationSoundVolume}
+            onChange={(v) => onUpdate('notificationSoundVolume', v)}
+            trailing={(
+              <button
+                onClick={() => playTaskCompleteSound(settings.notificationSoundVolume)}
+                className={cn(
+                  'flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-0.5',
+                  'text-[var(--ui-font-2xs)] text-[var(--color-text-secondary)]',
+                  'hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors',
+                )}
+                title="试听"
+              >
+                <Play size={10} />
+                试听
+              </button>
             )}
-          >
-            <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
-          </button>
-        ))}
-      </div>
+          />
+        )}
+      </SettingsSection>
 
-      <div className="h-px bg-[var(--color-border)]" />
-      <ToggleRow
-        label="活动分屏高亮"
-        description={settings.showActivePaneBorder ? '当前选中的分屏显示高亮边框' : '不显示分屏高亮边框'}
-        checked={settings.showActivePaneBorder}
-        onChange={(v) => onUpdate('showActivePaneBorder', v)}
-      />
+      {/* ───── 标题栏 ───── */}
+      <SettingsSection icon={Search} title="标题栏" description="顶部区域的搜索与菜单显示策略。">
+        <ToggleRow
+          label="标题栏搜索"
+          description={settings.showTitleBarSearch ? '可直接从顶部搜索文件与会话' : '中间显示音乐播放器或当前项目名'}
+          checked={settings.showTitleBarSearch}
+          onChange={(v) => onUpdate('showTitleBarSearch', v)}
+        />
+        {settings.showTitleBarSearch && (
+          <SegmentedChoice
+            value={settings.titleBarSearchScope}
+            options={[
+              { id: 'project', label: '当前项目', desc: '只搜索当前项目 / worktree' },
+              { id: 'all-projects', label: '全部项目', desc: '跨所有项目搜索' },
+            ]}
+            onChange={(v) => onUpdate('titleBarSearchScope', v)}
+          />
+        )}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">菜单显示方式</span>
+          <SegmentedChoice
+            value={settings.titleBarMenuVisibility}
+            options={[
+              { id: 'always', label: '始终显示', desc: '菜单一直可见' },
+              { id: 'hover', label: '悬停显示', desc: '鼠标移到标题时显示' },
+            ]}
+            onChange={(v) => onUpdate('titleBarMenuVisibility', v)}
+          />
+        </div>
+      </SettingsSection>
 
-      {/* Music player toggle + visualizer mode */}
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <AudioLines size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          音乐播放器
-        </span>
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">在标题栏显示</span>
-          <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-            {settings.showTitleBarSearch
+      {/* ───── 窗口与分屏 ───── */}
+      <SettingsSection icon={SplitSquareHorizontal} title="窗口与分屏" description="弹出窗口默认行为、分屏视觉反馈。">
+        <ToggleRow
+          label="活动分屏高亮"
+          description={settings.showActivePaneBorder ? '当前分屏显示高亮边框' : '不显示高亮边框'}
+          checked={settings.showActivePaneBorder}
+          onChange={(v) => onUpdate('showActivePaneBorder', v)}
+        />
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出窗口默认尺寸</span>
+          <div className="flex gap-3">
+            <FontSizeSlider label="宽度" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
+            <FontSizeSlider label="高度" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出位置</span>
+          <SegmentedChoice
+            value={settings.popoutPosition}
+            options={[
+              { id: 'cursor', label: '跟随鼠标', desc: '在鼠标位置附近打开' },
+              { id: 'center', label: '屏幕居中', desc: '总是在屏幕中央打开' },
+            ]}
+            onChange={(v) => onUpdate('popoutPosition', v)}
+          />
+        </div>
+      </SettingsSection>
+
+      {/* ───── Git 面板 ───── */}
+      <SettingsSection icon={GitBranch} title="Git 面板" description="Git 侧栏的改动文件视图与 AI 修复流程。">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">改动文件展示方式</span>
+          <SegmentedChoice
+            value={settings.gitChangesViewMode}
+            options={[
+              { id: 'flat', label: '平铺列表', desc: '简洁的文件列表' },
+              { id: 'tree', label: '目录树', desc: '按文件夹层级组织' },
+            ]}
+            onChange={(v) => onUpdate('gitChangesViewMode', v)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">审查报告的 AI 修复方式</span>
+          <SegmentedChoice
+            value={settings.gitReviewFixMode}
+            options={[
+              { id: 'claude-gui', label: 'Claude GUI', desc: '在 Claude GUI 标签页展示完整过程' },
+              { id: 'claude-code-cli', label: 'Claude Code CLI', desc: '打开 CLI 标签并发送任务' },
+            ]}
+            onChange={(v) => onUpdate('gitReviewFixMode', v)}
+          />
+        </div>
+      </SettingsSection>
+
+      {/* ───── 音乐播放器 ───── */}
+      <SettingsSection icon={AudioLines} title="音乐播放器" description="标题栏内嵌播放器与可视化。">
+        <ToggleRow
+          label="在标题栏显示"
+          description={
+            settings.showTitleBarSearch
               ? '标题栏搜索启用时会自动隐藏'
               : settings.showMusicPlayer
                 ? '显示播放器与可视化效果'
-                : '显示当前项目名称'}
-          </span>
-        </div>
+                : '显示当前项目名称'
+          }
+          checked={settings.showMusicPlayer}
+          onChange={(v) => onUpdate('showMusicPlayer', v)}
+        />
+        {settings.showMusicPlayer && (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">可视化风格</span>
+              <SegmentedChoice
+                value={settings.visualizerMode}
+                options={[
+                  { id: 'melody', label: '旋律流线', desc: '柔和曲线与粒子', icon: AudioLines },
+                  { id: 'bars', label: '频谱柱状', desc: '经典频谱柱状图', icon: BarChart3 },
+                ]}
+                onChange={(v) => onUpdate('visualizerMode', v)}
+              />
+            </div>
+            <FontSizeSlider
+              label="可视化宽度"
+              value={settings.visualizerWidth}
+              min={80}
+              max={Math.max(400, window.innerWidth)}
+              onChange={(v) => onUpdate('visualizerWidth', v)}
+            />
+            <ToggleRow
+              label="播放控制按钮"
+              description="上一首 / 播放暂停 / 下一首"
+              checked={settings.showPlayerControls}
+              onChange={(v) => onUpdate('showPlayerControls', v)}
+            />
+            <ToggleRow
+              label="歌曲信息"
+              description="显示歌曲名、歌手与封面"
+              checked={settings.showTrackInfo}
+              onChange={(v) => onUpdate('showTrackInfo', v)}
+            />
+          </>
+        )}
+      </SettingsSection>
+
+      {/* ───── 数据清理 ───── */}
+      <SettingsSection icon={Trash2} title="数据清理" description="清空全部会话标签与分栏布局。项目、分组、主题会保留。">
         <button
-          onClick={() => onUpdate('showMusicPlayer', !settings.showMusicPlayer)}
+          onClick={() => {
+            const sessions = useSessionsStore.getState().sessions
+            for (const s of sessions) {
+              if (s.ptyId) window.api.session.kill(s.ptyId).catch(() => {})
+            }
+            useSessionsStore.setState({ sessions: [], activeSessionId: null, outputStates: {}, closedStack: [] })
+            usePanesStore.getState().initPane([], null)
+            window.api.config.write('sessions', [])
+            window.api.config.write('panes', {})
+          }}
           className={cn(
-            'relative h-5 w-9 rounded-full transition-colors duration-200',
-            settings.showMusicPlayer ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-bg-surface)]',
+            'flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-error)]/30 px-4 py-2',
+            'text-[var(--ui-font-sm)] text-[var(--color-error)]',
+            'hover:bg-[var(--color-error)]/10 transition-colors',
           )}
         >
-          <span
-            className={cn(
-              'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
-              settings.showMusicPlayer && 'translate-x-4',
-            )}
-          />
+          <Trash2 size={13} />
+          清空全部会话
         </button>
-      </div>
-      {settings.showMusicPlayer && (
-        <>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        选择标题栏音乐播放器的可视化风格。
-      </p>
-      <div className="flex gap-2">
-        {([
-          { id: 'melody' as const, label: '旋律流线', icon: AudioLines, desc: '更柔和的曲线和粒子效果' },
-          { id: 'bars' as const, label: '频谱柱状', icon: BarChart3, desc: '经典的频谱柱状图' },
-        ]).map(({ id, label, icon: Icon, desc }) => (
-          <button
-            key={id}
-            onClick={() => onUpdate('visualizerMode', id)}
-            className={cn(
-              'flex flex-1 items-center gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5 transition-colors',
-              settings.visualizerMode === id
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-            )}
-          >
-            <Icon size={16} />
-            <div className="flex flex-col items-start">
-              <span className="text-[var(--ui-font-sm)] font-medium">{label}</span>
-              <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Visualizer width */}
-      <FontSizeSlider
-        label="可视化宽度"
-        value={settings.visualizerWidth}
-        min={80}
-        max={Math.max(400, window.innerWidth)}
-        onChange={(v) => onUpdate('visualizerWidth', v)}
-      />
-
-      {/* Show controls toggle */}
-      <ToggleRow
-        label="播放控制按钮"
-        description="上一首 / 播放暂停 / 下一首"
-        checked={settings.showPlayerControls}
-        onChange={(v) => onUpdate('showPlayerControls', v)}
-      />
-
-      {/* Show track info toggle */}
-      <ToggleRow
-        label="歌曲信息"
-        description="显示歌曲名、歌手名和封面"
-        checked={settings.showTrackInfo}
-        onChange={(v) => onUpdate('showTrackInfo', v)}
-      />
-        </>
-      )}
-
-      {/* Clear all sessions */}
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <Trash2 size={14} className="text-[var(--color-error)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          数据清理
-        </span>
-      </div>
-      <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-        清空全部会话标签和分栏布局。项目、分组与主题配置会被保留。
-      </p>
-      <button
-        onClick={() => {
-          // Kill all PTYs
-          const sessions = useSessionsStore.getState().sessions
-          for (const s of sessions) {
-            if (s.ptyId) window.api.session.kill(s.ptyId).catch(() => {})
-          }
-          // Reset stores
-          useSessionsStore.setState({ sessions: [], activeSessionId: null, outputStates: {}, closedStack: [] })
-          usePanesStore.getState().initPane([], null)
-          // Persist
-          window.api.config.write('sessions', [])
-          window.api.config.write('panes', {})
-        }}
-        className={cn(
-          'flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-error)]/30 px-4 py-2',
-          'text-[var(--ui-font-sm)] text-[var(--color-error)]',
-          'hover:bg-[var(--color-error)]/10 transition-colors',
-        )}
-      >
-        <Trash2 size={13} />
-        清空全部会话
-      </button>
+      </SettingsSection>
     </div>
   )
 }

@@ -127,6 +127,12 @@ export interface AppSettings {
   popoutHeight: number
   /** Pop-out window position: 'cursor' follows mouse, 'center' centers on screen */
   popoutPosition: 'cursor' | 'center'
+  /** Show in-app toast / system notification when an agent task completes */
+  notificationToastEnabled: boolean
+  /** Play a sound when an agent task completes */
+  notificationSoundEnabled: boolean
+  /** Notification sound volume, 0..1 */
+  notificationSoundVolume: number
   quickCommandGroups: QuickCommandGroup[]
   quickCommands: QuickCommand[]
   todoItems: TodoItem[]
@@ -171,6 +177,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   popoutWidth: 800,
   popoutHeight: 600,
   popoutPosition: 'cursor',
+  notificationToastEnabled: true,
+  notificationSoundEnabled: true,
+  notificationSoundVolume: 0.6,
   quickCommandGroups: [],
   quickCommands: [...DEFAULT_QUICK_COMMANDS],
   todoItems: [],
@@ -888,6 +897,11 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.popoutWidth === 'number') s.popoutWidth = Math.max(400, Math.min(1920, raw.popoutWidth))
       if (typeof raw.popoutHeight === 'number') s.popoutHeight = Math.max(300, Math.min(1080, raw.popoutHeight))
       if (raw.popoutPosition === 'cursor' || raw.popoutPosition === 'center') s.popoutPosition = raw.popoutPosition
+      if (typeof raw.notificationToastEnabled === 'boolean') s.notificationToastEnabled = raw.notificationToastEnabled
+      if (typeof raw.notificationSoundEnabled === 'boolean') s.notificationSoundEnabled = raw.notificationSoundEnabled
+      if (typeof raw.notificationSoundVolume === 'number') {
+        s.notificationSoundVolume = Math.max(0, Math.min(1, raw.notificationSoundVolume))
+      }
       if (raw.quickCommandGroups !== undefined) {
         const normalizedQuickCommandGroups = normalizeQuickCommandGroups(raw.quickCommandGroups)
         s.quickCommandGroups = normalizedQuickCommandGroups.groups

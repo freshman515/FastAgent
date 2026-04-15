@@ -26,7 +26,7 @@ export function getTerminalBufferText(sessionId: string, lineCount = 120): strin
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import type { Session } from '@shared/types'
+import type { Session, SessionDataEvent } from '@shared/types'
 import { isClaudeCodeType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -156,21 +156,78 @@ export function useXterm(
 
     // Check if session already has an active PTY (e.g. after React remount during reorder)
     const existingPtyId = currentSession.ptyId
-    if (existingPtyId && currentSession.status === 'running') {
-      // Reuse existing PTY — replay buffered output to restore scrollback
+    let restoreReady = !(existingPtyId && currentSession.status === 'running')
+    let restoredSnapshotSeq = 0
+    const pendingRestoreEvents: SessionDataEvent[] = []
+
+    // PTY → xterm
+    const offData = window.api.session.onData((event) => {
+      if (event.ptyId && event.ptyId === ptyId) {
+        trackSessionOutput(sessionId, event.data.length)
+        if (!restoreReady) {
+          pendingRestoreEvents.push(event)
+          return
+        }
+        terminal.write(event.data)
+      }
+    })
+
+    // PTY exit
+    const offExit = window.api.session.onExit((event) => {
+      if (event.ptyId && event.ptyId === ptyId) {
+        ptyId = null
+        terminal.write(
+          `\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`,
+        )
+        useSessionsStore.getState().updateStatus(sessionId, 'stopped')
+        addTimelineEvent(sessionId, 'stop', `Exited with code ${event.exitCode}`)
+      }
+    })
+
+    const restoreFromSnapshot = async (): Promise<void> => {
+      if (!existingPtyId || currentSession.status !== 'running') return
+
       ptyId = existingPtyId
-      window.api.session.getReplay(existingPtyId).then((replay) => {
-        if (destroyed || !replay) return
-        terminal.write(replay)
+
+      try {
+        const replay = await window.api.session.getReplay(existingPtyId)
+        if (destroyed) return
+
+        restoredSnapshotSeq = replay.seq
+        if (replay.data) {
+          await new Promise<void>((resolve) => {
+            terminal.write(replay.data, resolve)
+          })
+        }
+      } finally {
+        restoreReady = true
+
+        if (destroyed) return
+
+        for (const pendingEvent of pendingRestoreEvents) {
+          if (pendingEvent.seq > restoredSnapshotSeq) {
+            terminal.write(pendingEvent.data)
+          }
+        }
+        pendingRestoreEvents.length = 0
+
         requestAnimationFrame(() => {
           if (!destroyed) {
             try {
               fitAddon.fit()
-              window.api.session.resize(ptyId!, terminal.cols, terminal.rows)
+              if (ptyId) {
+                window.api.session.resize(ptyId, terminal.cols, terminal.rows)
+              }
             } catch { /* ignore */ }
           }
         })
-      })
+      }
+    }
+
+    if (existingPtyId && currentSession.status === 'running') {
+      // Reuse existing PTY — restore a serialized terminal snapshot, then
+      // append only live chunks that arrived after the snapshot sequence.
+      void restoreFromSnapshot()
     } else {
       // Create new PTY
       window.api.session
@@ -204,26 +261,6 @@ export function useXterm(
           })
         })
     }
-
-    // PTY → xterm
-    const offData = window.api.session.onData((event) => {
-      if (event.ptyId && event.ptyId === ptyId) {
-        terminal.write(event.data)
-        trackSessionOutput(sessionId, event.data.length)
-      }
-    })
-
-    // PTY exit
-    const offExit = window.api.session.onExit((event) => {
-      if (event.ptyId && event.ptyId === ptyId) {
-        ptyId = null
-        terminal.write(
-          `\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`,
-        )
-        useSessionsStore.getState().updateStatus(sessionId, 'stopped')
-        addTimelineEvent(sessionId, 'stop', `Exited with code ${event.exitCode}`)
-      }
-    })
 
     // Undo stack for software undo (used by non-terminal sessions).
     // Each entry is a "chunk" that was added in one action (paste = one chunk, keystroke = one char).
@@ -297,7 +334,7 @@ export function useXterm(
               if (ptyId) {
                 // Capture what Codex echoes back (e.g. "[Image #1]") so Ctrl+Z can undo it
                 let echoed = ''
-                const offCapture = window.api.session.onData((event: { ptyId: string | null; data: string }) => {
+                const offCapture = window.api.session.onData((event: SessionDataEvent) => {
                   if (event.ptyId === ptyId) echoed += event.data
                 })
                 setTimeout(() => {
@@ -346,7 +383,7 @@ export function useXterm(
               if (ptyId) {
                 // Same echo-capture as Codex for undo
                 let echoed = ''
-                const offCapture = window.api.session.onData((event: { ptyId: string | null; data: string }) => {
+                const offCapture = window.api.session.onData((event: SessionDataEvent) => {
                   if (event.ptyId === ptyId) echoed += event.data
                 })
                 setTimeout(() => {

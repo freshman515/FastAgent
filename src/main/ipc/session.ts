@@ -26,7 +26,7 @@ export function registerSessionHandlers(): void {
     ptyManager.kill(ptyId)
   })
 
-  ipcMain.handle(IPC.SESSION_REPLAY, (_event, ptyId: string) => {
+  ipcMain.handle(IPC.SESSION_REPLAY, async (_event, ptyId: string) => {
     return ptyManager.getReplay(ptyId)
   })
 
@@ -38,10 +38,10 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSION_EXPORT, async (event, ptyId: string, sessionName: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return false
-    const replay = ptyManager.getReplay(ptyId)
-    if (!replay) return false
+    const replay = await ptyManager.getReplay(ptyId)
+    if (!replay.data) return false
     // Strip all ANSI/VT escape sequences for clean text export
-    const clean = replay
+    const clean = replay.data
       // CSI sequences: ESC[ ... letter (includes private modes like ?25l, ?9001h)
       .replace(/\x1b\[[\?!]?[0-9;]*[a-zA-Z]/g, '')
       // OSC sequences: ESC] ... (BEL or ST)
@@ -64,7 +64,7 @@ export function registerSessionHandlers(): void {
     return true
   })
 
-  // Graceful shutdown: send Ctrl+C to Claude Code sessions, capture resume UUIDs
+  // Graceful shutdown: send Ctrl+C to Claude Code sessions, capture resume IDs
   ipcMain.handle(IPC.SESSION_GRACEFUL_SHUTDOWN, async () => {
     const uuidMap = await ptyManager.gracefulShutdownClaudeSessions()
     // Convert Map to plain object for IPC serialization

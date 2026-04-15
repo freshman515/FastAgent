@@ -1,12 +1,22 @@
 import * as pty from '@lydell/node-pty'
 import type { IPty } from '@lydell/node-pty'
+import headlessPkg from '@xterm/headless'
+import serializePkg from '@xterm/addon-serialize'
 import { BrowserWindow } from 'electron'
 import { IPC } from '@shared/types'
-import type { SessionCreateOptions } from '@shared/types'
+import type { SessionCreateOptions, SessionReplayPayload } from '@shared/types'
 import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
 
 const isWindows = process.platform === 'win32'
+const HeadlessTerminal = (headlessPkg as { Terminal: new (options?: Record<string, unknown>) => import('@xterm/headless').Terminal }).Terminal
+const SerializeAddon = (serializePkg as { SerializeAddon: new () => import('@xterm/addon-serialize').SerializeAddon }).SerializeAddon
+
+interface TerminalMirror {
+  terminal: import('@xterm/headless').Terminal
+  serializeAddon: import('@xterm/addon-serialize').SerializeAddon
+  pendingWrite: Promise<void>
+}
 
 interface ManagedPty {
   pty: IPty
@@ -14,14 +24,69 @@ interface ManagedPty {
   type: SessionCreateOptions['type']
   sessionId: string | undefined
   replayBuffer: string
+  mirror: TerminalMirror
+  dataSeq: number
+  resumeId: string | null
 }
 
-const MAX_REPLAY_CHARS = 65_536
+// Agent CLIs (especially Codex/Claude) emit a lot of ANSI/TUI repaint traffic.
+// When a session tab is unmounted during project/worktree switches we rebuild
+// the terminal from this replay buffer. 64 KiB is too small and causes the
+// replay to start mid-stream, which drops earlier content and can leave the
+// restored screen visually blank/truncated.
+const MAX_REPLAY_CHARS = 4 * 1024 * 1024
+
+function createTerminalMirror(cols: number, rows: number): TerminalMirror {
+  const terminal = new HeadlessTerminal({
+    cols,
+    rows,
+    scrollback: 10_000,
+    allowProposedApi: true,
+  })
+  const serializeAddon = new SerializeAddon()
+  terminal.loadAddon(serializeAddon as unknown as { activate(terminal: unknown): void; dispose(): void })
+  return {
+    terminal,
+    serializeAddon,
+    pendingWrite: Promise.resolve(),
+  }
+}
+
+function queueMirrorWrite(mirror: TerminalMirror, data: string): void {
+  mirror.pendingWrite = mirror.pendingWrite
+    .catch(() => undefined)
+    .then(
+      () =>
+        new Promise<void>((resolve) => {
+          mirror.terminal.write(data, resolve)
+        }),
+    )
+}
+
+function disposeTerminalMirror(mirror: TerminalMirror): void {
+  try {
+    mirror.serializeAddon.dispose()
+  } catch {
+    // ignore
+  }
+  try {
+    mirror.terminal.dispose()
+  } catch {
+    // ignore
+  }
+}
 
 // Strip ANSI escape sequences for text matching
 function stripAnsi(str: string): string {
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[()][0-2AB]|\x1b[>=<]|\x1b\[[\?!]?[0-9;]*[hlm]/g, '')
+}
+
+function getResumePattern(type: SessionCreateOptions['type']): RegExp | null {
+  if (type === 'claude-code' || type === 'claude-code-yolo') {
+    return /claude\s+--resume\s+([0-9a-f-]{36})/i
+  }
+  return null
 }
 
 export class PtyManager {
@@ -71,6 +136,9 @@ export class PtyManager {
       type: options.type,
       sessionId: options.sessionId,
       replayBuffer: '',
+      mirror: createTerminalMirror(cols, rows),
+      dataSeq: 0,
+      resumeId: null,
     }
 
     this.ptys.set(id, managed)
@@ -90,12 +158,38 @@ export class PtyManager {
       setTimeout(() => { agentStarted = true }, 3000)
     }
 
-    const sendToWindows = (payload: { ptyId: string; data: string }): void => {
+    const sendToWindows = (payload: { ptyId: string; data: string; seq: number }): void => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
           win.webContents.send(IPC.SESSION_DATA, payload)
         }
       }
+    }
+
+    const broadcastResumeId = (resumeId: string): void => {
+      if (!managed.sessionId) return
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('session:resume-uuids', { [managed.sessionId]: resumeId })
+        }
+      }
+    }
+
+    const captureResumeId = (): void => {
+      const pattern = getResumePattern(managed.type)
+      if (!pattern) return
+      const clean = stripAnsi(managed.replayBuffer)
+      const match = clean.match(pattern)
+      const nextResumeId = match?.[1] ?? null
+      if (!nextResumeId || nextResumeId === managed.resumeId) return
+      managed.resumeId = nextResumeId
+      broadcastResumeId(nextResumeId)
+    }
+
+    const emitVisibleData = (data: string): void => {
+      queueMirrorWrite(managed.mirror, data)
+      managed.dataSeq += 1
+      sendToWindows({ ptyId: id, data, seq: managed.dataSeq })
     }
 
     // Forward data to all windows
@@ -105,6 +199,7 @@ export class PtyManager {
       if (managed.replayBuffer.length > MAX_REPLAY_CHARS) {
         managed.replayBuffer = managed.replayBuffer.slice(-MAX_REPLAY_CHARS)
       }
+      captureResumeId()
 
       // For agent sessions, suppress shell prompt/command, only show agent output
       if (!agentStarted) {
@@ -113,12 +208,12 @@ export class PtyManager {
         const detected = AGENT_KEYWORDS.some((kw) => clean.includes(kw) || raw.includes(kw))
         if (detected) {
           agentStarted = true
-          sendToWindows({ ptyId: id, data })
+          emitVisibleData(data)
         }
         return
       }
 
-      sendToWindows({ ptyId: id, data })
+      emitVisibleData(data)
 
       // Permission & idle notifications are handled by HookServer (Claude Code hooks)
     })
@@ -126,10 +221,13 @@ export class PtyManager {
     ptyProcess.onExit(({ exitCode }) => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
-          win.webContents.send(IPC.SESSION_EXIT, { ptyId: id, exitCode })
+          win.webContents.send(IPC.SESSION_EXIT, { ptyId: id, exitCode, resumeUUID: managed.resumeId })
         }
       }
-      this.ptys.delete(id)
+      if (this.ptys.has(id)) {
+        disposeTerminalMirror(managed.mirror)
+        this.ptys.delete(id)
+      }
     })
 
     // For agent sessions on Windows, send the command after shell is ready
@@ -165,7 +263,9 @@ export class PtyManager {
 
   resize(id: string, cols: number, rows: number): void {
     try {
-      this.ptys.get(id)?.pty.resize(cols, rows)
+      const managed = this.ptys.get(id)
+      managed?.pty.resize(cols, rows)
+      managed?.mirror.terminal.resize(cols, rows)
     } catch {
       // Ignore resize errors (process may have exited)
     }
@@ -175,6 +275,7 @@ export class PtyManager {
     const managed = this.ptys.get(id)
     if (managed) {
       managed.pty.kill()
+      disposeTerminalMirror(managed.mirror)
       this.ptys.delete(id)
     }
 
@@ -188,36 +289,62 @@ export class PtyManager {
     return this.ptys.has(id)
   }
 
-  getReplay(id: string): string {
-    return this.ptys.get(id)?.replayBuffer ?? ''
+  async getReplay(id: string): Promise<SessionReplayPayload> {
+    const managed = this.ptys.get(id)
+    if (!managed) return { data: '', seq: 0 }
+
+    const targetSeq = managed.dataSeq
+    const targetPendingWrite = managed.mirror.pendingWrite
+
+    try {
+      await targetPendingWrite.catch(() => undefined)
+      const data = managed.mirror.serializeAddon.serialize()
+      if (data) {
+        return { data, seq: targetSeq }
+      }
+    } catch {
+      // Fall back to raw replay buffer below.
+    }
+
+    return {
+      data: managed.replayBuffer,
+      seq: targetSeq,
+    }
   }
 
   /**
    * Gracefully shutdown all Claude Code sessions by sending Ctrl+C twice,
-   * then capture the resume UUID from the output.
+   * then capture the resume id from the output.
    * Returns a map of sessionId → resumeUUID.
    */
   async gracefulShutdownClaudeSessions(): Promise<Map<string, string>> {
     const results = new Map<string, string>()
-    const claudePtys = Array.from(this.ptys.entries()).filter(
-      ([, m]) => (m.type === 'claude-code' || m.type === 'claude-code-yolo') && m.sessionId,
+    const resumablePtys = Array.from(this.ptys.entries()).filter(
+      ([, m]) =>
+        (m.type === 'claude-code' || m.type === 'claude-code-yolo')
+        && m.sessionId,
     )
 
-    if (claudePtys.length === 0) return results
+    if (resumablePtys.length === 0) return results
 
-    const promises = claudePtys.map(
+    const promises = resumablePtys.map(
       ([, managed]) =>
         new Promise<void>((resolve) => {
           const ptyProcess = managed.pty
           let captureBuffer = ''
-          const RESUME_RE = /claude\s+--resume\s+([0-9a-f-]{36})/
+          const resumePattern = /claude\s+--resume\s+([0-9a-f-]{36})/i
 
-          // Listen for resume UUID in output
+          if (managed.resumeId) {
+            results.set(managed.sessionId!, managed.resumeId)
+          }
+
+          // Listen for resume id in output
           const onData = ptyProcess.onData((data) => {
             captureBuffer += data
             const clean = stripAnsi(captureBuffer)
-            const match = clean.match(RESUME_RE)
+            const match = clean.match(resumePattern)
             if (match) {
+              managed.resumeId = match[1]
               results.set(managed.sessionId!, match[1])
             }
           })
@@ -238,8 +365,9 @@ export class PtyManager {
             onData.dispose()
             // Check buffer one last time
             const clean = stripAnsi(captureBuffer)
-            const match = clean.match(RESUME_RE)
+            const match = clean.match(resumePattern)
             if (match && !results.has(managed.sessionId!)) {
+              managed.resumeId = match[1]
               results.set(managed.sessionId!, match[1])
             }
             resolve()
@@ -259,6 +387,7 @@ export class PtyManager {
       } catch {
         // ignore
       }
+      disposeTerminalMirror(managed.mirror)
     }
     this.ptys.clear()
   }

@@ -30,6 +30,7 @@ export type SessionType = 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'c
 export function isClaudeCodeType(type: SessionType): boolean {
   return type === 'claude-code' || type === 'claude-code-yolo'
 }
+
 export type SessionStatus = 'running' | 'idle' | 'waiting-input' | 'stopped'
 export type OutputState = 'idle' | 'outputting' | 'unread'
 
@@ -40,8 +41,8 @@ export interface Session {
   name: string
   status: SessionStatus
   ptyId: string | null
-  initialized: boolean // true after first PTY launch, used for --resume
-  resumeUUID: string | null // UUID captured from `claude --resume <uuid>` on exit
+  initialized: boolean // true after first PTY launch, used for agent resume
+  resumeUUID: string | null // session id / UUID captured from agent exit output
   pinned: boolean
   createdAt: number
   updatedAt: number
@@ -57,7 +58,7 @@ export interface SessionCreateOptions {
   type: SessionType
   sessionId?: string   // unique session id for agent resume
   resume?: boolean     // true = resume previous session
-  resumeUUID?: string  // UUID from claude --resume output
+  resumeUUID?: string  // session id / UUID from agent resume output
   command?: string
   args?: string[]
   cols?: number
@@ -71,11 +72,18 @@ export interface SessionCreateResult {
 export interface SessionDataEvent {
   ptyId: string
   data: string
+  seq: number
 }
 
 export interface SessionExitEvent {
   ptyId: string
   exitCode: number
+  resumeUUID?: string | null
+}
+
+export interface SessionReplayPayload {
+  data: string
+  seq: number
 }
 
 export type ClaudeGuiComputeMode = 'auto' | 'max'

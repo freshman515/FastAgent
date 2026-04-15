@@ -13,17 +13,20 @@ function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
   if (typeof obj.id !== 'string' || typeof obj.projectId !== 'string') return null
+  const type = (['claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'opencode', 'terminal'].includes(obj.type as string)
+    ? obj.type
+    : 'terminal') as SessionType
   return {
     id: obj.id,
     projectId: obj.projectId,
-    type: (['claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'opencode', 'terminal'].includes(obj.type as string)
-      ? obj.type
-      : 'terminal') as SessionType,
+    type,
     name: typeof obj.name === 'string' ? obj.name : 'Session',
     status: 'stopped' as SessionStatus,
     ptyId: null,
     initialized: obj.initialized === true,
-    resumeUUID: typeof obj.resumeUUID === 'string' ? obj.resumeUUID : null,
+    resumeUUID: isClaudeCodeType(type) && typeof obj.resumeUUID === 'string'
+      ? obj.resumeUUID
+      : null,
     pinned: obj.pinned === true,
     createdAt: typeof obj.createdAt === 'number' ? obj.createdAt : Date.now(),
     updatedAt: Date.now(),

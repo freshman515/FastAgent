@@ -21,6 +21,9 @@ import type {
   Session,
   SessionCreateOptions,
   SessionCreateResult,
+  SessionDataEvent,
+  SessionExitEvent,
+  SessionReplayPayload,
 } from '@shared/types'
 
 interface OpencodeRequest {
@@ -67,7 +70,7 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_RESIZE, ptyId, cols, rows),
     kill: (ptyId: string) => ipcRenderer.invoke(IPC.SESSION_KILL, ptyId),
     getReplay: (ptyId: string) =>
-      ipcRenderer.invoke(IPC.SESSION_REPLAY, ptyId) as Promise<string>,
+      ipcRenderer.invoke(IPC.SESSION_REPLAY, ptyId) as Promise<SessionReplayPayload>,
     getActivity: (ptyId: string) =>
       ipcRenderer.invoke(IPC.SESSION_ACTIVITY, ptyId) as Promise<boolean>,
     export: (ptyId: string, name: string) =>
@@ -79,13 +82,13 @@ const api = {
       ipcRenderer.on('session:resume-uuids', handler)
       return () => ipcRenderer.removeListener('session:resume-uuids', handler)
     },
-    onData: (callback: (event: { ptyId: string; data: string }) => void) => {
-      const handler = (_: unknown, event: { ptyId: string; data: string }) => callback(event)
+    onData: (callback: (event: SessionDataEvent) => void) => {
+      const handler = (_: unknown, event: SessionDataEvent) => callback(event)
       ipcRenderer.on(IPC.SESSION_DATA, handler)
       return () => ipcRenderer.removeListener(IPC.SESSION_DATA, handler)
     },
-    onExit: (callback: (event: { ptyId: string; exitCode: number }) => void) => {
-      const handler = (_: unknown, event: { ptyId: string; exitCode: number }) => callback(event)
+    onExit: (callback: (event: SessionExitEvent) => void) => {
+      const handler = (_: unknown, event: SessionExitEvent) => callback(event)
       ipcRenderer.on(IPC.SESSION_EXIT, handler)
       return () => ipcRenderer.removeListener(IPC.SESSION_EXIT, handler)
     },

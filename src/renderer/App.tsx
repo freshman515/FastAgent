@@ -25,8 +25,9 @@ import { useClaudeGuiStore } from '@/stores/claudeGui'
 import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useState } from 'react'
-import { ANONYMOUS_PROJECT_ID, type ClaudeGuiEvent } from '@shared/types'
+import { ANONYMOUS_PROJECT_ID, isClaudeCodeType, type ClaudeGuiEvent } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
+import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { cn } from '@/lib/utils'
 
 interface EditorPathContext {
@@ -534,6 +535,36 @@ export function App(): JSX.Element {
     })
   }, [])
 
+  // Keep session runtime state correct even when the owning TerminalView is
+  // unmounted (for example during project/worktree switches).
+  useEffect(() => {
+    return window.api.session.onExit((event) => {
+      const sessionStore = useSessionsStore.getState()
+      const session = sessionStore.sessions.find((item) => item.ptyId === event.ptyId)
+      if (!session) return
+      sessionStore.updateSession(session.id, {
+        ptyId: null,
+        ...(isClaudeCodeType(session.type) && typeof event.resumeUUID === 'string' && event.resumeUUID
+          ? { resumeUUID: event.resumeUUID }
+          : {}),
+      })
+      sessionStore.updateStatus(session.id, 'stopped')
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.api.session.onResumeUUIDs((uuids) => {
+      const sessionStore = useSessionsStore.getState()
+      for (const [sessionId, resumeUUID] of Object.entries(uuids)) {
+        if (!resumeUUID) continue
+        const session = sessionStore.sessions.find((item) => item.id === sessionId)
+        if (!session || session.resumeUUID === resumeUUID) continue
+        if (!isClaudeCodeType(session.type)) continue
+        sessionStore.updateSession(sessionId, { resumeUUID })
+      }
+    })
+  }, [])
+
   // Focus a specific session (navigate project + pane + tab)
   const focusSession = useCallback((sessionId: string) => {
     const session = useSessionsStore.getState().sessions.find((s) => s.id === sessionId)
@@ -578,14 +609,21 @@ export function App(): JSX.Element {
         ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
         : undefined
       const name = session?.name ?? 'Claude Code'
-      useUIStore.getState().addToast({
-        title: 'Task completed',
-        body: name,
-        type: 'success',
-        sessionId: session?.id,
-        projectId: session?.projectId,
-        duration: 8000,
-      })
+      const { notificationToastEnabled, notificationSoundEnabled, notificationSoundVolume } =
+        useUIStore.getState().settings
+      if (notificationToastEnabled) {
+        useUIStore.getState().addToast({
+          title: 'Task completed',
+          body: name,
+          type: 'success',
+          sessionId: session?.id,
+          projectId: session?.projectId,
+          duration: 8000,
+        })
+      }
+      if (notificationSoundEnabled) {
+        playTaskCompleteSound(notificationSoundVolume)
+      }
     })
   }, [])
 

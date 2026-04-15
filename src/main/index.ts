@@ -300,7 +300,7 @@ app.on('before-quit', async (e) => {
     const sessionsSnapshot = Array.isArray(config.sessions) ? [...config.sessions] : []
     const panesSnapshot = config.panes ?? {}
 
-    // Gracefully shutdown Claude Code sessions and capture resume UUIDs
+    // Gracefully shutdown Claude Code sessions and capture resume IDs
     const uuidMap = await ptyManager.gracefulShutdownClaudeSessions()
 
     // Write back the snapshot with UUIDs applied (ignoring any renderer-side deletions)

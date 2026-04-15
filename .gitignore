@@ -41,4 +41,5 @@ release/
 # Misc
 .cache/
 .temp/
+.tmp-cache/
 *.tgz
