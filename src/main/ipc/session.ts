@@ -1,7 +1,7 @@
 import { dialog, ipcMain, BrowserWindow } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { IPC } from '@shared/types'
-import type { SessionCreateOptions } from '@shared/types'
+import type { SessionCreateOptions, SessionSubmitOptions } from '@shared/types'
 import { ptyManager } from '../services/PtyManager'
 import { activityMonitor } from '../services/ActivityMonitor'
 import { hookServer } from '../services/HookServer'
@@ -14,6 +14,10 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle(IPC.SESSION_WRITE, (_event, ptyId: string, data: string) => {
     ptyManager.write(ptyId, data)
+  })
+
+  ipcMain.handle(IPC.SESSION_SUBMIT, (_event, ptyId: string, options: SessionSubmitOptions) => {
+    return ptyManager.submitInput(ptyId, options.input, { submit: options.submit !== false })
   })
 
   ipcMain.handle(IPC.SESSION_RESIZE, (_event, ptyId: string, cols: number, rows: number) => {

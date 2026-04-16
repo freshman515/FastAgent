@@ -163,6 +163,14 @@ const TOOLS = [
           type: 'string',
           description: 'Optional FastAgents worktree id (overrides cwd resolution).',
         },
+        isolate_worktree: {
+          type: 'boolean',
+          description: 'When true, create a new git worktree for this session before launch.',
+        },
+        branch_name: {
+          type: 'string',
+          description: 'Optional branch name to use with isolate_worktree.',
+        },
         name: {
           type: 'string',
           description: 'Display name for the new tab.',
@@ -273,6 +281,8 @@ async function callTool(name, args) {
         cwd: args.cwd || '',
         project_id: args.project_id,
         worktree_id: args.worktree_id,
+        isolate_worktree: args.isolate_worktree,
+        branch_name: args.branch_name,
         name: args.name,
         activate: args.activate,
         initial_input: args.initial_input,
@@ -281,7 +291,10 @@ async function callTool(name, args) {
       if (!data.ok || !data.session_id) {
         throw new Error(data.error || 'create_session failed')
       }
-      return `Created session ${data.session_id} (type=${body.type}).`
+      const fallback = data.worktree_fallback
+        ? ` Worktree isolation was not used: ${data.worktree_error || 'fallback to current workspace'}.`
+        : ''
+      return `Created session ${data.session_id} (type=${body.type}).${fallback}`
     }
 
     case 'fa_wait_for_idle': {

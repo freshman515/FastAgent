@@ -378,16 +378,7 @@ export class OrchestratorService {
       return
     }
     const pressEnter = body.press_enter !== false
-    ptyManager.write(ptyId, body.input)
-    if (pressEnter && !body.input.endsWith('\r') && !body.input.endsWith('\n')) {
-      // Agent TUIs like Codex / OpenCode batch consecutive writes as a paste,
-      // which swallows a trailing \r into the input box instead of treating
-      // it as a submit keystroke. Insert a brief delay so the Enter arrives
-      // as an independent event. Claude Code / plain shells also work fine
-      // under this delay.
-      await delay(120)
-      ptyManager.write(ptyId, '\r')
-    }
+    ptyManager.submitInput(ptyId, body.input, { submit: pressEnter })
     jsonResponse(res, 200, { ok: true, bytesWritten: Buffer.byteLength(body.input) })
   }
 
@@ -435,6 +426,8 @@ export class OrchestratorService {
       cwd?: unknown
       project_id?: unknown
       worktree_id?: unknown
+      isolate_worktree?: unknown
+      branch_name?: unknown
       name?: unknown
       activate?: unknown
       initial_input?: unknown
@@ -449,6 +442,8 @@ export class OrchestratorService {
     const cwd = typeof body.cwd === 'string' ? body.cwd : ''
     const projectId = typeof body.project_id === 'string' ? body.project_id : null
     const worktreeId = typeof body.worktree_id === 'string' ? body.worktree_id : null
+    const isolateWorktree = body.isolate_worktree === true
+    const branchName = typeof body.branch_name === 'string' ? body.branch_name : null
     const name = typeof body.name === 'string' ? body.name : null
     const activate = body.activate !== false
     const initialInput = typeof body.initial_input === 'string' ? body.initial_input : null
@@ -467,6 +462,8 @@ export class OrchestratorService {
       cwd,
       projectId,
       worktreeId,
+      isolateWorktree,
+      branchName,
       name,
       activate,
       initialInput,
@@ -490,6 +487,8 @@ export class OrchestratorService {
       jsonResponse(res, 200, {
         ok: true,
         session_id: result.sessionId,
+        worktree_fallback: result.worktreeFallback === true,
+        worktree_error: result.worktreeError ?? null,
       })
     } catch (err) {
       errorResponse(res, 504, err instanceof Error ? err.message : String(err))

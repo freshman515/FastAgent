@@ -2,6 +2,8 @@ import * as pty from '@lydell/node-pty'
 import type { IPty } from '@lydell/node-pty'
 import headlessPkg from '@xterm/headless'
 import serializePkg from '@xterm/addon-serialize'
+import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { BrowserWindow } from 'electron'
 import { IPC, isClaudeCodeType } from '@shared/types'
 import type { SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
@@ -21,6 +23,11 @@ interface TerminalMirror {
   pendingWrite: Promise<void>
 }
 
+interface QueuedInput {
+  data: string
+  delayAfterMs: number
+}
+
 interface ManagedPty {
   pty: IPty
   cwd: string
@@ -31,7 +38,7 @@ interface ManagedPty {
   dataSeq: number
   resumeId: string | null
   inputReady: boolean
-  queuedInput: string[]
+  queuedInput: QueuedInput[]
   inputReadyTimer: NodeJS.Timeout | null
   inputFlushInProgress: boolean
 }
@@ -52,6 +59,9 @@ const MAX_REPLAY_CHARS = 4 * 1024 * 1024
 const AGENT_START_FALLBACK_MS = 3000
 const AGENT_INPUT_READY_QUIET_MS = 1000
 const QUEUED_INPUT_WRITE_GAP_MS = 120
+const AGENT_SUBMIT_BASE_DELAY_MS = 550
+const AGENT_SUBMIT_MAX_DELAY_MS = 1800
+const AGENT_SUBMIT_REINFORCE_DELAY_MS = 900
 
 function createTerminalMirror(cols: number, rows: number): TerminalMirror {
   const terminal = new HeadlessTerminal({
@@ -113,6 +123,17 @@ function normalizeCwd(cwd: string): string {
   return cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
 }
 
+function getAgentSubmitDelay(input: string): number {
+  return Math.min(
+    AGENT_SUBMIT_MAX_DELAY_MS,
+    AGENT_SUBMIT_BASE_DELAY_MS + Math.floor(input.length / 20),
+  )
+}
+
+function stripTrailingSubmitNewlines(input: string): string {
+  return input.replace(/[\r\n]+$/g, '')
+}
+
 interface McpBridgeEnv {
   port: number
   token: string
@@ -123,6 +144,7 @@ export type DataObserver = (ptyId: string) => void
 export class PtyManager {
   private readonly ptys = new Map<string, ManagedPty>()
   private idCounter = 0
+  private readonly gitCommonDirCache = new Map<string, string | null>()
 
   /** Populated by OrchestratorService.init() so PTYs spawned afterwards see the
    *  MCP bridge port + token in their env. */
@@ -187,11 +209,13 @@ export class PtyManager {
 
     try {
       while (managed.inputReady && managed.queuedInput.length > 0) {
-        const data = managed.queuedInput.shift()
-        if (typeof data !== 'string') continue
-        managed.pty.write(data)
+        const item = managed.queuedInput.shift()
+        if (!item) continue
+        if (item.data) {
+          managed.pty.write(item.data)
+        }
         if (managed.queuedInput.length > 0) {
-          await delay(QUEUED_INPUT_WRITE_GAP_MS)
+          await delay(item.delayAfterMs)
         }
       }
     } finally {
@@ -199,6 +223,36 @@ export class PtyManager {
       if (managed.inputReady && managed.queuedInput.length > 0) {
         void this.flushQueuedInput(managed)
       }
+    }
+  }
+
+  private enqueueInput(managed: ManagedPty, data: string, delayAfterMs = QUEUED_INPUT_WRITE_GAP_MS): void {
+    managed.queuedInput.push({ data, delayAfterMs })
+    if (managed.inputReady) {
+      void this.flushQueuedInput(managed)
+    }
+  }
+
+  private getGitCommonDir(cwd: string): string | null {
+    const normalized = normalizeCwd(cwd)
+    if (this.gitCommonDirCache.has(normalized)) {
+      return this.gitCommonDirCache.get(normalized) ?? null
+    }
+
+    try {
+      const output = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        cwd,
+        encoding: 'utf8',
+        windowsHide: true,
+      }).trim()
+      const commonDir = output
+        ? normalizeCwd(resolve(cwd, output))
+        : null
+      this.gitCommonDirCache.set(normalized, commonDir)
+      return commonDir
+    } catch {
+      this.gitCommonDirCache.set(normalized, null)
+      return null
     }
   }
 
@@ -428,13 +482,48 @@ export class PtyManager {
     const managed = this.ptys.get(id)
     if (!managed) return
     if (!managed.inputReady || managed.inputFlushInProgress) {
-      managed.queuedInput.push(data)
-      if (managed.inputReady) {
-        void this.flushQueuedInput(managed)
-      }
+      this.enqueueInput(managed, data)
       return
     }
     managed.pty.write(data)
+  }
+
+  submitInput(id: string, input: string, options: { submit?: boolean } = {}): boolean {
+    const managed = this.ptys.get(id)
+    if (!managed) return false
+
+    const shouldSubmit = options.submit !== false
+    if (!shouldSubmit) {
+      this.write(id, input)
+      return true
+    }
+
+    if (managed.type === 'terminal') {
+      this.write(id, input.endsWith('\r') || input.endsWith('\n') ? input : `${input}\r`)
+      return true
+    }
+
+    const text = stripTrailingSubmitNewlines(input)
+    const submitDelay = getAgentSubmitDelay(text)
+    const sequence: QueuedInput[] = [
+      { data: text, delayAfterMs: submitDelay },
+      { data: '\r', delayAfterMs: AGENT_SUBMIT_REINFORCE_DELAY_MS },
+    ]
+
+    if (managed.type === 'codex' || managed.type === 'codex-yolo') {
+      // Codex can keep multiline pasted prompts in the composer after the
+      // first Enter. A delayed second Enter is harmless when the first one
+      // only inserted a newline, and is the most reliable submit signal we
+      // can send through ConPTY without a first-class Codex API.
+      sequence.push({ data: '\r', delayAfterMs: QUEUED_INPUT_WRITE_GAP_MS })
+    }
+
+    managed.queuedInput.push(...sequence)
+    if (managed.inputReady) {
+      void this.flushQueuedInput(managed)
+    }
+
+    return true
   }
 
   listManagedSessions(): ManagedSessionInfo[] {
@@ -470,7 +559,11 @@ export class PtyManager {
     if (!source || !target) return false
     const sourceCwd = normalizeCwd(source.cwd)
     const targetCwd = normalizeCwd(target.cwd)
-    return sourceCwd === targetCwd
+    if (sourceCwd === targetCwd) return true
+
+    const sourceCommonDir = this.getGitCommonDir(source.cwd)
+    const targetCommonDir = this.getGitCommonDir(target.cwd)
+    return Boolean(sourceCommonDir && targetCommonDir && sourceCommonDir === targetCommonDir)
   }
 
   writeToSession(sessionId: string, data: string): boolean {

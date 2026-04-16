@@ -8,6 +8,7 @@ import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { createAgentWorktree } from '@/lib/agent-worktrees'
 
 /**
  * Bridges the FastAgents MCP HTTP server (main process) to the renderer's
@@ -79,6 +80,8 @@ async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> 
     // Resolve projectId: explicit > source session's project > anonymous.
     let projectId = req.projectId ?? null
     let worktreeId = req.worktreeId ?? undefined
+    let worktreeFallback = false
+    let worktreeError: string | undefined
 
     if (!projectId && req.sourceSessionId) {
       const source = sessionStore.sessions.find((s) => s.id === req.sourceSessionId)
@@ -89,6 +92,23 @@ async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> 
     }
 
     if (!projectId) projectId = ANONYMOUS_PROJECT_ID
+
+    if (req.isolateWorktree && projectId !== ANONYMOUS_PROJECT_ID) {
+      const project = useProjectsStore.getState().projects.find((item) => item.id === projectId)
+      if (project) {
+        const created = await createAgentWorktree({
+          projectId,
+          projectPath: project.path,
+          label: req.name ?? req.type,
+          branchName: req.branchName,
+        })
+        if (created.worktreeId) {
+          worktreeId = created.worktreeId
+        }
+        worktreeFallback = created.fallback
+        worktreeError = created.error
+      }
+    }
 
     const sessionId = sessionStore.addSession(projectId, req.type, worktreeId)
 
@@ -111,14 +131,7 @@ async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> 
     if (req.initialInput) {
       const session = useSessionsStore.getState().sessions.find((s) => s.id === sessionId)
       if (session?.ptyId) {
-        await delay(300)
-        await window.api.session.write(session.ptyId, req.initialInput)
-        if (!req.initialInput.endsWith('\r') && !req.initialInput.endsWith('\n')) {
-          // Codex / OpenCode TUIs batch writes as a paste — the \r gets
-          // swallowed into the input unless it arrives as a separate event.
-          await delay(120)
-          await window.api.session.write(session.ptyId, '\r')
-        }
+        await window.api.session.submit(session.ptyId, req.initialInput, true)
       }
     }
 
@@ -126,6 +139,8 @@ async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> 
       requestId: req.requestId,
       ok: true,
       sessionId,
+      worktreeFallback,
+      worktreeError,
     })
   } catch (err) {
     window.api.mcp.respondCreateSession({
@@ -161,8 +176,4 @@ function waitForPty(sessionId: string, timeoutMs: number): Promise<void> {
       }
     })
   })
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

@@ -3,6 +3,7 @@ import { Layers, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTemplatesStore } from '@/stores/templates'
 import type { SessionType, SessionTemplateItem } from '@shared/types'
+import { BUILT_IN_WORKER_TEMPLATES } from '@shared/workerTemplates'
 
 const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'claude-code', label: 'Claude Code' },
@@ -182,6 +183,24 @@ export function TemplatesPage(): JSX.Element {
       <p className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
         创建可复用模板，用来一次性快速启动多个会话。
       </p>
+
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+        <div className="mb-2 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">内置 Worker 模板库</div>
+        <div className="grid gap-2 md:grid-cols-2">
+          {BUILT_IN_WORKER_TEMPLATES.map((template) => (
+            <div key={template.id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-primary)]">{template.name}</span>
+                <span className="ml-auto rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">{template.type}</span>
+              </div>
+              <div className="mt-1 text-[10px] leading-4 text-[var(--color-text-tertiary)]">{template.description}</div>
+              <div className="mt-2 text-[10px] text-[var(--color-text-secondary)]">
+                {template.isolatedWorktree ? '默认隔离 worktree' : '默认共享当前 worktree'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="flex flex-col gap-2">
         {templates.map((t) => (

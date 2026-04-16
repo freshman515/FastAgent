@@ -5,7 +5,7 @@ import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomTheme
 
 export type VisualizerMode = 'melody' | 'bars'
 export type DockSide = 'left' | 'right'
-export type DockPanelId = 'projects' | 'agent' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
+export type DockPanelId = 'projects' | 'agent' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
 export type TodoPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
@@ -13,6 +13,7 @@ export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
   'agent',
+  'tasks',
   'commands',
   'prompts',
   'promptOptimizer',
@@ -27,7 +28,7 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
 
 export const DEFAULT_DOCK_PANEL_ORDER: Record<DockSide, DockPanelId[]> = {
   left: ['projects', 'git', 'files'],
-  right: ['agent', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
+  right: ['agent', 'tasks', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
 }
 
 const DEFAULT_DOCK_PANEL_ACTIVE: Record<DockSide, DockPanelId | null> = {

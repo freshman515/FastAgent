@@ -89,6 +89,11 @@ export interface SessionReplayPayload {
   seq: number
 }
 
+export interface SessionSubmitOptions {
+  input: string
+  submit?: boolean
+}
+
 // ─── Meta-Agent (FastAgents MCP) ───
 // The orchestrator HTTP server in main bridges to the renderer's stores for
 // actions that require renderer state (creating sessions, listing sessions
@@ -119,6 +124,10 @@ export interface McpCreateSessionRequest {
   cwd: string
   projectId?: string | null
   worktreeId?: string | null
+  /** Create a new git worktree before launching the session. */
+  isolateWorktree?: boolean
+  /** Optional branch name when isolateWorktree is enabled. */
+  branchName?: string | null
   name?: string | null
   activate?: boolean
   initialInput?: string | null
@@ -128,6 +137,8 @@ export interface McpCreateSessionResponse {
   requestId: string
   ok: boolean
   sessionId?: string
+  worktreeFallback?: boolean
+  worktreeError?: string
   error?: string
 }
 
@@ -470,6 +481,18 @@ export interface SessionTemplateItem {
   prompt?: string
 }
 
+export interface WorkerTemplate {
+  id: string
+  name: string
+  description: string
+  type: Exclude<SessionType, 'terminal' | 'claude-gui'>
+  defaultName: string
+  prompt: string
+  ownershipHint?: string
+  resultContract: string
+  isolatedWorktree: boolean
+}
+
 export interface SessionTemplate {
   id: string
   name: string
@@ -482,10 +505,15 @@ export interface SessionTemplate {
 export type TaskBundleType = 'fix-bug' | 'new-feature' | 'code-review' | 'release-check' | 'custom'
 
 export interface TaskBundleStep {
+  id?: string
   type: SessionType
   name: string
   prompt: string
   env?: Record<string, string>
+  dependsOn?: string[]
+  ownership?: string[]
+  isolatedWorktree?: boolean
+  templateId?: string
 }
 
 export interface TaskBundle {
@@ -506,6 +534,35 @@ export interface ActiveTask {
   sessionIds: string[]
   status: 'active' | 'completed' | 'cancelled'
   createdAt: number
+  graphNodes?: TaskGraphNode[]
+  reports?: Record<string, StructuredWorkerReport>
+}
+
+export type TaskGraphNodeStatus = 'pending' | 'running' | 'blocked' | 'completed' | 'failed'
+
+export interface TaskGraphNode {
+  id: string
+  templateId?: string
+  name: string
+  type: Exclude<SessionType, 'terminal' | 'claude-gui'>
+  prompt: string
+  dependsOn: string[]
+  ownership: string[]
+  isolatedWorktree: boolean
+  sessionId?: string
+  worktreeId?: string
+  status: TaskGraphNodeStatus
+}
+
+export interface StructuredWorkerReport {
+  status: string
+  filesChanged: string[]
+  verification: string
+  risks: string
+  blockers: string
+  suggestedNextAction: string
+  raw: string
+  updatedAt: number
 }
 
 // ─── IPC Channels ───
@@ -513,6 +570,7 @@ export interface ActiveTask {
 export const IPC = {
   SESSION_CREATE: 'session:create',
   SESSION_WRITE: 'session:write',
+  SESSION_SUBMIT: 'session:submit',
   SESSION_RESIZE: 'session:resize',
   SESSION_KILL: 'session:kill',
   SESSION_ACTIVITY: 'session:activity',

@@ -69,6 +69,8 @@ const api = {
     create: (options: SessionCreateOptions) =>
       ipcRenderer.invoke(IPC.SESSION_CREATE, options) as Promise<SessionCreateResult>,
     write: (ptyId: string, data: string) => ipcRenderer.invoke(IPC.SESSION_WRITE, ptyId, data),
+    submit: (ptyId: string, input: string, submit = true) =>
+      ipcRenderer.invoke(IPC.SESSION_SUBMIT, ptyId, { input, submit }),
     resize: (ptyId: string, cols: number, rows: number) =>
       ipcRenderer.invoke(IPC.SESSION_RESIZE, ptyId, cols, rows),
     kill: (ptyId: string) => ipcRenderer.invoke(IPC.SESSION_KILL, ptyId),
