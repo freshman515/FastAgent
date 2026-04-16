@@ -9,8 +9,7 @@ import { claudeGuiService } from '../services/ClaudeGuiService'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSION_CREATE, (_event, options: SessionCreateOptions) => {
-    const ptyId = ptyManager.create(options)
-    return { ptyId }
+    return ptyManager.create(options)
   })
 
   ipcMain.handle(IPC.SESSION_WRITE, (_event, ptyId: string, data: string) => {

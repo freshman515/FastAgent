@@ -133,10 +133,7 @@ export function startIdeServer(): Promise<number> {
     httpServer = http.createServer((req, res) => {
       if (req.url === '/state') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify({
-          workspaceFolders: currentWorkspaceFolders,
-          ...currentEditorState,
-        }))
+        res.end(JSON.stringify(getIdeStateSnapshot()))
         return
       }
 
@@ -192,6 +189,13 @@ export function stopIdeServer(): void {
 
 export function getIdeServerPort(): number | null {
   return serverPort
+}
+
+export function getIdeStateSnapshot(): Record<string, unknown> {
+  return {
+    workspaceFolders: currentWorkspaceFolders,
+    ...currentEditorState,
+  }
 }
 
 export function updateWorkspaceFolders(folders: string[]): void {

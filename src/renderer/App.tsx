@@ -23,6 +23,7 @@ import { detectLanguage, type EditorTab, sanitizeEditorTab, useEditorsStore } fr
 import { useLaunchesStore } from '@/stores/launches'
 import { useClaudeGuiStore } from '@/stores/claudeGui'
 import { useActivityMonitor } from '@/hooks/useActivityMonitor'
+import { useMcpBridge } from '@/hooks/useMcpBridge'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useState } from 'react'
 import { ANONYMOUS_PROJECT_ID, isClaudeCodeType, type ClaudeGuiEvent } from '@shared/types'
@@ -565,6 +566,10 @@ export function App(): JSX.Element {
     })
   }, [])
 
+  // FastAgents MCP bridge: handle list-sessions and create-session requests
+  // coming from the orchestrator HTTP server (Meta-Agent tools).
+  useMcpBridge()
+
   // Focus a specific session (navigate project + pane + tab)
   const focusSession = useCallback((sessionId: string) => {
     const session = useSessionsStore.getState().sessions.find((s) => s.id === sessionId)
@@ -601,14 +606,14 @@ export function App(): JSX.Element {
     })
   }, [focusSession])
 
-  // Listen for Claude Code Stop hook — show completion toast
+  // Listen for agent Stop hooks — show completion toast
   useEffect(() => {
     return window.api.session.onIdleToast((event) => {
       // sessionId is already matched by HookServer via CWD + last user input
       const session = event.sessionId
         ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
         : undefined
-      const name = session?.name ?? 'Claude Code'
+      const name = session?.name ?? 'Agent'
       const { notificationToastEnabled, notificationSoundEnabled, notificationSoundVolume } =
         useUIStore.getState().settings
       if (notificationToastEnabled) {

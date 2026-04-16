@@ -35,6 +35,83 @@ import { usePanesStore } from '@/stores/panes'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { getXtermTheme, defaultDarkTheme } from '@/lib/ghosttyTheme'
 
+const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350] as const
+
+function refitAndRefreshTerminal(
+  terminal: Terminal | null,
+  fitAddon: FitAddon | null,
+  container: HTMLElement | null,
+  focus = false,
+): { cols: number; rows: number } | null {
+  if (!terminal || !fitAddon || !container) return null
+
+  const rect = container.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+
+  try {
+    fitAddon.fit()
+    if (terminal.rows > 0) {
+      terminal.refresh(0, terminal.rows - 1)
+    }
+    if (focus) {
+      terminal.focus()
+    }
+    return { cols: terminal.cols, rows: terminal.rows }
+  } catch {
+    return null
+  }
+}
+
+function scheduleTerminalRepaint(
+  terminal: Terminal | null,
+  fitAddon: FitAddon | null,
+  container: HTMLElement | null,
+  onDimensions?: (dimensions: { cols: number; rows: number }) => void,
+  focus = false,
+): () => void {
+  let disposed = false
+  const frameIds = new Set<number>()
+  const timeoutIds = new Set<ReturnType<typeof setTimeout>>()
+
+  const run = (): void => {
+    if (disposed) return
+    const dimensions = refitAndRefreshTerminal(terminal, fitAddon, container, focus)
+    if (dimensions) {
+      onDimensions?.(dimensions)
+    }
+  }
+
+  const scheduleFrame = (callback: () => void): void => {
+    const frameId = requestAnimationFrame(() => {
+      frameIds.delete(frameId)
+      callback()
+    })
+    frameIds.add(frameId)
+  }
+
+  scheduleFrame(() => scheduleFrame(run))
+
+  for (const delay of TERMINAL_REPAINT_DELAYS_MS) {
+    const timeoutId = setTimeout(() => {
+      timeoutIds.delete(timeoutId)
+      run()
+    }, delay)
+    timeoutIds.add(timeoutId)
+  }
+
+  return () => {
+    disposed = true
+    for (const frameId of frameIds) {
+      cancelAnimationFrame(frameId)
+    }
+    for (const timeoutId of timeoutIds) {
+      clearTimeout(timeoutId)
+    }
+    frameIds.clear()
+    timeoutIds.clear()
+  }
+}
+
 export function useXterm(
   session: Session,
   isActive: boolean,
@@ -94,7 +171,9 @@ export function useXterm(
       const worktree = currentSession.worktreeId
         ? worktreeStore.worktrees.find((w) => w.id === currentSession.worktreeId)
         : worktreeStore.getMainWorktree(currentSession.projectId)
-      cwd = worktree?.path ?? project?.path
+      // Final fallback: a session.cwd hint set by the MCP bridge (Meta-Agent
+      // creating a session for a path that isn't a tracked project/worktree).
+      cwd = worktree?.path ?? project?.path ?? currentSession.cwd
       if (!cwd) return
     }
     const sessionId = currentSession.id
@@ -104,6 +183,7 @@ export function useXterm(
     const { settings } = useUIStore.getState()
     let ptyId: string | null = null
     let destroyed = false
+    const repaintCleanups: Array<() => void> = []
 
     const xtermTheme = getXtermTheme(settings.terminalTheme) ?? defaultDarkTheme
     const terminal = new Terminal({
@@ -143,16 +223,36 @@ export function useXterm(
     fitAddonRef.current = fitAddon
     terminalRef.current = terminal
 
-    // Fit after a frame so container has real dimensions
-    requestAnimationFrame(() => {
-      if (!destroyed) {
-        try {
-          fitAddon.fit()
-        } catch {
+    const scheduleRepaint = (focus = false): void => {
+      const cleanup = scheduleTerminalRepaint(
+        terminal,
+        fitAddon,
+        container,
+        ({ cols, rows }) => {
+          if (ptyId) {
+            window.api.session.resize(ptyId, cols, rows)
+          }
+        },
+        focus,
+      )
+      repaintCleanups.push(cleanup)
+    }
+
+    // xterm can miss its first DOM paint when opened while React is still
+    // settling pane/tab layout. Retry across a few ticks, then refresh rows.
+    scheduleRepaint(false)
+
+    if (document.fonts) {
+      void document.fonts.ready
+        .then(() => {
+          if (!destroyed) {
+            scheduleRepaint(false)
+          }
+        })
+        .catch(() => {
           // ignore
-        }
-      }
-    })
+        })
+    }
 
     // Check if session already has an active PTY (e.g. after React remount during reorder)
     const existingPtyId = currentSession.ptyId
@@ -211,16 +311,7 @@ export function useXterm(
         }
         pendingRestoreEvents.length = 0
 
-        requestAnimationFrame(() => {
-          if (!destroyed) {
-            try {
-              fitAddon.fit()
-              if (ptyId) {
-                window.api.session.resize(ptyId, terminal.cols, terminal.rows)
-              }
-            } catch { /* ignore */ }
-          }
-        })
+        scheduleRepaint(false)
       }
     }
 
@@ -246,19 +337,20 @@ export function useXterm(
             return
           }
           ptyId = result.ptyId
+          const nextSessionUpdates: Partial<Omit<Session, 'id'>> = {
+            ptyId,
+            status: 'running',
+            initialized: true,
+          }
+          if (isClaudeCodeType(sessionType) && result.resumeUUID) {
+            nextSessionUpdates.resumeUUID = result.resumeUUID
+          }
           useSessionsStore
             .getState()
-            .updateSession(sessionId, { ptyId, status: 'running', initialized: true })
+            .updateSession(sessionId, nextSessionUpdates)
           addTimelineEvent(sessionId, 'start', `Session started (${sessionType})`)
 
-          requestAnimationFrame(() => {
-            if (!destroyed) {
-              try {
-                fitAddon.fit()
-                window.api.session.resize(ptyId!, terminal.cols, terminal.rows)
-              } catch { /* ignore */ }
-            }
-          })
+          scheduleRepaint(false)
         })
     }
 
@@ -459,11 +551,7 @@ export function useXterm(
     // Container resize observer
     const resizeObserver = new ResizeObserver(() => {
       if (!destroyed) {
-        try {
-          fitAddon.fit()
-        } catch {
-          // ignore
-        }
+        refitAndRefreshTerminal(terminal, fitAddon, container)
       }
     })
     resizeObserver.observe(container)
@@ -479,6 +567,9 @@ export function useXterm(
       onDataDisposable.dispose()
       onResizeDisposable.dispose()
       resizeObserver.disconnect()
+      for (const cleanup of repaintCleanups) {
+        cleanup()
+      }
       terminal.dispose()
       // NOTE: Do NOT kill PTY here. PTY lifecycle is independent of the React component.
       // PTY is killed explicitly via session.kill() when user closes a tab.
@@ -487,16 +578,21 @@ export function useXterm(
 
   // Re-fit and focus when becoming active (switching tabs/projects/panes)
   useEffect(() => {
-    if (isActive) {
-      const timer = setTimeout(() => {
-        try {
-          fitAddonRef.current?.fit()
-        } catch { /* ignore */ }
-        terminalRef.current?.focus()
-      }, 50)
-      return () => clearTimeout(timer)
-    }
-  }, [isActive])
+    if (!isActive) return
+
+    return scheduleTerminalRepaint(
+      terminalRef.current,
+      fitAddonRef.current,
+      containerRef.current,
+      ({ cols, rows }) => {
+        const currentPtyId = sessionRef.current.ptyId
+        if (currentPtyId) {
+          window.api.session.resize(currentPtyId, cols, rows)
+        }
+      },
+      true,
+    )
+  }, [cwdReady, isActive])
 
   // Live-update terminal font when settings change
   useEffect(() => {
@@ -513,10 +609,12 @@ export function useXterm(
       if (!term) return
       term.options.fontSize = terminalFontSize
       term.options.fontFamily = terminalFontFamily
-      try {
-        fitAddonRef.current?.fit()
-      } catch {
-        // ignore
+      const dimensions = refitAndRefreshTerminal(term, fitAddonRef.current, containerRef.current)
+      if (dimensions) {
+        const currentPtyId = sessionRef.current.ptyId
+        if (currentPtyId) {
+          window.api.session.resize(currentPtyId, dimensions.cols, dimensions.rows)
+        }
       }
     })
   }, [])

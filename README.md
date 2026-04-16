@@ -85,6 +85,30 @@ npm run dev
 npm run build
 ```
 
+## Agent Orchestration MCP
+
+FastAgents automatically injects a local MCP server into Claude Code sessions. The MCP server is backed by a localhost-only Orchestrator service with a per-app Bearer token, so Claude Code sessions can coordinate other running sessions in the same workspace.
+
+Available tools:
+
+| Tool | Purpose |
+|------|---------|
+| `fastagents_list_sessions` | List running sessions in the same project/worktree scope |
+| `fastagents_read_session` | Read recent terminal output from a target session |
+| `fastagents_write_session` | Send terminal input to another session |
+| `fastagents_create_session` | Create a new Claude Code, Codex, OpenCode, or Terminal session in the same scope |
+| `fastagents_wait_for_idle` | Wait until a target session stops producing output, then return recent output |
+
+Claude Code receives the MCP configuration through `--mcp-config` at launch. The generated config and bridge script are written under the app user data `mcp` directory at runtime, so no manual Claude configuration is required.
+
+Smoke test:
+
+1. Start FastAgents with `npm run dev`.
+2. Open two Claude Code tabs in the same project/worktree.
+3. In one Claude tab, ask it to call `fastagents_list_sessions`.
+4. Ask it to send a short message to the other session with `fastagents_write_session`.
+5. Use `fastagents_read_session` or `fastagents_wait_for_idle` to inspect the target session output.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

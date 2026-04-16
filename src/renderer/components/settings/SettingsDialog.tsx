@@ -11,6 +11,7 @@ import { TemplatesPage } from './TemplatesPage'
 import { getThemeNames, getXtermTheme, getAllCustomThemeNames, getTheme, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { CustomThemeEditor } from './CustomThemeEditor'
 import { parseThemeAuto } from '@/lib/themeImport'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type SettingsPage = 'general' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
@@ -224,6 +225,19 @@ const SESSION_TYPE_OPTIONS = [
 
 function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   const groups = useGroupsStore((s) => s.groups)
+  const [confirmClearSessionsOpen, setConfirmClearSessionsOpen] = useState(false)
+
+  const clearAllSessions = useCallback(() => {
+    const sessions = useSessionsStore.getState().sessions
+    for (const s of sessions) {
+      if (s.ptyId) window.api.session.kill(s.ptyId).catch(() => {})
+    }
+    useSessionsStore.setState({ sessions: [], activeSessionId: null, outputStates: {}, closedStack: [] })
+    usePanesStore.getState().initPane([], null)
+    window.api.config.write('sessions', [])
+    window.api.config.write('panes', {})
+    setConfirmClearSessionsOpen(false)
+  }, [])
 
   return (
     <div className={PAGE_STACK}>
@@ -462,16 +476,7 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
       {/* ───── 数据清理 ───── */}
       <SettingsSection icon={Trash2} title="数据清理" description="清空全部会话标签与分栏布局。项目、分组、主题会保留。">
         <button
-          onClick={() => {
-            const sessions = useSessionsStore.getState().sessions
-            for (const s of sessions) {
-              if (s.ptyId) window.api.session.kill(s.ptyId).catch(() => {})
-            }
-            useSessionsStore.setState({ sessions: [], activeSessionId: null, outputStates: {}, closedStack: [] })
-            usePanesStore.getState().initPane([], null)
-            window.api.config.write('sessions', [])
-            window.api.config.write('panes', {})
-          }}
+          onClick={() => setConfirmClearSessionsOpen(true)}
           className={cn(
             'flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-error)]/30 px-4 py-2',
             'text-[var(--ui-font-sm)] text-[var(--color-error)]',
@@ -482,6 +487,18 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           清空全部会话
         </button>
       </SettingsSection>
+
+      {confirmClearSessionsOpen && (
+        <ConfirmDialog
+          title="清空全部会话"
+          message="确认清空所有会话标签和分栏布局吗？正在运行的会话会被停止。项目、分组、主题会保留。"
+          confirmLabel="清空"
+          cancelLabel="取消"
+          danger
+          onConfirm={clearAllSessions}
+          onCancel={() => setConfirmClearSessionsOpen(false)}
+        />
+      )}
     </div>
   )
 }

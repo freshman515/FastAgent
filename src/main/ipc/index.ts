@@ -10,6 +10,7 @@ import { registerClaudeGuiHandlers } from './claudeGui'
 import { registerOpencodeHandlers } from './opencode'
 import { registerSearchHandlers } from './search'
 import { registerUpdaterHandlers } from './updater'
+import { registerMcpHandlers } from './mcp'
 
 export function registerAllHandlers(): void {
   registerWindowHandlers()
@@ -24,4 +25,5 @@ export function registerAllHandlers(): void {
   registerOpencodeHandlers()
   registerSearchHandlers()
   registerUpdaterHandlers()
+  registerMcpHandlers()
 }

@@ -8,6 +8,7 @@ directories:
 
 files:
   - "out/**/*"
+  - "src/main/services/mcp-bridge.cjs"
   - "assets/icons/fastagents-256.png"
   - "node_modules/**/*"
   - "!node_modules/**/README.md"

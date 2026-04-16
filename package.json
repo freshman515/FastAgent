@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
+    "test": "tsc src/shared/claudeSession.ts --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck --outDir .tmp-cache/claude-session-test && node --test scripts/claudeSession.test.mjs",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps"

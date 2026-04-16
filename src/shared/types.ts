@@ -49,6 +49,7 @@ export interface Session {
   worktreeId?: string   // bound to specific worktree; undefined = main worktree
   color?: string        // color tag for visual grouping (hex)
   label?: string        // short label (e.g. "前端", "API")
+  cwd?: string          // resolved working directory hint (set by MCP bridge for anonymous sessions)
 }
 
 // ─── IPC Types ───
@@ -61,12 +62,14 @@ export interface SessionCreateOptions {
   resumeUUID?: string  // session id / UUID from agent resume output
   command?: string
   args?: string[]
+  env?: Record<string, string>
   cols?: number
   rows?: number
 }
 
 export interface SessionCreateResult {
   ptyId: string
+  resumeUUID?: string | null
 }
 
 export interface SessionDataEvent {
@@ -84,6 +87,53 @@ export interface SessionExitEvent {
 export interface SessionReplayPayload {
   data: string
   seq: number
+}
+
+// ─── Meta-Agent (FastAgents MCP) ───
+// The orchestrator HTTP server in main bridges to the renderer's stores for
+// actions that require renderer state (creating sessions, listing sessions
+// with their full metadata). Everything else (read / write / wait_for_idle)
+// is served directly by main using PtyManager.
+
+export interface McpSessionInfo {
+  /** Renderer session id (same value shown in UI tabs). */
+  id: string
+  name: string
+  type: SessionType
+  status: SessionStatus
+  cwd: string | null
+  projectId: string | null
+  worktreeId: string | null
+  paneId: string | null
+  /** True when this session is the agent that owns the MCP bridge — never act on self. */
+  isSelf: boolean
+  /** True when the PTY backing this session is alive. */
+  hasPty: boolean
+}
+
+export interface McpCreateSessionRequest {
+  requestId: string
+  sourceSessionId: string | null
+  type: Exclude<SessionType, 'claude-gui'>
+  /** Absolute working directory. Empty string = inherit from source session / project. */
+  cwd: string
+  projectId?: string | null
+  worktreeId?: string | null
+  name?: string | null
+  activate?: boolean
+  initialInput?: string | null
+}
+
+export interface McpCreateSessionResponse {
+  requestId: string
+  ok: boolean
+  sessionId?: string
+  error?: string
+}
+
+export interface McpListSessionsResponse {
+  requestId: string
+  sessions: McpSessionInfo[]
 }
 
 export type ClaudeGuiComputeMode = 'auto' | 'max'
@@ -473,6 +523,15 @@ export const IPC = {
   SESSION_GRACEFUL_SHUTDOWN: 'session:graceful-shutdown',
   SESSION_FOCUS: 'session:focus',
   SESSION_IDLE_TOAST: 'session:idle-toast',
+
+  // ─── Meta-Agent / MCP bridge ───
+  // main → renderer: ask renderer to perform an action requested by the
+  // FastAgents MCP server (called by an agent acting as orchestrator).
+  // renderer → main: reply with the result keyed by requestId.
+  MCP_LIST_SESSIONS_REQUEST: 'mcp:list-sessions-request',
+  MCP_LIST_SESSIONS_RESPONSE: 'mcp:list-sessions-response',
+  MCP_CREATE_SESSION_REQUEST: 'mcp:create-session-request',
+  MCP_CREATE_SESSION_RESPONSE: 'mcp:create-session-response',
 
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPOND: 'permission:respond',

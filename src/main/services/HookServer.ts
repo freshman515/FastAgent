@@ -1,4 +1,4 @@
-// HookServer — Local HTTP server receiving Claude Code hook callbacks
+// HookServer — Local HTTP server receiving agent hook callbacks
 // Routes: POST /agent-hook (Stop etc.), POST /permission (PermissionRequest — blocking)
 
 import http from 'node:http'
@@ -160,12 +160,25 @@ export class HookServer {
       try {
         const data = JSON.parse(body)
         const event = data.hook_event_name as string | undefined
-        const faSessionId = data.fa_session_id as string | undefined
+        const faSessionId = typeof data.fa_session_id === 'string' && data.fa_session_id
+          ? data.fa_session_id
+          : null
+        const cwd = typeof data.cwd === 'string' ? data.cwd : ''
+        const sessionType = typeof data.fastagents_session_type === 'string'
+          ? data.fastagents_session_type
+          : ''
+        const hookSource = typeof data.fastagents_hook_source === 'string'
+          ? data.fastagents_hook_source
+          : ''
+        const resolvedSessionId = faSessionId
+          ?? (cwd && (sessionType === 'codex' || sessionType === 'codex-yolo' || hookSource === 'codex')
+            ? ptyManager.findCodexSessionByCwd(cwd)
+            : null)
 
-        if (event === 'Stop' && faSessionId) {
+        if (event === 'Stop' && resolvedSessionId) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (!win.isDestroyed()) {
-              win.webContents.send(IPC.SESSION_IDLE_TOAST, { sessionId: faSessionId })
+              win.webContents.send(IPC.SESSION_IDLE_TOAST, { sessionId: resolvedSessionId })
             }
           }
         }

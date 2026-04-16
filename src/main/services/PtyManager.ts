@@ -3,10 +3,13 @@ import type { IPty } from '@lydell/node-pty'
 import headlessPkg from '@xterm/headless'
 import serializePkg from '@xterm/addon-serialize'
 import { BrowserWindow } from 'electron'
-import { IPC } from '@shared/types'
-import type { SessionCreateOptions, SessionReplayPayload } from '@shared/types'
+import { IPC, isClaudeCodeType } from '@shared/types'
+import type { SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
+import type { ClaudeSessionLaunchMode } from '@shared/claudeSession'
 import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
+import { resolveClaudeSessionLaunch } from './ClaudeSessionResolver'
+import { createFastAgentsMcpConfig } from './FastAgentsMcpService'
 
 const isWindows = process.platform === 'win32'
 const HeadlessTerminal = (headlessPkg as { Terminal: new (options?: Record<string, unknown>) => import('@xterm/headless').Terminal }).Terminal
@@ -27,6 +30,13 @@ interface ManagedPty {
   mirror: TerminalMirror
   dataSeq: number
   resumeId: string | null
+}
+
+export interface ManagedSessionInfo {
+  ptyId: string
+  sessionId: string
+  cwd: string
+  type: SessionCreateOptions['type']
 }
 
 // Agent CLIs (especially Codex/Claude) emit a lot of ANSI/TUI repaint traffic.
@@ -82,28 +92,133 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[()][0-2AB]|\x1b[>=<]|\x1b\[[\?!]?[0-9;]*[hlm]/g, '')
 }
 
-function getResumePattern(type: SessionCreateOptions['type']): RegExp | null {
-  if (type === 'claude-code' || type === 'claude-code-yolo') {
-    return /claude\s+--resume\s+([0-9a-f-]{36})/i
-  }
-  return null
+function quoteShellArg(arg: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(arg)) return arg
+  if (isWindows) return `"${arg.replace(/"/g, '\\"')}"`
+  return `'${arg.replace(/'/g, "'\\''")}'`
 }
+
+function normalizeCwd(cwd: string): string {
+  return cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+}
+
+interface McpBridgeEnv {
+  port: number
+  token: string
+}
+
+export type DataObserver = (ptyId: string) => void
 
 export class PtyManager {
   private readonly ptys = new Map<string, ManagedPty>()
   private idCounter = 0
 
-  create(options: SessionCreateOptions): string {
+  /** Populated by OrchestratorService.init() so PTYs spawned afterwards see the
+   *  MCP bridge port + token in their env. */
+  private mcpEnv: McpBridgeEnv | null = null
+
+  /** Observers notified once per visible PTY data chunk. Used by the
+   *  orchestrator service to track per-PTY idle time for /wait_idle. */
+  private readonly dataObservers = new Set<DataObserver>()
+
+  setMcpEnv(env: McpBridgeEnv | null): void {
+    this.mcpEnv = env
+  }
+
+  getMcpEnv(): McpBridgeEnv | null {
+    return this.mcpEnv
+  }
+
+  addDataObserver(observer: DataObserver): () => void {
+    this.dataObservers.add(observer)
+    return () => { this.dataObservers.delete(observer) }
+  }
+
+  /** Reverse lookup: renderer Session.id → ptyId. */
+  findPtyIdBySessionId(sessionId: string): string | null {
+    for (const [ptyId, managed] of this.ptys) {
+      if (managed.sessionId === sessionId) return ptyId
+    }
+    return null
+  }
+
+  private notifyDataObservers(ptyId: string): void {
+    for (const observer of this.dataObservers) {
+      try {
+        observer(ptyId)
+      } catch {
+        // Observer errors must never break the data path.
+      }
+    }
+  }
+
+  create(options: SessionCreateOptions): SessionCreateResult {
     const id = `pty-${++this.idCounter}-${Date.now()}`
     const shell = detectShell()
 
     let shellPath = shell.shell
     let shellArgs: string[] = [...shell.args]
+    let effectiveResumeUUID = options.resumeUUID ?? null
+    let claudeLaunchMode: ClaudeSessionLaunchMode | undefined
 
     // For agent sessions, wrap the agent command
-    const agentCmd = buildAgentCommand(options.type, options.sessionId, options.resume, options.resumeUUID)
+    if (isClaudeCodeType(options.type)) {
+      const launch = resolveClaudeSessionLaunch(options.cwd, options.resume, options.resumeUUID)
+      effectiveResumeUUID = launch.sessionUUID
+      claudeLaunchMode = launch.mode
+
+      if (launch.replacedUUID) {
+        console.warn(
+          `[PtyManager] ignoring stale Claude resume id ${launch.replacedUUID} for ${options.cwd} (${launch.replacementReason ?? 'unknown'}); using ${launch.sessionUUID}`,
+        )
+      }
+    }
+
+    const agentCmd = buildAgentCommand(
+      options.type,
+      options.sessionId,
+      options.resume,
+      effectiveResumeUUID ?? undefined,
+      claudeLaunchMode,
+    )
+    if (agentCmd && isClaudeCodeType(options.type) && options.sessionId && this.mcpEnv) {
+      const mcpConfigPath = createFastAgentsMcpConfig({
+        port: this.mcpEnv.port,
+        token: this.mcpEnv.token,
+        sessionId: options.sessionId,
+      })
+      if (mcpConfigPath) {
+        agentCmd.args.push('--mcp-config', mcpConfigPath)
+      }
+    }
+    // Codex CLI spawns MCP servers with a *sealed* env — only the env vars
+    // declared in ~/.codex/config.toml's [mcp_servers.fastagents] table are
+    // visible to the bridge. SESSION_ID is per-PTY so it can't live in the
+    // global TOML. Override it on the command line using Codex's `-c` flag
+    // which accepts dotted keys into the config.
+    //
+    // Note: we deliberately pass the value *without* TOML quotes. Codex
+    // parses the value as TOML first; since a session id like `mo1gtu87-
+    // rsjk8r` fails TOML parsing (bare identifier with a dash), it falls
+    // back to treating the raw string as a literal. Wrapping in `"..."`
+    // would be correct TOML but then the shell (pwsh on Windows, bash on
+    // Unix) re-quotes the whole arg and the extra escape sequences get
+    // mis-parsed — PowerShell does not recognize `\"` so the argument
+    // splits mid-value and codex sees a stray positional PROMPT.
+    if (
+      agentCmd
+      && (options.type === 'codex' || options.type === 'codex-yolo')
+      && options.sessionId
+      && this.mcpEnv
+    ) {
+      agentCmd.args = [
+        '-c',
+        `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${options.sessionId}`,
+        ...agentCmd.args,
+      ]
+    }
     if (agentCmd && !isWindows) {
-      const fullCmd = [agentCmd.command, ...agentCmd.args].join(' ')
+      const fullCmd = [agentCmd.command, ...agentCmd.args].map(quoteShellArg).join(' ')
       shellArgs = ['-c', fullCmd]
     }
 
@@ -114,10 +229,16 @@ export class PtyManager {
       ...process.env as Record<string, string>,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
-      // Inject session ID so hook scripts can identify this exact session
+      // Inject session ID so hook scripts / MCP bridge can identify this exact session.
       ...(options.sessionId ? { FASTAGENTS_SESSION_ID: options.sessionId } : {}),
-      // IDE server port for Claude Code MCP integration
+      FASTAGENTS_SESSION_TYPE: options.type,
+      // Editor IDE server (separate from the MCP orchestrator).
       ...(getIdeServerPort() ? { FASTAGENTS_IDE_PORT: String(getIdeServerPort()) } : {}),
+      // FastAgents MCP bridge — agents in this PTY can talk back to us.
+      ...(this.mcpEnv ? {
+        FASTAGENTS_MCP_PORT: String(this.mcpEnv.port),
+        FASTAGENTS_MCP_TOKEN: this.mcpEnv.token,
+      } : {}),
       ...(options.env ?? {}),
     }
 
@@ -138,7 +259,7 @@ export class PtyManager {
       replayBuffer: '',
       mirror: createTerminalMirror(cols, rows),
       dataSeq: 0,
-      resumeId: null,
+      resumeId: isClaudeCodeType(options.type) ? effectiveResumeUUID : null,
     }
 
     this.ptys.set(id, managed)
@@ -149,13 +270,18 @@ export class PtyManager {
     // or fall back to a short timeout.
     const isAgentSession = options.type !== 'terminal'
     let agentStarted = !isAgentSession
+    let suppressedOutput = ''
 
     // Agent banner keywords (case-insensitive checked)
     const AGENT_KEYWORDS = ['Claude Code', 'Codex', 'opencode', 'OpenCode', 'open-code']
 
+    let agentStartFallback: NodeJS.Timeout | null = null
     if (isAgentSession) {
       // Fallback: start forwarding after 3s no matter what
-      setTimeout(() => { agentStarted = true }, 3000)
+      agentStartFallback = setTimeout(() => {
+        agentStarted = true
+        suppressedOutput = ''
+      }, 3000)
     }
 
     const sendToWindows = (payload: { ptyId: string; data: string; seq: number }): void => {
@@ -166,30 +292,11 @@ export class PtyManager {
       }
     }
 
-    const broadcastResumeId = (resumeId: string): void => {
-      if (!managed.sessionId) return
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('session:resume-uuids', { [managed.sessionId]: resumeId })
-        }
-      }
-    }
-
-    const captureResumeId = (): void => {
-      const pattern = getResumePattern(managed.type)
-      if (!pattern) return
-      const clean = stripAnsi(managed.replayBuffer)
-      const match = clean.match(pattern)
-      const nextResumeId = match?.[1] ?? null
-      if (!nextResumeId || nextResumeId === managed.resumeId) return
-      managed.resumeId = nextResumeId
-      broadcastResumeId(nextResumeId)
-    }
-
     const emitVisibleData = (data: string): void => {
       queueMirrorWrite(managed.mirror, data)
       managed.dataSeq += 1
       sendToWindows({ ptyId: id, data, seq: managed.dataSeq })
+      this.notifyDataObservers(id)
     }
 
     // Forward data to all windows
@@ -199,15 +306,16 @@ export class PtyManager {
       if (managed.replayBuffer.length > MAX_REPLAY_CHARS) {
         managed.replayBuffer = managed.replayBuffer.slice(-MAX_REPLAY_CHARS)
       }
-      captureResumeId()
 
       // For agent sessions, suppress shell prompt/command, only show agent output
       if (!agentStarted) {
+        suppressedOutput += data
         const raw = managed.replayBuffer
         const clean = stripAnsi(raw)
         const detected = AGENT_KEYWORDS.some((kw) => clean.includes(kw) || raw.includes(kw))
         if (detected) {
           agentStarted = true
+          suppressedOutput = ''
           emitVisibleData(data)
         }
         return
@@ -219,6 +327,17 @@ export class PtyManager {
     })
 
     ptyProcess.onExit(({ exitCode }) => {
+      if (agentStartFallback) {
+        clearTimeout(agentStartFallback)
+        agentStartFallback = null
+      }
+
+      if (!agentStarted && suppressedOutput) {
+        agentStarted = true
+        emitVisibleData(suppressedOutput)
+        suppressedOutput = ''
+      }
+
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
           win.webContents.send(IPC.SESSION_EXIT, { ptyId: id, exitCode, resumeUUID: managed.resumeId })
@@ -236,11 +355,11 @@ export class PtyManager {
       setTimeout(() => {
         const parts = [agentCmd.command, ...agentCmd.args]
         const suffix = options.type !== 'terminal' ? ' ; exit' : ''
-        ptyProcess.write(parts.join(' ') + suffix + '\r')
+        ptyProcess.write(parts.map(quoteShellArg).join(' ') + suffix + '\r')
       }, 500)
     }
 
-    return id
+    return { ptyId: id, resumeUUID: managed.resumeId }
   }
 
   write(id: string, data: string): void {
@@ -249,16 +368,88 @@ export class PtyManager {
     managed.pty.write(data)
   }
 
-  /** Find a claude-code session by CWD path */
-  findClaudeSessionByCwd(cwd: string): string | null {
-    const norm = cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+  listManagedSessions(): ManagedSessionInfo[] {
+    return Array.from(this.ptys.entries())
+      .flatMap(([ptyId, managed]) => {
+        if (!managed.sessionId) return []
+        return [{
+          ptyId,
+          sessionId: managed.sessionId,
+          cwd: managed.cwd,
+          type: managed.type,
+        }]
+      })
+  }
+
+  getManagedSession(sessionId: string): ManagedSessionInfo | null {
+    for (const [ptyId, managed] of this.ptys) {
+      if (managed.sessionId !== sessionId) continue
+      return {
+        ptyId,
+        sessionId,
+        cwd: managed.cwd,
+        type: managed.type,
+      }
+    }
+    return null
+  }
+
+  canAccessSession(sourceSessionId: string | null | undefined, targetSessionId: string): boolean {
+    if (!sourceSessionId) return false
+    const source = this.getManagedSession(sourceSessionId)
+    const target = this.getManagedSession(targetSessionId)
+    if (!source || !target) return false
+    const sourceCwd = normalizeCwd(source.cwd)
+    const targetCwd = normalizeCwd(target.cwd)
+    return sourceCwd === targetCwd
+  }
+
+  writeToSession(sessionId: string, data: string): boolean {
+    for (const [, managed] of this.ptys) {
+      if (managed.sessionId !== sessionId) continue
+      managed.pty.write(data)
+      return true
+    }
+    return false
+  }
+
+  async getReplayBySessionId(sessionId: string): Promise<SessionReplayPayload | null> {
+    for (const [ptyId, managed] of this.ptys) {
+      if (managed.sessionId !== sessionId) continue
+      return this.getReplay(ptyId)
+    }
+    return null
+  }
+
+  /** Find an agent session by CWD path, optionally limited to specific session types. */
+  findAgentSessionByCwd(
+    cwd: string,
+    allowedTypes: Array<SessionCreateOptions['type']> = [
+      'claude-code',
+      'claude-code-yolo',
+      'codex',
+      'codex-yolo',
+      'opencode',
+    ],
+  ): string | null {
+    const norm = normalizeCwd(cwd)
     for (const [, m] of this.ptys) {
       if (!m.sessionId) continue
-      if (m.type !== 'claude-code' && m.type !== 'claude-code-yolo') continue
-      const mCwd = m.cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+      if (!allowedTypes.includes(m.type)) continue
+      const mCwd = normalizeCwd(m.cwd)
       if (norm === mCwd || norm.startsWith(mCwd + '/')) return m.sessionId
     }
     return null
+  }
+
+  /** Find a claude-code session by CWD path */
+  findClaudeSessionByCwd(cwd: string): string | null {
+    return this.findAgentSessionByCwd(cwd, ['claude-code', 'claude-code-yolo'])
+  }
+
+  /** Find a Codex session by CWD path */
+  findCodexSessionByCwd(cwd: string): string | null {
+    return this.findAgentSessionByCwd(cwd, ['codex', 'codex-yolo'])
   }
 
   resize(id: string, cols: number, rows: number): void {

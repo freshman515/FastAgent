@@ -15,6 +15,9 @@ import type {
   ExternalIdeId,
   ExternalIdeOption,
   FileSearchResult,
+  McpCreateSessionRequest,
+  McpCreateSessionResponse,
+  McpSessionInfo,
   OpenIdeResult,
   ProjectSearchMatch,
   SearchQueryOptions,
@@ -119,6 +122,24 @@ const api = {
     },
     respondPermission: (id: string, behavior: 'allow' | 'deny', suggestionIndex?: number) =>
       ipcRenderer.invoke(IPC.PERMISSION_RESPOND, id, behavior, suggestionIndex),
+  },
+
+  // ─── FastAgents MCP bridge (Meta-Agent) ───
+  mcp: {
+    onListSessionsRequest: (callback: (req: { requestId: string }) => void) => {
+      const handler = (_: unknown, req: { requestId: string }) => callback(req)
+      ipcRenderer.on(IPC.MCP_LIST_SESSIONS_REQUEST, handler)
+      return () => ipcRenderer.removeListener(IPC.MCP_LIST_SESSIONS_REQUEST, handler)
+    },
+    respondListSessions: (payload: { requestId: string; sessions: McpSessionInfo[] }) =>
+      ipcRenderer.send(IPC.MCP_LIST_SESSIONS_RESPONSE, payload),
+    onCreateSessionRequest: (callback: (req: McpCreateSessionRequest) => void) => {
+      const handler = (_: unknown, req: McpCreateSessionRequest) => callback(req)
+      ipcRenderer.on(IPC.MCP_CREATE_SESSION_REQUEST, handler)
+      return () => ipcRenderer.removeListener(IPC.MCP_CREATE_SESSION_REQUEST, handler)
+    },
+    respondCreateSession: (payload: McpCreateSessionResponse) =>
+      ipcRenderer.send(IPC.MCP_CREATE_SESSION_RESPONSE, payload),
   },
 
   claudeGui: {

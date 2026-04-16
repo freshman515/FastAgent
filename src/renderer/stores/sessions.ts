@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session, SessionType, SessionStatus, OutputState } from '@shared/types'
 import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
+import { isClaudeSessionUuid } from '@shared/claudeSession'
 import { generateId } from '@/lib/utils'
 
 const RUNTIME_ONLY_SESSION_FIELDS = new Set<keyof Omit<Session, 'id'>>([
@@ -8,6 +9,22 @@ const RUNTIME_ONLY_SESSION_FIELDS = new Set<keyof Omit<Session, 'id'>>([
   'status',
   'updatedAt',
 ])
+
+function createClaudeSessionUuid(): string {
+  const randomUUID = globalThis.crypto?.randomUUID
+  if (typeof randomUUID === 'function') return randomUUID.call(globalThis.crypto)
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16)
+    const digit = char === 'x' ? value : (value & 0x3) | 0x8
+    return digit.toString(16)
+  })
+}
+
+function getClaudeResumeUUID(type: SessionType, value?: unknown): string | null {
+  if (!isClaudeCodeType(type)) return null
+  return isClaudeSessionUuid(value) ? value : createClaudeSessionUuid()
+}
 
 function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
@@ -24,9 +41,7 @@ function sanitizeSession(s: unknown): Session | null {
     status: 'stopped' as SessionStatus,
     ptyId: null,
     initialized: obj.initialized === true,
-    resumeUUID: isClaudeCodeType(type) && typeof obj.resumeUUID === 'string'
-      ? obj.resumeUUID
-      : null,
+    resumeUUID: getClaudeResumeUUID(type, obj.resumeUUID),
     pinned: obj.pinned === true,
     createdAt: typeof obj.createdAt === 'number' ? obj.createdAt : Date.now(),
     updatedAt: Date.now(),
@@ -122,7 +137,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       status: 'stopped',
       ptyId: null,
       initialized: false,
-      resumeUUID: null,
+      resumeUUID: getClaudeResumeUUID(type),
       pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -147,7 +162,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       status: 'stopped',
       ptyId: null,
       initialized: false,
-      resumeUUID: null,
+      resumeUUID: getClaudeResumeUUID(item.type),
       pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -195,6 +210,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         status: 'stopped',
         ptyId: null,
         initialized: isClaudeCodeType(restored.type) ? restored.initialized : false,
+        resumeUUID: getClaudeResumeUUID(restored.type, restored.resumeUUID),
       }
       const sessions = [...state.sessions, session]
       persist(sessions)

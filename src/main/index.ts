@@ -12,6 +12,7 @@ import { startIdeServer, stopIdeServer, registerIdeIPC } from './services/IdeSer
 import { opencodeService } from './services/OpencodeService'
 import { claudeGuiService } from './services/ClaudeGuiService'
 import { updaterService } from './services/UpdaterService'
+import { orchestratorService } from './services/OrchestratorService'
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
@@ -61,9 +62,23 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerAllHandlers()
+
+  // Boot the FastAgents MCP bridge HTTP server BEFORE spawning any PTYs, so
+  // the env vars (FASTAGENTS_MCP_PORT / FASTAGENTS_MCP_TOKEN) are in place
+  // when sessions start. If init fails we keep going — the app must still
+  // launch even when the bridge can't bind a port.
+  try {
+    await orchestratorService.init()
+  } catch (err) {
+    console.error('[orchestrator] failed to start MCP bridge HTTP server:', err)
+  }
+
   createWindow()
+  if (mainWindow) {
+    orchestratorService.setMainWindow(mainWindow)
+  }
   mediaMonitor.start()
 
   // Auto-updater: register listeners first, then check after a short delay
@@ -319,6 +334,7 @@ app.on('before-quit', async (e) => {
   }
 
   hookServer.stop()
+  orchestratorService.dispose()
   unregisterHooks()
   mediaMonitor.stop()
   stopIdeServer()

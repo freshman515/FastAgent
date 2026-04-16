@@ -485,13 +485,28 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const windowDragRef = useRef<WindowDragState | null>(null)
   const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
 
+  const openNewSessionMenu = useCallback((anchor: HTMLElement, align: 'left' | 'center' = 'left') => {
+    const rect = anchor.getBoundingClientRect()
+    setMenuPos({
+      top: rect.bottom + 4,
+      left: align === 'center' ? rect.left + rect.width / 2 - 96 : rect.left,
+    })
+    setShowNewMenu(true)
+  }, [])
+
   const handlePlusClick = (): void => {
-    if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect()
-      setMenuPos({ top: rect.bottom + 4, left: rect.left })
+    if (!btnRef.current) return
+    if (showNewMenu) {
+      setShowNewMenu(false)
+      return
     }
-    setShowNewMenu(!showNewMenu)
+    openNewSessionMenu(btnRef.current)
   }
+
+  const handleEmptyIconClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation()
+    openNewSessionMenu(event.currentTarget, 'center')
+  }, [openNewSessionMenu])
 
   const paneRootRef = useRef<HTMLDivElement>(null)
 
@@ -916,6 +931,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             <EmptyState
               title="Empty pane"
               description="Create a session or drag a tab here."
+              icon={<Plus size={22} className="text-[var(--color-accent)]/70" />}
+              actionLabel="新建会话"
+              onIconClick={handleEmptyIconClick}
             />
           </div>
         )}

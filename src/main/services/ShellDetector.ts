@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { buildClaudeCodeArgs, type ClaudeSessionLaunchMode } from '@shared/claudeSession'
 
 const isWindows = process.platform === 'win32'
 
@@ -64,17 +65,15 @@ export function buildAgentCommand(
   _sessionId?: string,
   resume?: boolean,
   resumeUUID?: string,
+  claudeLaunchMode?: ClaudeSessionLaunchMode,
 ): { command: string; args: string[] } | null {
   if (type === 'terminal' || type === 'claude-gui') {
     return null
   }
 
   if (type === 'claude-code' || type === 'claude-code-yolo') {
-    const baseArgs = type === 'claude-code-yolo' ? ['--dangerously-skip-permissions'] : []
-    if (resume && resumeUUID) {
-      return { command: 'claude', args: [...baseArgs, '--resume', resumeUUID] }
-    }
-    return { command: 'claude', args: baseArgs }
+    const mode = claudeLaunchMode ?? (resume && resumeUUID ? 'resume' : 'plain')
+    return { command: 'claude', args: buildClaudeCodeArgs(type, mode, resumeUUID) }
   }
 
   if (type === 'codex') {
