@@ -274,11 +274,35 @@ function shortToolOutput(output: string): string {
   return normalized.length > 80 ? `${normalized.slice(0, 80)}...` : normalized
 }
 
+function isTextPart(part: OpencodePart): part is TextPart {
+  return part.type === 'text' && 'text' in part && typeof part.text === 'string'
+}
+
+function isReasoningPart(part: OpencodePart): part is ReasoningPart {
+  return part.type === 'reasoning' && 'text' in part && typeof part.text === 'string'
+}
+
+function isToolPart(part: OpencodePart): part is ToolPart {
+  return part.type === 'tool' && 'state' in part && typeof part.state === 'object' && part.state !== null
+}
+
+function isFilePart(part: OpencodePart): part is FilePart {
+  return part.type === 'file' && 'url' in part && typeof part.url === 'string'
+}
+
+function isPatchPart(part: OpencodePart): part is PatchPart {
+  return part.type === 'patch' && 'files' in part && Array.isArray(part.files)
+}
+
+function isAgentPart(part: OpencodePart): part is AgentPart {
+  return part.type === 'agent' && 'name' in part && typeof part.name === 'string'
+}
+
 function MessageBody({ message }: { message: OpencodeMessage }): JSX.Element {
   return (
     <div className="mt-2 flex flex-col gap-2">
       {message.parts.map((part) => {
-        if (part.type === 'text') {
+        if (isTextPart(part)) {
           if (isUsageLikeText(part.text)) {
             return (
               <details key={part.id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-2">
@@ -301,7 +325,7 @@ function MessageBody({ message }: { message: OpencodeMessage }): JSX.Element {
           )
         }
 
-        if (part.type === 'reasoning') {
+        if (isReasoningPart(part)) {
           return (
             <details key={part.id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-2">
               <summary className="cursor-pointer text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
@@ -314,7 +338,7 @@ function MessageBody({ message }: { message: OpencodeMessage }): JSX.Element {
           )
         }
 
-        if (part.type === 'tool') {
+        if (isToolPart(part)) {
           const tone = part.state.status === 'completed'
             ? 'text-[var(--color-success)]'
             : part.state.status === 'error'
@@ -347,7 +371,7 @@ function MessageBody({ message }: { message: OpencodeMessage }): JSX.Element {
           )
         }
 
-        if (part.type === 'file') {
+        if (isFilePart(part)) {
           return (
             <div key={part.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-2 text-[11px] text-[var(--color-text-secondary)]">
               <FileCode2 size={12} className="text-[var(--color-info)]" />
@@ -356,12 +380,12 @@ function MessageBody({ message }: { message: OpencodeMessage }): JSX.Element {
           )
         }
 
-        if (part.type === 'patch') {
+        if (isPatchPart(part)) {
           return (
             <div key={part.id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-2">
               <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">Patch</div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {part.files.map((file) => (
+                {part.files.map((file: string) => (
                   <span key={file} className="rounded bg-[var(--color-bg-primary)] px-1.5 py-1 text-[10px] text-[var(--color-text-secondary)]">
                     {file}
                   </span>
@@ -371,7 +395,7 @@ function MessageBody({ message }: { message: OpencodeMessage }): JSX.Element {
           )
         }
 
-        if (part.type === 'agent') {
+        if (isAgentPart(part)) {
           return (
             <div key={part.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-2 text-[11px] text-[var(--color-text-secondary)]">
               <Sparkles size={12} className="text-[var(--color-accent)]" />
@@ -592,7 +616,7 @@ export function OpenCodePanel(): JSX.Element {
         }
 
         if (event.type === 'permission.updated') {
-          const permission = event.properties as OpencodePermission
+          const permission = event.properties as unknown as OpencodePermission
           if (permission.sessionID !== sessionId) return
           setPermissions((current) => current.some((item) => item.id === permission.id)
             ? current.map((item) => (item.id === permission.id ? permission : item))

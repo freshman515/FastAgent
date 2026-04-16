@@ -30,6 +30,10 @@ interface ManagedPty {
   mirror: TerminalMirror
   dataSeq: number
   resumeId: string | null
+  inputReady: boolean
+  queuedInput: string[]
+  inputReadyTimer: NodeJS.Timeout | null
+  inputFlushInProgress: boolean
 }
 
 export interface ManagedSessionInfo {
@@ -45,6 +49,9 @@ export interface ManagedSessionInfo {
 // replay to start mid-stream, which drops earlier content and can leave the
 // restored screen visually blank/truncated.
 const MAX_REPLAY_CHARS = 4 * 1024 * 1024
+const AGENT_START_FALLBACK_MS = 3000
+const AGENT_INPUT_READY_QUIET_MS = 1000
+const QUEUED_INPUT_WRITE_GAP_MS = 120
 
 function createTerminalMirror(cols: number, rows: number): TerminalMirror {
   const terminal = new HeadlessTerminal({
@@ -84,6 +91,10 @@ function disposeTerminalMirror(mirror: TerminalMirror): void {
   } catch {
     // ignore
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // Strip ANSI escape sequences for text matching
@@ -148,6 +159,45 @@ export class PtyManager {
         observer(ptyId)
       } catch {
         // Observer errors must never break the data path.
+      }
+    }
+  }
+
+  private scheduleInputReady(ptyId: string, quietMs = AGENT_INPUT_READY_QUIET_MS): void {
+    const managed = this.ptys.get(ptyId)
+    if (!managed || managed.inputReady) return
+
+    if (managed.inputReadyTimer) {
+      clearTimeout(managed.inputReadyTimer)
+    }
+
+    managed.inputReadyTimer = setTimeout(() => {
+      const current = this.ptys.get(ptyId)
+      if (!current) return
+
+      current.inputReadyTimer = null
+      current.inputReady = true
+      void this.flushQueuedInput(current)
+    }, quietMs)
+  }
+
+  private async flushQueuedInput(managed: ManagedPty): Promise<void> {
+    if (managed.inputFlushInProgress) return
+    managed.inputFlushInProgress = true
+
+    try {
+      while (managed.inputReady && managed.queuedInput.length > 0) {
+        const data = managed.queuedInput.shift()
+        if (typeof data !== 'string') continue
+        managed.pty.write(data)
+        if (managed.queuedInput.length > 0) {
+          await delay(QUEUED_INPUT_WRITE_GAP_MS)
+        }
+      }
+    } finally {
+      managed.inputFlushInProgress = false
+      if (managed.inputReady && managed.queuedInput.length > 0) {
+        void this.flushQueuedInput(managed)
       }
     }
   }
@@ -260,6 +310,10 @@ export class PtyManager {
       mirror: createTerminalMirror(cols, rows),
       dataSeq: 0,
       resumeId: isClaudeCodeType(options.type) ? effectiveResumeUUID : null,
+      inputReady: options.type === 'terminal',
+      queuedInput: [],
+      inputReadyTimer: null,
+      inputFlushInProgress: false,
     }
 
     this.ptys.set(id, managed)
@@ -281,7 +335,8 @@ export class PtyManager {
       agentStartFallback = setTimeout(() => {
         agentStarted = true
         suppressedOutput = ''
-      }, 3000)
+        this.scheduleInputReady(id)
+      }, AGENT_START_FALLBACK_MS)
     }
 
     const sendToWindows = (payload: { ptyId: string; data: string; seq: number }): void => {
@@ -297,6 +352,9 @@ export class PtyManager {
       managed.dataSeq += 1
       sendToWindows({ ptyId: id, data, seq: managed.dataSeq })
       this.notifyDataObservers(id)
+      if (isAgentSession) {
+        this.scheduleInputReady(id)
+      }
     }
 
     // Forward data to all windows
@@ -330,6 +388,10 @@ export class PtyManager {
       if (agentStartFallback) {
         clearTimeout(agentStartFallback)
         agentStartFallback = null
+      }
+      if (managed.inputReadyTimer) {
+        clearTimeout(managed.inputReadyTimer)
+        managed.inputReadyTimer = null
       }
 
       if (!agentStarted && suppressedOutput) {
@@ -365,6 +427,13 @@ export class PtyManager {
   write(id: string, data: string): void {
     const managed = this.ptys.get(id)
     if (!managed) return
+    if (!managed.inputReady || managed.inputFlushInProgress) {
+      managed.queuedInput.push(data)
+      if (managed.inputReady) {
+        void this.flushQueuedInput(managed)
+      }
+      return
+    }
     managed.pty.write(data)
   }
 
@@ -405,9 +474,9 @@ export class PtyManager {
   }
 
   writeToSession(sessionId: string, data: string): boolean {
-    for (const [, managed] of this.ptys) {
+    for (const [ptyId, managed] of this.ptys) {
       if (managed.sessionId !== sessionId) continue
-      managed.pty.write(data)
+      this.write(ptyId, data)
       return true
     }
     return false
@@ -465,6 +534,10 @@ export class PtyManager {
   kill(id: string): void {
     const managed = this.ptys.get(id)
     if (managed) {
+      if (managed.inputReadyTimer) {
+        clearTimeout(managed.inputReadyTimer)
+        managed.inputReadyTimer = null
+      }
       managed.pty.kill()
       disposeTerminalMirror(managed.mirror)
       this.ptys.delete(id)
@@ -573,6 +646,10 @@ export class PtyManager {
   destroyAll(): void {
 
     for (const [, managed] of this.ptys) {
+      if (managed.inputReadyTimer) {
+        clearTimeout(managed.inputReadyTimer)
+        managed.inputReadyTimer = null
+      }
       try {
         managed.pty.kill()
       } catch {

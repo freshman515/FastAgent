@@ -350,6 +350,11 @@ function buildDiffReviewText(options: ClaudeDiffReviewOptions): string {
   ].join('\n\n')
 }
 
+interface AssistantTextBlock {
+  type: 'text'
+  text: string
+}
+
 function collectAssistantText(payload: any): string[] {
   if (!payload || typeof payload !== 'object') return []
 
@@ -357,10 +362,15 @@ function collectAssistantText(payload: any): string[] {
     return []
   }
 
-  const content = Array.isArray(payload.message.content) ? payload.message.content : []
+  const content: unknown[] = Array.isArray(payload.message.content) ? payload.message.content : []
   return content
-    .filter((block) => block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text as string)
+    .filter((block): block is AssistantTextBlock => block !== null
+      && typeof block === 'object'
+      && 'type' in block
+      && block.type === 'text'
+      && 'text' in block
+      && typeof block.text === 'string')
+    .map((block) => block.text)
 }
 
 function getClaudeSpawnTarget(args: string[]): { command: string; args: string[] } {

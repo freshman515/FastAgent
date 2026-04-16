@@ -40,7 +40,7 @@ export function useActivityMonitor(): void {
                   .projects.find((p) => p.id === session.projectId)
                 useUIStore.getState().addToast({
                   title: `${session.name} completed`,
-                  body: project ? `Project: ${project.name}` : undefined,
+                  body: project ? `Project: ${project.name}` : '',
                   type: 'info',
                   sessionId: session.id,
                   projectId: session.projectId,
@@ -66,7 +66,7 @@ export function useActivityMonitor(): void {
 
   // Listen for system notification clicks
   useEffect(() => {
-    return window.api.notification.onClick((data) => {
+    const unsubscribe = window.api.notification.onClick((data) => {
       if (data.sessionId) {
         const session = useSessionsStore.getState().sessions.find((s) => s.id === data.sessionId)
         if (session) {
@@ -80,11 +80,15 @@ export function useActivityMonitor(): void {
         useProjectsStore.getState().selectProject(data.projectId)
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // Listen for session exit events
   useEffect(() => {
-    return window.api.session.onExit((event) => {
+    const unsubscribe = window.api.session.onExit((event) => {
       const { sessions, activeSessionId } = useSessionsStore.getState()
       const session = sessions.find((s) => s.ptyId === event.ptyId)
       if (!session) return
@@ -103,5 +107,9 @@ export function useActivityMonitor(): void {
         })
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 }

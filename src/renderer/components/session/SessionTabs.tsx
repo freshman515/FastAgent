@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { SessionTab } from './SessionTab'
@@ -28,6 +29,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
   const reorderSessions = useSessionsStore((s) => s.reorderSessions)
   const sidebarCollapsed = useUIStore((s) => s.dockPanelCollapsed.left)
   const toggleSidebar = useUIStore((s) => s.toggleDockPanel)
+  const activePaneId = usePanesStore((s) => s.activePaneId)
 
   const handleDragStart = useCallback((id: string, e: React.DragEvent) => {
     setDraggingId(id)
@@ -129,6 +131,7 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
           <SessionTab
             key={session.id}
             session={session}
+            paneId={activePaneId}
             isActive={session.id === activeSessionId}
             isDragging={draggingId === session.id}
             showDivider={index < sessions.length - 1}

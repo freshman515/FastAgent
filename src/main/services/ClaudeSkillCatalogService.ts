@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs'
 import { access, readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -124,7 +125,7 @@ export async function listClaudeGuiSkills(cwd: string): Promise<ClaudeGuiSkillCa
   for (const root of buildSkillRoots(cwd)) {
     if (!await pathExists(root.path)) continue
 
-    let entries: Awaited<ReturnType<typeof readdir>>
+    let entries: Dirent<string>[]
     try {
       entries = await readdir(root.path, { withFileTypes: true })
     } catch {

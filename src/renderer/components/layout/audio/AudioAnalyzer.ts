@@ -18,8 +18,8 @@ export class AudioAnalyzer {
   private source: MediaStreamAudioSourceNode | null = null
   private stream: MediaStream | null = null
 
-  private freqData: Uint8Array = new Uint8Array(0)
-  private timeData: Uint8Array = new Uint8Array(0)
+  private freqData: Uint8Array<ArrayBuffer> = new Uint8Array(0)
+  private timeData: Uint8Array<ArrayBuffer> = new Uint8Array(0)
 
   private bassHistory: number[] = []
   private lastBeatTime = 0

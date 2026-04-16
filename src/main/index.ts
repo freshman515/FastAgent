@@ -312,15 +312,20 @@ app.on('before-quit', async (e) => {
     // Snapshot sessions and panes BEFORE graceful shutdown
     // (because pty exit → renderer removeSession → config gets overwritten)
     const config = readConfig()
-    const sessionsSnapshot = Array.isArray(config.sessions) ? [...config.sessions] : []
+    const sessionsSnapshot: Record<string, unknown>[] = Array.isArray(config.sessions)
+      ? config.sessions.filter(
+        (session): session is Record<string, unknown> =>
+          typeof session === 'object' && session !== null,
+      )
+      : []
     const panesSnapshot = config.panes ?? {}
 
     // Gracefully shutdown Claude Code sessions and capture resume IDs
     const uuidMap = await ptyManager.gracefulShutdownClaudeSessions()
 
     // Write back the snapshot with UUIDs applied (ignoring any renderer-side deletions)
-    const updated = sessionsSnapshot.map((s: Record<string, unknown>) => {
-      const result = { ...s, status: 'stopped', ptyId: null }
+    const updated = sessionsSnapshot.map((s) => {
+      const result: Record<string, unknown> = { ...s, status: 'stopped', ptyId: null }
       if (typeof s.id === 'string' && uuidMap.has(s.id)) {
         result.resumeUUID = uuidMap.get(s.id)
       }

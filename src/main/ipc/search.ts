@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import type { Dirent } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
 import { ipcMain } from 'electron'
@@ -191,8 +192,8 @@ function createExecPromise(command: string, args: string[], cwd: string, maxBuff
         return
       }
 
-      const code = (error as NodeJS.ErrnoException & { code?: string | number }).code
-      if (code === 1) {
+      const code = (error as { code?: unknown }).code
+      if (code === 1 || code === '1') {
         resolve('')
         return
       }
@@ -306,7 +307,7 @@ async function walkDirectory<T>(
   limit: number,
   visitFile: (filePath: string, remainingLimit: number) => Promise<T[]>,
 ): Promise<T[]> {
-  let entries: Awaited<ReturnType<typeof readdir>>
+  let entries: Dirent<string>[]
   try {
     entries = await readdir(dirPath, { withFileTypes: true })
   } catch {

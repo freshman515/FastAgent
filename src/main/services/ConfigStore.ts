@@ -76,7 +76,7 @@ export function readConfig(): ConfigData {
 
 export function writeConfig(key: keyof ConfigData, value: unknown): void {
   const data = readConfig()
-  ;(data as Record<string, unknown>)[key] = value
+  ;(data as unknown as Record<keyof ConfigData, unknown>)[key] = value
   cache = data
 
   ensureDir()

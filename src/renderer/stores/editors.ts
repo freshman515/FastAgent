@@ -191,7 +191,7 @@ export const useEditorsStore = create<EditorsState>((set, get) => ({
 
   _loadFromConfig: (raw) => {
     const tabs = Array.isArray(raw)
-      ? raw.map(sanitizeEditorTab).filter((tab): tab is EditorTab => tab !== null)
+      ? raw.map((tab) => sanitizeEditorTab(tab)).filter((tab): tab is EditorTab => tab !== null)
       : []
     set({ tabs, navigationTargets: {} })
   },

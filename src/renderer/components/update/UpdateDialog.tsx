@@ -66,7 +66,9 @@ export function UpdateDialog(): JSX.Element | null {
           break
       }
     })
-    return unsubscribe
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   if (state.kind === 'hidden') return null

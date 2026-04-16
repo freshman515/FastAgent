@@ -7,8 +7,8 @@ export function TerminalContainer(): JSX.Element {
   const splitSessionId = useSessionsStore((s) => s.splitSessionId)
   const splitDirection = useSessionsStore((s) => s.splitDirection)
 
-  const hasSplit = splitSessionId && splitSessionId !== activeSessionId
-    && sessions.some((s) => s.id === splitSessionId)
+  const hasSplit = Boolean(splitSessionId && splitSessionId !== activeSessionId
+    && sessions.some((s) => s.id === splitSessionId))
 
   return (
     <>

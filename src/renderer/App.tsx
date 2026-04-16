@@ -444,7 +444,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const pendingEditedFiles = new Map<string, string[]>()
-    return window.api.claudeGui.onEvent((event) => {
+    const unsubscribe = window.api.claudeGui.onEvent((event) => {
       useClaudeGuiStore.getState().applyEvent(event)
 
       if (event.type === 'tool-use' && event.toolUseId && isClaudeGuiFileMutatingTool(event.toolName)) {
@@ -482,6 +482,7 @@ export function App(): JSX.Element {
       }
 
       if (event.type === 'tool-result' && event.toolUseId) {
+        const toolUseId = event.toolUseId
         const snapshot = useClaudeGuiStore.getState().pendingPatchSnapshots[event.toolUseId]
         if (snapshot) {
           void Promise.all(
@@ -500,7 +501,7 @@ export function App(): JSX.Element {
             useClaudeGuiStore.getState().finalizePatchSnapshot({
               conversationId: event.conversationId,
               requestId: event.requestId,
-              toolUseId: event.toolUseId,
+              toolUseId,
               isError: event.isError === true,
               files: files.filter((item): item is NonNullable<typeof item> => item !== null),
             })
@@ -515,11 +516,15 @@ export function App(): JSX.Element {
         }))
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // Listen for Claude Code status-line updates (model, context, cost)
   useEffect(() => {
-    return window.api.session.onStatusUpdate((data) => {
+    const unsubscribe = window.api.session.onStatusUpdate((data) => {
       if (!data.sessionId) return
       updateAgentStatus(data.sessionId, {
         model: typeof data.model === 'string' ? data.model : null,
@@ -534,12 +539,16 @@ export function App(): JSX.Element {
           : null,
       })
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // Keep session runtime state correct even when the owning TerminalView is
   // unmounted (for example during project/worktree switches).
   useEffect(() => {
-    return window.api.session.onExit((event) => {
+    const unsubscribe = window.api.session.onExit((event) => {
       const sessionStore = useSessionsStore.getState()
       const session = sessionStore.sessions.find((item) => item.ptyId === event.ptyId)
       if (!session) return
@@ -551,10 +560,14 @@ export function App(): JSX.Element {
       })
       sessionStore.updateStatus(session.id, 'stopped')
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
-    return window.api.session.onResumeUUIDs((uuids) => {
+    const unsubscribe = window.api.session.onResumeUUIDs((uuids) => {
       const sessionStore = useSessionsStore.getState()
       for (const [sessionId, resumeUUID] of Object.entries(uuids)) {
         if (!resumeUUID) continue
@@ -564,6 +577,10 @@ export function App(): JSX.Element {
         sessionStore.updateSession(sessionId, { resumeUUID })
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // FastAgents MCP bridge: handle list-sessions and create-session requests
@@ -593,22 +610,29 @@ export function App(): JSX.Element {
 
   // Listen for session focus requests (from notification click)
   useEffect(() => {
-    return window.api.session.onFocus((event) => focusSession(event.sessionId))
+    const unsubscribe = window.api.session.onFocus((event) => focusSession(event.sessionId))
+    return () => {
+      unsubscribe()
+    }
   }, [focusSession])
 
   // Listen for overlay actions (e.g., "Jump to session" clicked in overlay)
   useEffect(() => {
-    return window.api.overlay.onAction((raw) => {
+    const unsubscribe = window.api.overlay.onAction((raw) => {
       const action = raw as { type: string; sessionId?: string; projectId?: string }
       if (action.type === 'jump' && action.sessionId) {
         focusSession(action.sessionId)
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [focusSession])
 
   // Listen for agent Stop hooks — show completion toast
   useEffect(() => {
-    return window.api.session.onIdleToast((event) => {
+    const unsubscribe = window.api.session.onIdleToast((event) => {
       // sessionId is already matched by HookServer via CWD + last user input
       const session = event.sessionId
         ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
@@ -630,11 +654,15 @@ export function App(): JSX.Element {
         playTaskCompleteSound(notificationSoundVolume)
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // Listen for detached window close — re-attach tabs to their original project
   useEffect(() => {
-    return window.api.detach.onClosed(({ tabIds, sessions: detachedSessions, editors: detachedEditorsRaw, projectId, worktreeId }) => {
+    const unsubscribe = window.api.detach.onClosed(({ tabIds, sessions: detachedSessions, editors: detachedEditorsRaw, projectId, worktreeId }) => {
       if (tabIds.length === 0) return
       const detachedEditors = detachedEditorsRaw
         .map((editor) => sanitizeEditorTab(editor))
@@ -675,6 +703,10 @@ export function App(): JSX.Element {
         useSessionsStore.getState().setActive(tabIds[0])
       }
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // Capture F11 before focused terminals/editors consume it.

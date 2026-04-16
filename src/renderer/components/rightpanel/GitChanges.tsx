@@ -438,8 +438,11 @@ export function GitChanges(): JSX.Element {
       const preferences: ClaudeGuiPreferences = {
         selectedModel: CLAUDE_REVIEW_FIX_MODEL,
         computeMode: 'max',
+        permissionMode: 'default',
         planMode: false,
         thinkingMode: true,
+        messageTextSize: 'lg',
+        includeEditorContext: true,
         languageMode: true,
         language: 'zh',
         onlyCommunicate: false,

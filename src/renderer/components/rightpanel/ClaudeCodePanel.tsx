@@ -318,15 +318,17 @@ function toDisplayPath(filePath: string, rootPath: string | null): string {
   return filePath.slice(rootPath.length).replace(/^[/\\]/, '') || filePath
 }
 
-function formatSelectionRange(selection: NonNullable<ActiveCursorInfo>['selection']): string {
+type ActiveSelection = NonNullable<NonNullable<ActiveCursorInfo>['selection']>
+
+function formatSelectionRange(selection: ActiveSelection): string {
   return `L${selection.startLine}:C${selection.startColumn} - L${selection.endLine}:C${selection.endColumn}`
 }
 
-function buildSelectionLabel(selection: NonNullable<ActiveCursorInfo>['selection']): string {
+function buildSelectionLabel(selection: ActiveSelection): string {
   return `${formatSelectionRange(selection)} · ${selection.lines} 行 / ${selection.chars} 字符`
 }
 
-function buildSelectionLineLabel(selection: NonNullable<ActiveCursorInfo>['selection']): string {
+function buildSelectionLineLabel(selection: ActiveSelection): string {
   if (selection.startLine === selection.endLine) {
     return `L${selection.startLine}`
   }
@@ -879,7 +881,7 @@ function ToolSection({
   onToggle: (id: string) => void
   collapsible?: boolean
   children: ReactNode
-}): JSX.Element {
+}): ReactNode {
   return (
     <div className="mt-3 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/70">
       {collapsible ? (
@@ -915,7 +917,7 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
   onRetry: (requestId: string, mode: 'same' | 'failed') => void
   expandedSections: Record<string, boolean>
   onToggleSection: (id: string) => void
-}): JSX.Element {
+}): ReactNode {
   const matchClass = isActiveSearchMatch
     ? 'ring-1 ring-[var(--color-accent)]/80 ring-offset-0'
     : isSearchMatch
@@ -1149,11 +1151,10 @@ function MessageCard({ entry, conversation, rootPath, isLast, onOpenFile, onOpen
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-[var(--color-text-tertiary)]">
           <span>{label}</span>
-          {message.kind === 'thinking' && <ChevronRight size={12} />}
         </div>
         <div className={contentClass}>
           {message.text && (
-            message.kind === 'assistant' || message.kind === 'thinking' || message.kind === 'tool-result'
+            message.kind === 'tool-result'
               ? <div className={cn('ai-summary-content text-[var(--color-text-primary)]', typography.body)} dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
               : <div className={cn('whitespace-pre-wrap break-words text-[var(--color-text-primary)]', typography.body)}>{message.text}</div>
           )}
@@ -1478,12 +1479,13 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
 
     const offRequest = window.api.session.onPermissionRequest((event) => {
       if (!event.conversationId || !scopedConversationIds.has(event.conversationId)) return
+      const conversationId = event.conversationId
       setPermissionRequests((current) => (
         current.some((item) => item.id === event.id)
           ? current
           : [...current, {
               id: event.id,
-              conversationId: event.conversationId,
+              conversationId,
               toolName: event.toolName,
               detail: event.detail,
               suggestions: event.suggestions,

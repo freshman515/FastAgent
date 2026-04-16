@@ -88,7 +88,7 @@ const DEFAULT_QUICK_COMMANDS = [
   { id: 'qc-default-git-log', name: 'git log', command: 'git log --oneline -10' },
 ] as const
 
-const DEFAULT_QUICK_COMMAND_IDS = new Set(DEFAULT_QUICK_COMMANDS.map((cmd) => cmd.id))
+const DEFAULT_QUICK_COMMAND_IDS: Set<string> = new Set(DEFAULT_QUICK_COMMANDS.map((cmd) => cmd.id))
 
 export interface AppSettings {
   uiFontSize: number

@@ -461,7 +461,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     return editorIds.map((id) => allEditorTabs.find((t) => t.id === id)).filter(Boolean) as typeof allEditorTabs
   }, [paneSessions, allEditorTabs])
   const orderedTabs = useMemo<PaneTabItem[]>(() => {
-    return paneSessions.flatMap((id) => {
+    return paneSessions.flatMap<PaneTabItem>((id) => {
       if (id.startsWith('editor-')) {
         const tab = allEditorTabs.find((item) => item.id === id)
         return tab ? [{ kind: 'editor', id, tab }] : []

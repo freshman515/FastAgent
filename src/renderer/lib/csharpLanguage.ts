@@ -16,7 +16,7 @@ export function registerEnhancedCSharpLanguage(): void {
 
   monaco.languages.setLanguageConfiguration('csharp', csharpConf)
 
-  const enhancedLanguage = {
+  const enhancedLanguage: monaco.languages.IMonarchLanguage = {
     ...baseCSharpLanguage,
     tokenizer: {
       ...baseCSharpLanguage.tokenizer,
@@ -39,13 +39,13 @@ export function registerEnhancedCSharpLanguage(): void {
         [/[A-Z][A-Za-z0-9_]*(?=\s*[<\[\]?]*\s+[@_a-zA-Z])/, 'class.name'],
         [/[A-Z][A-Za-z0-9_]*/, 'class.name'],
         ...baseCSharpLanguage.tokenizer.root,
-      ],
+      ] as monaco.languages.IMonarchLanguageRule[],
       qualified: [
         [/[A-Z][A-Za-z0-9_]*(?=\s*\()/, 'function'],
         [/[A-Z][A-Za-z0-9_]*/, 'property.name'],
         [/[a-z_][A-Za-z0-9_]*/, 'property.name'],
         ...(baseCSharpLanguage.tokenizer.qualified ?? []),
-      ],
+      ] as monaco.languages.IMonarchLanguageRule[],
     },
   }
 

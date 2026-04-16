@@ -31,7 +31,9 @@ export function MusicPlayer(): JSX.Element {
   useEffect(() => {
     window.api.media.get().then(setMedia)
     const unsubscribe = window.api.media.onUpdate((info) => setMedia(info as MediaInfo))
-    return unsubscribe
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // ── Audio capture toggle ──

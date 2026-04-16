@@ -41,6 +41,7 @@ interface GroupsState {
   reorderGroupById: (fromId: string, toId: string) => void
   reorderProjectInGroup: (groupId: string, fromProjId: string, toProjId: string) => void
   moveProjectToGroup: (projectId: string, fromGroupId: string, toGroupId: string) => void
+  moveProjectToGroupAt: (projectId: string, fromGroupId: string, toGroupId: string, beforeProjId: string) => void
 }
 
 export const useGroupsStore = create<GroupsState>((set, get) => ({

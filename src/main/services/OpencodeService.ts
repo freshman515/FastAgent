@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type { WebContents } from 'electron'
@@ -23,7 +23,7 @@ interface RunningInstance {
   key: string
   directory: string
   url: string
-  proc: ChildProcessWithoutNullStreams
+  proc: ChildProcess
 }
 
 interface LiveSubscription {

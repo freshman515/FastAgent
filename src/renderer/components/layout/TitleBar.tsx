@@ -499,7 +499,7 @@ export function TitleBar(): JSX.Element | null {
         </div>
 
         <button
-          onClick={openSettings}
+          onClick={() => openSettings()}
           className={cn(
             'flex h-full w-11 items-center justify-center',
             'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
