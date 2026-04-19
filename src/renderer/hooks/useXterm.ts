@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Terminal, type IBufferLine } from '@xterm/xterm'
+import { Terminal, type IBufferLine, type ILink, type ILinkProvider } from '@xterm/xterm'
 import { addTimelineEvent } from '@/components/rightpanel/SessionTimeline'
 import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/agentRuntime'
 
@@ -33,7 +33,47 @@ import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { usePanesStore } from '@/stores/panes'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { useEditorsStore } from '@/stores/editors'
 import { getXtermTheme, defaultDarkTheme } from '@/lib/ghosttyTheme'
+
+const TERMINAL_FONT_SIZE_MIN = 8
+const TERMINAL_FONT_SIZE_MAX = 36
+
+/** File extensions we treat as clickable when referenced in the terminal. */
+const CLICKABLE_FILE_EXT_RE = /\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?$/
+
+/** Match file path candidates like `src/foo.ts:42`, `./foo.py`, `C:\\x\\y.rs:1:2`. */
+const FILE_PATH_RE = /(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_][\w.\-+]*[\\/])[\w.\-+\\/]*\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/g
+
+const URL_RE = /https?:\/\/[^\s<>()"'`\\]+/g
+
+interface ParsedFileRef {
+  path: string
+  line: number | null
+  column: number | null
+}
+
+function parseFileRef(raw: string): ParsedFileRef | null {
+  if (!CLICKABLE_FILE_EXT_RE.test(raw)) return null
+  const match = raw.match(/^(.*?)(?::(\d+)(?::(\d+))?)?$/)
+  if (!match) return null
+  return {
+    path: match[1],
+    line: match[2] ? parseInt(match[2], 10) : null,
+    column: match[3] ? parseInt(match[3], 10) : null,
+  }
+}
+
+function isAbsolutePath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('/')
+}
+
+function joinCwd(cwd: string, relative: string): string {
+  const sep = cwd.includes('\\') && !cwd.includes('/') ? '\\' : '/'
+  const trimmedCwd = cwd.replace(/[\\/]+$/, '')
+  const normalizedRelative = relative.replace(/^\.[\\/]+/, '')
+  return `${trimmedCwd}${sep}${normalizedRelative}`
+}
 
 const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350] as const
 
@@ -115,11 +155,17 @@ function scheduleTerminalRepaint(
 export function useXterm(
   session: Session,
   isActive: boolean,
-): { containerRef: React.RefObject<HTMLDivElement | null>; searchAddonRef: React.RefObject<SearchAddon | null> } {
+): {
+  containerRef: React.RefObject<HTMLDivElement | null>
+  searchAddonRef: React.RefObject<SearchAddon | null>
+  terminalRef: React.RefObject<Terminal | null>
+  pasteFromClipboardRef: React.RefObject<(() => Promise<void>) | null>
+} {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
+  const pasteFromClipboardRef = useRef<(() => Promise<void>) | null>(null)
   const sessionRef = useRef(session)
   sessionRef.current = session
 
@@ -209,6 +255,82 @@ export function useXterm(
     searchAddonRef.current = searchAddon
     terminal.open(container)
     terminalRegistry.set(sessionId, terminal)
+
+    // Resolve current session cwd for relative file path links
+    const resolveSessionCwd = (): string | null => {
+      const current = sessionRef.current
+      const worktreeStore = useWorktreesStore.getState()
+      const projectsStore = useProjectsStore.getState()
+      const wt = current.worktreeId
+        ? worktreeStore.worktrees.find((w) => w.id === current.worktreeId)
+        : worktreeStore.getMainWorktree(current.projectId)
+      const project = projectsStore.projects.find((p) => p.id === current.projectId)
+      return wt?.path ?? project?.path ?? current.cwd ?? null
+    }
+
+    const openFileLink = (ref: ParsedFileRef): void => {
+      const cwd = resolveSessionCwd()
+      const absolute = isAbsolutePath(ref.path) ? ref.path : (cwd ? joinCwd(cwd, ref.path) : null)
+      if (!absolute) return
+      const context = {
+        projectId: sessionRef.current.projectId,
+        worktreeId: sessionRef.current.worktreeId ?? null,
+      }
+      const editors = useEditorsStore.getState()
+      if (ref.line !== null) {
+        editors.openFileAtLocation(absolute, { line: ref.line, column: ref.column ?? 1 }, context)
+      } else {
+        editors.openFile(absolute, context)
+      }
+    }
+
+    // Link provider — Ctrl/Cmd+Click to open URL in browser or file path in editor
+    const linkProvider: ILinkProvider = {
+      provideLinks(y, callback) {
+        const line = terminal.buffer.active.getLine(y - 1)
+        if (!line) { callback(undefined); return }
+        const text = line.translateToString(true)
+        const links: ILink[] = []
+
+        URL_RE.lastIndex = 0
+        let m: RegExpExecArray | null
+        while ((m = URL_RE.exec(text)) !== null) {
+          const stripped = m[0].replace(/[.,;:!?)\]}>'"`]+$/, '')
+          if (stripped.length === 0) continue
+          const start = m.index
+          const end = start + stripped.length
+          links.push({
+            range: { start: { x: start + 1, y }, end: { x: end, y } },
+            text: stripped,
+            activate: (event) => {
+              if (event.ctrlKey || event.metaKey) {
+                void window.api.shell.openExternal(stripped)
+              }
+            },
+          })
+        }
+
+        FILE_PATH_RE.lastIndex = 0
+        let fm: RegExpExecArray | null
+        while ((fm = FILE_PATH_RE.exec(text)) !== null) {
+          const raw = fm[0].replace(/[.,;!?)\]}>'"`]+$/, '')
+          const ref = parseFileRef(raw)
+          if (!ref) continue
+          const start = fm.index
+          const end = start + raw.length
+          links.push({
+            range: { start: { x: start + 1, y }, end: { x: end, y } },
+            text: raw,
+            activate: (event) => {
+              if (event.ctrlKey || event.metaKey) openFileLink(ref)
+            },
+          })
+        }
+
+        callback(links.length > 0 ? links : undefined)
+      },
+    }
+    const linkProviderDisposable = terminal.registerLinkProvider(linkProvider)
 
     // IME compositionend: clear textarea to prevent stale content
     const textarea = terminal.textarea
@@ -358,6 +480,64 @@ export function useXterm(
     // Each entry is a "chunk" that was added in one action (paste = one chunk, keystroke = one char).
     let undoStack: string[] = []
 
+    // Unified clipboard paste — used by Ctrl+V handler and the context-menu
+    // "Paste" action so both paths record undo chunks and share the image /
+    // text dispatch logic for Claude Code / Codex.
+    const pasteFromClipboard = async (): Promise<void> => {
+      if (sessionType === 'terminal') {
+        try {
+          const text = await navigator.clipboard.readText()
+          if (!text) return
+          terminal.focus()
+          terminal.paste(text)
+          trackSessionInput(sessionId)
+          addTimelineEvent(sessionId, 'input', 'Clipboard paste')
+        } catch {}
+        return
+      }
+
+      // Claude Code / Codex: image → Alt+V (native), text → inject
+      try {
+        const items = await navigator.clipboard.read()
+        const hasImage = items.some((item) => item.types.some((t) => t.startsWith('image/')))
+        if (hasImage) {
+          if (ptyId) {
+            // Capture what the agent echoes (e.g. "[Image #1]") so Ctrl+Z can undo it
+            let echoed = ''
+            const offCapture = window.api.session.onData((event: SessionDataEvent) => {
+              if (event.ptyId === ptyId) echoed += event.data
+            })
+            setTimeout(() => {
+              offCapture()
+              // eslint-disable-next-line no-control-regex
+              const printable = echoed.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/[^\x20-\x7e]/g, '')
+              if (printable.length > 0) undoStack.push(printable)
+            }, 400)
+            window.api.session.write(ptyId, '\x1bv')
+          }
+          return
+        }
+      } catch {
+        // clipboard.read() may be unavailable; fall through to text paste
+      }
+
+      try {
+        const text = await navigator.clipboard.readText()
+        if (!text) return
+        const printable = [...text].filter((ch) => {
+          const c = ch.charCodeAt(0)
+          return c >= 32 && c !== 127
+        }).join('')
+        if (printable.length > 0) undoStack.push(printable)
+        terminal.focus()
+        terminal.paste(text)
+        trackSessionInput(sessionId)
+        addTimelineEvent(sessionId, 'input', 'Clipboard paste')
+      } catch {}
+    }
+
+    pasteFromClipboardRef.current = pasteFromClipboard
+
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true
 
@@ -409,101 +589,18 @@ export function useXterm(
         return false
       }
 
-      // Codex Ctrl+V: smart paste — image → Alt+V (Codex native), text → inject
-      if ((sessionType === 'codex' || sessionType === 'codex-yolo')
+      // Ctrl/Cmd+V: smart paste for Claude Code / Codex — image → Alt+V, text → inject.
+      // Terminal sessions fall through to xterm's default paste path.
+      const isSmartPasteTarget =
+        sessionType === 'codex' || sessionType === 'codex-yolo'
+        || sessionType === 'claude-code' || sessionType === 'claude-code-yolo'
+      if (isSmartPasteTarget
         && (e.ctrlKey || e.metaKey)
         && !e.altKey
         && e.key.toLowerCase() === 'v') {
         e.preventDefault()
         e.stopPropagation()
-        void (async () => {
-          try {
-            const items = await navigator.clipboard.read()
-            const hasImage = items.some((item) =>
-              item.types.some((t) => t.startsWith('image/'))
-            )
-            if (hasImage) {
-              if (ptyId) {
-                // Capture what Codex echoes back (e.g. "[Image #1]") so Ctrl+Z can undo it
-                let echoed = ''
-                const offCapture = window.api.session.onData((event: SessionDataEvent) => {
-                  if (event.ptyId === ptyId) echoed += event.data
-                })
-                setTimeout(() => {
-                  offCapture()
-                  // Strip ANSI escape sequences and keep only printable ASCII
-                  // eslint-disable-next-line no-control-regex
-                  const printable = echoed.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/[^\x20-\x7e]/g, '')
-                  if (printable.length > 0) undoStack.push(printable)
-                }, 400)
-                window.api.session.write(ptyId, '\x1bv')
-              }
-              return
-            }
-          } catch {
-            // clipboard.read() may be unavailable; fall through to text paste
-          }
-          // Text paste
-          try {
-            const text = await navigator.clipboard.readText()
-            if (!text) return
-            // Track entire paste as one undo chunk (at call site, not in onData,
-            // to avoid double-counting and bracketed-paste escape sequences)
-            const printable = [...text].filter((ch) => {
-              const c = ch.charCodeAt(0)
-              return c >= 32 && c !== 127
-            }).join('')
-            if (printable.length > 0) undoStack.push(printable)
-            terminal.focus()
-            terminal.paste(text)
-            trackSessionInput(sessionId)
-            addTimelineEvent(sessionId, 'input', 'Clipboard paste')
-          } catch {}
-        })()
-        return false
-      }
-
-      // Claude Code Ctrl+V: smart paste — image → Alt+V, text → inject
-      if (e.ctrlKey && e.key === 'v' && (sessionType === 'claude-code' || sessionType === 'claude-code-yolo')) {
-        e.preventDefault()
-        e.stopPropagation()
-        void (async () => {
-          try {
-            const items = await navigator.clipboard.read()
-            const hasImage = items.some((item) => item.types.some((t) => t.startsWith('image/')))
-            if (hasImage) {
-              if (ptyId) {
-                // Same echo-capture as Codex for undo
-                let echoed = ''
-                const offCapture = window.api.session.onData((event: SessionDataEvent) => {
-                  if (event.ptyId === ptyId) echoed += event.data
-                })
-                setTimeout(() => {
-                  offCapture()
-                  // eslint-disable-next-line no-control-regex
-                  const printable = echoed.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/[^\x20-\x7e]/g, '')
-                  if (printable.length > 0) undoStack.push(printable)
-                }, 400)
-                window.api.session.write(ptyId, '\x1bv')
-              }
-              return
-            }
-          } catch {}
-          // Text paste
-          try {
-            const text = await navigator.clipboard.readText()
-            if (!text) return
-            const printable = [...text].filter((ch) => {
-              const c = ch.charCodeAt(0)
-              return c >= 32 && c !== 127
-            }).join('')
-            if (printable.length > 0) undoStack.push(printable)
-            terminal.focus()
-            terminal.paste(text)
-            trackSessionInput(sessionId)
-            addTimelineEvent(sessionId, 'input', 'Clipboard paste')
-          } catch {}
-        })()
+        void pasteFromClipboard()
         return false
       }
 
@@ -556,17 +653,43 @@ export function useXterm(
     })
     resizeObserver.observe(container)
 
+    // Ctrl+wheel: zoom terminal font (clamped, persisted via UIStore).
+    // Must use capture phase — xterm's SmoothScrollableElement attaches a
+    // bubble-phase wheel listener on its viewport that calls both
+    // preventDefault() and stopPropagation() (scrollableElement.ts:444-446),
+    // so a bubble listener on the container never fires for Ctrl+wheel.
+    const onWheel = (event: WheelEvent): void => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.deltaY === 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      const current = terminal.options.fontSize ?? useUIStore.getState().settings.terminalFontSize
+      const step = event.deltaY < 0 ? 1 : -1
+      const next = Math.min(
+        TERMINAL_FONT_SIZE_MAX,
+        Math.max(TERMINAL_FONT_SIZE_MIN, current + step),
+      )
+      if (next === current) return
+      // Persist via settings — the existing subscription below will apply the
+      // change to the terminal and refit. This keeps all panes in sync.
+      useUIStore.getState().updateSettings({ terminalFontSize: next })
+    }
+    container.addEventListener('wheel', onWheel, { passive: false, capture: true })
+
     return () => {
       destroyed = true
       terminalRegistry.delete(sessionId)
       terminalRef.current = null
       fitAddonRef.current = null
       searchAddonRef.current = null
+      pasteFromClipboardRef.current = null
       offData()
       offExit()
       onDataDisposable.dispose()
       onResizeDisposable.dispose()
+      linkProviderDisposable.dispose()
       resizeObserver.disconnect()
+      container.removeEventListener('wheel', onWheel, { capture: true })
       for (const cleanup of repaintCleanups) {
         cleanup()
       }
@@ -635,5 +758,5 @@ export function useXterm(
     })
   }, [])
 
-  return { containerRef, searchAddonRef }
+  return { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef }
 }

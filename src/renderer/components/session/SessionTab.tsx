@@ -231,7 +231,6 @@ export function SessionTab({
         onClick={handleClick}
         onContextMenu={handleContextMenu}
       >
-        {/* Color dot */}
         {session.color && (
           <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.color }} />
         )}

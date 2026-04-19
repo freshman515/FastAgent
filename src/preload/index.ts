@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '@shared/types'
 import type {
   ClaudeCodeContext,
@@ -59,6 +59,7 @@ const api = {
 
   shell: {
     openPath: (path: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_PATH, path),
+    openExternal: (url: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
     openInIde: (ide: ExternalIdeId, path: string) =>
       ipcRenderer.invoke(IPC.SHELL_OPEN_IN_IDE, ide, path) as Promise<OpenIdeResult>,
     listIdes: () =>
@@ -106,6 +107,11 @@ const api = {
       const handler = (_: unknown, event: { sessionId?: string | null }) => callback(event)
       ipcRenderer.on(IPC.SESSION_IDLE_TOAST, handler)
       return () => ipcRenderer.removeListener(IPC.SESSION_IDLE_TOAST, handler)
+    },
+    onActivityStatus: (callback: (event: { sessionId: string; activity: 'running' | 'thinking' | 'idle' | 'completed'; source: 'claude' | 'codex'; ts: number }) => void) => {
+      const handler = (_: unknown, event: { sessionId: string; activity: 'running' | 'thinking' | 'idle' | 'completed'; source: 'claude' | 'codex'; ts: number }) => callback(event)
+      ipcRenderer.on(IPC.SESSION_ACTIVITY_UPDATE, handler)
+      return () => ipcRenderer.removeListener(IPC.SESSION_ACTIVITY_UPDATE, handler)
     },
     onStatusUpdate: (callback: (data: { sessionId: string | null; model?: string; contextWindow?: unknown; cost?: unknown; workspace?: unknown }) => void) => {
       const handler = (_: unknown, data: { sessionId: string | null; model?: string; contextWindow?: unknown; cost?: unknown; workspace?: unknown }) => callback(data)
@@ -268,6 +274,25 @@ const api = {
       ipcRenderer.send('ide:selection-changed', params),
     updateWorkspace: (folders: string[]) => ipcRenderer.send('ide:update-workspace', folders),
     getPort: () => ipcRenderer.invoke('ide:get-port') as Promise<number | null>,
+  },
+
+  files: {
+    /**
+     * Resolve the absolute filesystem path of a File object obtained from a
+     * drag-and-drop / file input event. Uses Electron's webUtils (newer) or
+     * the legacy File.path property as a fallback.
+     */
+    getPathForFile: (file: File): string | null => {
+      try {
+        const legacy = (file as unknown as { path?: string }).path
+        if (typeof legacy === 'string' && legacy.length > 0) return legacy
+      } catch { /* ignore */ }
+      try {
+        return webUtils.getPathForFile(file) || null
+      } catch {
+        return null
+      }
+    },
   },
 
   fs: {

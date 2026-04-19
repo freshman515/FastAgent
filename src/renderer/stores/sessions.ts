@@ -1,8 +1,14 @@
 import { create } from 'zustand'
-import type { Session, SessionType, SessionStatus, OutputState } from '@shared/types'
+import type { Session, SessionType, SessionStatus, OutputState, SessionActivity } from '@shared/types'
 import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
 import { isClaudeSessionUuid } from '@shared/claudeSession'
 import { generateId } from '@/lib/utils'
+
+export interface ActivityRecord {
+  status: SessionActivity
+  source: 'claude' | 'codex'
+  ts: number
+}
 
 const RUNTIME_ONLY_SESSION_FIELDS = new Set<keyof Omit<Session, 'id'>>([
   'ptyId',
@@ -64,6 +70,7 @@ interface SessionsState {
   splitSessionId: string | null // second pane in split view
   splitDirection: 'horizontal' | 'vertical'
   outputStates: Record<string, OutputState>
+  activityStates: Record<string, ActivityRecord>
   closedStack: Session[]
   _loaded: boolean
   _loadFromConfig: (raw: unknown[]) => void
@@ -83,6 +90,9 @@ interface SessionsState {
   setOutputState: (id: string, state: OutputState) => void
   markAsRead: (id: string) => void
   clearOutputState: (id: string) => void
+
+  setActivity: (id: string, record: ActivityRecord) => void
+  clearActivity: (id: string) => void
 }
 
 export const useSessionsStore = create<SessionsState>((set, get) => ({
@@ -91,6 +101,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   splitSessionId: null,
   splitDirection: 'horizontal',
   outputStates: {},
+  activityStates: {},
   closedStack: [],
   _loaded: false,
 
@@ -185,6 +196,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const sessions = state.sessions.filter((s) => s.id !== id)
       persist(sessions)
       const { [id]: _, ...outputStates } = state.outputStates
+      const { [id]: __, ...activityStates } = state.activityStates
 
       let nextActiveId = state.activeSessionId
       if (state.activeSessionId === id) {
@@ -197,7 +209,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         ? [{ ...removed, status: 'stopped' as SessionStatus, ptyId: null }, ...state.closedStack].slice(0, 20)
         : state.closedStack
 
-      return { sessions, outputStates, activeSessionId: nextActiveId, closedStack }
+      return { sessions, outputStates, activityStates, activeSessionId: nextActiveId, closedStack }
     }),
 
   restoreLastClosed: () =>
@@ -274,5 +286,17 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set((state) => {
       const { [id]: _, ...rest } = state.outputStates
       return { outputStates: rest }
+    }),
+
+  setActivity: (id, record) =>
+    set((state) => ({
+      activityStates: { ...state.activityStates, [id]: record },
+    })),
+
+  clearActivity: (id) =>
+    set((state) => {
+      if (!(id in state.activityStates)) return state
+      const { [id]: _, ...rest } = state.activityStates
+      return { activityStates: rest }
     }),
 }))

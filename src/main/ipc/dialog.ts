@@ -7,6 +7,11 @@ export function registerDialogHandlers(): void {
     shell.openPath(path)
   })
 
+  ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, (_event, url: string) => {
+    if (!/^https?:\/\//i.test(url)) return
+    void shell.openExternal(url)
+  })
+
   ipcMain.handle(IPC.SHELL_OPEN_IN_IDE, (_event, ide: ExternalIdeId, path: string) => {
     return openProjectInIde(ide, path)
   })

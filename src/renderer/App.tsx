@@ -630,6 +630,46 @@ export function App(): JSX.Element {
     }
   }, [focusSession])
 
+  // Listen for agent activity events — drive SessionTab status indicator
+  useEffect(() => {
+    const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+    const unsubscribe = window.api.session.onActivityStatus((event) => {
+      const { setActivity, clearActivity } = useSessionsStore.getState()
+      setActivity(event.sessionId, {
+        status: event.activity,
+        source: event.source,
+        ts: event.ts,
+      })
+
+      const existingTimer = completionTimers.get(event.sessionId)
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+        completionTimers.delete(event.sessionId)
+      }
+
+      if (event.activity === 'completed') {
+        // Decay the highlighted completed state back to idle after ~10s
+        const timer = setTimeout(() => {
+          const current = useSessionsStore.getState().activityStates[event.sessionId]
+          if (current?.status === 'completed' && current.ts === event.ts) {
+            setActivity(event.sessionId, { status: 'idle', source: event.source, ts: Date.now() })
+          }
+          completionTimers.delete(event.sessionId)
+        }, 10000)
+        completionTimers.set(event.sessionId, timer)
+      }
+
+      // When session is removed elsewhere we don't know; clearActivity is a safety net
+      void clearActivity
+    })
+
+    return () => {
+      unsubscribe()
+      for (const timer of completionTimers.values()) clearTimeout(timer)
+      completionTimers.clear()
+    }
+  }, [])
+
   // Listen for agent Stop hooks — show completion toast
   useEffect(() => {
     const unsubscribe = window.api.session.onIdleToast((event) => {
@@ -638,12 +678,16 @@ export function App(): JSX.Element {
         ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
         : undefined
       const name = session?.name ?? 'Agent'
+      const project = session
+        ? useProjectsStore.getState().projects.find((p) => p.id === session.projectId)
+        : undefined
+      const body = project ? `${project.name}\n${name}` : name
       const { notificationToastEnabled, notificationSoundEnabled, notificationSoundVolume } =
         useUIStore.getState().settings
       if (notificationToastEnabled) {
         useUIStore.getState().addToast({
           title: 'Task completed',
-          body: name,
+          body,
           type: 'success',
           sessionId: session?.id,
           projectId: session?.projectId,

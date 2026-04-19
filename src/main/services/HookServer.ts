@@ -149,7 +149,7 @@ export class HookServer {
     res.end()
   }
 
-  /** Non-blocking hooks: Stop, etc. */
+  /** Non-blocking hooks: Stop, UserPromptSubmit, PreToolUse, PostToolUse */
   private handleAgentHook(req: http.IncomingMessage, res: http.ServerResponse): void {
     let body = ''
     req.on('data', (chunk: Buffer) => { body += chunk })
@@ -170,12 +170,47 @@ export class HookServer {
         const hookSource = typeof data.fastagents_hook_source === 'string'
           ? data.fastagents_hook_source
           : ''
+        const isCodex = sessionType === 'codex' || sessionType === 'codex-yolo' || hookSource === 'codex'
         const resolvedSessionId = faSessionId
-          ?? (cwd && (sessionType === 'codex' || sessionType === 'codex-yolo' || hookSource === 'codex')
-            ? ptyManager.findCodexSessionByCwd(cwd)
-            : null)
+          ?? (cwd && isCodex ? ptyManager.findCodexSessionByCwd(cwd) : null)
+          ?? (cwd && !isCodex ? ptyManager.findClaudeSessionByCwd(cwd) : null)
 
-        if (event === 'Stop' && resolvedSessionId) {
+        if (!resolvedSessionId) return
+
+        // Map hook event → agent activity status
+        // Codex only emits Stop; Claude emits the full set.
+        let activity: 'running' | 'thinking' | 'completed' | null = null
+        switch (event) {
+          case 'Stop':
+            activity = 'completed'
+            break
+          case 'UserPromptSubmit':
+          case 'PostToolUse':
+            activity = 'thinking'
+            break
+          case 'PreToolUse':
+            activity = 'running'
+            break
+          default:
+            activity = null
+        }
+
+        if (activity) {
+          const payload = {
+            sessionId: resolvedSessionId,
+            activity,
+            source: isCodex ? 'codex' : 'claude',
+            ts: Date.now(),
+          }
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              win.webContents.send(IPC.SESSION_ACTIVITY_UPDATE, payload)
+            }
+          }
+        }
+
+        // Preserve legacy Stop toast signal
+        if (event === 'Stop') {
           for (const win of BrowserWindow.getAllWindows()) {
             if (!win.isDestroyed()) {
               win.webContents.send(IPC.SESSION_IDLE_TOAST, { sessionId: resolvedSessionId })

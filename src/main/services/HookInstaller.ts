@@ -338,6 +338,9 @@ function ensureCodexHooksFeatureEnabled(): void {
   writeFileSync(configPath, `${lines.join('\n').replace(/\n+$/, '')}\n`, 'utf-8')
 }
 
+/** Claude events we forward to FastAgents for agent activity tracking. */
+const CLAUDE_ACTIVITY_EVENTS = ['Stop', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse'] as const
+
 function registerClaudeHooks(port: number): void {
   if (!existsSync(getClaudeDir())) {
     console.log('[HookInstaller] Claude not installed, skipping')
@@ -353,8 +356,10 @@ function registerClaudeHooks(port: number): void {
   const scriptPath = getClaudeScriptPath().replace(/\\/g, '/')
   const command = `node "${scriptPath}"`
 
-  // Stop: command hook (non-blocking)
-  addCommandHook(settings, 'Stop', command, CLAUDE_HOOK_MARKER)
+  // Activity events: Stop, UserPromptSubmit, PreToolUse, PostToolUse (all non-blocking)
+  for (const event of CLAUDE_ACTIVITY_EVENTS) {
+    addCommandHook(settings, event, command, CLAUDE_HOOK_MARKER)
+  }
 
   // Notification: status-line hook (non-blocking — captures model, context, cost)
   // Include port in a query param so the PERM_MARKER match works for cleanup
@@ -409,7 +414,7 @@ export function unregisterHooks(): void {
     const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>
 
     // Remove command hooks
-    for (const event of ['Stop']) {
+    for (const event of CLAUDE_ACTIVITY_EVENTS) {
       if (!Array.isArray(hooks[event])) continue
       hooks[event] = hooks[event].filter(
         (e) => !e.hooks?.some((h) => h.type === 'command' && h.command?.includes(CLAUDE_HOOK_MARKER)),

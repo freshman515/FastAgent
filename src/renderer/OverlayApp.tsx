@@ -191,7 +191,7 @@ export function OverlayApp(): JSX.Element {
                   {toast.title}
                 </p>
                 {toast.body && (
-                  <p className="text-[var(--ui-font-xs)] leading-relaxed text-[var(--color-text-secondary)]">
+                  <p className="whitespace-pre-line text-[var(--ui-font-xs)] leading-relaxed text-[var(--color-text-secondary)]">
                     {toast.body}
                   </p>
                 )}

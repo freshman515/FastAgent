@@ -33,6 +33,14 @@ export function isClaudeCodeType(type: SessionType): boolean {
 
 export type SessionStatus = 'running' | 'idle' | 'waiting-input' | 'stopped'
 export type OutputState = 'idle' | 'outputting' | 'unread'
+/**
+ * Agent activity derived from hook events:
+ * - running: tool is executing
+ * - thinking: model is reasoning (between prompt submit and first tool, or between tools)
+ * - completed: Stop hook just fired (high-visibility window, decays to idle)
+ * - idle: no activity / waiting for user input
+ */
+export type SessionActivity = 'running' | 'thinking' | 'idle' | 'completed'
 
 export interface Session {
   id: string
@@ -581,6 +589,7 @@ export const IPC = {
   SESSION_GRACEFUL_SHUTDOWN: 'session:graceful-shutdown',
   SESSION_FOCUS: 'session:focus',
   SESSION_IDLE_TOAST: 'session:idle-toast',
+  SESSION_ACTIVITY_UPDATE: 'session:activity-update',
 
   // ─── Meta-Agent / MCP bridge ───
   // main → renderer: ask renderer to perform an action requested by the
@@ -607,6 +616,7 @@ export const IPC = {
 
   DIALOG_SELECT_FOLDER: 'dialog:select-folder',
   SHELL_OPEN_PATH: 'shell:open-path',
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
   SHELL_OPEN_IN_IDE: 'shell:open-in-ide',
   SHELL_LIST_IDES: 'shell:list-ides',
 
