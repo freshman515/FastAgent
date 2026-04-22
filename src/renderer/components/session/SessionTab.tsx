@@ -11,20 +11,7 @@ import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getTerminalPreviewText } from '@/hooks/useXterm'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
-import claudeIcon from '@/assets/icons/Claude.png'
-import codexIcon from '@/assets/icons/codex.png'
-import opencodeIcon from '@/assets/icons/icon-opencode.png'
-import terminalIconDark from '@/assets/icons/terminal_white.png'
-import terminalIconLight from '@/assets/icons/terminal.png'
-
-const TYPE_ICONS: Record<string, string> = {
-  'claude-code': claudeIcon,
-  'claude-code-yolo': claudeIcon,
-  'claude-gui': claudeIcon,
-  codex: codexIcon,
-  'codex-yolo': codexIcon,
-  opencode: opencodeIcon,
-}
+import { getSessionIcon } from '@/lib/sessionIcon'
 
 interface SessionTabProps {
   session: Session
@@ -70,8 +57,7 @@ export function SessionTab({
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isDarkTheme = useIsDarkTheme()
-  const terminalIcon = isDarkTheme ? terminalIconDark : terminalIconLight
-  const iconSrc = session.type === 'terminal' ? terminalIcon : (TYPE_ICONS[session.type] ?? claudeIcon)
+  const iconSrc = getSessionIcon(session.type, isDarkTheme)
   const currentWindowId = window.api.detach.isDetached ? window.api.detach.getWindowId() : 'main'
 
   const handleClick = useCallback(() => {
@@ -247,9 +233,20 @@ export function SessionTab({
         onContextMenu={handleContextMenu}
       >
         {session.color && (
-          <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.color }} />
+          <span
+            className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_6px_currentColor] transition-shadow"
+            style={{ backgroundColor: session.color, color: session.color }}
+          />
         )}
-        <img src={iconSrc} alt="" className="h-[18px] w-[18px] shrink-0" draggable={false} />
+        <img
+          src={iconSrc}
+          alt=""
+          className={cn(
+            'h-[18px] w-[18px] shrink-0 transition-all duration-150',
+            isActive ? 'opacity-100' : 'opacity-70 group-hover:opacity-100',
+          )}
+          draggable={false}
+        />
 
         {isRenaming ? (
           <input

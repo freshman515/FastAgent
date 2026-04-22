@@ -783,13 +783,14 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             ref={btnRef}
             onClick={handlePlusClick}
             className={cn(
-              'no-drag flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
-              'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-              'transition-colors duration-100',
+              'no-drag group/new flex h-[28px] w-[28px] shrink-0 items-center justify-center self-center',
+              'rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]',
+              'hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)]',
+              'active:scale-95 transition-all duration-120',
             )}
-            title="New Session"
+            title="新建会话"
           >
-            <Plus size={14} />
+            <Plus size={14} className="transition-transform duration-150 group-hover/new:rotate-90" />
           </button>
 
           {/* Close pane button — only when multiple panes exist */}
@@ -797,11 +798,12 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             <button
               onClick={() => usePanesStore.getState().mergePane(paneId)}
               className={cn(
-                'no-drag flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
-                'text-[var(--color-text-tertiary)] hover:bg-[var(--color-error)]/20 hover:text-[var(--color-error)]',
-                'transition-colors duration-100',
+                'no-drag flex h-[28px] w-[28px] shrink-0 items-center justify-center self-center',
+                'rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]',
+                'hover:bg-[var(--color-error)]/15 hover:text-[var(--color-error)]',
+                'active:scale-95 transition-all duration-120',
               )}
-              title="Close Pane (merge tabs)"
+              title="关闭当前分屏（合并标签）"
             >
               <X size={12} />
             </button>
@@ -931,9 +933,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         {sessions.length === 0 && editorTabs.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
             <EmptyState
-              title="Empty pane"
-              description="Create a session or drag a tab here."
-              icon={<Plus size={22} className="text-[var(--color-accent)]/70" />}
+              title="空白分屏"
+              description="创建一个新会话，或把标签页拖到这里。"
+              icon={<Plus size={22} className="text-[var(--color-accent)]/80" />}
               actionLabel="新建会话"
               onIconClick={handleEmptyIconClick}
             />

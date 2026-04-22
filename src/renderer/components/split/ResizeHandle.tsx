@@ -67,20 +67,33 @@ export function ResizeHandle({ splitId, direction, currentRatio }: ResizeHandleP
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        'group shrink-0 bg-[var(--color-titlebar-bg)]',
+        'group shrink-0 bg-[var(--color-titlebar-bg)] relative',
         isHorizontal ? 'w-[var(--layout-gap)] cursor-col-resize' : 'h-[var(--layout-gap)] cursor-row-resize',
-        'relative',
       )}
     >
+      {/* Widened hit area with subtle hover highlight */}
       <div
         className={cn(
-          'absolute z-10',
+          'absolute z-10 transition-colors duration-120',
           isHorizontal
-            ? 'inset-y-0 -left-1.5 -right-1.5 group-hover:bg-[var(--color-accent)]/30'
-            : 'inset-x-0 -top-1.5 -bottom-1.5 group-hover:bg-[var(--color-accent)]/30',
-          'transition-colors duration-75',
+            ? 'inset-y-0 -left-1.5 -right-1.5 group-hover:bg-[var(--color-accent)]/20'
+            : 'inset-x-0 -top-1.5 -bottom-1.5 group-hover:bg-[var(--color-accent)]/20',
         )}
       />
+      {/* Center drag affordance — 3 dots that appear on hover */}
+      <div
+        className={cn(
+          'pointer-events-none absolute z-20 flex items-center justify-center',
+          'opacity-0 group-hover:opacity-100 transition-opacity duration-150',
+          isHorizontal
+            ? 'inset-y-0 left-1/2 -translate-x-1/2 flex-col gap-[2px]'
+            : 'inset-x-0 top-1/2 -translate-y-1/2 flex-row gap-[2px]',
+        )}
+      >
+        <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
+        <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
+        <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
+      </div>
     </div>
   )
 }

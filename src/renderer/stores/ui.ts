@@ -171,7 +171,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   visualizerMode: 'melody',
   showMusicPlayer: true,
   showTitleBarSearch: false,
-  showActivePaneBorder: true,
+  showActivePaneBorder: false,
   titleBarMenuVisibility: 'always',
   titleBarSearchScope: 'project',
   gitChangesViewMode: 'tree',

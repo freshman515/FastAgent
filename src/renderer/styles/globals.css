@@ -165,13 +165,21 @@ html, body, #root {
 .tab-active {
   position: relative;
   z-index: 2;
-  background: var(--color-terminal-bg);
+  /* Very subtle top-down tint so the active tab feels "lifted" from the bar */
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-accent) 6%, var(--color-terminal-bg)) 0%,
+      var(--color-terminal-bg) 22px
+    ),
+    var(--color-terminal-bg);
   border-radius: 10px 10px 0 0;
   /* Cover the tab-bar's bottom border so the tab looks welded to the content */
   padding-bottom: 1px;
   margin-bottom: -1px;
-  /* Subtle top accent line — stronger when pane is focused */
+  /* Top accent indicator — overridden by -focused / -muted modifiers */
   box-shadow: inset 0 2px 0 0 transparent;
+  transition: background 160ms ease;
 }
 
 .tab-active-focused {
@@ -210,16 +218,17 @@ html, body, #root {
 /* ─── Inactive tab divider line (Chrome-like thin separator) ─── */
 .tab-inactive {
   position: relative;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .tab-inactive::after {
   content: '';
   position: absolute;
-  top: 25%;
-  bottom: 25%;
+  top: 28%;
+  bottom: 28%;
   right: -0.5px;
   width: 1px;
-  background: color-mix(in srgb, var(--color-border) 65%, transparent);
+  background: color-mix(in srgb, var(--color-border) 55%, transparent);
   pointer-events: none;
   transition: opacity 120ms ease;
 }
@@ -229,6 +238,29 @@ html, body, #root {
 .tab-inactive:hover::after,
 .tab-inactive.tab-before-active::after {
   opacity: 0;
+}
+
+/* Subtle underline pulse between the tab bar and content — only visible
+   when a tab is active. Improves the "welded to content" illusion. */
+.tab-bar {
+  position: relative;
+}
+
+.tab-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in srgb, var(--color-accent) 20%, transparent) 50%,
+    transparent 100%
+  );
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 /* ─── AI Summary markdown rendering ─── */
