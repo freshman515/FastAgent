@@ -61,6 +61,7 @@ export function SessionTab({
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [showCloseAllConfirm, setShowCloseAllConfirm] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
   const [preview, setPreview] = useState<{ lines: string[]; x: number; y: number } | null>(null)
@@ -140,7 +141,21 @@ export function SessionTab({
 
   const paneSessions = usePanesStore((s) => s.paneSessions[paneId] ?? [])
   const canSplit = paneSessions.length >= 2
+  const canCloseAll = paneSessions.length > 1
   const isSplit = usePanesStore((s) => s.root.type === 'split')
+
+  const doCloseAll = useCallback(() => {
+    const sessionsState = useSessionsStore.getState()
+    const targets = paneSessions
+      .map((sid) => sessionsState.sessions.find((s) => s.id === sid))
+      .filter((s): s is Session => !!s && !s.pinned)
+    for (const s of targets) {
+      if (s.ptyId) window.api.session.kill(s.ptyId)
+      removeSessionFromPane(paneId, s.id)
+      removeSession(s.id)
+    }
+    setShowCloseAllConfirm(false)
+  }, [paneSessions, paneId, removeSession, removeSessionFromPane])
   const activeTabClass = isActive
     ? cn(
       'tab-active font-medium text-[var(--color-text-primary)]',
@@ -491,6 +506,16 @@ export function SessionTab({
                 </button>
               </>
             )}
+
+            {/* Close All Sessions */}
+            {canCloseAll && (
+              <button
+                onClick={() => { setContextMenu(null); setShowCloseAllConfirm(true) }}
+                className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]"
+              >
+                关闭全部会话
+              </button>
+            )}
           </div>
         </>,
         document.body,
@@ -506,6 +531,29 @@ export function SessionTab({
           onCancel={() => setShowCloseConfirm(false)}
         />
       )}
+
+      {showCloseAllConfirm && (() => {
+        const sessionsState = useSessionsStore.getState()
+        const closable = paneSessions
+          .map((sid) => sessionsState.sessions.find((s) => s.id === sid))
+          .filter((s): s is Session => !!s && !s.pinned)
+        const total = paneSessions.length
+        const pinnedCount = total - closable.length
+        return (
+          <ConfirmDialog
+            title="关闭全部会话"
+            message={
+              pinnedCount > 0
+                ? `将关闭 ${closable.length} 个会话（${pinnedCount} 个已固定会话会保留），确认操作吗？`
+                : `将关闭全部 ${closable.length} 个会话，确认操作吗？`
+            }
+            confirmLabel="全部关闭"
+            danger
+            onConfirm={doCloseAll}
+            onCancel={() => setShowCloseAllConfirm(false)}
+          />
+        )
+      })()}
     </>
   )
 }

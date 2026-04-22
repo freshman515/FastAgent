@@ -62,6 +62,8 @@ const QUEUED_INPUT_WRITE_GAP_MS = 120
 const AGENT_SUBMIT_BASE_DELAY_MS = 550
 const AGENT_SUBMIT_MAX_DELAY_MS = 1800
 const AGENT_SUBMIT_REINFORCE_DELAY_MS = 900
+const CODEX_STARTUP_INPUT_WARMUP_MS = 650
+const CODEX_STARTUP_SUBMIT_DELAY_MS = 1400
 
 function createTerminalMirror(cols: number, rows: number): TerminalMirror {
   const terminal = new HeadlessTerminal({
@@ -504,11 +506,27 @@ export class PtyManager {
     }
 
     const text = stripTrailingSubmitNewlines(input)
-    const submitDelay = getAgentSubmitDelay(text)
-    const sequence: QueuedInput[] = [
+    const queuedBeforeReady = !managed.inputReady
+    let submitDelay = getAgentSubmitDelay(text)
+    const sequence: QueuedInput[] = []
+
+    if (
+      queuedBeforeReady
+      && (managed.type === 'codex' || managed.type === 'codex-yolo')
+    ) {
+      // Codex can show the first prompt before its composer fully transitions
+      // into a submit-ready state. When `initial_input` is queued during boot,
+      // sending the text immediately followed by Enter can leave the prompt in
+      // multiline compose mode. Give the first queued Codex prompt a brief
+      // warmup before pasting, then wait longer before the first submit.
+      sequence.push({ data: '', delayAfterMs: CODEX_STARTUP_INPUT_WARMUP_MS })
+      submitDelay = Math.max(submitDelay, CODEX_STARTUP_SUBMIT_DELAY_MS)
+    }
+
+    sequence.push(
       { data: text, delayAfterMs: submitDelay },
       { data: '\r', delayAfterMs: AGENT_SUBMIT_REINFORCE_DELAY_MS },
-    ]
+    )
 
     if (managed.type === 'codex' || managed.type === 'codex-yolo') {
       // Codex can keep multiline pasted prompts in the composer after the
