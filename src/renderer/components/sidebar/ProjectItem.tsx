@@ -17,7 +17,7 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { useLaunchesStore } from '@/stores/launches'
 import { LaunchMenu } from './LaunchMenu'
 import claudeIcon from '@/assets/icons/Claude.png'
-import codexIcon from '@/assets/icons/codex.png'
+import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 

@@ -5,7 +5,7 @@ import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { usePanesStore } from '@/stores/panes'
 import claudeIcon from '@/assets/icons/Claude.png'
-import codexIcon from '@/assets/icons/codex.png'
+import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 
