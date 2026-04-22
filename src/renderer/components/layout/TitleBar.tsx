@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { createSessionWithPrompt } from '@/lib/createSession'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -173,14 +174,16 @@ export function TitleBar(): JSX.Element | null {
       return
     }
 
-    const paneStore = usePanesStore.getState()
-    const sessionStore = useSessionsStore.getState()
     const worktreeId = selectedWorktreeId ?? getDefaultWorktreeIdForProject(selectedProjectId)
-    const sessionId = sessionStore.addSession(selectedProjectId, defaultSessionType, worktreeId)
-
-    paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
-    paneStore.setPaneActiveSession(paneStore.activePaneId, sessionId)
-    sessionStore.setActive(sessionId)
+    createSessionWithPrompt(
+      { projectId: selectedProjectId, type: defaultSessionType, worktreeId },
+      (sessionId) => {
+        const paneStore = usePanesStore.getState()
+        paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
+        paneStore.setPaneActiveSession(paneStore.activePaneId, sessionId)
+        useSessionsStore.getState().setActive(sessionId)
+      },
+    )
   }, [addToast, defaultSessionType, selectedProjectId, selectedWorktreeId])
 
   const handleCopyText = useCallback(async (value: string, title: string) => {

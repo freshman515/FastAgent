@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { createSessionWithPrompt } from '@/lib/createSession'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -104,11 +105,11 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
         // Double-click on empty area → create default session type
         if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.tab-bar') === e.currentTarget) {
           const defaultType = useUIStore.getState().settings.defaultSessionType
-          const addSession = useSessionsStore.getState().addSession
           const setActiveSession = useSessionsStore.getState().setActive
           const worktreeId = getDefaultWorktreeIdForProject(projectId)
-          const id = addSession(projectId, defaultType, worktreeId)
-          setActiveSession(id)
+          createSessionWithPrompt({ projectId, type: defaultType, worktreeId }, (id) => {
+            setActiveSession(id)
+          })
         }
       }}
     >

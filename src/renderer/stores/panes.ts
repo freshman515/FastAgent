@@ -21,6 +21,10 @@ export type PaneNode = PaneLeaf | PaneSplit
 
 export type SplitPosition = 'left' | 'right' | 'up' | 'down'
 
+export type WorkspaceMode = 'project' | 'sessions'
+
+export const SESSIONS_LAYOUT_KEY = '__sessions__'
+
 interface StoredPaneLayout {
   root: PaneNode
   activePaneId: string
@@ -45,13 +49,18 @@ interface PanesState {
   // paneId → recently activated session IDs, most recent first
   paneRecentSessions: Record<string, string[]>
 
-  // Per-project layout cache: projectId → saved layout
+  // Per-project layout cache: projectId → saved layout (SESSIONS_LAYOUT_KEY for sessions mode)
   projectLayouts: Record<string, StoredPaneLayout>
   currentProjectId: string | null
+
+  // 'project' = pane layout scoped to a project/worktree (classic behavior).
+  // 'sessions' = free-form layout where panes can host sessions from any project.
+  workspaceMode: WorkspaceMode
 
   // Actions
   switchProject: (projectId: string, projectSessionIds: string[], activeSessionId: string | null) => void
   switchWorktree: (worktreeId: string, worktreeSessionIds: string[], activeSessionId: string | null) => void
+  setWorkspaceMode: (mode: WorkspaceMode) => void
   initPane: (sessionIds: string[], activeSessionId: string | null) => void
   loadFromConfig: (raw: Record<string, unknown>) => void
   splitPane: (paneId: string, position: SplitPosition, sessionId: string) => void
@@ -248,6 +257,7 @@ function persistPanes(state: PanesState): void {
     paneRecentSessions: state.paneRecentSessions,
     currentProjectId: state.currentProjectId,
     projectLayouts: state.projectLayouts,
+    workspaceMode: state.workspaceMode,
   })
 }
 
@@ -261,6 +271,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
   paneRecentSessions: { [DEFAULT_PANE_ID]: [] },
   projectLayouts: {},
   currentProjectId: null,
+  workspaceMode: 'project',
 
   initPane: (sessionIds, activeSessionId) => {
     const paneSessions = { [DEFAULT_PANE_ID]: sessionIds }
@@ -272,6 +283,73 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       paneSessions,
       paneActiveSession,
       paneRecentSessions: seedPaneRecentSessions(paneSessions, paneActiveSession),
+    })
+  },
+
+  setWorkspaceMode: (mode) => {
+    const state = get()
+    if (state.workspaceMode === mode) return
+
+    // Snapshot the current layout under its scope key before swapping.
+    const updatedLayouts = { ...state.projectLayouts }
+    if (state.currentProjectId) {
+      updatedLayouts[state.currentProjectId] = {
+        root: state.root,
+        activePaneId: state.activePaneId,
+        paneSessions: { ...state.paneSessions },
+        paneActiveSession: { ...state.paneActiveSession },
+        paneRecentSessions: { ...state.paneRecentSessions },
+        fullscreenPaneId: state.fullscreenPaneId,
+      }
+    }
+
+    if (mode === 'sessions') {
+      const saved = updatedLayouts[SESSIONS_LAYOUT_KEY]
+      if (saved) {
+        set({
+          workspaceMode: 'sessions',
+          root: saved.root,
+          activePaneId: saved.activePaneId,
+          fullscreenPaneId: sanitizeFullscreenPaneId(saved.root, saved.paneSessions, saved.fullscreenPaneId),
+          paneSessions: saved.paneSessions,
+          paneActiveSession: saved.paneActiveSession,
+          paneRecentSessions: seedPaneRecentSessions(
+            saved.paneSessions,
+            saved.paneActiveSession,
+            saved.paneRecentSessions,
+          ),
+          currentProjectId: SESSIONS_LAYOUT_KEY,
+          projectLayouts: updatedLayouts,
+        })
+      } else {
+        set({
+          workspaceMode: 'sessions',
+          root: { type: 'leaf', id: DEFAULT_PANE_ID },
+          activePaneId: DEFAULT_PANE_ID,
+          fullscreenPaneId: null,
+          paneSessions: { [DEFAULT_PANE_ID]: [] },
+          paneActiveSession: { [DEFAULT_PANE_ID]: null },
+          paneRecentSessions: { [DEFAULT_PANE_ID]: [] },
+          currentProjectId: SESSIONS_LAYOUT_KEY,
+          projectLayouts: updatedLayouts,
+        })
+      }
+      return
+    }
+
+    // Back to project mode: reset to an empty layout so the sessions-mode
+    // pane tree doesn't briefly render against the selected project before
+    // MainPanel's effect restores the project's saved layout.
+    set({
+      workspaceMode: 'project',
+      root: { type: 'leaf', id: DEFAULT_PANE_ID },
+      activePaneId: DEFAULT_PANE_ID,
+      fullscreenPaneId: null,
+      paneSessions: { [DEFAULT_PANE_ID]: [] },
+      paneActiveSession: { [DEFAULT_PANE_ID]: null },
+      paneRecentSessions: { [DEFAULT_PANE_ID]: [] },
+      currentProjectId: null,
+      projectLayouts: updatedLayouts,
     })
   },
 
@@ -424,6 +502,8 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       const paneRecentSessions = raw.paneRecentSessions && typeof raw.paneRecentSessions === 'object'
         ? raw.paneRecentSessions as Record<string, string[]>
         : undefined
+      const rawMode = raw.workspaceMode
+      const workspaceMode: WorkspaceMode = rawMode === 'sessions' ? 'sessions' : 'project'
       set({
         root,
         activePaneId: (raw.activePaneId as string) ?? DEFAULT_PANE_ID,
@@ -433,6 +513,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         paneRecentSessions: seedPaneRecentSessions(paneSessions, paneActiveSession, paneRecentSessions),
         currentProjectId: (raw.currentProjectId as string) ?? null,
         projectLayouts: (raw.projectLayouts ?? {}) as PanesState['projectLayouts'],
+        workspaceMode,
       })
     }
   },

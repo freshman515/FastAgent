@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, SessionType, TaskBundle, Worktree } from '@shared/types'
 import { isAnonymousProject, removeAnonymousProject } from '@/lib/anonymous-project'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
+import { createSessionWithPrompt } from '@/lib/createSession'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useGroupsStore } from '@/stores/groups'
@@ -367,10 +368,11 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
             {SESSION_OPTS.map((opt) => (
               <button key={opt.type} className={MENU_ITEM} onClick={() => {
                 handleClick()
-                const sid = useSessionsStore.getState().addSession(project.id, opt.type, wt.id)
-                usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, sid)
-                useSessionsStore.getState().setActive(sid)
                 setWtContextMenu(null)
+                createSessionWithPrompt({ projectId: project.id, type: opt.type, worktreeId: wt.id }, (sid) => {
+                  usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, sid)
+                  useSessionsStore.getState().setActive(sid)
+                })
               }}>
                 <img src={opt.icon} alt="" className="h-3.5 w-3.5" />{opt.label}
               </button>
@@ -664,9 +666,14 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {SESSION_OPTS.map((opt) => (
               <button key={opt.type} className={MENU_ITEM} onClick={() => {
                 selectProject(project.id)
-                const id = addSession(project.id, opt.type, getDefaultWorktreeIdForProject(project.id))
-                usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
-                setActive(id); setContextMenu(null)
+                setContextMenu(null)
+                createSessionWithPrompt(
+                  { projectId: project.id, type: opt.type, worktreeId: getDefaultWorktreeIdForProject(project.id) },
+                  (id) => {
+                    usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
+                    setActive(id)
+                  },
+                )
               }}>
                 <img src={opt.icon} alt="" className="h-3.5 w-3.5" />{opt.label}
               </button>

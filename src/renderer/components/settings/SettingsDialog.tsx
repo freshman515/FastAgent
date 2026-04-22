@@ -299,6 +299,14 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
             ))}
           </div>
         </div>
+        <ToggleRow
+          label="新建会话时询问名称"
+          description={settings.promptSessionNameOnCreate
+            ? '弹出输入框命名，或使用默认名称'
+            : '直接使用自动生成的默认名称'}
+          checked={settings.promptSessionNameOnCreate}
+          onChange={(v) => onUpdate('promptSessionNameOnCreate', v)}
+        />
       </SettingsSection>
 
       {/* ───── 通知提醒 ───── */}

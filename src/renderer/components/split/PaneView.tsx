@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { createSessionWithPrompt } from '@/lib/createSession'
 import { usePanesStore, registerPaneElement, type PaneNode, type SplitPosition } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -657,8 +658,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           if (isDetached || e.target !== e.currentTarget) return
           const defaultType = useUIStore.getState().settings.defaultSessionType
           const worktreeId = getDefaultWorktreeIdForProject(projectId)
-          const id = useSessionsStore.getState().addSession(projectId, defaultType, worktreeId)
-          usePanesStore.getState().addSessionToPane(paneId, id)
+          createSessionWithPrompt({ projectId, type: defaultType, worktreeId }, (id) => {
+            usePanesStore.getState().addSessionToPane(paneId, id)
+          })
         }}
         onDragOver={(e) => {
           if (isTabDrag(e)) {

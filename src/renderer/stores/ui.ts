@@ -1,17 +1,19 @@
 import { create } from 'zustand'
-import type { ToastNotification } from '@shared/types'
+import type { SessionType, ToastNotification } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
+import { usePanesStore } from './panes'
 
 export type VisualizerMode = 'melody' | 'bars'
 export type DockSide = 'left' | 'right'
-export type DockPanelId = 'projects' | 'agent' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
+export type DockPanelId = 'projects' | 'recentSessions' | 'agent' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
 export type TodoPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
+  'recentSessions',
   'agent',
   'tasks',
   'commands',
@@ -27,7 +29,7 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
 ]
 
 export const DEFAULT_DOCK_PANEL_ORDER: Record<DockSide, DockPanelId[]> = {
-  left: ['projects', 'git', 'files'],
+  left: ['projects', 'recentSessions', 'git', 'files'],
   right: ['agent', 'tasks', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
 }
 
@@ -105,6 +107,8 @@ export interface AppSettings {
   editorFontLigatures: boolean
   visibleGroupId: string | null // null = show all groups
   defaultSessionType: 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'opencode'
+  /** Pop up a naming dialog when creating a new session */
+  promptSessionNameOnCreate: boolean
   recentPaths: string[]
   visualizerMode: VisualizerMode
   showMusicPlayer: boolean
@@ -162,6 +166,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   editorFontLigatures: true,
   visibleGroupId: null,
   defaultSessionType: 'claude-code',
+  promptSessionNameOnCreate: false,
   recentPaths: [],
   visualizerMode: 'melody',
   showMusicPlayer: true,
@@ -233,6 +238,20 @@ interface UIState {
   addToast: (toast: Omit<ToastNotification, 'id' | 'createdAt'>) => string
   removeToast: (id: string) => void
   clearToasts: () => void
+
+  sessionNamePrompt: SessionNamePromptRequest | null
+  setSessionNamePrompt: (prompt: SessionNamePromptRequest | null) => void
+}
+
+export interface SessionNamePromptRequest {
+  defaultName: string
+  title?: string
+  description?: string
+  /** Session type — controls the icon shown in the dialog header. */
+  sessionType?: SessionType
+  onSubmit: (name: string) => void
+  onUseDefault: () => void
+  onCancel: () => void
 }
 
 type UIPersistedState = Pick<
@@ -737,7 +756,17 @@ export const useUIStore = create<UIState>((set, get) => ({
       return { dockPanelCollapsed }
     }),
 
-  setDockPanelTab: (side, tab) =>
+  setDockPanelTab: (side, tab) => {
+    // Left-side tab toggles the workspace mode: 'recentSessions' swaps to the
+    // free-form sessions layout, 'projects' swaps back to the per-project layout.
+    if (side === 'left') {
+      if (tab === 'recentSessions') {
+        usePanesStore.getState().setWorkspaceMode('sessions')
+      } else if (tab === 'projects') {
+        usePanesStore.getState().setWorkspaceMode('project')
+      }
+    }
+
     set((state) => {
       const currentSide = getDockPanelSide(state.dockPanelOrder, tab)
       const dockPanelCollapsed = {
@@ -765,7 +794,8 @@ export const useUIStore = create<UIState>((set, get) => ({
         dockPanelActiveTab: moved.active,
         dockPanelCollapsed,
       }
-    }),
+    })
+  },
 
   activateDockPanel: (tab) =>
     set((state) => {
@@ -872,6 +902,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.editorFontLigatures === 'boolean') s.editorFontLigatures = raw.editorFontLigatures
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
       if (typeof raw.defaultSessionType === 'string' && ['claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
+      if (typeof raw.promptSessionNameOnCreate === 'boolean') s.promptSessionNameOnCreate = raw.promptSessionNameOnCreate
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
       if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
       if (typeof raw.showMusicPlayer === 'boolean') s.showMusicPlayer = raw.showMusicPlayer
@@ -1054,6 +1085,9 @@ export const useUIStore = create<UIState>((set, get) => ({
     })),
 
   clearToasts: () => set({ toasts: [] }),
+
+  sessionNamePrompt: null,
+  setSessionNamePrompt: (prompt) => set({ sessionNamePrompt: prompt }),
 }))
 
 function applyUIFont(settings: AppSettings): void {

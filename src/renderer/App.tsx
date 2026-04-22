@@ -4,6 +4,7 @@ import { MainPanel } from '@/components/layout/MainPanel'
 import { StatusBar } from '@/components/layout/StatusBar'
 import { RightPanel } from '@/components/layout/RightPanel'
 import { ToastContainer } from '@/components/notification/ToastContainer'
+import { SessionNamePromptDialog } from '@/components/session/SessionNamePromptDialog'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
@@ -14,6 +15,7 @@ import { switchProjectContext } from '@/lib/project-context'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
+import { useSessionGroupsStore } from '@/stores/sessionGroups'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useTemplatesStore } from '@/stores/templates'
@@ -320,6 +322,7 @@ export function App(): JSX.Element {
       if (disposed) return
 
       useGroupsStore.getState()._loadFromConfig(data.groups)
+      useSessionGroupsStore.getState()._loadFromConfig((data as Record<string, unknown>).sessionGroups as unknown[] ?? [])
       useProjectsStore.getState()._loadFromConfig(data.projects)
       useSessionsStore.getState()._loadFromConfig(sanitizedSessions)
       useEditorsStore.getState()._loadFromConfig(sanitizedEditors)
@@ -899,6 +902,9 @@ export function App(): JSX.Element {
 
       {/* Toast notifications */}
       <ToastContainer />
+
+      {/* Session name prompt */}
+      <SessionNamePromptDialog />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { Bell, Columns2, FileText, GitBranch, Layers, Circle, Clock, Palette, Play, TreeDeciduous } from 'lucide-react'
+import { Bell, Columns2, FileText, GitBranch, Layers, Circle, Clock, Palette, TreeDeciduous } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
@@ -7,9 +7,7 @@ import { useGitStore } from '@/stores/git'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { usePanesStore } from '@/stores/panes'
 import { useEditorsStore, FILE_ICONS } from '@/stores/editors'
-import { useLaunchesStore } from '@/stores/launches'
 import { useUIStore } from '@/stores/ui'
-import { LaunchMenu } from '@/components/sidebar/LaunchMenu'
 
 function formatUptime(ms: number): string {
   const seconds = Math.floor(ms / 1000)
@@ -54,7 +52,6 @@ export function StatusBar(): JSX.Element {
   const paneRoot = usePanesStore((s) => s.root)
   const openSettings = useUIStore((s) => s.openSettings)
   const terminalTheme = useUIStore((s) => s.settings.terminalTheme)
-  const [launchMenuPos, setLaunchMenuPos] = useState<{ x: number; y: number } | null>(null)
   const activeEditorTab = useEditorsStore((s) => activeSessionId?.startsWith('editor-') ? s.tabs.find((t) => t.id === activeSessionId) : undefined)
 
   // Project sessions
@@ -208,22 +205,6 @@ export function StatusBar(): JSX.Element {
           </span>
         )}
 
-        {/* Run button */}
-        {selectedProject && (
-          <>
-            <div className="mx-0.5 h-3 w-px bg-[var(--color-border)]" />
-            <button
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setLaunchMenuPos({ x: rect.left, y: rect.top - 8 })
-              }}
-              className={cn(ITEM, 'cursor-pointer text-[var(--color-success)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-[var(--radius-sm)]')}
-              title="运行"
-            >
-              <Play size={11} fill="currentColor" /> 运行
-            </button>
-          </>
-        )}
       </div>
 
       {/* Right section */}
@@ -300,16 +281,6 @@ export function StatusBar(): JSX.Element {
           {clockText}
         </span>
       </div>
-
-      {/* Launch menu */}
-      {launchMenuPos && selectedProject && (
-        <LaunchMenu
-          projectId={selectedProject.id ?? ''}
-          projectPath={selectedProject.path ?? ''}
-          position={{ x: launchMenuPos.x, y: launchMenuPos.y - 300 }}
-          onClose={() => setLaunchMenuPos(null)}
-        />
-      )}
     </div>
   )
 }

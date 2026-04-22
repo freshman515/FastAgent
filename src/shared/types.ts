@@ -8,6 +8,14 @@ export interface Group {
   projectIds: string[]
 }
 
+export interface SessionGroup {
+  id: string
+  name: string
+  color: string
+  collapsed: boolean
+  sessionIds: string[]
+}
+
 export interface Project {
   id: string
   name: string

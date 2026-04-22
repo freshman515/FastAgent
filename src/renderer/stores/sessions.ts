@@ -76,7 +76,8 @@ interface SessionsState {
   _loadFromConfig: (raw: unknown[]) => void
   upsertSessions: (sessions: Session[]) => void
 
-  addSession: (projectId: string, type: SessionType, worktreeId?: string) => string
+  addSession: (projectId: string, type: SessionType, worktreeId?: string, nameOverride?: string) => string
+  generateDefaultSessionName: (projectId: string, type: SessionType) => string
   addSessionFromTemplate: (projectId: string, item: { type: SessionType; name: string; prompt?: string }, worktreeId?: string) => string
   removeSession: (id: string) => void
   restoreLastClosed: () => void
@@ -129,8 +130,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       }
     }),
 
-  addSession: (projectId, type, worktreeId) => {
-    const id = generateId()
+  generateDefaultSessionName: (projectId, type) => {
     const config = SESSION_TYPE_CONFIG[type]
     const existing = get().sessions.filter((s) => s.projectId === projectId && s.type === type)
     let maxNum = 0
@@ -138,7 +138,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const match = s.name.match(new RegExp(`^${config.label}\\s+(\\d+)$`))
       if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10))
     }
-    const name = `${config.label} ${maxNum + 1}`
+    return `${config.label} ${maxNum + 1}`
+  },
+
+  addSession: (projectId, type, worktreeId, nameOverride) => {
+    const id = generateId()
+    const trimmedOverride = nameOverride?.trim()
+    const name = trimmedOverride && trimmedOverride.length > 0
+      ? trimmedOverride
+      : get().generateDefaultSessionName(projectId, type)
 
     const session: Session = {
       id,

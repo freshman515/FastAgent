@@ -16,10 +16,12 @@ export function MainPanel(): JSX.Element {
   const editors = useEditorsStore((s) => s.tabs)
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const currentLayoutKey = usePanesStore((s) => s.currentProjectId)
+  const workspaceMode = usePanesStore((s) => s.workspaceMode)
 
   // Keep panes in sync with the selected project/worktree without overwriting
   // an explicit switch that already restored the correct layout.
   useEffect(() => {
+    if (workspaceMode !== 'project') return
     if (!selectedProjectId) return
     if (!worktreesLoaded) return
 
@@ -79,7 +81,7 @@ export function MainPanel(): JSX.Element {
       )
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on project/worktree switch, not on session changes
-  }, [selectedProjectId, selectedWorktreeId, currentLayoutKey, worktreesLoaded, worktrees, editors])
+  }, [workspaceMode, selectedProjectId, selectedWorktreeId, currentLayoutKey, worktreesLoaded, worktrees, editors])
 
   // Sync workspace folders to IDE bridge for Claude Code /ide
   const selectedProject = useProjectsStore((s) => s.projects.find((p) => p.id === s.selectedProjectId))
@@ -104,7 +106,7 @@ export function MainPanel(): JSX.Element {
     document.title = 'FastAgents'
   }, [activeEditor?.fileName, activeEditor?.id, activeSession?.name, activeSession?.id])
 
-  if (!selectedProjectId) {
+  if (workspaceMode === 'project' && !selectedProjectId) {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--color-bg-primary)]">
         <EmptyState
@@ -117,7 +119,7 @@ export function MainPanel(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-primary)]">
-      <SplitContainer projectId={selectedProjectId} />
+      <SplitContainer projectId={selectedProjectId ?? ''} />
     </div>
   )
 }
