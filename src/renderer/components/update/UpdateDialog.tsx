@@ -1,8 +1,38 @@
+import DOMPurify from 'dompurify'
 import { Download, RefreshCw, RotateCcw, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { UpdaterEvent } from '@shared/types'
 import { cn } from '@/lib/utils'
+
+const RELEASE_NOTES_ALLOWED_TAGS = [
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'p', 'br', 'hr',
+  'ul', 'ol', 'li',
+  'strong', 'em', 'b', 'i', 'del', 's',
+  'code', 'pre',
+  'blockquote',
+  'a',
+  'img',
+  'div', 'span',
+]
+
+const RELEASE_NOTES_ALLOWED_ATTR = ['href', 'title', 'alt', 'src', 'target', 'rel']
+
+function looksLikeHtml(input: string): boolean {
+  return /<[a-z][^>]*>/i.test(input)
+}
+
+function renderReleaseNotes(raw: string): { html: string; isHtml: boolean } {
+  if (looksLikeHtml(raw)) {
+    const clean = DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: RELEASE_NOTES_ALLOWED_TAGS,
+      ALLOWED_ATTR: RELEASE_NOTES_ALLOWED_ATTR,
+    })
+    return { html: clean, isHtml: true }
+  }
+  return { html: raw, isHtml: false }
+}
 
 type UpdaterState =
   | { kind: 'hidden' }
@@ -24,6 +54,39 @@ function formatSize(bytes: number): string {
   if (mb >= 100) return `${mb.toFixed(0)} MB`
   if (mb >= 1) return `${mb.toFixed(1)} MB`
   return `${(bytes / 1024).toFixed(0)} KB`
+}
+
+function ReleaseNotes({ notes }: { notes: string }): JSX.Element {
+  const rendered = useMemo(() => renderReleaseNotes(notes), [notes])
+  const baseClass = cn(
+    'mt-3 max-h-40 overflow-y-auto rounded-[var(--radius-sm)] border border-[var(--color-border)]',
+    'bg-[var(--color-bg-primary)] px-3 py-2 text-[11px] leading-5 text-[var(--color-text-secondary)]',
+  )
+  if (rendered.isHtml) {
+    return (
+      <div
+        className={cn(
+          baseClass,
+          '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+          '[&_h1]:mt-2 [&_h1]:mb-1 [&_h1]:text-[13px] [&_h1]:font-semibold [&_h1]:text-[var(--color-text-primary)]',
+          '[&_h2]:mt-2 [&_h2]:mb-1 [&_h2]:text-[12px] [&_h2]:font-semibold [&_h2]:text-[var(--color-text-primary)]',
+          '[&_h3]:mt-1.5 [&_h3]:mb-0.5 [&_h3]:text-[11px] [&_h3]:font-semibold [&_h3]:text-[var(--color-text-primary)]',
+          '[&_p]:my-1',
+          '[&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc',
+          '[&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal',
+          '[&_li]:my-0.5',
+          '[&_code]:rounded [&_code]:bg-[var(--color-bg-tertiary)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[10px]',
+          '[&_pre]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-[var(--color-bg-tertiary)] [&_pre]:p-2',
+          '[&_pre_code]:bg-transparent [&_pre_code]:p-0',
+          '[&_a]:text-[var(--color-accent)] [&_a]:underline hover:[&_a]:opacity-80',
+          '[&_strong]:font-semibold [&_strong]:text-[var(--color-text-primary)]',
+          '[&_blockquote]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--color-border)] [&_blockquote]:pl-2 [&_blockquote]:text-[var(--color-text-tertiary)]',
+        )}
+        dangerouslySetInnerHTML={{ __html: rendered.html }}
+      />
+    )
+  }
+  return <div className={cn(baseClass, 'whitespace-pre-wrap')}>{notes}</div>
 }
 
 export function UpdateDialog(): JSX.Element | null {
@@ -113,11 +176,7 @@ export function UpdateDialog(): JSX.Element | null {
               <p className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">
                 FastAgents 有新版本可用，是否立即下载并升级？
               </p>
-              {state.notes && (
-                <div className="mt-3 max-h-40 overflow-y-auto rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[11px] leading-5 text-[var(--color-text-secondary)] whitespace-pre-wrap">
-                  {state.notes}
-                </div>
-              )}
+              {state.notes && <ReleaseNotes notes={state.notes} />}
             </>
           )}
 

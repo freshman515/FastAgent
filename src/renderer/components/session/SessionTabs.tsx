@@ -1,5 +1,5 @@
 import { PanelLeftOpen, Plus } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
@@ -81,12 +81,41 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
     setDropTarget(null)
   }, [])
 
-  const handlePlusClick = (): void => {
+  const closeTimerRef = useRef<number | null>(null)
+
+  const cancelCloseTimer = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleCloseMenu = useCallback(() => {
+    cancelCloseTimer()
+    closeTimerRef.current = window.setTimeout(() => {
+      setShowNewMenu(false)
+      closeTimerRef.current = null
+    }, 150)
+  }, [cancelCloseTimer])
+
+  const openNewMenu = useCallback(() => {
+    cancelCloseTimer()
     if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect()
       setMenuPos({ top: rect.bottom + 4, left: rect.left })
     }
-    setShowNewMenu(!showNewMenu)
+    setShowNewMenu(true)
+  }, [cancelCloseTimer])
+
+  useEffect(() => () => cancelCloseTimer(), [cancelCloseTimer])
+
+  const handlePlusClick = (): void => {
+    if (showNewMenu) {
+      cancelCloseTimer()
+      setShowNewMenu(false)
+      return
+    }
+    openNewMenu()
   }
 
   return (
@@ -148,6 +177,8 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
         <button
           ref={btnRef}
           onClick={handlePlusClick}
+          onMouseEnter={openNewMenu}
+          onMouseLeave={scheduleCloseMenu}
           className={cn(
             'flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full ml-2 mr-1',
             'text-[var(--color-text-tertiary)] border border-[var(--color-border)]',
@@ -163,8 +194,13 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
       {showNewMenu && (
         <NewSessionMenu
           projectId={projectId}
-          onClose={() => setShowNewMenu(false)}
+          onClose={() => {
+            cancelCloseTimer()
+            setShowNewMenu(false)
+          }}
           position={menuPos}
+          onMouseEnter={cancelCloseTimer}
+          onMouseLeave={scheduleCloseMenu}
         />
       )}
     </div>

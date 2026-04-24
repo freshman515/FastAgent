@@ -30,9 +30,18 @@ interface NewSessionMenuProps {
   paneId?: string
   onClose: () => void
   position: { top: number; left: number }
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }
 
-export function NewSessionMenu({ projectId, paneId, onClose, position }: NewSessionMenuProps): JSX.Element {
+export function NewSessionMenu({
+  projectId,
+  paneId,
+  onClose,
+  position,
+  onMouseEnter,
+  onMouseLeave,
+}: NewSessionMenuProps): JSX.Element {
   const addSessionToPane = usePanesStore((s) => s.addSessionToPane)
 
   const handleSelect = useCallback(
@@ -48,31 +57,30 @@ export function NewSessionMenu({ projectId, paneId, onClose, position }: NewSess
   )
 
   return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        style={{ top: position.top, left: position.left }}
-        className={cn(
-          'fixed z-50 w-48 rounded-[var(--radius-md)] py-1',
-          'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]',
-          'shadow-lg shadow-black/30 animate-[fade-in_0.1s_ease-out]',
-        )}
-      >
-        {SESSION_OPTIONS.map((opt) => (
-          <button
-            key={opt.type}
-            onClick={() => handleSelect(opt.type)}
-            className={cn(
-              'flex w-full items-center gap-2.5 px-3 py-2',
-              'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-              'transition-colors duration-75',
-            )}
-          >
-            <img src={opt.icon} alt="" className="h-4 w-4 shrink-0" />
-            <span className="text-[var(--ui-font-sm)] font-medium">{opt.label}</span>
-          </button>
-        ))}
-      </div>
-    </>
+    <div
+      style={{ top: position.top, left: position.left }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className={cn(
+        'fixed z-50 w-48 rounded-[var(--radius-md)] py-1',
+        'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]',
+        'shadow-lg shadow-black/30 animate-[fade-in_0.1s_ease-out]',
+      )}
+    >
+      {SESSION_OPTIONS.map((opt) => (
+        <button
+          key={opt.type}
+          onClick={() => handleSelect(opt.type)}
+          className={cn(
+            'flex w-full items-center gap-2.5 px-3 py-2',
+            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+            'transition-colors duration-75',
+          )}
+        >
+          <img src={opt.icon} alt="" className="h-4 w-4 shrink-0" />
+          <span className="text-[var(--ui-font-sm)] font-medium">{opt.label}</span>
+        </button>
+      ))}
+    </div>
   )
 }

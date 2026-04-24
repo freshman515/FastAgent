@@ -486,23 +486,48 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const windowDragRef = useRef<WindowDragState | null>(null)
   const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
 
+  const closeMenuTimerRef = useRef<number | null>(null)
+
+  const cancelCloseMenu = useCallback(() => {
+    if (closeMenuTimerRef.current !== null) {
+      window.clearTimeout(closeMenuTimerRef.current)
+      closeMenuTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleCloseMenu = useCallback(() => {
+    cancelCloseMenu()
+    closeMenuTimerRef.current = window.setTimeout(() => {
+      setShowNewMenu(false)
+      closeMenuTimerRef.current = null
+    }, 150)
+  }, [cancelCloseMenu])
+
+  useEffect(() => () => cancelCloseMenu(), [cancelCloseMenu])
+
   const openNewSessionMenu = useCallback((anchor: HTMLElement, align: 'left' | 'center' = 'left') => {
+    cancelCloseMenu()
     const rect = anchor.getBoundingClientRect()
     setMenuPos({
       top: rect.bottom + 4,
       left: align === 'center' ? rect.left + rect.width / 2 - 96 : rect.left,
     })
     setShowNewMenu(true)
-  }, [])
+  }, [cancelCloseMenu])
 
   const handlePlusClick = (): void => {
     if (!btnRef.current) return
     if (showNewMenu) {
+      cancelCloseMenu()
       setShowNewMenu(false)
       return
     }
     openNewSessionMenu(btnRef.current)
   }
+
+  const handlePlusMouseEnter = useCallback(() => {
+    if (btnRef.current) openNewSessionMenu(btnRef.current)
+  }, [openNewSessionMenu])
 
   const handleEmptyIconClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation()
@@ -782,6 +807,8 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           <button
             ref={btnRef}
             onClick={handlePlusClick}
+            onMouseEnter={handlePlusMouseEnter}
+            onMouseLeave={scheduleCloseMenu}
             className={cn(
               'no-drag group/new flex h-[28px] w-[28px] shrink-0 items-center justify-center self-center',
               'rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]',
@@ -831,8 +858,13 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           <NewSessionMenu
             projectId={projectId}
             paneId={paneId}
-            onClose={() => setShowNewMenu(false)}
+            onClose={() => {
+              cancelCloseMenu()
+              setShowNewMenu(false)
+            }}
             position={menuPos}
+            onMouseEnter={cancelCloseMenu}
+            onMouseLeave={scheduleCloseMenu}
           />
         )}
       </div>
