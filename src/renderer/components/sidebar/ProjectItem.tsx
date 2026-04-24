@@ -594,16 +594,19 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
 
         {/* Branch badge */}
-        {!isAnonymous && branchInfo && (
-          <span className={cn(
-            'flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5',
-            'text-[var(--ui-font-xs)] font-medium leading-none',
-            branchInfo.isDirty
-              ? 'bg-[var(--color-warning)]/15 text-[var(--color-warning)]'
-              : 'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]',
-          )}>
-            <GitBranch size={11} />
-            <span className="max-w-[90px] truncate">{branchInfo.current}</span>
+        {!isAnonymous && branchInfo?.current && (
+          <span
+            className={cn(
+              'flex max-w-[92px] shrink-0 items-center gap-1 text-[var(--ui-font-2xs)] leading-none',
+              'text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]',
+            )}
+            title={branchInfo.isDirty
+              ? `当前分支：${branchInfo.current}（有未提交更改）`
+              : `当前分支：${branchInfo.current}`}
+          >
+            <GitBranch size={10} className="shrink-0 opacity-75" />
+            <span className="truncate">{branchInfo.current}</span>
+            {branchInfo.isDirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
           </span>
         )}
 

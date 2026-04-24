@@ -309,6 +309,44 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         />
       </SettingsSection>
 
+      {/* ───── 工作区模式 ───── */}
+      <SettingsSection
+        icon={SplitSquareHorizontal}
+        title="工作区模式"
+        description="选择会话和终端的排布方式，快捷键 Ctrl+Shift+M 可随时切换。"
+      >
+        <SegmentedChoice
+          value={settings.workspaceLayout}
+          options={[
+            { id: 'panes', label: '分屏模式', desc: '经典标签 + 分屏（默认）' },
+            { id: 'canvas', label: '无限画布', desc: '卡片自由缩放与摆放' },
+          ]}
+          onChange={(v) => onUpdate('workspaceLayout', v)}
+        />
+        {settings.workspaceLayout === 'canvas' && (
+          <>
+            <ToggleRow
+              label="显示网格"
+              description="在画布上渲染点状背景网格，辅助对齐"
+              checked={settings.canvasGridEnabled}
+              onChange={(v) => onUpdate('canvasGridEnabled', v)}
+            />
+            <ToggleRow
+              label="吸附到网格"
+              description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘"
+              checked={settings.canvasSnapEnabled}
+              onChange={(v) => onUpdate('canvasSnapEnabled', v)}
+            />
+            <ToggleRow
+              label="显示缩略图"
+              description="右下角小地图显示画布全貌和当前视口"
+              checked={settings.canvasShowMinimap}
+              onChange={(v) => onUpdate('canvasShowMinimap', v)}
+            />
+          </>
+        )}
+      </SettingsSection>
+
       {/* ───── 通知提醒 ───── */}
       <SettingsSection icon={Bell} title="通知提醒" description="会话任务完成时的桌面通知与音效。">
         <ToggleRow

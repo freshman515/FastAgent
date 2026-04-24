@@ -70,6 +70,58 @@ export interface Session {
   codexResumeId?: string
 }
 
+// ─── Canvas Mode ───
+//
+// Parallel layout engine to the BSP panes tree. When `AppSettings.workspaceLayout`
+// is 'canvas', MainPanel renders `CanvasWorkspace` instead of `SplitContainer`.
+// State is stored per "layout key" — same key shape as pane `projectLayouts`
+// (projectId / worktreeId / SESSIONS_LAYOUT_KEY), so switching scope restores
+// the right canvas. Canvas and panes states coexist — switching workspaceLayout
+// does NOT destroy the other side's layout.
+
+export type WorkspaceLayout = 'panes' | 'canvas'
+
+export type CanvasCardKind = 'session' | 'terminal' | 'note'
+
+export interface CanvasCard {
+  id: string
+  kind: CanvasCardKind
+  /** Session id for kind='session'|'terminal'; null for note cards. */
+  refId: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+  zIndex: number
+  collapsed: boolean
+  /** Note-card body (plain text). */
+  noteBody?: string
+  /** Note-card accent color token (e.g. 'yellow' | 'blue' | 'green' | 'pink'). */
+  noteColor?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CanvasViewport {
+  scale: number
+  offsetX: number
+  offsetY: number
+}
+
+export interface CanvasLayout {
+  cards: CanvasCard[]
+  viewport: CanvasViewport
+}
+
+export interface CanvasPersistedState {
+  schemaVersion: number
+  layouts: Record<string, CanvasLayout>
+}
+
+export const CANVAS_SCHEMA_VERSION = 1
+export const CANVAS_MIN_SCALE = 0.1
+export const CANVAS_MAX_SCALE = 8
+
 // ─── IPC Types ───
 
 export interface SessionCreateOptions {

@@ -372,6 +372,7 @@ const api = {
         activeTasks?: unknown[]
         ui: Record<string, unknown>
         panes?: Record<string, unknown>
+        canvas?: Record<string, unknown>
         claudeGui?: Record<string, unknown>
       }>,
     getAnonymousWorkspace: () =>

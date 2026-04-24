@@ -378,3 +378,37 @@ html, body, #root {
 .terminal-search-input:focus-visible {
   outline: none;
 }
+
+.terminal-view {
+  --vscode-scrollbar-shadow: transparent;
+}
+
+.terminal-view .xterm,
+.terminal-view .xterm .xterm-viewport,
+.terminal-view .xterm .xterm-screen,
+.terminal-view .xterm .xterm-screen canvas {
+  border-color: transparent !important;
+  outline: none !important;
+}
+
+.terminal-view .xterm:not(.allow-transparency) .xterm-viewport {
+  background-color: var(--color-terminal-bg) !important;
+}
+
+.terminal-view .xterm .xterm-scrollable-element > .xterm-shadow {
+  box-shadow: none !important;
+}
+
+.canvas-session-frame {
+  box-shadow:
+    0 22px 70px rgba(0, 0, 0, 0.62),
+    0 10px 28px rgba(0, 0, 0, 0.45),
+    0 0 34px color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.theme-light .canvas-session-frame {
+  box-shadow:
+    0 20px 58px rgba(15, 23, 42, 0.28),
+    0 8px 24px rgba(15, 23, 42, 0.18),
+    0 0 28px rgba(15, 23, 42, 0.12);
+}

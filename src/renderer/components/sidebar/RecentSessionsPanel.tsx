@@ -1,4 +1,4 @@
-import { FolderPlus, Plus, Search, X } from 'lucide-react'
+import { ChevronRight, FolderPlus, Plus, Search, X } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
@@ -11,6 +11,7 @@ import {
   RecentSessionItem,
   UNGROUPED_MARKER,
 } from './RecentSessionItem'
+import { bucketRecentSessions, type TimeBucketKey } from './recentTimeBuckets'
 
 export function RecentSessionsPanel(): JSX.Element {
   const addGroup = useSessionGroupsStore((s) => s.addGroup)
@@ -22,7 +23,12 @@ export function RecentSessionsPanel(): JSX.Element {
   const [newName, setNewName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [recentDragOver, setRecentDragOver] = useState(false)
+  const [collapsedBuckets, setCollapsedBuckets] = useState<Partial<Record<TimeBucketKey, boolean>>>({})
   const committedRef = useRef(false)
+
+  const toggleBucket = useCallback((key: TimeBucketKey) => {
+    setCollapsedBuckets((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
 
   const groupedSessionIds = useMemo(() => {
     const ids = new Set<string>()
@@ -39,6 +45,10 @@ export function RecentSessionsPanel(): JSX.Element {
     if (!q) return sorted
     return sorted.filter((s) => s.name.toLowerCase().includes(q))
   }, [sessions, groupedSessionIds, searchQuery])
+
+  const timeBuckets = useMemo(() => bucketRecentSessions(recentSessions), [recentSessions])
+  const searchActive = searchQuery.trim().length > 0
+  const showTopHeader = groups.length > 0
 
   const handleCommit = useCallback(() => {
     if (committedRef.current) return
@@ -173,28 +183,63 @@ export function RecentSessionsPanel(): JSX.Element {
             recentDragOver && 'bg-[var(--color-accent)]/8 ring-1 ring-inset ring-[var(--color-accent)]/40',
           )}
         >
-          <div className="px-2.5 pt-1.5 pb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
-            <span>最近 · 未分组</span>
-            {recentSessions.length > 0 && (
-              <span className="tabular-nums rounded-full bg-[var(--color-bg-tertiary)]/60 px-1.5 py-px text-[9px] text-[var(--color-text-tertiary)]">
-                {recentSessions.length}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col gap-0.5 pb-1">
-            {recentSessions.map((session) => (
-              <RecentSessionItem
-                key={session.id}
-                session={session}
-                sourceGroupId={null}
-              />
-            ))}
-            {recentSessions.length === 0 && (
-              <div className="mx-2 my-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)]/70 px-3 py-3 text-center text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-                {searchQuery ? '无匹配会话' : '这里会显示所有未归组的会话'}
+          {showTopHeader && (
+            <div className="px-2.5 pt-1.5 pb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
+              <span>最近 · 未分组</span>
+              {recentSessions.length > 0 && (
+                <span className="tabular-nums rounded-full bg-[var(--color-bg-tertiary)]/60 px-1.5 py-px text-[9px] text-[var(--color-text-tertiary)]">
+                  {recentSessions.length}
+                </span>
+              )}
+            </div>
+          )}
+          {timeBuckets.map((bucket) => {
+            const collapsed = !searchActive && !!collapsedBuckets[bucket.key]
+            return (
+              <div key={bucket.key} className="pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => toggleBucket(bucket.key)}
+                  className={cn(
+                    'group/bucket flex w-full items-center gap-1.5 text-left',
+                    'text-[var(--ui-font-sm)] font-medium text-[var(--color-text-secondary)]',
+                    'transition-colors hover:text-[var(--color-text-primary)]',
+                    showTopHeader ? 'pl-2.5 pr-2.5' : 'px-2.5',
+                    'pt-1.5 pb-1',
+                  )}
+                >
+                  <ChevronRight
+                    size={12}
+                    strokeWidth={2.25}
+                    className={cn(
+                      'shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-150',
+                      !collapsed && 'rotate-90',
+                    )}
+                  />
+                  <span className="flex-1">{bucket.label}</span>
+                  <span className="tabular-nums rounded-full bg-[var(--color-bg-tertiary)]/60 px-1.5 py-0.5 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                    {bucket.sessions.length}
+                  </span>
+                </button>
+                {!collapsed && (
+                  <div className="flex flex-col gap-0.5 pt-0.5">
+                    {bucket.sessions.map((session) => (
+                      <RecentSessionItem
+                        key={session.id}
+                        session={session}
+                        sourceGroupId={null}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            )
+          })}
+          {recentSessions.length === 0 && (
+            <div className="mx-2 my-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)]/70 px-3 py-3 text-center text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              {searchQuery ? '无匹配会话' : '这里会显示所有未归组的会话'}
+            </div>
+          )}
         </div>
       </div>
     </div>

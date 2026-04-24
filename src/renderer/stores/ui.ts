@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SessionType, ToastNotification } from '@shared/types'
+import type { SessionType, ToastNotification, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
@@ -155,6 +155,15 @@ export interface AppSettings {
   // Session history panel — remembered filter selections
   sessionHistorySourceFilter: 'all' | 'claude-code' | 'codex'
   sessionHistoryOnlyCurrentProject: boolean
+  // ─── Canvas workspace ───
+  /** 'panes' = classic BSP split tabs, 'canvas' = infinite canvas with free-form cards */
+  workspaceLayout: WorkspaceLayout
+  /** Show the grid background on the canvas */
+  canvasGridEnabled: boolean
+  /** Snap card movement to the grid / sibling edges */
+  canvasSnapEnabled: boolean
+  /** Show the minimap overlay on the canvas */
+  canvasShowMinimap: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -208,6 +217,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 Keep it brief and actionable. Use the same language as the terminal output.`,
   sessionHistorySourceFilter: 'all',
   sessionHistoryOnlyCurrentProject: false,
+  workspaceLayout: 'panes',
+  canvasGridEnabled: true,
+  canvasSnapEnabled: true,
+  canvasShowMinimap: true,
 }
 
 interface UIState {
@@ -1003,6 +1016,12 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.sessionHistoryOnlyCurrentProject === 'boolean') {
         s.sessionHistoryOnlyCurrentProject = raw.sessionHistoryOnlyCurrentProject
       }
+      if (raw.workspaceLayout === 'panes' || raw.workspaceLayout === 'canvas') {
+        s.workspaceLayout = raw.workspaceLayout
+      }
+      if (typeof raw.canvasGridEnabled === 'boolean') s.canvasGridEnabled = raw.canvasGridEnabled
+      if (typeof raw.canvasSnapEnabled === 'boolean') s.canvasSnapEnabled = raw.canvasSnapEnabled
+      if (typeof raw.canvasShowMinimap === 'boolean') s.canvasShowMinimap = raw.canvasShowMinimap
       if (typeof raw.terminalTheme === 'string') s.terminalTheme = raw.terminalTheme
       // Prefer the dedicated top-level customThemes key (more robust against ui-settings resets)
       const themesSource = (customThemesOverride && Object.keys(customThemesOverride).length > 0)

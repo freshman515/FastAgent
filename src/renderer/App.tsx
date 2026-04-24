@@ -13,6 +13,7 @@ import { DetachedApp } from '@/DetachedApp'
 import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
 import { usePanesStore } from '@/stores/panes'
+import { useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
 import { useSessionGroupsStore } from '@/stores/sessionGroups'
@@ -332,6 +333,7 @@ export function App(): JSX.Element {
       useWorktreesStore.getState()._loadFromConfig(rawWorktrees)
       useLaunchesStore.getState()._loadFromConfig((data as Record<string, unknown>).launches as unknown[] ?? [])
       useClaudeGuiStore.getState()._loadFromConfig((data as Record<string, unknown>).claudeGui as Record<string, unknown> ?? {})
+      useCanvasStore.getState().loadFromConfig((data as Record<string, unknown>).canvas as Record<string, unknown> ?? {})
 
       const hasAnonymousProjectData = sanitizedSessions.some((session) =>
         session && typeof session === 'object' && (session as { projectId?: unknown }).projectId === ANONYMOUS_PROJECT_ID,
@@ -786,6 +788,21 @@ export function App(): JSX.Element {
         const restored = useSessionsStore.getState()
         const newest = restored.sessions[restored.sessions.length - 1]
         if (newest) paneStore.addSessionToPane(activePaneId, newest.id)
+        return
+      }
+
+      // Ctrl+Shift+M — toggle workspace layout (panes ⇄ canvas)
+      if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
+        e.preventDefault()
+        const ui = useUIStore.getState()
+        const next = ui.settings.workspaceLayout === 'canvas' ? 'panes' : 'canvas'
+        ui.updateSettings({ workspaceLayout: next })
+        ui.addToast({
+          title: next === 'canvas' ? '已切换到画布模式' : '已切换到分屏模式',
+          body: next === 'canvas' ? '滚轮缩放，空格 + 拖拽平移' : '分屏布局已恢复',
+          type: 'info',
+          duration: 3000,
+        })
         return
       }
 

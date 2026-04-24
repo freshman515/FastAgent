@@ -155,7 +155,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     : undefined
 
   return (
-    <div className="h-full w-full bg-[var(--color-terminal-bg)]">
+    <div className="terminal-view h-full w-full bg-[var(--color-terminal-bg)]">
       <div className="relative h-full w-full bg-[var(--color-terminal-bg)]">
       {/* Search bar */}
       {searchOpen && (

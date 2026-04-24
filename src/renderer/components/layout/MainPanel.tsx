@@ -4,7 +4,9 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { useUIStore } from '@/stores/ui'
 import { SplitContainer } from '@/components/split/SplitContainer'
+import { CanvasWorkspace } from '@/components/canvas/CanvasWorkspace'
 import { EmptyState } from '@/components/session/EmptyState'
 
 export function MainPanel(): JSX.Element {
@@ -17,6 +19,7 @@ export function MainPanel(): JSX.Element {
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const currentLayoutKey = usePanesStore((s) => s.currentProjectId)
   const workspaceMode = usePanesStore((s) => s.workspaceMode)
+  const workspaceLayout = useUIStore((s) => s.settings.workspaceLayout)
 
   // Keep panes in sync with the selected project/worktree without overwriting
   // an explicit switch that already restored the correct layout.
@@ -105,6 +108,14 @@ export function MainPanel(): JSX.Element {
     }
     document.title = 'FastAgents'
   }, [activeEditor?.fileName, activeEditor?.id, activeSession?.name, activeSession?.id])
+
+  if (workspaceLayout === 'canvas') {
+    return (
+      <div className="flex h-full flex-col bg-[var(--color-bg-primary)]">
+        <CanvasWorkspace />
+      </div>
+    )
+  }
 
   if (workspaceMode === 'project' && !selectedProjectId) {
     return (
