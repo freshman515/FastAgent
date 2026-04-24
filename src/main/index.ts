@@ -2,6 +2,7 @@ import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, shell } f
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
+import { resolveCodexResumeIdsForSessions, warmSessionHistoryCache } from './ipc/sessionHistory'
 import { ptyManager } from './services/PtyManager'
 import { activityMonitor } from './services/ActivityMonitor'
 import { readConfig, writeConfig } from './services/ConfigStore'
@@ -80,6 +81,7 @@ app.whenReady().then(async () => {
     orchestratorService.setMainWindow(mainWindow)
   }
   mediaMonitor.start()
+  setTimeout(() => warmSessionHistoryCache(), 1200)
 
   // Auto-updater: register listeners first, then check after a short delay
   // so the renderer has time to mount its dialog listener.
@@ -322,12 +324,38 @@ app.on('before-quit', async (e) => {
 
     // Gracefully shutdown Claude Code sessions and capture resume IDs
     const uuidMap = await ptyManager.gracefulShutdownClaudeSessions()
+    const managedBySessionId = new Map(
+      ptyManager.listManagedSessions().map((session) => [session.sessionId, session]),
+    )
+    const codexResumeMap = await resolveCodexResumeIdsForSessions(
+      sessionsSnapshot.flatMap((session) => {
+        if (typeof session.id !== 'string') return []
+        if (session.type !== 'codex' && session.type !== 'codex-yolo') return []
+
+        const managed = managedBySessionId.get(session.id)
+        const existingResumeId = session.codexResumeId
+        if (!managed && typeof existingResumeId !== 'string') return []
+
+        const cwd = managed?.cwd ?? (typeof session.cwd === 'string' ? session.cwd : '')
+        if (!cwd && typeof existingResumeId !== 'string') return []
+
+        return [{
+          sessionId: session.id,
+          cwd,
+          startedAt: managed?.startedAt ?? (typeof session.createdAt === 'number' ? session.createdAt : undefined),
+          existingResumeId,
+        }]
+      }),
+    )
 
     // Write back the snapshot with UUIDs applied (ignoring any renderer-side deletions)
     const updated = sessionsSnapshot.map((s) => {
       const result: Record<string, unknown> = { ...s, status: 'stopped', ptyId: null }
       if (typeof s.id === 'string' && uuidMap.has(s.id)) {
         result.resumeUUID = uuidMap.get(s.id)
+      }
+      if (typeof s.id === 'string' && codexResumeMap.has(s.id)) {
+        result.codexResumeId = codexResumeMap.get(s.id)
       }
       return result
     })

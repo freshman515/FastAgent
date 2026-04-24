@@ -376,6 +376,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       const allValid = allSaved.every((sid) => projectSessionIds.includes(sid))
       if (allValid && allSaved.length > 0) {
         set({
+          workspaceMode: 'project',
           root: saved.root,
           activePaneId: saved.activePaneId,
           fullscreenPaneId: sanitizeFullscreenPaneId(saved.root, saved.paneSessions, saved.fullscreenPaneId),
@@ -395,6 +396,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
 
     // No saved layout — init fresh
     set({
+      workspaceMode: 'project',
       root: { type: 'leaf', id: DEFAULT_PANE_ID },
       activePaneId: DEFAULT_PANE_ID,
       fullscreenPaneId: null,
@@ -460,6 +462,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
 
       if (hasAnySessions) {
         set({
+          workspaceMode: 'project',
           root: saved.root,
           activePaneId: saved.activePaneId,
           fullscreenPaneId: sanitizeFullscreenPaneId(saved.root, cleanedPaneSessions, saved.fullscreenPaneId),
@@ -479,6 +482,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
 
     // No saved layout — init fresh
     set({
+      workspaceMode: 'project',
       root: { type: 'leaf', id: DEFAULT_PANE_ID },
       activePaneId: DEFAULT_PANE_ID,
       fullscreenPaneId: null,

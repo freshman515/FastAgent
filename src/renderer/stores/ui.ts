@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { SessionType, ToastNotification } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
+import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
 import { usePanesStore } from './panes'
 
 export type VisualizerMode = 'melody' | 'bars'
@@ -769,7 +770,13 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (tab === 'recentSessions') {
         usePanesStore.getState().setWorkspaceMode('sessions')
       } else if (tab === 'projects') {
-        usePanesStore.getState().setWorkspaceMode('project')
+        const paneStore = usePanesStore.getState()
+        // Restore in one panes update when coming from sessions mode, avoiding
+        // the intermediate empty project layout that remounts terminals.
+        const restored = paneStore.workspaceMode === 'sessions' && restoreSelectedProjectPaneLayout()
+        if (!restored) {
+          paneStore.setWorkspaceMode('project')
+        }
       }
     }
 

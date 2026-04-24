@@ -1,7 +1,7 @@
 import { AlertCircle, ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { HistoricalSession, HistoricalSessionListResult, HistoricalSessionSource, Project } from '@shared/types'
+import type { HistoricalSession, HistoricalSessionListResult, HistoricalSessionSource, Project, Session, Worktree } from '@shared/types'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
@@ -12,6 +12,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import { useUIStore } from '@/stores/ui'
+import { useWorktreesStore } from '@/stores/worktrees'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DockActions } from '@/components/layout/DockActions'
 
@@ -116,6 +117,79 @@ function findMatchingProjectId(cwd: string, projects: Project[]): string | null 
     }
   }
   return exact ?? prefix?.id ?? null
+}
+
+function isCodexType(type: Session['type']): boolean {
+  return type === 'codex' || type === 'codex-yolo'
+}
+
+function parseTime(iso: string | null): number {
+  if (!iso) return 0
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? 0 : t
+}
+
+function resolveSessionCwd(session: Session, projects: Project[], worktrees: Worktree[]): string {
+  if (session.cwd) return session.cwd
+  if (session.worktreeId) {
+    const wt = worktrees.find((w) => w.id === session.worktreeId)
+    if (wt?.path) return wt.path
+  }
+  const mainWorktree = worktrees.find((w) => w.projectId === session.projectId && w.isMain)
+  if (mainWorktree?.path) return mainWorktree.path
+  return projects.find((p) => p.id === session.projectId)?.path ?? ''
+}
+
+function inferCodexSessionIds(
+  appSessions: Session[],
+  historySessions: HistoricalSession[],
+  projects: Project[],
+  worktrees: Worktree[],
+): Map<string, string> {
+  const result = new Map<string, string>()
+  const usedHistoryIds = new Set<string>()
+  for (const s of appSessions) {
+    if (isCodexType(s.type) && s.codexResumeId) usedHistoryIds.add(s.codexResumeId)
+  }
+  const candidates = historySessions
+    .filter((s) => s.source === 'codex')
+    .map((s) => ({
+      session: s,
+      cwd: normalizePath(s.cwd),
+      startedAt: parseTime(s.startedAt),
+      updatedAt: parseTime(s.updatedAt),
+    }))
+    .filter((s) => s.cwd && (s.startedAt > 0 || s.updatedAt > 0))
+
+  for (const s of appSessions) {
+    if (!isCodexType(s.type) || s.codexResumeId || s.status !== 'running') continue
+    const cwd = normalizePath(resolveSessionCwd(s, projects, worktrees))
+    if (!cwd) continue
+
+    let best: { id: string; score: number } | null = null
+    for (const candidate of candidates) {
+      if (usedHistoryIds.has(candidate.session.id)) continue
+      if (candidate.cwd !== cwd) continue
+
+      const startedAt = candidate.startedAt || candidate.updatedAt
+      // A freshly launched Codex rollout is created shortly after the
+      // FastAgents tab. If it predates the tab by much, it is probably an older
+      // transcript in the same project.
+      if (startedAt < s.createdAt - 2 * 60_000) continue
+
+      const score = Math.abs(startedAt - s.createdAt)
+      if (!best || score < best.score) {
+        best = { id: candidate.session.id, score }
+      }
+    }
+
+    if (best) {
+      result.set(s.id, best.id)
+      usedHistoryIds.add(best.id)
+    }
+  }
+
+  return result
 }
 
 function buildProjectGroups(
@@ -337,29 +411,13 @@ export function SessionHistoryPanel(): JSX.Element {
   const isDark = useIsDarkTheme()
   const projects = useProjectsStore((s) => s.projects)
   const activeProjectId = useProjectsStore((s) => s.selectedProjectId)
+  const worktrees = useWorktreesStore((s) => s.worktrees)
   // Live set of currently-open transcripts keyed by their resume id. Re-derived
   // on every store change so opening/closing a tab immediately restyles the
   // matching history row. The active one is pulled from the focused pane so
-  // switching between two open Claude tabs also updates the highlight.
+  // switching between two open agent tabs also updates the highlight.
   const openSessions = useSessionsStore((s) => s.sessions)
   const activePaneSessionId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
-
-  const { openClaudeIds, openCodexIds, activeClaudeId, activeCodexId } = useMemo(() => {
-    const claudeIds = new Set<string>()
-    const codexIds = new Set<string>()
-    let activeClaude: string | null = null
-    let activeCodex: string | null = null
-    for (const s of openSessions) {
-      if (isClaudeCodeType(s.type) && s.resumeUUID) {
-        claudeIds.add(s.resumeUUID)
-        if (s.id === activePaneSessionId) activeClaude = s.resumeUUID
-      } else if ((s.type === 'codex' || s.type === 'codex-yolo') && s.codexResumeId) {
-        codexIds.add(s.codexResumeId)
-        if (s.id === activePaneSessionId) activeCodex = s.codexResumeId
-      }
-    }
-    return { openClaudeIds: claudeIds, openCodexIds: codexIds, activeClaudeId: activeClaude, activeCodexId: activeCodex }
-  }, [openSessions, activePaneSessionId])
 
   const setSourceFilter = useCallback((next: SourceFilter) => {
     updateSettings({ sessionHistorySourceFilter: next })
@@ -386,6 +444,40 @@ export function SessionHistoryPanel(): JSX.Element {
   const [deleting, setDeleting] = useState(false)
 
   const userGroups = useGroupsStore((s) => s.groups)
+
+  const inferredCodexSessionIds = useMemo(
+    () => inferCodexSessionIds(openSessions, sessions, projects, worktrees),
+    [openSessions, sessions, projects, worktrees],
+  )
+
+  useEffect(() => {
+    if (inferredCodexSessionIds.size === 0) return
+    const store = useSessionsStore.getState()
+    for (const [sessionId, codexResumeId] of inferredCodexSessionIds) {
+      const current = store.sessions.find((s) => s.id === sessionId)
+      if (!current || !isCodexType(current.type) || current.codexResumeId) continue
+      store.updateSession(sessionId, { codexResumeId })
+    }
+  }, [inferredCodexSessionIds])
+
+  const { openClaudeIds, openCodexIds, activeClaudeId, activeCodexId } = useMemo(() => {
+    const claudeIds = new Set<string>()
+    const codexIds = new Set<string>()
+    let activeClaude: string | null = null
+    let activeCodex: string | null = null
+    for (const s of openSessions) {
+      if (isClaudeCodeType(s.type) && s.resumeUUID) {
+        claudeIds.add(s.resumeUUID)
+        if (s.id === activePaneSessionId) activeClaude = s.resumeUUID
+      } else if (isCodexType(s.type)) {
+        const codexId = s.codexResumeId ?? inferredCodexSessionIds.get(s.id) ?? null
+        if (!codexId) continue
+        codexIds.add(codexId)
+        if (s.id === activePaneSessionId) activeCodex = codexId
+      }
+    }
+    return { openClaudeIds: claudeIds, openCodexIds: codexIds, activeClaudeId: activeClaude, activeCodexId: activeCodex }
+  }, [openSessions, activePaneSessionId, inferredCodexSessionIds])
 
   const refresh = useCallback(async (options: { background?: boolean } = {}): Promise<void> => {
     // Background refreshes piggyback on a cached render — no loading spinner,

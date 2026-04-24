@@ -66,7 +66,7 @@ export interface Session {
   color?: string        // color tag for visual grouping (hex)
   label?: string        // short label (e.g. "前端", "API")
   cwd?: string          // resolved working directory override (set by MCP bridge / history resume)
-  /** Codex rollout id to resume on next spawn. Transient — not persisted across app restart. */
+  /** Codex rollout id to resume on next spawn. */
   codexResumeId?: string
 }
 

@@ -32,6 +32,14 @@ function getClaudeResumeUUID(type: SessionType, value?: unknown): string | null 
   return isClaudeSessionUuid(value) ? value : createClaudeSessionUuid()
 }
 
+function getCodexResumeId(type: SessionType, value?: unknown): string | undefined {
+  if (type !== 'codex' && type !== 'codex-yolo') return undefined
+  if (typeof value !== 'string') return undefined
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : undefined
+}
+
 function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
@@ -54,6 +62,8 @@ function sanitizeSession(s: unknown): Session | null {
     worktreeId: typeof obj.worktreeId === 'string' ? obj.worktreeId : undefined,
     color: typeof obj.color === 'string' ? obj.color : undefined,
     label: typeof obj.label === 'string' ? obj.label : undefined,
+    cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
+    codexResumeId: getCodexResumeId(type, obj.codexResumeId),
   }
 }
 

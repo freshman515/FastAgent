@@ -54,6 +54,27 @@ export function getDefaultWorktreeIdForProject(projectId: string): string | unde
   return worktree.id
 }
 
+export function restoreSelectedProjectPaneLayout(): boolean {
+  const selectedProjectId = useProjectsStore.getState().selectedProjectId
+  if (!selectedProjectId) return false
+
+  const wtStore = useWorktreesStore.getState()
+  if (!wtStore._loaded) return false
+
+  const paneStore = usePanesStore.getState()
+  const worktree = resolveProjectWorktree(selectedProjectId)
+  const tabIds = getContextTabIds(selectedProjectId, worktree)
+  const fallbackActiveTabId = tabIds[0] ?? null
+
+  if (worktree) {
+    paneStore.switchWorktree(worktree.id, tabIds, fallbackActiveTabId)
+  } else {
+    paneStore.switchProject(selectedProjectId, tabIds, fallbackActiveTabId)
+  }
+
+  return true
+}
+
 export function switchProjectContext(
   projectId: string,
   preferredSessionId: string | null,

@@ -1,9 +1,9 @@
 import { createReadStream } from 'node:fs'
-import { readdir, stat, unlink } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline'
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import {
   IPC,
   type HistoricalSession,
@@ -25,9 +25,11 @@ import {
 
 const MAX_FILES_PER_SOURCE = 1500
 const PREVIEW_MAX_CHARS = 200
+const HISTORY_CACHE_VERSION = 1
 // Cap per-file line reads — avoids multi-second stalls on very long sessions
 // while still giving accurate message counts for typical conversations.
 const MAX_LINES_PER_FILE = 8000
+const CODEX_RESUME_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Patterns that indicate a user "message" is actually injected instructions
 // rather than something the user typed. Codex in particular prepends AGENTS.md
@@ -153,7 +155,14 @@ async function scanClaudeTranscript(filePath: string, id: string): Promise<Histo
   }
 }
 
-async function listClaudeTranscripts(): Promise<{ files: Array<{ path: string; id: string; mtimeMs: number }>; error?: string }> {
+interface ClaudeTranscriptFile {
+  path: string
+  id: string
+  mtimeMs: number
+  size: number
+}
+
+async function listClaudeTranscripts(): Promise<{ files: ClaudeTranscriptFile[]; error?: string }> {
   const root = join(homedir(), '.claude', 'projects')
   let topEntries: string[]
   try {
@@ -164,7 +173,7 @@ async function listClaudeTranscripts(): Promise<{ files: Array<{ path: string; i
     return { files: [], error: `未找到 Claude 会话目录：${root}` }
   }
 
-  const out: Array<{ path: string; id: string; mtimeMs: number }> = []
+  const out: ClaudeTranscriptFile[] = []
   for (const dirName of topEntries) {
     const dir = join(root, dirName)
     let names: string[]
@@ -174,7 +183,7 @@ async function listClaudeTranscripts(): Promise<{ files: Array<{ path: string; i
       const full = join(dir, name)
       try {
         const info = await stat(full)
-        out.push({ path: full, id: name.slice(0, -6), mtimeMs: info.mtimeMs })
+        out.push({ path: full, id: name.slice(0, -6), mtimeMs: info.mtimeMs, size: info.size })
       } catch { /* skip unreadable */ }
     }
   }
@@ -282,7 +291,7 @@ async function scanCodexRollout(filePath: string): Promise<HistoricalSession | n
 
 async function collectCodexRolloutPaths(
   root: string,
-  out: Array<{ path: string; mtimeMs: number }>,
+  out: CodexRolloutFile[],
   depth: number,
 ): Promise<void> {
   // Structure is ~/.codex/sessions/yyyy/mm/dd/rollout-*.jsonl — fixed 3 levels
@@ -303,17 +312,23 @@ async function collectCodexRolloutPaths(
     if (entry.isFile && entry.name.endsWith('.jsonl') && entry.name.startsWith('rollout-')) {
       try {
         const info = await stat(full)
-        out.push({ path: full, mtimeMs: info.mtimeMs })
+        out.push({ path: full, mtimeMs: info.mtimeMs, size: info.size })
       } catch { /* skip */ }
     }
   }
 }
 
-async function listCodexRollouts(): Promise<{ files: Array<{ path: string; mtimeMs: number }>; error?: string }> {
+interface CodexRolloutFile {
+  path: string
+  mtimeMs: number
+  size: number
+}
+
+async function listCodexRollouts(): Promise<{ files: CodexRolloutFile[]; error?: string }> {
   const root = join(homedir(), '.codex', 'sessions')
   try { await stat(root) } catch { return { files: [], error: `未找到 Codex 会话目录：${root}` } }
 
-  const all: Array<{ path: string; mtimeMs: number }> = []
+  const all: CodexRolloutFile[] = []
   await collectCodexRolloutPaths(root, all, 0)
   all.sort((a, b) => b.mtimeMs - a.mtimeMs)
   return { files: all.slice(0, MAX_FILES_PER_SOURCE) }
@@ -328,16 +343,124 @@ async function listCodexRollouts(): Promise<{ files: Array<{ path: string; mtime
 
 interface CacheEntry {
   mtimeMs: number
+  size: number
   session: HistoricalSession
 }
 
 const fileCache = new Map<string, CacheEntry>()
+let persistentCacheLoaded = false
+let persistentCacheLoadPromise: Promise<void> | null = null
+let persistCacheTimer: ReturnType<typeof setTimeout> | null = null
+let cacheDirty = false
+let currentBuild: Promise<HistoricalSessionListResult> | null = null
+
+function getHistoryCacheFile(): string {
+  return join(app.getPath('userData'), 'cache', 'session-history-v1.json')
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function isHistoricalSession(value: unknown): value is HistoricalSession {
+  if (!value || typeof value !== 'object') return false
+  const s = value as Partial<HistoricalSession>
+  return (
+    (s.source === 'claude-code' || s.source === 'codex')
+    && typeof s.id === 'string'
+    && typeof s.filePath === 'string'
+    && typeof s.cwd === 'string'
+    && isNullableString(s.startedAt)
+    && isNullableString(s.updatedAt)
+    && isNullableString(s.firstUserPrompt)
+    && typeof s.userTurns === 'number'
+  )
+}
+
+async function loadPersistentCache(): Promise<void> {
+  if (persistentCacheLoaded) return
+  if (persistentCacheLoadPromise) return persistentCacheLoadPromise
+
+  persistentCacheLoadPromise = (async () => {
+    try {
+      const raw = await readFile(getHistoryCacheFile(), 'utf-8')
+      const parsed = JSON.parse(raw) as { version?: unknown; entries?: unknown }
+      if (parsed.version !== HISTORY_CACHE_VERSION || !Array.isArray(parsed.entries)) return
+
+      for (const rawEntry of parsed.entries) {
+        if (!rawEntry || typeof rawEntry !== 'object') continue
+        const entry = rawEntry as { path?: unknown; mtimeMs?: unknown; size?: unknown; session?: unknown }
+        if (typeof entry.path !== 'string') continue
+        if (typeof entry.mtimeMs !== 'number' || typeof entry.size !== 'number') continue
+        if (!isHistoricalSession(entry.session)) continue
+        if (entry.session.filePath !== entry.path) continue
+        if (!fileCache.has(entry.path)) {
+          fileCache.set(entry.path, {
+            mtimeMs: entry.mtimeMs,
+            size: entry.size,
+            session: entry.session,
+          })
+        }
+      }
+    } catch {
+      // Missing or corrupt cache just means the first scan rebuilds it.
+    } finally {
+      persistentCacheLoaded = true
+      persistentCacheLoadPromise = null
+    }
+  })()
+
+  return persistentCacheLoadPromise
+}
+
+function schedulePersistentCacheWrite(): void {
+  cacheDirty = true
+  if (persistCacheTimer) return
+
+  persistCacheTimer = setTimeout(() => {
+    persistCacheTimer = null
+    void writePersistentCache()
+  }, 250)
+}
+
+async function writePersistentCache(): Promise<void> {
+  if (!cacheDirty) return
+  cacheDirty = false
+
+  const cacheFile = getHistoryCacheFile()
+  const payload = {
+    version: HISTORY_CACHE_VERSION,
+    updatedAt: new Date().toISOString(),
+    entries: [...fileCache.entries()].map(([path, entry]) => ({
+      path,
+      mtimeMs: entry.mtimeMs,
+      size: entry.size,
+      session: entry.session,
+    })),
+  }
+
+  try {
+    await mkdir(join(app.getPath('userData'), 'cache'), { recursive: true })
+    const tmpFile = `${cacheFile}.tmp`
+    await writeFile(tmpFile, JSON.stringify(payload), 'utf-8')
+    await rename(tmpFile, cacheFile)
+  } catch (err) {
+    cacheDirty = true
+    console.warn('[sessionHistory] failed to persist cache:', err)
+  }
+}
 
 export function invalidateSessionHistoryCache(paths: string[]): void {
-  for (const p of paths) fileCache.delete(p)
+  let changed = false
+  for (const p of paths) {
+    if (fileCache.delete(p)) changed = true
+  }
+  if (changed) schedulePersistentCacheWrite()
 }
 
 async function buildHistoryList(): Promise<HistoricalSessionListResult> {
+  await loadPersistentCache()
+
   const errors: HistoricalSessionListResult['errors'] = {}
 
   const [claudeList, codexList] = await Promise.all([
@@ -350,13 +473,13 @@ async function buildHistoryList(): Promise<HistoricalSessionListResult> {
   // Figure out which files we can serve from cache vs. need to rescan.
   const seenPaths = new Set<string>()
   const cachedSessions: HistoricalSession[] = []
-  const claudeToScan: Array<{ path: string; id: string; mtimeMs: number }> = []
-  const codexToScan: Array<{ path: string; mtimeMs: number }> = []
+  const claudeToScan: ClaudeTranscriptFile[] = []
+  const codexToScan: CodexRolloutFile[] = []
 
   for (const f of claudeList.files) {
     seenPaths.add(f.path)
     const hit = fileCache.get(f.path)
-    if (hit && hit.mtimeMs === f.mtimeMs) {
+    if (hit && hit.mtimeMs === f.mtimeMs && hit.size === f.size) {
       cachedSessions.push(hit.session)
     } else {
       claudeToScan.push(f)
@@ -365,7 +488,7 @@ async function buildHistoryList(): Promise<HistoricalSessionListResult> {
   for (const f of codexList.files) {
     seenPaths.add(f.path)
     const hit = fileCache.get(f.path)
-    if (hit && hit.mtimeMs === f.mtimeMs) {
+    if (hit && hit.mtimeMs === f.mtimeMs && hit.size === f.size) {
       cachedSessions.push(hit.session)
     } else {
       codexToScan.push(f)
@@ -375,23 +498,31 @@ async function buildHistoryList(): Promise<HistoricalSessionListResult> {
   // Drop cache entries whose files are no longer in the listing (deleted on
   // disk or rotated out past MAX_FILES_PER_SOURCE). Otherwise the Map grows
   // unboundedly across the process lifetime.
+  let removedStaleCacheEntries = false
   for (const key of fileCache.keys()) {
-    if (!seenPaths.has(key)) fileCache.delete(key)
+    if (!seenPaths.has(key)) {
+      fileCache.delete(key)
+      removedStaleCacheEntries = true
+    }
   }
 
   // Rescan only the changed / new files.
   const [claudeScanned, codexScanned] = await Promise.all([
     scanAll(claudeToScan.map((f) => async () => {
       const parsed = await scanClaudeTranscript(f.path, f.id)
-      if (parsed) fileCache.set(f.path, { mtimeMs: f.mtimeMs, session: parsed })
+      if (parsed) fileCache.set(f.path, { mtimeMs: f.mtimeMs, size: f.size, session: parsed })
       return parsed
     })),
     scanAll(codexToScan.map((f) => async () => {
       const parsed = await scanCodexRollout(f.path)
-      if (parsed) fileCache.set(f.path, { mtimeMs: f.mtimeMs, session: parsed })
+      if (parsed) fileCache.set(f.path, { mtimeMs: f.mtimeMs, size: f.size, session: parsed })
       return parsed
     })),
   ])
+
+  if (removedStaleCacheEntries || claudeToScan.length > 0 || codexToScan.length > 0) {
+    schedulePersistentCacheWrite()
+  }
 
   const sessions = [...cachedSessions, ...claudeScanned, ...codexScanned]
   sessions.sort((a, b) => {
@@ -401,6 +532,115 @@ async function buildHistoryList(): Promise<HistoricalSessionListResult> {
   })
 
   return { sessions, errors }
+}
+
+function getHistoryList(): Promise<HistoricalSessionListResult> {
+  if (!currentBuild) {
+    currentBuild = buildHistoryList().finally(() => {
+      currentBuild = null
+    })
+  }
+  return currentBuild
+}
+
+export function warmSessionHistoryCache(): void {
+  void getHistoryList().catch((err) => {
+    console.warn('[sessionHistory] failed to warm cache:', err)
+  })
+}
+
+export interface CodexResumeLookupTarget {
+  sessionId: string
+  cwd: string
+  startedAt?: number
+  existingResumeId?: unknown
+}
+
+function isCodexResumeId(value: unknown): value is string {
+  return typeof value === 'string' && CODEX_RESUME_ID_RE.test(value)
+}
+
+function normalizeLookupCwd(cwd: string): string {
+  return cwd.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function parseLookupTime(value: string | null): number {
+  if (!value) return 0
+  const ts = Date.parse(value)
+  return Number.isFinite(ts) ? ts : 0
+}
+
+export async function resolveCodexResumeIdsForSessions(
+  targets: CodexResumeLookupTarget[],
+): Promise<Map<string, string>> {
+  const results = new Map<string, string>()
+  const pending: CodexResumeLookupTarget[] = []
+  const usedIds = new Set<string>()
+
+  for (const target of targets) {
+    if (!target.sessionId) continue
+    if (isCodexResumeId(target.existingResumeId)) {
+      results.set(target.sessionId, target.existingResumeId)
+      usedIds.add(target.existingResumeId)
+      continue
+    }
+    if (target.cwd) pending.push(target)
+  }
+
+  if (pending.length === 0) return results
+
+  const history = await getHistoryList()
+  const candidates = history.sessions
+    .filter((session) => session.source === 'codex' && isCodexResumeId(session.id) && session.cwd)
+    .map((session) => ({
+      id: session.id,
+      cwd: normalizeLookupCwd(session.cwd),
+      startedAt: parseLookupTime(session.startedAt),
+      updatedAt: parseLookupTime(session.updatedAt),
+    }))
+    .filter((session) => session.cwd)
+
+  for (const target of pending.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))) {
+    const targetCwd = normalizeLookupCwd(target.cwd)
+    const targetStartedAt = target.startedAt ?? 0
+    let best: (typeof candidates)[number] | null = null
+    let bestScore = Number.POSITIVE_INFINITY
+
+    for (const candidate of candidates) {
+      if (usedIds.has(candidate.id) || candidate.cwd !== targetCwd) continue
+      const candidateStartedAt = candidate.startedAt || candidate.updatedAt
+      if (targetStartedAt && candidateStartedAt && candidateStartedAt < targetStartedAt - 2 * 60_000) {
+        continue
+      }
+
+      const score = targetStartedAt && candidateStartedAt
+        ? Math.abs(candidateStartedAt - targetStartedAt)
+        : -Math.max(candidate.updatedAt, candidate.startedAt)
+
+      if (score < bestScore) {
+        best = candidate
+        bestScore = score
+      }
+    }
+
+    if (!best) {
+      for (const candidate of candidates) {
+        if (usedIds.has(candidate.id) || candidate.cwd !== targetCwd) continue
+        const score = -Math.max(candidate.updatedAt, candidate.startedAt)
+        if (score < bestScore) {
+          best = candidate
+          bestScore = score
+        }
+      }
+    }
+
+    if (best) {
+      results.set(target.sessionId, best.id)
+      usedIds.add(best.id)
+    }
+  }
+
+  return results
 }
 
 async function scanAll<T>(tasks: Array<() => Promise<T | null>>): Promise<T[]> {
@@ -477,7 +717,7 @@ async function deleteHistoryFiles(paths: string[]): Promise<DeleteResult> {
 
     try {
       await unlink(raw)
-      fileCache.delete(raw)
+      if (fileCache.delete(raw)) schedulePersistentCacheWrite()
       result.deleted += 1
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -485,7 +725,7 @@ async function deleteHistoryFiles(paths: string[]): Promise<DeleteResult> {
       // go away", and a stale cache from a previous list() doesn't deserve a
       // hard error.
       if (msg.includes('ENOENT')) {
-        fileCache.delete(raw)
+        if (fileCache.delete(raw)) schedulePersistentCacheWrite()
         result.deleted += 1
       } else {
         result.errors.push({ path: raw, error: msg })
@@ -498,7 +738,7 @@ async function deleteHistoryFiles(paths: string[]): Promise<DeleteResult> {
 
 export function registerSessionHistoryHandlers(): void {
   ipcMain.handle(IPC.SESSION_HISTORY_LIST, async (): Promise<HistoricalSessionListResult> => {
-    return buildHistoryList()
+    return getHistoryList()
   })
 
   ipcMain.handle(IPC.SESSION_HISTORY_DELETE, async (_event, paths: string[]): Promise<DeleteResult> => {

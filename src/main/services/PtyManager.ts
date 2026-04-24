@@ -33,6 +33,7 @@ interface ManagedPty {
   cwd: string
   type: SessionCreateOptions['type']
   sessionId: string | undefined
+  startedAt: number
   replayBuffer: string
   mirror: TerminalMirror
   dataSeq: number
@@ -48,6 +49,7 @@ export interface ManagedSessionInfo {
   sessionId: string
   cwd: string
   type: SessionCreateOptions['type']
+  startedAt: number
 }
 
 // Agent CLIs (especially Codex/Claude) emit a lot of ANSI/TUI repaint traffic.
@@ -362,6 +364,7 @@ export class PtyManager {
       cwd: options.cwd,
       type: options.type,
       sessionId: options.sessionId,
+      startedAt: Date.now(),
       replayBuffer: '',
       mirror: createTerminalMirror(cols, rows),
       dataSeq: 0,
@@ -553,6 +556,7 @@ export class PtyManager {
           sessionId: managed.sessionId,
           cwd: managed.cwd,
           type: managed.type,
+          startedAt: managed.startedAt,
         }]
       })
   }
@@ -565,6 +569,7 @@ export class PtyManager {
         sessionId,
         cwd: managed.cwd,
         type: managed.type,
+        startedAt: managed.startedAt,
       }
     }
     return null
