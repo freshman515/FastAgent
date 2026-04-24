@@ -1,4 +1,5 @@
 import type { AudioFeatures, Particle, VisualParams, VisualizerMode } from './types'
+import type { ArtworkPalette } from './artworkHue'
 
 const MAX_PARTICLES = 40
 
@@ -109,6 +110,7 @@ class AnimationMapper {
   smoothMid = 0
   smoothTreble = 0
   hue = 200
+  artworkPalette: ArtworkPalette | null = null
 
   map(features: AudioFeatures): VisualParams {
     const { volume, bass, mid, treble, dominantBand } = features
@@ -118,13 +120,26 @@ class AnimationMapper {
     this.smoothMid += (mid - this.smoothMid) * 0.12
     this.smoothTreble += (treble - this.smoothTreble) * 0.1
 
-    const targetHue = 180 + (dominantBand / 128) * 180
-    this.hue += (targetHue - this.hue) * 0.03
+    // When an artwork hue is provided, stay close to it and let the dominant
+    // band modulate by ±18° for a subtle in-color shimmer. Otherwise sweep
+    // the full 180-360° range based on frequency.
+    const targetHue = this.artworkPalette !== null
+      ? this.artworkPalette.hue + ((dominantBand - 64) / 64) * (this.artworkPalette.isNeutral ? 4 : 18)
+      : 180 + (dominantBand / 128) * 180
+    // Converge faster when following artwork so track changes feel snappy.
+    const ease = this.artworkPalette !== null ? 0.08 : 0.03
+    this.hue = easeHueTowards(this.hue, targetHue, ease)
+
+    const baseSaturation = this.artworkPalette?.saturation ?? 0.78
+    const baseLightness = this.artworkPalette?.lightness ?? 0.58
+    const neutral = this.artworkPalette?.isNeutral ?? false
 
     return {
       amplitude: 0.55 + this.smoothVolume * 0.45 + this.smoothBass * 0.3,
       flowSpeed: 0.8 + this.smoothMid * 1.2,
       hue: this.hue,
+      saturation: clamp01(baseSaturation + (neutral ? 0.02 : 0.06) * this.smoothTreble),
+      lightness: clamp01(baseLightness + this.smoothVolume * 0.05 + this.smoothBass * 0.03),
       glowIntensity: 0.3 + this.smoothBass * 0.7,
       particleBurst: features.beat,
       bassImpact: this.smoothBass,
@@ -149,6 +164,15 @@ export class MelodyRenderer {
 
   mode: VisualizerMode = 'melody'
 
+  /**
+   * Drive the visualizer color from the album artwork. Neutral / grayscale
+   * covers are represented with low saturation instead of falling back to the
+   * default blue palette.
+   */
+  setArtworkPalette(palette: ArtworkPalette | null): void {
+    this.mapper.artworkPalette = palette
+  }
+
   render(ctx: CanvasRenderingContext2D, w: number, h: number, features: AudioFeatures): void {
     const params = this.mapper.map(features)
     this.time += 0.016 * params.flowSpeed
@@ -169,7 +193,17 @@ export class MelodyRenderer {
   renderIdle(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.clearRect(0, 0, w, h)
 
+    // Drift idle hue toward the artwork so the paused/idle state still
+    // reflects the current cover art.
+    if (this.mapper.artworkPalette !== null) {
+      this.mapper.hue = easeHueTowards(this.mapper.hue, this.mapper.artworkPalette.hue, 0.06)
+    }
+
     if (this.mode === 'bars') {
+      const neutral = this.mapper.artworkPalette?.isNeutral ?? false
+      const idleHue = this.mapper.hue
+      const idleSaturation = this.mapper.artworkPalette?.saturation ?? 0.3
+      const idleLightness = clamp01((this.mapper.artworkPalette?.lightness ?? 0.5) + 0.02)
       const { count, barWidth, slotWidth } = computeBarsLayout(w)
       const maxH = h - 2
       for (let i = 0; i < count; i++) {
@@ -179,7 +213,12 @@ export class MelodyRenderer {
         if (val <= 0.01) continue
         const barH = Math.max(1.25, val * maxH)
         const x = i * slotWidth + (slotWidth - barWidth) / 2
-        ctx.fillStyle = 'hsla(200, 30%, 50%, 0.15)'
+        ctx.fillStyle = hsla(
+          neutral ? idleHue : idleHue + (count > 1 ? (i / (count - 1)) * 18 : 0),
+          clamp01(idleSaturation + (neutral ? 0.02 : 0.04)),
+          idleLightness,
+          0.15,
+        )
         ctx.fillRect(x, h - barH, barWidth, barH)
       }
     } else {
@@ -257,7 +296,10 @@ export class MelodyRenderer {
     const totalCp = visibleCp + RIBBON_PAD_POINTS * 2
     const amp = layer.amplitude * globalAmp * h
     const baseY = layer.baseline * h
-    const hue = this.mapper.hue + layer.hueShift
+    const neutral = this.mapper.artworkPalette?.isNeutral ?? false
+    const hue = neutral ? this.mapper.hue : this.mapper.hue + layer.hueShift
+    const saturation = clamp01((this.mapper.artworkPalette?.saturation ?? 0.78) + (neutral ? 0.03 : 0.08))
+    const lightness = clamp01((this.mapper.artworkPalette?.lightness ?? 0.58) + 0.03)
     const segments = Math.max(80, visibleCp * 5)
 
     const cpYs: number[] = []
@@ -331,11 +373,11 @@ export class MelodyRenderer {
       const gradH = amp * 1.0
       const grad = ctx.createLinearGradient(0, gradY, 0, gradY + gradH)
       const fillA = layer.fillAlpha * globalAmp
-      grad.addColorStop(0, `hsla(${hue}, 70%, 60%, 0)`)
-      grad.addColorStop(0.35, `hsla(${hue}, 70%, 60%, ${fillA * 0.7})`)
-      grad.addColorStop(0.5, `hsla(${hue}, 70%, 65%, ${fillA})`)
-      grad.addColorStop(0.65, `hsla(${hue}, 70%, 60%, ${fillA * 0.7})`)
-      grad.addColorStop(1, `hsla(${hue}, 70%, 60%, 0)`)
+      grad.addColorStop(0, hsla(hue, saturation, lightness, 0))
+      grad.addColorStop(0.35, hsla(hue, saturation, lightness, fillA * 0.7))
+      grad.addColorStop(0.5, hsla(hue, saturation, clamp01(lightness + 0.04), fillA))
+      grad.addColorStop(0.65, hsla(hue, saturation, lightness, fillA * 0.7))
+      grad.addColorStop(1, hsla(hue, saturation, lightness, 0))
       ctx.fillStyle = grad
       ctx.fill()
       ctx.restore()
@@ -343,13 +385,13 @@ export class MelodyRenderer {
 
     // Pass 2: Edge stroke
     ctx.save()
-    ctx.strokeStyle = `hsla(${hue}, 78%, 68%, ${layer.alpha})`
+    ctx.strokeStyle = hsla(hue, clamp01(saturation + 0.05), clamp01(lightness + 0.08), layer.alpha)
     ctx.lineWidth = layer.edgeWidth
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
     if (layer.glow > 0) {
       ctx.shadowBlur = layer.glow * Math.max(0.4, globalAmp)
-      ctx.shadowColor = `hsla(${hue}, 80%, 60%, ${layer.alpha * 0.45})`
+      ctx.shadowColor = hsla(hue, clamp01(saturation + 0.08), lightness, layer.alpha * 0.45)
     }
 
     ctx.beginPath()
@@ -361,10 +403,10 @@ export class MelodyRenderer {
 
     // Pass 3: Peak highlight
     const peakThreshold = 0.4
-    ctx.strokeStyle = `hsla(${hue}, 85%, 80%, ${layer.alpha * 0.6})`
+    ctx.strokeStyle = hsla(hue, clamp01(saturation + 0.08), clamp01(lightness + 0.18), layer.alpha * 0.6)
     ctx.lineWidth = layer.edgeWidth * 0.6
     ctx.shadowBlur = layer.glow * 1.2 * Math.max(0.4, globalAmp)
-    ctx.shadowColor = `hsla(${hue}, 85%, 70%, ${layer.alpha * 0.5})`
+    ctx.shadowColor = hsla(hue, clamp01(saturation + 0.08), clamp01(lightness + 0.1), layer.alpha * 0.5)
 
     let inPeak = false
     for (let i = 0; i <= segments; i++) {
@@ -410,14 +452,22 @@ export class MelodyRenderer {
   // ── Background Glow ──
 
   private renderGlow(ctx: CanvasRenderingContext2D, w: number, h: number, params: VisualParams): void {
-    const { hue, glowIntensity, bassImpact } = params
+    const { hue, saturation, lightness, glowIntensity, bassImpact } = params
     const cx = w * 0.5
     const cy = h * 0.6
     const radius = w * 0.35 + bassImpact * w * 0.15
 
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
-    grad.addColorStop(0, `hsla(${hue}, 70%, 55%, ${glowIntensity * 0.12})`)
-    grad.addColorStop(0.5, `hsla(${hue + 30}, 60%, 45%, ${glowIntensity * 0.05})`)
+    grad.addColorStop(0, hsla(hue, saturation, lightness, glowIntensity * 0.12))
+    grad.addColorStop(
+      0.5,
+      hsla(
+        hue + (saturation < 0.16 ? 8 : 30),
+        clamp01(saturation * 0.9),
+        clamp01(lightness - 0.08),
+        glowIntensity * 0.05,
+      ),
+    )
     grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, w, h)
@@ -437,7 +487,7 @@ export class MelodyRenderer {
           life: 1,
           maxLife: 0.6 + Math.random() * 0.6,
           size: 0.8 + Math.random() * 1.2,
-          hue: params.hue + (Math.random() - 0.5) * 40,
+          hue: params.hue + (params.saturation < 0.16 ? (Math.random() - 0.5) * 8 : (Math.random() - 0.5) * 40),
         })
       }
     }
@@ -456,8 +506,10 @@ export class MelodyRenderer {
       const alpha = p.life * 0.7
       ctx.save()
       ctx.shadowBlur = 3
-      ctx.shadowColor = `hsla(${p.hue}, 80%, 70%, ${alpha})`
-      ctx.fillStyle = `hsla(${p.hue}, 80%, 75%, ${alpha})`
+      const particleSaturation = this.mapper.artworkPalette?.isNeutral ? 0.12 : 0.8
+      const particleLightness = this.mapper.artworkPalette?.isNeutral ? 0.76 : 0.75
+      ctx.shadowColor = hsla(p.hue, particleSaturation, particleLightness, alpha)
+      ctx.fillStyle = hsla(p.hue, particleSaturation, clamp01(particleLightness + 0.05), alpha)
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2)
       ctx.fill()
@@ -475,7 +527,12 @@ export class MelodyRenderer {
       const y = h * (0.3 + Math.random() * 0.5)
       const alpha = params.trebleShimmer * (0.2 + Math.random() * 0.3)
       const size = 0.4 + Math.random() * 0.7
-      ctx.fillStyle = `hsla(${params.hue + 60}, 90%, 85%, ${alpha})`
+      ctx.fillStyle = hsla(
+        params.hue + (params.saturation < 0.16 ? 6 : 60),
+        params.saturation < 0.16 ? 0.1 : 0.9,
+        params.saturation < 0.16 ? 0.86 : 0.85,
+        alpha,
+      )
       ctx.beginPath()
       ctx.arc(x, y, size, 0, Math.PI * 2)
       ctx.fill()
@@ -492,7 +549,8 @@ export class MelodyRenderer {
     features: AudioFeatures,
   ): void {
     const { spectrum, bass, beat } = features
-    const { hue, bassImpact } = params
+    const { hue, saturation, lightness, bassImpact } = params
+    const neutral = saturation < 0.16
 
     const { count: barCount, barWidth, slotWidth } = computeBarsLayout(w)
     const maxH = h - 2
@@ -510,7 +568,6 @@ export class MelodyRenderer {
       const raw = (spectrum[lo] ?? 0) * (1 - frac) + (spectrum[hi] ?? 0) * frac
       const target = Math.min(1, raw)
 
-      const t = barCount > 1 ? i / (barCount - 1) : 0
       let attack: number
       let release: number
       if (frequencyT < 0.3) {
@@ -536,24 +593,25 @@ export class MelodyRenderer {
       const x = i * slotWidth + (slotWidth - barWidth) / 2
       const y = h - barH
 
-      const barHue = hue + frequencyT * 60
-      const lightness = 50 + val * 20
+      const barHue = neutral ? hue : hue + frequencyT * 60
+      const barSaturation = clamp01(saturation + (neutral ? 0.03 : 0.12) * (0.35 + centerBias * 0.65))
+      const barLightness = clamp01(lightness + val * 0.18)
       const alpha = 0.55 + val * 0.45
 
       if (beat && centerBias > 0.68) {
         ctx.save()
         ctx.shadowBlur = 8 + bassImpact * 6
-        ctx.shadowColor = `hsla(${barHue}, 85%, 60%, ${alpha * 0.7})`
-        ctx.fillStyle = `hsla(${barHue}, 85%, ${lightness + 10}%, ${Math.min(1, alpha + 0.2)})`
+        ctx.shadowColor = hsla(barHue, clamp01(barSaturation + 0.05), clamp01(barLightness + 0.04), alpha * 0.7)
+        ctx.fillStyle = hsla(barHue, clamp01(barSaturation + 0.05), clamp01(barLightness + 0.1), Math.min(1, alpha + 0.2))
         ctx.fillRect(x, y, barWidth, barH)
         ctx.restore()
       } else {
-        ctx.fillStyle = `hsla(${barHue}, 75%, ${lightness}%, ${alpha})`
+        ctx.fillStyle = hsla(barHue, barSaturation, barLightness, alpha)
         ctx.fillRect(x, y, barWidth, barH)
       }
 
       if (barH > 3) {
-        ctx.fillStyle = `hsla(${barHue}, 90%, 80%, ${0.6 + val * 0.4})`
+        ctx.fillStyle = hsla(barHue, clamp01(barSaturation + 0.03), clamp01(barLightness + 0.16), 0.6 + val * 0.4)
         ctx.fillRect(x, y, barWidth, 1.5)
       }
     }
@@ -561,7 +619,7 @@ export class MelodyRenderer {
     if (bass > 0.3) {
       const pulseAlpha = (bass - 0.3) * 0.12
       const grad = ctx.createLinearGradient(0, h, 0, 0)
-      grad.addColorStop(0, `hsla(${hue}, 70%, 50%, ${pulseAlpha})`)
+      grad.addColorStop(0, hsla(hue, saturation, lightness, pulseAlpha))
       grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)')
       ctx.fillStyle = grad
       ctx.fillRect(0, 0, w, h)
@@ -581,6 +639,25 @@ function computeBarsLayout(w: number): { count: number; barWidth: number; slotWi
 
 function clampIdx(i: number, len: number): number {
   return Math.max(0, Math.min(len - 1, i))
+}
+
+function easeHueTowards(current: number, target: number, ease: number): number {
+  // Take the shortest arc around the 360° wheel so magenta → cyan doesn't
+  // rainbow through yellow.
+  let diff = ((target - current + 540) % 360) - 180
+  const next = current + diff * ease
+  return (next + 360) % 360
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value))
+}
+
+function hsla(hue: number, saturation: number, lightness: number, alpha: number): string {
+  const normalizedHue = ((hue % 360) + 360) % 360
+  const sat = Math.round(clamp01(saturation) * 100)
+  const light = Math.round(clamp01(lightness) * 100)
+  return `hsla(${normalizedHue}, ${sat}%, ${light}%, ${alpha})`
 }
 
 function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {

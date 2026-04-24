@@ -30,6 +30,10 @@ export interface VisualParams {
   flowSpeed: number
   /** Base hue (0-360) */
   hue: number
+  /** Base saturation 0-1 */
+  saturation: number
+  /** Base lightness 0-1 */
+  lightness: number
   /** Glow intensity 0-1 */
   glowIntensity: number
   /** Whether to burst particles this frame */

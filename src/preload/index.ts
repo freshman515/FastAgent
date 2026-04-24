@@ -318,12 +318,34 @@ const api = {
     get: () => ipcRenderer.invoke('media:get') as Promise<{
       title: string
       artist: string
+      albumTitle: string
+      albumArtist: string
+      sourceAppId: string
+      trackNumber: number | null
       artwork: string
       status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown'
     }>,
     command: (cmd: 'play-pause' | 'next' | 'prev') => ipcRenderer.invoke('media:command', cmd),
-    onUpdate: (callback: (info: { title: string; artist: string; status: string }) => void) => {
-      const handler = (_: unknown, info: { title: string; artist: string; status: string }) => callback(info)
+    onUpdate: (callback: (info: {
+      title: string
+      artist: string
+      albumTitle: string
+      albumArtist: string
+      sourceAppId: string
+      trackNumber: number | null
+      artwork: string
+      status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown'
+    }) => void) => {
+      const handler = (_: unknown, info: {
+        title: string
+        artist: string
+        albumTitle: string
+        albumArtist: string
+        sourceAppId: string
+        trackNumber: number | null
+        artwork: string
+        status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown'
+      }) => callback(info)
       ipcRenderer.on('media:update', handler)
       return () => ipcRenderer.removeListener('media:update', handler)
     },
