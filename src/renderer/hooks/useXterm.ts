@@ -217,15 +217,19 @@ export function useXterm(
       const worktree = currentSession.worktreeId
         ? worktreeStore.worktrees.find((w) => w.id === currentSession.worktreeId)
         : worktreeStore.getMainWorktree(currentSession.projectId)
-      // Final fallback: a session.cwd hint set by the MCP bridge (Meta-Agent
-      // creating a session for a path that isn't a tracked project/worktree).
-      cwd = worktree?.path ?? project?.path ?? currentSession.cwd
+      // session.cwd is an explicit override — set by the MCP bridge for anonymous
+      // cwds and by the history-resume flow when the original transcript's cwd
+      // doesn't match any registered project. When present it takes priority
+      // over project/worktree paths so `claude --resume` / `codex resume`
+      // actually runs in the same cwd the transcript was recorded in.
+      cwd = currentSession.cwd ?? worktree?.path ?? project?.path
       if (!cwd) return
     }
     const sessionId = currentSession.id
     const sessionType = currentSession.type
     const shouldResume = currentSession.initialized && isClaudeCodeType(currentSession.type)
     const resumeUUID = currentSession.resumeUUID ?? undefined
+    const codexResumeId = currentSession.codexResumeId
     const { settings } = useUIStore.getState()
     let ptyId: string | null = null
     let destroyed = false
@@ -450,6 +454,7 @@ export function useXterm(
           sessionId,
           resume: shouldResume,
           resumeUUID,
+          codexResumeId,
           cols: terminal.cols || 80,
           rows: terminal.rows || 24,
         })

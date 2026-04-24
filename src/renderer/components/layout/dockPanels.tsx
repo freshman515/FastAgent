@@ -1,9 +1,10 @@
 import type { ComponentType } from 'react'
-import { Activity, Bot, Command, Files, GitBranch, History, Layers3, ListTodo, MessageSquareText, Network, Search, Sparkles, Clock } from 'lucide-react'
+import { Activity, Archive, Bot, Command, Files, GitBranch, History, Layers3, ListTodo, MessageSquareText, Network, Search, Sparkles, Clock } from 'lucide-react'
 import type { DockPanelId } from '@/stores/ui'
 import claudeIcon from '@/assets/icons/Claude.png'
 import { ProjectsPanel } from '@/components/sidebar/ProjectsPanel'
 import { RecentSessionsPanel } from '@/components/sidebar/RecentSessionsPanel'
+import { SessionHistoryPanel } from '@/components/sidebar/SessionHistoryPanel'
 import { AgentMonitor } from '@/components/rightpanel/AgentMonitor'
 import { QuickCommands } from '@/components/rightpanel/QuickCommands'
 import { PromptManager } from '@/components/rightpanel/PromptManager'
@@ -40,6 +41,12 @@ export const DOCK_PANEL_DEFINITIONS: Record<DockPanelId, DockPanelDefinition> = 
     label: '最近会话',
     icon: Clock,
     render: () => <RecentSessionsPanel />,
+  },
+  sessionHistory: {
+    id: 'sessionHistory',
+    label: '历史会话',
+    icon: Archive,
+    render: () => <SessionHistoryPanel />,
   },
   agent: {
     id: 'agent',

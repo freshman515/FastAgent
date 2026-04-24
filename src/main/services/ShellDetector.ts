@@ -60,28 +60,39 @@ function detectUnixShell(): ShellInfo {
   return { shell: '/bin/sh', args: [] }
 }
 
+const CODEX_RESUME_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export interface BuildAgentCommandOptions {
+  sessionId?: string
+  resume?: boolean
+  resumeUUID?: string
+  claudeLaunchMode?: ClaudeSessionLaunchMode
+  /** Codex rollout id — when present, runs `codex resume <id>` (and `--dangerously-bypass-approvals-and-sandbox` for codex-yolo). */
+  codexResumeId?: string
+}
+
 export function buildAgentCommand(
   type: 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal',
-  _sessionId?: string,
-  resume?: boolean,
-  resumeUUID?: string,
-  claudeLaunchMode?: ClaudeSessionLaunchMode,
+  options: BuildAgentCommandOptions = {},
 ): { command: string; args: string[] } | null {
   if (type === 'terminal' || type === 'claude-gui') {
     return null
   }
 
   if (type === 'claude-code' || type === 'claude-code-yolo') {
-    const mode = claudeLaunchMode ?? (resume && resumeUUID ? 'resume' : 'plain')
-    return { command: 'claude', args: buildClaudeCodeArgs(type, mode, resumeUUID) }
+    const mode = options.claudeLaunchMode ?? (options.resume && options.resumeUUID ? 'resume' : 'plain')
+    return { command: 'claude', args: buildClaudeCodeArgs(type, mode, options.resumeUUID) }
   }
 
-  if (type === 'codex') {
-    return { command: 'codex', args: [] }
-  }
-
-  if (type === 'codex-yolo') {
-    return { command: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox'] }
+  if (type === 'codex' || type === 'codex-yolo') {
+    const baseArgs = type === 'codex-yolo' ? ['--dangerously-bypass-approvals-and-sandbox'] : []
+    if (options.codexResumeId && CODEX_RESUME_ID_RE.test(options.codexResumeId)) {
+      // `codex resume` is a subcommand — it must be the FIRST positional arg,
+      // followed by the session id. Flags like `--dangerously-bypass-...` still
+      // apply and belong after the subcommand per Codex's CLI parser.
+      return { command: 'codex', args: ['resume', options.codexResumeId, ...baseArgs] }
+    }
+    return { command: 'codex', args: baseArgs }
   }
 
   if (type === 'opencode') {

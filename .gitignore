@@ -4,6 +4,7 @@ node_modules/
 # Build output
 out/
 dist/
+tmp/
 *.tsbuildinfo
 
 # Logs

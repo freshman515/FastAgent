@@ -65,7 +65,9 @@ export interface Session {
   worktreeId?: string   // bound to specific worktree; undefined = main worktree
   color?: string        // color tag for visual grouping (hex)
   label?: string        // short label (e.g. "前端", "API")
-  cwd?: string          // resolved working directory hint (set by MCP bridge for anonymous sessions)
+  cwd?: string          // resolved working directory override (set by MCP bridge / history resume)
+  /** Codex rollout id to resume on next spawn. Transient — not persisted across app restart. */
+  codexResumeId?: string
 }
 
 // ─── IPC Types ───
@@ -76,6 +78,8 @@ export interface SessionCreateOptions {
   sessionId?: string   // unique session id for agent resume
   resume?: boolean     // true = resume previous session
   resumeUUID?: string  // session id / UUID from agent resume output
+  /** Codex rollout UUID to resume — when set, launches `codex resume <id>` instead of plain `codex`. */
+  codexResumeId?: string
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -292,6 +296,46 @@ export interface ClaudeUtilization {
   error?: string
   /** True when no credentials.json was found (user hasn't logged in via `claude login`). */
   notAuthenticated?: boolean
+}
+
+// ─── Session History (Claude Code + Codex persisted transcripts) ─────────
+// Read-only snapshots built by scanning each CLI's on-disk session stores:
+//   - Claude Code: ~/.claude/projects/<sanitized-cwd>/*.jsonl
+//   - Codex:       ~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-*.jsonl
+// Used by the "历史会话" sidebar panel to let the user browse past conversations
+// across both CLIs and one-click resume them into a new pane.
+
+export type HistoricalSessionSource = 'claude-code' | 'codex'
+
+export interface HistoricalSession {
+  /** CLI this transcript belongs to. */
+  source: HistoricalSessionSource
+  /** Conversation/session UUID — used with `claude --resume <id>` / `codex resume <id>`. */
+  id: string
+  /** Absolute on-disk path of the transcript file (for debug / open-in-editor). */
+  filePath: string
+  /** Absolute working directory the original session was run in. */
+  cwd: string
+  /** ISO timestamp of the first entry in the transcript. */
+  startedAt: string | null
+  /** ISO timestamp of the last entry in the transcript. */
+  updatedAt: string | null
+  /** First non-injected user message, trimmed to a short preview. */
+  firstUserPrompt: string | null
+  /** Real user turns — only messages the user typed, excluding tool_result
+   *  entries, injected system reminders, and agent metadata lines. */
+  userTurns: number
+}
+
+export interface HistoricalSessionListResult {
+  sessions: HistoricalSession[]
+  /** Per-source error hints (e.g., missing directory, permission denied). */
+  errors: Partial<Record<HistoricalSessionSource, string>>
+}
+
+export interface HistoricalSessionDeleteResult {
+  deleted: number
+  errors: Array<{ path: string; error: string }>
 }
 
 export interface ClaudeGuiUsage {
@@ -636,6 +680,8 @@ export const IPC = {
   CLAUDE_GUI_FETCH_USAGE: 'claude-gui:fetch-usage',
   CLAUDE_CODE_FETCH_CONTEXT: 'claude-code:fetch-context',
   CLAUDE_CODE_FETCH_LOCAL_USAGE: 'claude-code:fetch-local-usage',
+  SESSION_HISTORY_LIST: 'session-history:list',
+  SESSION_HISTORY_DELETE: 'session-history:delete',
 
   UPDATER_CHECK: 'updater:check',
   UPDATER_DOWNLOAD: 'updater:download',

@@ -280,13 +280,13 @@ export class PtyManager {
       }
     }
 
-    const agentCmd = buildAgentCommand(
-      options.type,
-      options.sessionId,
-      options.resume,
-      effectiveResumeUUID ?? undefined,
+    const agentCmd = buildAgentCommand(options.type, {
+      sessionId: options.sessionId,
+      resume: options.resume,
+      resumeUUID: effectiveResumeUUID ?? undefined,
       claudeLaunchMode,
-    )
+      codexResumeId: options.codexResumeId,
+    })
     if (agentCmd && isClaudeCodeType(options.type) && options.sessionId && this.mcpEnv) {
       const mcpConfigPath = createFastAgentsMcpConfig({
         port: this.mcpEnv.port,

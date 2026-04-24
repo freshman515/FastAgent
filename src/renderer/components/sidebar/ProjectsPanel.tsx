@@ -4,6 +4,7 @@ import { createAnonymousTerminal } from '@/lib/anonymous-project'
 import { cn } from '@/lib/utils'
 import { useGroupsStore } from '@/stores/groups'
 import { useUIStore } from '@/stores/ui'
+import { DockActions } from '@/components/layout/DockActions'
 import { GroupList } from './GroupList'
 
 export function ProjectsPanel(): JSX.Element {
@@ -45,35 +46,30 @@ export function ProjectsPanel(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
-        <div className="text-[var(--ui-font-xs)] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
-          工作区
-        </div>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => { void createAnonymousTerminal() }}
-            className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
-              'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-              'transition-colors duration-100',
-            )}
-            title="匿名终端"
-          >
-            <Terminal size={14} />
-          </button>
-          <button
-            onClick={handleStartAdding}
-            className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
-              'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-              'transition-colors duration-100',
-            )}
-            title="新建分组"
-          >
-            <Plus size={14} />
-          </button>
-        </div>
-      </div>
+      <DockActions>
+        <button
+          onClick={() => { void createAnonymousTerminal() }}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
+            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+            'transition-colors duration-100',
+          )}
+          title="匿名终端"
+        >
+          <Terminal size={18} />
+        </button>
+        <button
+          onClick={handleStartAdding}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
+            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+            'transition-colors duration-100',
+          )}
+          title="新建分组"
+        >
+          <Plus size={18} />
+        </button>
+      </DockActions>
 
       {adding && (
         <div className="border-b border-[var(--color-border)] px-3 py-2">

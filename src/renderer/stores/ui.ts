@@ -6,7 +6,7 @@ import { usePanesStore } from './panes'
 
 export type VisualizerMode = 'melody' | 'bars'
 export type DockSide = 'left' | 'right'
-export type DockPanelId = 'projects' | 'recentSessions' | 'agent' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
+export type DockPanelId = 'projects' | 'recentSessions' | 'sessionHistory' | 'agent' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
 export type TodoPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
@@ -14,6 +14,7 @@ export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
   'recentSessions',
+  'sessionHistory',
   'agent',
   'tasks',
   'commands',
@@ -29,7 +30,7 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
 ]
 
 export const DEFAULT_DOCK_PANEL_ORDER: Record<DockSide, DockPanelId[]> = {
-  left: ['projects', 'recentSessions', 'git', 'files'],
+  left: ['projects', 'recentSessions', 'sessionHistory', 'git', 'files'],
   right: ['agent', 'tasks', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
 }
 
@@ -150,6 +151,9 @@ export interface AppSettings {
   aiApiKey: string
   aiModel: string
   aiSystemPrompt: string
+  // Session history panel — remembered filter selections
+  sessionHistorySourceFilter: 'all' | 'claude-code' | 'codex'
+  sessionHistoryOnlyCurrentProject: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -201,6 +205,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 - Key results or errors
 - Current status
 Keep it brief and actionable. Use the same language as the terminal output.`,
+  sessionHistorySourceFilter: 'all',
+  sessionHistoryOnlyCurrentProject: false,
 }
 
 interface UIState {
@@ -984,6 +990,12 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.aiApiKey === 'string') s.aiApiKey = raw.aiApiKey
       if (typeof raw.aiModel === 'string') s.aiModel = raw.aiModel
       if (typeof raw.aiSystemPrompt === 'string') s.aiSystemPrompt = raw.aiSystemPrompt
+      if (raw.sessionHistorySourceFilter === 'all' || raw.sessionHistorySourceFilter === 'claude-code' || raw.sessionHistorySourceFilter === 'codex') {
+        s.sessionHistorySourceFilter = raw.sessionHistorySourceFilter
+      }
+      if (typeof raw.sessionHistoryOnlyCurrentProject === 'boolean') {
+        s.sessionHistoryOnlyCurrentProject = raw.sessionHistoryOnlyCurrentProject
+      }
       if (typeof raw.terminalTheme === 'string') s.terminalTheme = raw.terminalTheme
       // Prefer the dedicated top-level customThemes key (more robust against ui-settings resets)
       const themesSource = (customThemesOverride && Object.keys(customThemesOverride).length > 0)

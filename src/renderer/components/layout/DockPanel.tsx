@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { DOCK_PANEL_IDS, type DockPanelId, type DockSide, useUIStore } from '@/stores/ui'
 import { DOCK_PANEL_DEFINITIONS } from './dockPanels'
+import { DockActionsContext } from './DockActions'
 
 const TAB_BUTTON = 'flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] transition-colors'
 const DRAG_MIME = 'application/x-fastagents-dock-panel'
@@ -52,6 +53,10 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
   const isDragging = useRef(false)
   const [dropTarget, setDropTarget] = useState<{ panelId?: DockPanelId; position: 'before' | 'after' | 'append' } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; panelId?: DockPanelId } | null>(null)
+  // Header action slot — populated on mount, consumed by child panels via
+  // <DockActions>. We use state (not ref) so the Context consumer re-renders
+  // once the DOM node is attached on first paint.
+  const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null)
 
   const activePanelId = useMemo(() => {
     if (activeTab && panelIds.includes(activeTab)) return activeTab
@@ -251,14 +256,17 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
         <span className="flex-1 truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)] tracking-tight">
           {activePanel.label}
         </span>
+        <div ref={setActionsSlot} className="flex h-full shrink-0 items-center gap-1" />
       </div>
-      <div
-        className="flex-1 overflow-y-auto overflow-x-hidden"
-        onDragOver={handleStripDragOver}
-        onDrop={handleStripDrop}
-      >
-        {activePanel.render()}
-      </div>
+      <DockActionsContext.Provider value={actionsSlot}>
+        <div
+          className="flex-1 overflow-y-auto overflow-x-hidden"
+          onDragOver={handleStripDragOver}
+          onDrop={handleStripDrop}
+        >
+          {activePanel.render()}
+        </div>
+      </DockActionsContext.Provider>
       {isAppendDropTarget && (
         <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-[var(--color-accent)]/60 bg-[var(--color-accent)]/7">
           <div className="rounded-full bg-[var(--color-bg-primary)]/92 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)] shadow-lg">

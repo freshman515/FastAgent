@@ -15,6 +15,8 @@ import type {
   ExternalIdeId,
   ExternalIdeOption,
   FileSearchResult,
+  HistoricalSessionDeleteResult,
+  HistoricalSessionListResult,
   McpCreateSessionRequest,
   McpCreateSessionResponse,
   McpSessionInfo,
@@ -148,6 +150,13 @@ const api = {
     },
     respondCreateSession: (payload: McpCreateSessionResponse) =>
       ipcRenderer.send(IPC.MCP_CREATE_SESSION_RESPONSE, payload),
+  },
+
+  sessionHistory: {
+    list: () =>
+      ipcRenderer.invoke(IPC.SESSION_HISTORY_LIST) as Promise<HistoricalSessionListResult>,
+    delete: (paths: string[]) =>
+      ipcRenderer.invoke(IPC.SESSION_HISTORY_DELETE, paths) as Promise<HistoricalSessionDeleteResult>,
   },
 
   claudeGui: {

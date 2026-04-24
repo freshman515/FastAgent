@@ -11,6 +11,7 @@ import { registerOpencodeHandlers } from './opencode'
 import { registerSearchHandlers } from './search'
 import { registerUpdaterHandlers } from './updater'
 import { registerMcpHandlers } from './mcp'
+import { registerSessionHistoryHandlers } from './sessionHistory'
 
 export function registerAllHandlers(): void {
   registerWindowHandlers()
@@ -26,4 +27,5 @@ export function registerAllHandlers(): void {
   registerSearchHandlers()
   registerUpdaterHandlers()
   registerMcpHandlers()
+  registerSessionHistoryHandlers()
 }

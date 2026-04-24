@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSessionGroupsStore } from '@/stores/sessionGroups'
+import { DockActions } from '@/components/layout/DockActions'
 import { SessionGroupItem } from './SessionGroupItem'
 import {
   DRAG_MIME_SESSION_ID,
@@ -80,23 +81,19 @@ export function RecentSessionsPanel(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      {/* Header */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
-        <div className="text-[var(--ui-font-xs)] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
-          最近会话
-        </div>
+      <DockActions>
         <button
           onClick={handleStartAdding}
           className={cn(
-            'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
+            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
             'transition-colors duration-100',
           )}
           title="新建分组"
         >
-          <Plus size={14} />
+          <Plus size={18} />
         </button>
-      </div>
+      </DockActions>
 
       {/* New group input */}
       {adding && (
