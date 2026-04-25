@@ -1,4 +1,4 @@
-import { StickyNote, Maximize2, RotateCcw, Grid3x3, Magnet, LayoutGrid, Lock } from 'lucide-react'
+import { StickyNote, Maximize2, RotateCcw, Grid3x3, Magnet, LayoutGrid } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useCanvasStore } from '@/stores/canvas'
@@ -19,7 +19,6 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
   const snapEnabled = useUIStore((state) => state.settings.canvasSnapEnabled)
   const overlapMode = useUIStore((state) => state.settings.canvasOverlapMode)
   const arrangeMode = useUIStore((state) => state.settings.canvasArrangeMode)
-  const arrangeConstrained = useUIStore((state) => state.settings.canvasArrangeConstrained)
   const updateSettings = useUIStore((state) => state.updateSettings)
 
   const [arrangeOpen, setArrangeOpen] = useState(false)
@@ -90,26 +89,15 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
         </button>
         {arrangeOpen && (
           <div className="absolute bottom-full left-0 mb-1 min-w-[168px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl">
-            <ArrangeItem label="自由排列" checked={arrangeMode === 'free'} onClick={() => handleArrangeMode('free')} />
-            <ArrangeItem label="网格排列" checked={arrangeMode === 'grid'} onClick={() => handleArrangeMode('grid')} />
-            <ArrangeItem label="横向排列" checked={arrangeMode === 'rowFlow'} onClick={() => handleArrangeMode('rowFlow')} />
-            <ArrangeItem label="纵向排列" checked={arrangeMode === 'colFlow'} onClick={() => handleArrangeMode('colFlow')} />
+            <ArrangeItem label="自由排列" onClick={() => handleArrangeMode('free')} />
+            <ArrangeItem label="网格排列" onClick={() => handleArrangeMode('grid')} />
+            <ArrangeItem label="横向排列" onClick={() => handleArrangeMode('rowFlow')} />
+            <ArrangeItem label="纵向排列" onClick={() => handleArrangeMode('colFlow')} />
             <div className="my-1 h-px bg-[var(--color-border)]" />
             <ArrangeItem label="紧凑打包" onClick={handlePack} />
           </div>
         )}
       </div>
-
-      <button
-        type="button"
-        onClick={() => updateSettings({ canvasArrangeConstrained: !arrangeConstrained })}
-        className={btn(arrangeConstrained)}
-        title={arrangeConstrained
-          ? `排列约束已启用：拖拽只调整${getArrangeModeLabel(arrangeMode)}顺序`
-          : '启用排列约束：拖拽只调整顺序，不改变排列模式'}
-      >
-        <Lock size={16} />
-      </button>
 
       <button type="button" onClick={handleFitAll} className={btn(false)} title="适配所有内容">
         <Maximize2 size={16} />
@@ -157,14 +145,13 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
   )
 }
 
-function ArrangeItem({ label, checked, onClick }: { label: string; checked?: boolean; onClick: () => void }): JSX.Element {
+function ArrangeItem({ label, onClick }: { label: string; onClick: () => void }): JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
     >
-      <span className={cn('w-3 shrink-0 text-center text-[var(--color-accent)]', checked ? 'opacity-100' : 'opacity-0')}>✓</span>
       <span className="flex-1">{label}</span>
     </button>
   )

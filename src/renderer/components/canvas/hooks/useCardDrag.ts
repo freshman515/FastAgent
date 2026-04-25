@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useCanvasStore } from '@/stores/canvas'
 import { useCanvasUiStore } from '@/stores/canvasUi'
-import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
+import { useUIStore } from '@/stores/ui'
 import type { CanvasCard } from '@shared/types'
 import { computeSnap } from './useSnapGuides'
 
@@ -9,8 +9,6 @@ const DOUBLE_CLICK_MS = 300
 const DOUBLE_CLICK_SLOP_PX = 8
 const AVOID_OVERLAP_GAP = 24
 const AVOID_OVERLAP_TRANSITION_MS = 140
-const ARRANGE_CONSTRAINT_GAP = 24
-const ARRANGE_CONSTRAINT_TRANSITION_MS = 140
 
 interface CardRect {
   id: string
@@ -22,11 +20,6 @@ interface CardRect {
 }
 
 interface AvoidanceState {
-  positions: Map<string, { x: number; y: number }>
-  affectedIds: Set<string>
-}
-
-interface ArrangeConstraintState {
   positions: Map<string, { x: number; y: number }>
   affectedIds: Set<string>
 }
@@ -57,7 +50,6 @@ export function useCardDrag({
   const draggedIdsRef = useRef<string[]>([])
   const liveDeltaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
   const avoidanceRef = useRef<AvoidanceState>({ positions: new Map(), affectedIds: new Set() })
-  const arrangementRef = useRef<ArrangeConstraintState>({ positions: new Map(), affectedIds: new Set() })
 
   useEffect(() => {
     if (!element) return
@@ -100,7 +92,6 @@ export function useCardDrag({
       clickCandidateRef.current = { x: event.clientX, y: event.clientY, time: now }
       draggedIdsRef.current = useCanvasStore.getState().selectedCardIds
       liveDeltaRef.current = { dx: 0, dy: 0 }
-      arrangementRef.current = { positions: new Map(), affectedIds: new Set() }
       avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
       element.setPointerCapture(event.pointerId)
     }
@@ -116,44 +107,20 @@ export function useCardDrag({
       const ids = draggedIdsRef.current
       const cards = useCanvasStore.getState().getLayout().cards
       const settings = useUIStore.getState().settings
-      const arrangeMode = settings.canvasArrangeMode
-      const constrainArrangement = settings.canvasArrangeConstrained && arrangeMode !== 'free'
       const snapEnabled = settings.canvasSnapEnabled
-      const snap = !constrainArrangement && snapEnabled
+      const snap = snapEnabled
         ? computeSnap(rawDx, rawDy, ids, cards, scale, true)
         : { dx: rawDx, dy: rawDy, guides: [] }
-      let { dx, dy } = snap
-      let constrainedArrangement: ArrangeConstraintState | null = null
+      const { dx, dy } = snap
 
-      if (constrainArrangement) {
-        constrainedArrangement = resolveConstrainedArrangement(cards, ids, cardId, arrangeMode as Exclude<CanvasArrangeMode, 'free'>, rawDx, rawDy)
-        applyArrangementConstraintStyles(cards, constrainedArrangement, arrangementRef.current, ids)
-        arrangementRef.current = constrainedArrangement
-        useCanvasUiStore.getState().clearGuides()
-        if (avoidanceRef.current.affectedIds.size > 0) {
-          applyAvoidanceStyles(cards, { positions: new Map(), affectedIds: new Set() }, avoidanceRef.current)
-          avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
-        }
-        const primaryCard = cards.find((card) => card.id === cardId)
-        const primaryPosition = constrainedArrangement.positions.get(cardId)
-        if (primaryCard && primaryPosition) {
-          dx = primaryPosition.x - primaryCard.x
-          dy = primaryPosition.y - primaryCard.y
-        }
-      } else {
-        if (arrangementRef.current.affectedIds.size > 0) {
-          applyArrangementConstraintStyles(cards, { positions: new Map(), affectedIds: new Set() }, arrangementRef.current, ids)
-          arrangementRef.current = { positions: new Map(), affectedIds: new Set() }
-        }
-        useCanvasUiStore.getState().setGuides(snap.guides)
-      }
+      useCanvasUiStore.getState().setGuides(snap.guides)
       liveDeltaRef.current = { dx, dy }
 
-      if (!constrainArrangement && settings.canvasOverlapMode === 'avoid') {
+      if (settings.canvasOverlapMode === 'avoid') {
         const avoidance = resolveAvoidOverlap(cards, ids, dx, dy)
         applyAvoidanceStyles(cards, avoidance, avoidanceRef.current)
         avoidanceRef.current = avoidance
-      } else if (!constrainArrangement && avoidanceRef.current.affectedIds.size > 0) {
+      } else if (avoidanceRef.current.affectedIds.size > 0) {
         applyAvoidanceStyles(cards, { positions: new Map(), affectedIds: new Set() }, avoidanceRef.current)
         avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
       }
@@ -168,11 +135,8 @@ export function useCardDrag({
         if (!el) continue
         const mode = el.dataset.cardCoordinateMode
         const isScreenProjected = mode === 'screen' || mode === 'screen-transform'
-        const constrainedPosition = constrainedArrangement?.positions.get(id)
-        const liveDxWorld = constrainedPosition ? constrainedPosition.x - card.x : dx
-        const liveDyWorld = constrainedPosition ? constrainedPosition.y - card.y : dy
-        const liveDx = isScreenProjected ? liveDxWorld * scale : liveDxWorld
-        const liveDy = isScreenProjected ? liveDyWorld * scale : liveDyWorld
+        const liveDx = isScreenProjected ? dx * scale : dx
+        const liveDy = isScreenProjected ? dy * scale : dy
         if (mode === 'screen-transform') {
           el.style.setProperty('--card-live-dx', `${liveDx}px`)
           el.style.setProperty('--card-live-dy', `${liveDy}px`)
@@ -189,7 +153,6 @@ export function useCardDrag({
       const { dx, dy } = liveDeltaRef.current
       const ids = draggedIdsRef.current
       const avoidance = avoidanceRef.current
-      const arrangement = arrangementRef.current
       const clickCandidate = clickCandidateRef.current
       const movedScreen = Math.hypot(event.clientX - start.x, event.clientY - start.y) > DOUBLE_CLICK_SLOP_PX
       startRef.current = null
@@ -197,7 +160,6 @@ export function useCardDrag({
       draggedIdsRef.current = []
       liveDeltaRef.current = { dx: 0, dy: 0 }
       avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
-      arrangementRef.current = { positions: new Map(), affectedIds: new Set() }
 
       // Reset transforms so commit takes effect via re-render.
       for (const id of ids) {
@@ -211,19 +173,16 @@ export function useCardDrag({
         }
       }
       useCanvasUiStore.getState().clearGuides()
-      if (arrangement.positions.size > 0) {
-        useCanvasStore.getState().updateCardPositions(arrangement.positions)
-      } else if (dx !== 0 || dy !== 0) {
+      if (dx !== 0 || dy !== 0) {
         useCanvasStore.getState().moveCards(ids, dx, dy)
         const ui = useUIStore.getState()
         if (ui.settings.canvasArrangeMode !== 'free') {
           ui.updateSettings({ canvasArrangeMode: 'free' })
         }
       }
-      if (arrangement.positions.size === 0 && avoidance.positions.size > 0) {
+      if (avoidance.positions.size > 0) {
         useCanvasStore.getState().updateCardPositions(avoidance.positions)
       }
-      cleanupArrangementConstraintTransitions(arrangement.affectedIds)
       cleanupAvoidanceTransitions(avoidance.affectedIds)
       lastClickRef.current = !movedScreen && event.type === 'pointerup' ? clickCandidate : null
     }
@@ -240,135 +199,6 @@ export function useCardDrag({
       element.removeEventListener('pointercancel', onPointerUp)
     }
   }, [element, cardId, handleSelector, enableDoubleClickFocus])
-}
-
-function resolveConstrainedArrangement(
-  cards: CanvasCard[],
-  draggedIds: string[],
-  primaryId: string,
-  mode: Exclude<CanvasArrangeMode, 'free'>,
-  dx: number,
-  dy: number,
-): ArrangeConstraintState {
-  const ordered = sortCardsForArrangeMode(cards, mode)
-  const dragged = new Set(draggedIds)
-  const draggedGroup = ordered.filter((card) => dragged.has(card.id))
-  if (draggedGroup.length === 0) return { positions: new Map(), affectedIds: new Set() }
-
-  const others = ordered.filter((card) => !dragged.has(card.id))
-  const primary = cards.find((card) => card.id === primaryId) ?? draggedGroup[0]
-  const origin = getArrangeOrigin(cards)
-  const insertIndex = getArrangeInsertIndex(others, cards.length, primary, mode, origin, dx, dy)
-  const nextOrder = [
-    ...others.slice(0, insertIndex),
-    ...draggedGroup,
-    ...others.slice(insertIndex),
-  ]
-  const positions = computeArrangePositions(nextOrder, mode, origin)
-  return { positions, affectedIds: new Set(positions.keys()) }
-}
-
-function sortCardsForArrangeMode(cards: CanvasCard[], mode: Exclude<CanvasArrangeMode, 'free'>): CanvasCard[] {
-  const byX = (a: CanvasCard, b: CanvasCard): number => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)
-  const byY = (a: CanvasCard, b: CanvasCard): number => (a.y - b.y) || (a.x - b.x) || (a.createdAt - b.createdAt)
-  if (mode === 'rowFlow') return [...cards].sort(byX)
-  if (mode === 'colFlow') return [...cards].sort(byY)
-  return [...cards].sort(byY)
-}
-
-function getArrangeOrigin(cards: CanvasCard[]): { x: number; y: number } {
-  return {
-    x: Math.min(...cards.map((card) => card.x)),
-    y: Math.min(...cards.map((card) => card.y)),
-  }
-}
-
-function getArrangeInsertIndex(
-  others: CanvasCard[],
-  totalCount: number,
-  primary: CanvasCard,
-  mode: Exclude<CanvasArrangeMode, 'free'>,
-  origin: { x: number; y: number },
-  dx: number,
-  dy: number,
-): number {
-  const pointerX = primary.x + dx + primary.width / 2
-  const pointerY = primary.y + dy + primary.height / 2
-
-  if (mode === 'rowFlow') {
-    return others.filter((card) => pointerX > card.x + card.width / 2).length
-  }
-  if (mode === 'colFlow') {
-    return others.filter((card) => pointerY > card.y + card.height / 2).length
-  }
-
-  const metrics = getGridMetrics([...others, primary], totalCount)
-  let nearestIndex = 0
-  let nearestDistance = Number.POSITIVE_INFINITY
-  for (let index = 0; index < totalCount; index += 1) {
-    const col = index % metrics.cols
-    const row = Math.floor(index / metrics.cols)
-    const centerX = origin.x + col * metrics.cellWidth + metrics.cellWidth / 2
-    const centerY = origin.y + row * metrics.cellHeight + metrics.cellHeight / 2
-    const distance = Math.hypot(pointerX - centerX, pointerY - centerY)
-    if (distance < nearestDistance) {
-      nearestDistance = distance
-      nearestIndex = index
-    }
-  }
-  return Math.max(0, Math.min(others.length, nearestIndex))
-}
-
-function computeArrangePositions(
-  ordered: CanvasCard[],
-  mode: Exclude<CanvasArrangeMode, 'free'>,
-  origin: { x: number; y: number },
-): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>()
-
-  if (mode === 'rowFlow') {
-    let x = origin.x
-    for (const card of ordered) {
-      positions.set(card.id, { x, y: origin.y })
-      x += card.width + ARRANGE_CONSTRAINT_GAP
-    }
-    return positions
-  }
-
-  if (mode === 'colFlow') {
-    let y = origin.y
-    for (const card of ordered) {
-      positions.set(card.id, { x: origin.x, y })
-      y += card.height + ARRANGE_CONSTRAINT_GAP
-    }
-    return positions
-  }
-
-  const metrics = getGridMetrics(ordered, ordered.length)
-  let y = origin.y
-  for (let rowStart = 0; rowStart < ordered.length; rowStart += metrics.cols) {
-    const rowCards = ordered.slice(rowStart, rowStart + metrics.cols)
-    const rowHeight = Math.max(...rowCards.map((rowCard) => rowCard.height))
-    rowCards.forEach((rowCard, col) => {
-      positions.set(rowCard.id, {
-        x: origin.x + col * metrics.cellWidth,
-        y,
-      })
-    })
-    y += rowHeight + ARRANGE_CONSTRAINT_GAP
-  }
-  return positions
-}
-
-function getGridMetrics(
-  cards: CanvasCard[],
-  totalCount: number,
-): { cols: number; cellWidth: number; cellHeight: number } {
-  return {
-    cols: Math.max(1, Math.ceil(Math.sqrt(totalCount))),
-    cellWidth: Math.max(...cards.map((card) => card.width)) + ARRANGE_CONSTRAINT_GAP,
-    cellHeight: Math.max(...cards.map((card) => card.height)) + ARRANGE_CONSTRAINT_GAP,
-  }
 }
 
 function resolveAvoidOverlap(
@@ -473,47 +303,6 @@ function computePush(anchor: CardRect, mover: CardRect, gap: number): { dx: numb
   return Math.abs(pushX) <= Math.abs(pushY)
     ? { dx: pushX, dy: 0 }
     : { dx: 0, dy: pushY }
-}
-
-function applyArrangementConstraintStyles(
-  cards: CanvasCard[],
-  next: ArrangeConstraintState,
-  previous: ArrangeConstraintState,
-  draggedIds: string[],
-): void {
-  const dragged = new Set(draggedIds)
-  const viewport = useCanvasStore.getState().getLayout().viewport
-  const affectedIds = new Set([...previous.affectedIds, ...next.affectedIds])
-
-  for (const id of affectedIds) {
-    if (dragged.has(id)) continue
-    const card = cards.find((candidate) => candidate.id === id)
-    if (!card) continue
-    const position = next.positions.get(id) ?? { x: card.x, y: card.y }
-    const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)
-    if (!el) continue
-
-    el.style.transition = `left ${ARRANGE_CONSTRAINT_TRANSITION_MS}ms ease, top ${ARRANGE_CONSTRAINT_TRANSITION_MS}ms ease`
-
-    const mode = el.dataset.cardCoordinateMode
-    if (mode === 'screen' || mode === 'screen-transform') {
-      el.style.left = `${Math.round(position.x * viewport.scale + viewport.offsetX)}px`
-      el.style.top = `${Math.round(position.y * viewport.scale + viewport.offsetY)}px`
-    } else {
-      el.style.left = `${position.x}px`
-      el.style.top = `${position.y}px`
-    }
-  }
-}
-
-function cleanupArrangementConstraintTransitions(affectedIds: Set<string>): void {
-  if (affectedIds.size === 0) return
-  setTimeout(() => {
-    for (const id of affectedIds) {
-      const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)
-      if (el) el.style.transition = ''
-    }
-  }, ARRANGE_CONSTRAINT_TRANSITION_MS + 40)
 }
 
 function applyAvoidanceStyles(

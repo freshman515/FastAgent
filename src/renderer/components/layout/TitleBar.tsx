@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, ExternalLink, FolderOpen, GitBranch, HelpCircle, Info, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
+import { ChevronDown, Columns2, Copy, ExternalLink, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
@@ -113,6 +113,7 @@ export function TitleBar(): JSX.Element | null {
   const showTitleBarSearch = useUIStore((s) => s.settings.showTitleBarSearch)
   const titleBarMenuVisibility = useUIStore((s) => s.settings.titleBarMenuVisibility)
   const defaultSessionType = useUIStore((s) => s.settings.defaultSessionType)
+  const workspaceLayout = useUIStore((s) => s.settings.workspaceLayout)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const openSettings = useUIStore((s) => s.openSettings)
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
@@ -185,6 +186,16 @@ export function TitleBar(): JSX.Element | null {
       },
     )
   }, [addToast, defaultSessionType, selectedProjectId, selectedWorktreeId])
+
+  const handleToggleWorkspaceLayout = useCallback(() => {
+    const next = workspaceLayout === 'canvas' ? 'panes' : 'canvas'
+    updateSettings({ workspaceLayout: next })
+    addToast({
+      type: 'info',
+      title: next === 'canvas' ? '已切换到画布模式' : '已切换到经典模式',
+      body: next === 'canvas' ? '滚轮缩放，空格 + 拖拽平移' : '经典标签与分屏布局已恢复',
+    })
+  }, [addToast, updateSettings, workspaceLayout])
 
   const handleCopyText = useCallback(async (value: string, title: string) => {
     try {
@@ -459,6 +470,81 @@ export function TitleBar(): JSX.Element | null {
       </div>
 
       <div className="no-drag flex h-full items-center">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={workspaceLayout === 'canvas'}
+          aria-label={workspaceLayout === 'canvas' ? '当前为画布模式，点击切换为经典模式' : '当前为经典模式，点击切换为画布模式'}
+          onClick={handleToggleWorkspaceLayout}
+          className={cn(
+            'group relative isolate mr-2 flex h-7 w-[132px] items-center overflow-hidden rounded-full border p-0.5',
+            'border-white/[0.07] bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.012))]',
+            'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.25),0_1px_10px_rgba(0,0,0,0.22)] backdrop-blur-xl',
+            'transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out',
+            'hover:border-white/[0.13] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-1px_0_rgba(0,0,0,0.3),0_2px_14px_rgba(0,0,0,0.28)]',
+            'active:scale-[0.985]',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50',
+          )}
+          title={workspaceLayout === 'canvas' ? '点击切换为经典模式' : '点击切换为画布模式'}
+        >
+          {/* top sheen */}
+          <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(120%_70%_at_50%_-20%,rgba(255,255,255,0.14),transparent_55%)]" />
+          {/* accent halo behind the active side */}
+          <span
+            className={cn(
+              'pointer-events-none absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full blur-[10px] transition-[left,opacity,background] duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
+              'bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-accent)_45%,transparent),transparent)]',
+              workspaceLayout === 'canvas' ? 'left-[calc(50%+1px)] opacity-90' : 'left-0.5 opacity-80',
+            )}
+          />
+          {/* sliding thumb */}
+          <span
+            className={cn(
+              'absolute left-0.5 top-0.5 h-[calc(100%-4px)] w-[calc(50%-2px)] overflow-hidden rounded-full border',
+              'border-white/[0.14] bg-[radial-gradient(120%_120%_at_50%_-20%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,var(--color-bg-tertiary),var(--color-bg-secondary))]',
+              'shadow-[0_6px_18px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(0,0,0,0.35)]',
+              'transition-transform duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
+              workspaceLayout === 'canvas' && 'translate-x-full',
+            )}
+          />
+          {/* labels */}
+          <span
+            className={cn(
+              'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] transition-[color,text-shadow] duration-200',
+              workspaceLayout === 'canvas'
+                ? 'text-[var(--color-text-tertiary)]/85'
+                : 'text-[var(--color-text-primary)] [text-shadow:0_0_12px_rgba(255,255,255,0.08)]',
+            )}
+          >
+            <Columns2
+              size={11}
+              strokeWidth={2.2}
+              className={cn(
+                'transition-[opacity,transform] duration-200',
+                workspaceLayout === 'canvas' ? 'opacity-55' : 'opacity-100',
+              )}
+            />
+            经典
+          </span>
+          <span
+            className={cn(
+              'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] transition-[color,text-shadow] duration-200',
+              workspaceLayout === 'canvas'
+                ? 'text-[var(--color-text-primary)] [text-shadow:0_0_12px_rgba(255,255,255,0.08)]'
+                : 'text-[var(--color-text-tertiary)]/85',
+            )}
+          >
+            <LayoutGrid
+              size={11}
+              strokeWidth={2.2}
+              className={cn(
+                'transition-[opacity,transform] duration-200',
+                workspaceLayout === 'canvas' ? 'opacity-100' : 'opacity-55',
+              )}
+            />
+            画布
+          </span>
+        </button>
         <div ref={ideMenuRef} className="relative mr-1 flex h-7 items-center">
           <button
             onClick={() => {

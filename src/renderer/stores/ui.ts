@@ -13,6 +13,11 @@ export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export type CanvasArrangeMode = 'free' | 'grid' | 'rowFlow' | 'colFlow'
 
+export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
+export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
+export const CANVAS_SESSION_CARD_HEIGHT_MIN = 320
+export const CANVAS_SESSION_CARD_HEIGHT_MAX = 1600
+
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
   'recentSessions',
@@ -167,10 +172,12 @@ export interface AppSettings {
   canvasOverlapMode: 'free' | 'avoid'
   /** Current visible canvas arrangement mode. */
   canvasArrangeMode: CanvasArrangeMode
-  /** Keep the selected canvas arrangement while dragging; drag only changes order. */
-  canvasArrangeConstrained: boolean
   /** Show the minimap overlay on the canvas */
   canvasShowMinimap: boolean
+  /** Default width for newly-created canvas session / terminal cards */
+  canvasSessionCardWidth: number
+  /** Default height for newly-created canvas session / terminal cards */
+  canvasSessionCardHeight: number
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -229,8 +236,9 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   canvasSnapEnabled: true,
   canvasOverlapMode: 'free',
   canvasArrangeMode: 'free',
-  canvasArrangeConstrained: false,
   canvasShowMinimap: true,
+  canvasSessionCardWidth: 1040,
+  canvasSessionCardHeight: 660,
 }
 
 interface UIState {
@@ -562,6 +570,14 @@ function ensureDockPanelActiveTabs(
 function clampDockPanelWidth(side: DockSide, width: number): number {
   const min = side === 'left' ? 200 : 240
   return Math.max(min, Math.min(600, width))
+}
+
+function clampCanvasSessionCardWidth(width: number): number {
+  return Math.round(Math.max(CANVAS_SESSION_CARD_WIDTH_MIN, Math.min(CANVAS_SESSION_CARD_WIDTH_MAX, width)))
+}
+
+function clampCanvasSessionCardHeight(height: number): number {
+  return Math.round(Math.max(CANVAS_SESSION_CARD_HEIGHT_MIN, Math.min(CANVAS_SESSION_CARD_HEIGHT_MAX, height)))
 }
 
 function normalizeDockPanelOrder(raw: unknown): {
@@ -1035,8 +1051,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.canvasArrangeMode === 'free' || raw.canvasArrangeMode === 'grid' || raw.canvasArrangeMode === 'rowFlow' || raw.canvasArrangeMode === 'colFlow') {
         s.canvasArrangeMode = raw.canvasArrangeMode
       }
-      if (typeof raw.canvasArrangeConstrained === 'boolean') s.canvasArrangeConstrained = raw.canvasArrangeConstrained
       if (typeof raw.canvasShowMinimap === 'boolean') s.canvasShowMinimap = raw.canvasShowMinimap
+      if (typeof raw.canvasSessionCardWidth === 'number') s.canvasSessionCardWidth = clampCanvasSessionCardWidth(raw.canvasSessionCardWidth)
+      if (typeof raw.canvasSessionCardHeight === 'number') s.canvasSessionCardHeight = clampCanvasSessionCardHeight(raw.canvasSessionCardHeight)
       if (typeof raw.terminalTheme === 'string') s.terminalTheme = raw.terminalTheme
       // Prefer the dedicated top-level customThemes key (more robust against ui-settings resets)
       const themesSource = (customThemesOverride && Object.keys(customThemesOverride).length > 0)

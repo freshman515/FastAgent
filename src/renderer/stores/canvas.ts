@@ -32,12 +32,9 @@ function clampScale(scale: number): number {
   return Math.max(CANVAS_MIN_SCALE, Math.min(CANVAS_MAX_SCALE, scale))
 }
 
-/**
- * Target viewport fraction for focused cards. The focus scale blends width and
- * height using area, then caps the tighter axis so focus stays comfortable.
- */
-export const FOCUS_ZOOM_FRACTION = 0.6
-const FOCUS_ZOOM_MAX_TIGHT_AXIS_FRACTION = 0.72
+/** Target viewport width fraction for focused cards, capped by height. */
+export const FOCUS_ZOOM_FRACTION = 0.66
+const FOCUS_ZOOM_MAX_HEIGHT_FRACTION = 0.82
 
 /** Viewport transition duration when focusing a card, in ms. */
 const FOCUS_ANIMATION_MS = 360
@@ -128,12 +125,21 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
 // ─── Card defaults ───
 
 const DEFAULT_CARD_SIZE: Record<CanvasCardKind, { width: number; height: number }> = {
-  session: { width: 520, height: 640 },
-  terminal: { width: 880, height: 560 },
+  session: { width: 1040, height: 660 },
+  terminal: { width: 1040, height: 660 },
   note: { width: 240, height: 180 },
 }
 
 const CARD_GAP = 24
+
+export function getDefaultCanvasCardSize(kind: CanvasCardKind): { width: number; height: number } {
+  if (kind === 'note') return DEFAULT_CARD_SIZE.note
+  const settings = useUIStore.getState().settings
+  return {
+    width: settings.canvasSessionCardWidth,
+    height: settings.canvasSessionCardHeight,
+  }
+}
 
 type CanvasPlacementSettings = {
   arrangeMode: CanvasArrangeMode
@@ -212,15 +218,31 @@ function getArrangeInsertIndex(
     return cards.filter((candidate) => centerY > candidate.y + candidate.height / 2).length
   }
 
-  const metrics = getGridMetrics([...cards, card], totalCount)
-  let nearestIndex = 0
+  return getGridInsertIndex(cards, totalCount, card, origin)
+}
+
+function getGridInsertIndex(
+  cards: CanvasCard[],
+  totalCount: number,
+  card: CanvasCard,
+  origin: { x: number; y: number },
+): number {
+  const desiredCenterX = card.x + card.width / 2
+  const desiredCenterY = card.y + card.height / 2
+  let nearestIndex = cards.length
   let nearestDistance = Number.POSITIVE_INFINITY
+
   for (let index = 0; index < totalCount; index += 1) {
-    const col = index % metrics.cols
-    const row = Math.floor(index / metrics.cols)
-    const slotCenterX = origin.x + col * metrics.cellWidth + metrics.cellWidth / 2
-    const slotCenterY = origin.y + row * metrics.cellHeight + metrics.cellHeight / 2
-    const distance = Math.hypot(centerX - slotCenterX, centerY - slotCenterY)
+    const arranged = [
+      ...cards.slice(0, index),
+      card,
+      ...cards.slice(index),
+    ]
+    const position = computeArrangePositions(arranged, 'grid', origin).get(card.id)
+    if (!position) continue
+    const slotCenterX = position.x + card.width / 2
+    const slotCenterY = position.y + card.height / 2
+    const distance = Math.hypot(desiredCenterX - slotCenterX, desiredCenterY - slotCenterY)
     if (distance < nearestDistance) {
       nearestDistance = distance
       nearestIndex = index
@@ -254,28 +276,64 @@ function computeArrangePositions(
     return positions
   }
 
-  const metrics = getGridMetrics(cards, cards.length)
-  let y = origin.y
-  for (let rowStart = 0; rowStart < cards.length; rowStart += metrics.cols) {
-    const rowCards = cards.slice(rowStart, rowStart + metrics.cols)
-    const rowHeight = Math.max(...rowCards.map((rowCard) => rowCard.height))
-    rowCards.forEach((rowCard, col) => {
-      positions.set(rowCard.id, {
-        x: origin.x + col * metrics.cellWidth,
-        y,
-      })
-    })
-    y += rowHeight + CARD_GAP
+  for (const [id, position] of computeGridPositions(cards, origin)) {
+    positions.set(id, position)
   }
   return positions
 }
 
-function getGridMetrics(cards: CanvasCard[], totalCount: number): { cols: number; cellWidth: number; cellHeight: number } {
-  return {
-    cols: Math.max(1, Math.ceil(Math.sqrt(totalCount))),
-    cellWidth: Math.max(...cards.map((card) => card.width)) + CARD_GAP,
-    cellHeight: Math.max(...cards.map((card) => card.height)) + CARD_GAP,
+function computeGridPositions(
+  cards: CanvasCard[],
+  origin: { x: number; y: number },
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+  if (cards.length === 0) return positions
+
+  const cols = getGridColumnCount(cards.length)
+  const columns = Array.from({ length: cols }, (): CanvasCard[] => [])
+  const columnHeights = Array.from({ length: cols }, () => 0)
+
+  cards.forEach((card, index) => {
+    const col = index < cols ? index : getShortestColumnIndex(columnHeights)
+    columns[col].push(card)
+    columnHeights[col] += card.height + CARD_GAP
+  })
+
+  const colWidths = columns.map((column) =>
+    column.reduce((width, card) => Math.max(width, card.width), 0),
+  )
+  const colX: number[] = []
+  let x = origin.x
+  for (let col = 0; col < cols; col += 1) {
+    colX[col] = x
+    x += colWidths[col] + CARD_GAP
   }
+
+  columns.forEach((column, col) => {
+    let y = origin.y
+    for (const card of column) {
+      positions.set(card.id, { x: colX[col], y })
+      y += card.height + CARD_GAP
+    }
+  })
+
+  return positions
+}
+
+function getGridColumnCount(totalCount: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(totalCount)))
+}
+
+function getShortestColumnIndex(columnHeights: number[]): number {
+  let index = 0
+  let height = columnHeights[0] ?? 0
+  for (let i = 1; i < columnHeights.length; i += 1) {
+    if (columnHeights[i] < height) {
+      index = i
+      height = columnHeights[i]
+    }
+  }
+  return index
 }
 
 function findNearestAvailablePosition(
@@ -363,7 +421,7 @@ interface CanvasState {
   fitAll: (containerWidth: number, containerHeight: number) => void
   /**
    * Animate the viewport so `cardId` lands centered and scaled to
-   * `FOCUS_ZOOM_FRACTION` of the shorter viewport axis. Also selects and
+   * `FOCUS_ZOOM_FRACTION` of the viewport width. Also selects and
    * brings the card to front so the session terminal gets keyboard focus.
    */
   focusOnCard: (cardId: string) => void
@@ -508,12 +566,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (!size) return
     const returnViewport = get().getViewport()
 
-    const scaleX = (size.width * FOCUS_ZOOM_FRACTION) / card.width
-    const scaleY = (size.height * FOCUS_ZOOM_FRACTION) / card.height
-    const fitScale = Math.min(scaleX, scaleY)
-    const areaScale = Math.sqrt(scaleX * scaleY)
-    const maxScale = fitScale * (FOCUS_ZOOM_MAX_TIGHT_AXIS_FRACTION / FOCUS_ZOOM_FRACTION)
-    const targetScale = clampScale(Math.min(areaScale, maxScale))
+    const widthScale = (size.width * FOCUS_ZOOM_FRACTION) / card.width
+    const maxHeightScale = (size.height * FOCUS_ZOOM_MAX_HEIGHT_FRACTION) / card.height
+    const targetScale = clampScale(Math.min(widthScale, maxHeightScale))
     const centerX = card.x + card.width / 2
     const centerY = card.y + card.height / 2
     const targetOffsetX = size.width / 2 - centerX * targetScale
@@ -555,7 +610,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   addCard: (partial) => {
     const id = partial.id ?? `card-${generateId()}`
-    const size = DEFAULT_CARD_SIZE[partial.kind]
+    const size = getDefaultCanvasCardSize(partial.kind)
     const now = Date.now()
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
@@ -767,7 +822,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       })
       return existing.card.id
     }
-    const size = DEFAULT_CARD_SIZE[kind]
+    const size = getDefaultCanvasCardSize(kind)
     return get().addCard({
       kind,
       refId: sessionId,
@@ -812,7 +867,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       let cards = [...layout.cards]
       for (const sessionId of newSessionIds) {
         const kind = kindFor(sessionId)
-        const size = DEFAULT_CARD_SIZE[kind]
+        const size = getDefaultCanvasCardSize(kind)
         maxZ += 1
         const cardId = `card-${generateId()}`
         createdCardIds.push(cardId)

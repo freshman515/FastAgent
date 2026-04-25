@@ -32,6 +32,9 @@ export function CanvasWorkspace(): JSX.Element {
   const workspaceMode = usePanesStore((state) => state.workspaceMode)
   const currentProjectKey = usePanesStore((state) => state.currentProjectId)
   const paneSessions = usePanesStore((state) => state.paneSessions)
+  const activePaneId = usePanesStore((state) => state.activePaneId)
+  const activeTabId = usePanesStore((state) => state.paneActiveSession[state.activePaneId] ?? null)
+  const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
 
   // 1) Keep canvas layout key aligned with the current panes scope.
   useEffect(() => {
@@ -49,9 +52,13 @@ export function CanvasWorkspace(): JSX.Element {
   //    we also focus the freshly created card — matches the muscle memory
   //    of "clicking a session makes it the thing you're looking at".
   const isInitialSyncRef = useRef(true)
+  const canvasSelectionSyncRef = useRef(false)
   useEffect(() => {
     const canvas = useCanvasStore.getState()
     const sessionIdsInPanes = Object.values(paneSessions).flat().filter((id) => !id.startsWith('editor-'))
+    const skipActiveTabFocus = canvasSelectionSyncRef.current
+    canvasSelectionSyncRef.current = false
+    const shouldFocusActiveTab = Boolean(activeTabId && sessionIdsInPanes.includes(activeTabId) && !skipActiveTabFocus)
     if (sessionIdsInPanes.length === 0) {
       isInitialSyncRef.current = false
       return
@@ -59,6 +66,9 @@ export function CanvasWorkspace(): JSX.Element {
     const existingRefs = new Set(canvas.getCards().map((c) => c.refId).filter(Boolean) as string[])
     const newIds = sessionIdsInPanes.filter((id) => !existingRefs.has(id))
     if (newIds.length === 0) {
+      if (shouldFocusActiveTab && activeTabId) {
+        requestAnimationFrame(() => focusCanvasCardForSession(activeTabId))
+      }
       isInitialSyncRef.current = false
       return
     }
@@ -67,6 +77,12 @@ export function CanvasWorkspace(): JSX.Element {
       const session = sessionsStore.sessions.find((s) => s.id === id)
       return session?.type === 'terminal' ? 'terminal' : 'session'
     })
+
+    if (shouldFocusActiveTab && activeTabId) {
+      requestAnimationFrame(() => focusCanvasCardForSession(activeTabId))
+      isInitialSyncRef.current = false
+      return
+    }
 
     // Skip focus on the very first sync after mount — the user just switched
     // to canvas mode and bulk-importing N cards shouldn't hijack the view.
@@ -77,9 +93,32 @@ export function CanvasWorkspace(): JSX.Element {
       requestAnimationFrame(() => canvas.focusOnCard(created[0]))
     }
     isInitialSyncRef.current = false
-  }, [paneSessions])
+  }, [activeTabId, paneSessions])
 
-  // 3) Reverse-sync: when sessions are removed elsewhere, clean up their
+  // 3) When a canvas card is focused/selected, keep classic tabs in sync so
+  //    switching back to classic mode lands on the same session.
+  useEffect(() => {
+    const selectedCardId = selectedCardIds[0]
+    if (!selectedCardId) return
+
+    const card = useCanvasStore.getState().getCard(selectedCardId)
+    if (!card?.refId || card.refId.startsWith('editor-')) return
+    const sessionExists = useSessionsStore.getState().sessions.some((session) => session.id === card.refId)
+    if (!sessionExists) return
+
+    const panes = usePanesStore.getState()
+    const paneId = panes.findPaneForSession(card.refId)
+    canvasSelectionSyncRef.current = true
+    if (paneId) {
+      panes.setActivePaneId(paneId)
+      panes.setPaneActiveSession(paneId, card.refId)
+    } else {
+      panes.addSessionToPane(activePaneId, card.refId)
+    }
+    useSessionsStore.getState().setActive(card.refId)
+  }, [activePaneId, selectedCardIds])
+
+  // 4) Reverse-sync: when sessions are removed elsewhere, clean up their
   //    canvas cards so we don't render orphans.
   useEffect(() => {
     const previousIds = new Set(useSessionsStore.getState().sessions.map((s) => s.id))
@@ -185,6 +224,13 @@ function CanvasCardRenderer({ card, viewportEl }: { card: CanvasCard; viewportEl
     return <CulledSessionCard card={card} viewportEl={viewportEl} />
   }
   return null
+}
+
+function focusCanvasCardForSession(sessionId: string): void {
+  const canvas = useCanvasStore.getState()
+  const card = canvas.getCards().find((candidate) => candidate.refId === sessionId)
+  if (!card) return
+  canvas.focusOnCard(card.id)
 }
 
 /**

@@ -1,8 +1,14 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { useUIStore, type AppSettings, type CanvasArrangeMode } from '@/stores/ui'
-import { useCanvasStore } from '@/stores/canvas'
+import {
+  CANVAS_SESSION_CARD_HEIGHT_MAX,
+  CANVAS_SESSION_CARD_HEIGHT_MIN,
+  CANVAS_SESSION_CARD_WIDTH_MAX,
+  CANVAS_SESSION_CARD_WIDTH_MIN,
+  useUIStore,
+  type AppSettings,
+} from '@/stores/ui'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui'
 import { useGroupsStore } from '@/stores/groups'
@@ -102,6 +108,63 @@ function FontSelect({ label, value, options, labels, onChange }: {
         ))}
       </div>
     </div>
+  )
+}
+
+function PixelNumberField({ label, value, min, max, step = 20, onChange }: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step?: number
+  onChange: (v: number) => void
+}): JSX.Element {
+  const [draft, setDraft] = useState(String(value))
+
+  useEffect(() => {
+    setDraft(String(value))
+  }, [value])
+
+  const commitDraft = (): void => {
+    const parsed = Number(draft)
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value))
+      return
+    }
+    const nextValue = Math.round(Math.max(min, Math.min(max, parsed)))
+    setDraft(String(nextValue))
+    if (nextValue !== value) onChange(nextValue)
+  }
+
+  return (
+    <label className="flex flex-1 flex-col gap-1.5">
+      <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">{label}</span>
+      <div className="relative">
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.currentTarget.blur()
+            } else if (event.key === 'Escape') {
+              setDraft(String(value))
+              event.currentTarget.blur()
+            }
+          }}
+          className={cn(
+            'peer h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/70 bg-[var(--color-bg-tertiary)]/45 pl-2.5 pr-8',
+            'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
+            'outline-none transition-all duration-150',
+            'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]/70',
+          )}
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">px</span>
+      </div>
+    </label>
   )
 }
 
@@ -240,11 +303,6 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
     setConfirmClearSessionsOpen(false)
   }, [])
 
-  const handleCanvasArrangeMode = (mode: CanvasArrangeMode): void => {
-    onUpdate('canvasArrangeMode', mode)
-    if (mode !== 'free') useCanvasStore.getState().arrange(mode)
-  }
-
   return (
     <div className={PAGE_STACK}>
       <PageIntro
@@ -331,6 +389,30 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         />
         {settings.workspaceLayout === 'canvas' && (
           <>
+            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+              <div className="mb-2 flex flex-col gap-0.5">
+                <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建会话卡片默认尺寸</span>
+                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                  只影响之后新建的终端、Claude Code、Codex 等会话卡片，已有卡片不自动改尺寸。
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <PixelNumberField
+                  label="宽度"
+                  value={settings.canvasSessionCardWidth}
+                  min={CANVAS_SESSION_CARD_WIDTH_MIN}
+                  max={CANVAS_SESSION_CARD_WIDTH_MAX}
+                  onChange={(v) => onUpdate('canvasSessionCardWidth', v)}
+                />
+                <PixelNumberField
+                  label="高度"
+                  value={settings.canvasSessionCardHeight}
+                  min={CANVAS_SESSION_CARD_HEIGHT_MIN}
+                  max={CANVAS_SESSION_CARD_HEIGHT_MAX}
+                  onChange={(v) => onUpdate('canvasSessionCardHeight', v)}
+                />
+              </div>
+            </div>
             <ToggleRow
               label="显示网格"
               description="在画布上渲染点状背景网格，辅助对齐"
@@ -342,22 +424,6 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
               description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘"
               checked={settings.canvasSnapEnabled}
               onChange={(v) => onUpdate('canvasSnapEnabled', v)}
-            />
-            <SegmentedChoice
-              value={settings.canvasArrangeMode}
-              options={[
-                { id: 'free', label: '自由排列', desc: '任意移动卡片' },
-                { id: 'grid', label: '网格排列', desc: '按网格重排' },
-                { id: 'rowFlow', label: '横向排列', desc: '保持单行顺序' },
-                { id: 'colFlow', label: '纵向排列', desc: '保持单列顺序' },
-              ]}
-              onChange={handleCanvasArrangeMode}
-            />
-            <ToggleRow
-              label="排列约束"
-              description="启用后拖拽只调整当前排列顺序，不把横向、纵向或网格模式拖变形"
-              checked={settings.canvasArrangeConstrained}
-              onChange={(v) => onUpdate('canvasArrangeConstrained', v)}
             />
             <SegmentedChoice
               value={settings.canvasOverlapMode}

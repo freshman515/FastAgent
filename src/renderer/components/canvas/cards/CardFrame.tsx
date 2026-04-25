@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCanvasStore } from '@/stores/canvas'
 import { useCardDrag } from '../hooks/useCardDrag'
@@ -12,6 +13,8 @@ interface CardFrameProps {
   title: React.ReactNode
   children: React.ReactNode
   onDelete?: () => void
+  deleteTitle?: string
+  onHeaderContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void
   headerActions?: React.ReactNode
   minWidth?: number
   minHeight?: number
@@ -67,6 +70,8 @@ export function CardFrame({
   title,
   children,
   onDelete,
+  deleteTitle = '删除',
+  onHeaderContextMenu,
   headerActions,
   minWidth,
   minHeight,
@@ -167,6 +172,12 @@ export function CardFrame({
       {/* Drag handle / title bar. Double-click is handled in useCardDrag so pointer capture cannot swallow it. */}
       <div
         data-card-drag
+        onContextMenu={(event) => {
+          if (!onHeaderContextMenu) return
+          event.preventDefault()
+          event.stopPropagation()
+          onHeaderContextMenu(event)
+        }}
         className={cn(
           'flex h-9 shrink-0 cursor-grab items-center justify-between gap-2 rounded-t-[var(--radius-lg)] bg-[var(--color-bg-surface)] px-3 select-none',
           !borderless && 'border-b border-[var(--color-border)]',
@@ -182,17 +193,29 @@ export function CardFrame({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onDelete() }}
-              className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
-              title="删除"
+              className={cn(
+                '-mr-3 flex h-9 w-10 items-center justify-center rounded-none rounded-tr-[var(--radius-lg)]',
+                'text-[var(--color-text-tertiary)] transition-colors duration-100',
+                'hover:bg-[var(--color-error)] hover:text-white',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/55',
+              )}
+              title={deleteTitle}
+              aria-label={deleteTitle}
             >
-              ✕
+              <X size={14} />
             </button>
           )}
         </div>
       </div>
 
       {/* Body */}
-      <div className={cn('min-h-0 flex-1 overflow-hidden rounded-b-[var(--radius-lg)]', bodyClassName)}>{children}</div>
+      <div
+        data-card-wheel-content
+        onContextMenu={(event) => event.stopPropagation()}
+        className={cn('min-h-0 flex-1 overflow-hidden rounded-b-[var(--radius-lg)]', bodyClassName)}
+      >
+        {children}
+      </div>
 
       {/* Resize handles */}
       {RESIZE_HANDLES.map((handle) => (

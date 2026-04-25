@@ -9,7 +9,6 @@ import { usePanesStore, type SplitPosition } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { getTerminalPreviewText } from '@/hooks/useXterm'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { getSessionIcon } from '@/lib/sessionIcon'
 
@@ -51,7 +50,7 @@ export function SessionTab({
   const [showCloseAllConfirm, setShowCloseAllConfirm] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
-  const [preview, setPreview] = useState<{ lines: string[]; x: number; y: number } | null>(null)
+  const [preview, setPreview] = useState<{ x: number; y: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragTokenRef = useRef<string | null>(null)
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -212,11 +211,9 @@ export function SessionTab({
         }}
         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); handleClose() } }}
         onMouseEnter={(e) => {
-          if (isActive) return
           const rect = e.currentTarget.getBoundingClientRect()
           previewTimer.current = setTimeout(() => {
-            const lines = getTerminalPreviewText(session.id)
-            if (lines.length > 0) setPreview({ lines, x: rect.left, y: rect.bottom + 6 })
+            setPreview({ x: rect.left, y: rect.bottom + 6 })
           }, 400)
         }}
         onMouseLeave={() => {
@@ -260,7 +257,12 @@ export function SessionTab({
             autoFocus
           />
         ) : (
-          <span className="flex-1 truncate text-[var(--ui-font-xs)]" onDoubleClick={(e) => { e.stopPropagation(); startRename() }}>{session.name}</span>
+          <span
+            className="flex-1 truncate text-[var(--ui-font-xs)]"
+            onDoubleClick={(e) => { e.stopPropagation(); startRename() }}
+          >
+            {session.name}
+          </span>
         )}
 
         {/* Label tag */}
@@ -301,18 +303,15 @@ export function SessionTab({
 
       {preview && createPortal(
         <div
-          style={{ top: preview.y, left: Math.min(preview.x, window.innerWidth - 410), zIndex: 9990 }}
-          className="fixed w-[400px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[#1a1a1e] shadow-xl shadow-black/50 overflow-hidden pointer-events-none"
+          style={{ top: preview.y, left: Math.max(8, Math.min(preview.x, window.innerWidth - 430)), zIndex: 9990 }}
+          className="fixed min-w-[220px] max-w-[420px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[#1a1a1e] shadow-xl shadow-black/50 overflow-hidden pointer-events-none"
         >
-          <div className="px-2.5 py-1 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-            <div className="flex items-center gap-1.5">
-              <img src={iconSrc} alt="" className="h-[18px] w-[18px]" />
-              <span className="text-[11px] font-medium text-[var(--color-text-secondary)] truncate">{session.name}</span>
+          <div className="px-2.5 py-1.5 bg-[var(--color-bg-secondary)]">
+            <div className="flex items-start gap-1.5">
+              <img src={iconSrc} alt="" className="mt-px h-[18px] w-[18px] shrink-0" />
+              <span className="break-words text-[11px] font-medium leading-5 text-[var(--color-text-secondary)]">{session.name}</span>
             </div>
           </div>
-          <pre className="px-2.5 py-2 text-[11px] leading-[16px] text-[#e8e8ec] overflow-hidden whitespace-pre" style={{ fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace" }}>
-            {preview.lines.join('\n')}
-          </pre>
         </div>,
         document.body,
       )}

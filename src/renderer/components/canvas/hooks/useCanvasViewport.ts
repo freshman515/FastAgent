@@ -22,6 +22,12 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
     if (!viewportEl) return
 
     const onWheel = (event: WheelEvent): void => {
+      const target = event.target as HTMLElement | null
+      const overCardContent = Boolean(target?.closest('[data-card-wheel-content]'))
+      if (overCardContent && !event.ctrlKey && !event.metaKey) {
+        return
+      }
+
       event.preventDefault()
       event.stopPropagation()
       cancelViewportAnimation()

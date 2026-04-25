@@ -4,7 +4,7 @@ import type { SessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
-import { useCanvasStore } from '@/stores/canvas'
+import { getDefaultCanvasCardSize, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -34,6 +34,9 @@ interface CanvasContextMenuProps {
 export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null)
+  const [menuPosition, setMenuPosition] = useState({ left: state.screenX, top: state.screenY })
+  const [submenuDirection, setSubmenuDirection] = useState<'right' | 'left'>('right')
+  const items = useMemo(() => buildMenuItems(state, onClose), [state, onClose])
 
   useEffect(() => {
     const onDown = (event: MouseEvent): void => {
@@ -45,13 +48,33 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
     return () => window.removeEventListener('pointerdown', onDown)
   }, [onClose])
 
-  const items = useMemo(() => buildMenuItems(state, onClose), [state, onClose])
+  useEffect(() => {
+    setMenuPosition({ left: state.screenX, top: state.screenY })
+  }, [state.screenX, state.screenY])
+
+  useEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+
+    const updatePosition = (): void => {
+      const margin = 8
+      const rect = menu.getBoundingClientRect()
+      const left = Math.min(Math.max(margin, state.screenX), Math.max(margin, window.innerWidth - rect.width - margin))
+      const top = Math.min(Math.max(margin, state.screenY), Math.max(margin, window.innerHeight - rect.height - margin))
+      setMenuPosition((current) => current.left === left && current.top === top ? current : { left, top })
+      setSubmenuDirection(left + rect.width + 190 + margin > window.innerWidth ? 'left' : 'right')
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    return () => window.removeEventListener('resize', updatePosition)
+  }, [state.screenX, state.screenY, items.length])
 
   return createPortal(
     <div
       ref={menuRef}
       className="fixed z-[400] min-w-[180px] overflow-visible rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
-      style={{ left: state.screenX, top: state.screenY }}
+      style={{ left: menuPosition.left, top: menuPosition.top }}
     >
       {items.map((item, index) => (
         item.kind === 'separator' ? (
@@ -75,7 +98,12 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
               <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">›</span>
             </button>
             {openSubmenuIndex === index && !item.disabled && (
-              <div className="absolute left-full top-0 ml-1 min-w-[190px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl">
+              <div
+                className={cn(
+                  'absolute top-0 min-w-[190px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl',
+                  submenuDirection === 'right' ? 'left-full ml-1' : 'right-full mr-1',
+                )}
+              >
                 {item.items.map((child) => (
                   <button
                     key={child.label}
@@ -86,14 +114,6 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
                       'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
                     )}
                   >
-                    {child.checked !== undefined && (
-                      <span className={cn(
-                        'w-3 shrink-0 text-center text-[var(--color-accent)]',
-                        child.checked ? 'opacity-100' : 'opacity-0',
-                      )}>
-                        ✓
-                      </span>
-                    )}
                     {child.icon && <img src={child.icon} alt="" className="h-4 w-4 shrink-0" />}
                     <span className="flex-1">{child.label}</span>
                   </button>
@@ -116,14 +136,6 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
               'hover:bg-[var(--color-bg-hover)] disabled:cursor-not-allowed disabled:opacity-40',
             )}
           >
-            {item.checked !== undefined && (
-              <span className={cn(
-                'w-3 shrink-0 text-center text-[var(--color-accent)]',
-                item.checked ? 'opacity-100' : 'opacity-0',
-              )}>
-                ✓
-              </span>
-            )}
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
               <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{item.shortcut}</span>
@@ -149,7 +161,6 @@ type ActionMenuItem = {
   danger?: boolean
   shortcut?: string
   icon?: string
-  checked?: boolean
 }
 
 function buildMenuItems(state: CanvasContextMenuState, onClose: () => void): MenuItem[] {
@@ -167,7 +178,6 @@ function buildCanvasItems(
   const fitAll = useCanvasStore.getState().fitAll
   const arrange = useCanvasStore.getState().arrange
   const ui = useUIStore.getState()
-  const { canvasArrangeMode, canvasArrangeConstrained } = ui.settings
   const updateSettings = ui.updateSettings
   const projectId = useProjectsStore.getState().selectedProjectId
   const setArrangeMode = (mode: CanvasArrangeMode): void => {
@@ -199,17 +209,10 @@ function buildCanvasItems(
       })) : [],
     },
     { kind: 'separator' },
-    { kind: 'item', label: '自由排列', checked: canvasArrangeMode === 'free', onClick: () => setArrangeMode('free') },
-    { kind: 'item', label: '网格排列', checked: canvasArrangeMode === 'grid', onClick: () => setArrangeMode('grid') },
-    { kind: 'item', label: '横向排列', checked: canvasArrangeMode === 'rowFlow', onClick: () => setArrangeMode('rowFlow') },
-    { kind: 'item', label: '纵向排列', checked: canvasArrangeMode === 'colFlow', onClick: () => setArrangeMode('colFlow') },
-    {
-      kind: 'item',
-      label: '排列约束',
-      checked: canvasArrangeConstrained,
-      shortcut: canvasArrangeConstrained ? '开' : '关',
-      onClick: () => updateSettings({ canvasArrangeConstrained: !canvasArrangeConstrained }),
-    },
+    { kind: 'item', label: '自由排列', onClick: () => setArrangeMode('free') },
+    { kind: 'item', label: '网格排列', onClick: () => setArrangeMode('grid') },
+    { kind: 'item', label: '横向排列', onClick: () => setArrangeMode('rowFlow') },
+    { kind: 'item', label: '纵向排列', onClick: () => setArrangeMode('colFlow') },
     { kind: 'item', label: '紧凑打包', onClick: () => { updateSettings({ canvasArrangeMode: 'free' }); arrange('pack') } },
     { kind: 'separator' },
     {
@@ -228,19 +231,19 @@ function buildCanvasItems(
 function createCanvasSession(projectId: string, type: SessionType, worldX: number, worldY: number): void {
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
   const cardKind = type === 'terminal' ? 'terminal' : 'session'
-  const cardSize = cardKind === 'terminal'
-    ? { width: 880, height: 560 }
-    : { width: 520, height: 640 }
+  const cardSize = getDefaultCanvasCardSize(cardKind)
 
   createSessionWithPrompt({ projectId, type, worktreeId }, (sessionId) => {
     const paneStore = usePanesStore.getState()
     paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
 
     useSessionsStore.getState().setActive(sessionId)
-    useCanvasStore.getState().attachSession(sessionId, cardKind, {
+    const canvasStore = useCanvasStore.getState()
+    const cardId = canvasStore.attachSession(sessionId, cardKind, {
       x: worldX - cardSize.width / 2,
       y: worldY - cardSize.height / 2,
     })
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
   })
 }
 
