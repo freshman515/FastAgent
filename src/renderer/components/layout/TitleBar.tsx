@@ -218,7 +218,7 @@ export function TitleBar(): JSX.Element | null {
     addToast({
       type: 'info',
       title: '快捷键',
-      body: 'Ctrl+Tab 切换标签，Ctrl+W 关闭标签，Ctrl+Shift+T 恢复关闭，Ctrl+Alt+方向键切换分栏。',
+      body: 'Ctrl+Tab 切换标签，Ctrl+W 关闭标签，Ctrl+Shift+T 恢复关闭，Ctrl+Alt+方向键切换分栏，Alt+1~9 切换 pane。',
       duration: 9000,
     })
   }, [addToast])

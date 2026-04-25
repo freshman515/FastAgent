@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Clock, FolderPlus, MoreHorizontal, Palette, Trash2, Edit3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, Eye, FolderPlus, List, MoreHorizontal, Palette, Trash2, Edit3 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { Group } from '@shared/types'
 import { cn } from '@/lib/utils'
@@ -17,18 +17,25 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
   const removeGroup = useGroupsStore((s) => s.removeGroup)
   const updateGroup = useGroupsStore((s) => s.updateGroup)
   const allProjects = useProjectsStore((s) => s.projects)
+  const visibleGroupId = useUIStore((s) => s.settings.visibleGroupId)
+  const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
+  const updateSettings = useUIStore((s) => s.updateSettings)
   const projects = useMemo(() => {
     const ids = group.projectIds ?? []
     const map = new Map(allProjects.map((p) => [p.id, p]))
     const ordered = ids.map((id) => map.get(id)).filter(Boolean) as typeof allProjects
     const remaining = allProjects.filter((p) => p.groupId === group.id && !ids.includes(p.id))
     let result = [...ordered, ...remaining]
+    if (visibleProjectId) {
+      return result.filter((p) => p.id === visibleProjectId)
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter((p) => p.name.toLowerCase().includes(q))
     }
     return result
-  }, [allProjects, group.id, group.projectIds, searchQuery])
+  }, [allProjects, group.id, group.projectIds, searchQuery, visibleProjectId])
 
   const addProject = useProjectsStore((s) => s.addProject)
   const addProjectToGroup = useGroupsStore((s) => s.addProjectToGroup)
@@ -269,6 +276,28 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
                 ))}
               </>
             )}
+            <div className="border-t border-[var(--color-border)] mt-0.5" />
+            <button
+              onClick={() => {
+                updateSettings({ visibleGroupId: group.id, visibleProjectId: null })
+                setContextMenu(null)
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+                visibleGroupId === group.id && !visibleProjectId && 'text-[var(--color-accent)]',
+              )}
+            >
+              <Eye size={12} /> 只显示当前分组
+            </button>
+            <button
+              onClick={() => {
+                updateSettings({ visibleGroupId: null, visibleProjectId: null })
+                setContextMenu(null)
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+            >
+              <List size={12} /> 显示所有分组
+            </button>
             <button
               onClick={() => {
                 setContextMenu(null)
@@ -310,7 +339,7 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
       )}
 
       {/* Projects list */}
-      {!group.collapsed && (
+      {(!group.collapsed || visibleProjectId) && (
         <div className="flex flex-col pb-1">
           {projects.map((project) => (
             <ProjectItem key={project.id} project={project} />

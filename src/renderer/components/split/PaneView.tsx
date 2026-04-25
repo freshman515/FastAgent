@@ -1,4 +1,4 @@
-import { GitBranch, Maximize2, Minimize2, Minus, Plus, Square, X } from 'lucide-react'
+import { GitBranch, Maximize2, Minimize2, Minus, MoreHorizontal, Plus, Square, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -50,6 +50,8 @@ type DetachedTabDragPayload =
 
 const MENU_ITEM = 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
 const MENU_ITEM_DISABLED = `${MENU_ITEM} cursor-not-allowed opacity-40 hover:bg-transparent hover:text-[var(--color-text-secondary)]`
+const PANE_ACTION_MENU_ITEM = 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
+const PANE_ACTION_MENU_ITEM_DISABLED = `${PANE_ACTION_MENU_ITEM} cursor-not-allowed opacity-40 hover:bg-transparent hover:text-[var(--color-text-secondary)]`
 const FILE_TAB_SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
   { position: 'right', label: '向右分屏' },
   { position: 'down', label: '向下分屏' },
@@ -485,8 +487,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null)
   const termAreaRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const paneMenuButtonRef = useRef<HTMLButtonElement>(null)
   const windowDragRef = useRef<WindowDragState | null>(null)
   const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
+  const [paneActionMenu, setPaneActionMenu] = useState<{ x: number; y: number } | null>(null)
 
   const closeMenuTimerRef = useRef<number | null>(null)
 
@@ -535,6 +539,23 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     event.stopPropagation()
     openNewSessionMenu(event.currentTarget, 'center')
   }, [openNewSessionMenu])
+
+  const activeTabIdForMenu = paneActiveSessionId && paneSessions.includes(paneActiveSessionId)
+    ? paneActiveSessionId
+    : (paneSessions[0] ?? null)
+  const canSplitActiveTab = Boolean(activeTabIdForMenu && paneSessions.length >= 2)
+
+  const openPaneActionMenu = useCallback(() => {
+    const rect = paneMenuButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setPaneActionMenu((current) => current ? null : { x: Math.max(4, rect.right - 204), y: rect.bottom + 4 })
+  }, [])
+
+  const splitActiveTab = useCallback((position: SplitPosition) => {
+    if (!activeTabIdForMenu || paneSessions.length < 2) return
+    usePanesStore.getState().splitPane(paneId, position, activeTabIdForMenu)
+    setPaneActionMenu(null)
+  }, [activeTabIdForMenu, paneId, paneSessions.length])
 
   const paneRootRef = useRef<HTMLDivElement>(null)
 
@@ -848,7 +869,26 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         </div>
 
         {isMultiPane && (
-          <div className="no-drag flex h-full shrink-0 items-center pr-1">
+          <div className="no-drag flex h-full shrink-0 items-center gap-0.5 pr-1">
+            <button
+              ref={paneMenuButtonRef}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                openPaneActionMenu()
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              className={cn(
+                'flex h-[28px] w-[28px] items-center justify-center rounded-[var(--radius-sm)]',
+                'text-[var(--color-text-tertiary)] transition-all duration-120',
+                'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+                'active:scale-95',
+              )}
+              title="Pane 快捷动作"
+              aria-label="Pane 快捷动作"
+            >
+              <MoreHorizontal size={14} />
+            </button>
             <button
               type="button"
               onClick={(event) => {
@@ -899,6 +939,80 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             onMouseEnter={cancelCloseMenu}
             onMouseLeave={scheduleCloseMenu}
           />
+        )}
+
+        {paneActionMenu && createPortal(
+          <>
+            <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setPaneActionMenu(null)} />
+            <div
+              style={{ top: paneActionMenu.y, left: paneActionMenu.x, zIndex: 9999 }}
+              className="fixed w-52 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-1 shadow-lg shadow-black/30"
+            >
+              <div className="border-b border-[var(--color-border)] px-3 py-1.5">
+                <p className="truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                  {activeTabIdForMenu ? '当前 pane' : '空白 pane'}
+                </p>
+              </div>
+              <button
+                className={PANE_ACTION_MENU_ITEM}
+                onClick={() => {
+                  togglePaneFullscreen(paneId)
+                  setPaneActionMenu(null)
+                }}
+              >
+                {isFullscreenPane ? '恢复分屏布局' : '放大当前 pane'}
+              </button>
+              <div className="my-0.5 border-t border-[var(--color-border)]" />
+              <button
+                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!canSplitActiveTab}
+                onClick={() => splitActiveTab('right')}
+              >
+                当前 tab 向右分屏
+              </button>
+              <button
+                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!canSplitActiveTab}
+                onClick={() => splitActiveTab('down')}
+              >
+                当前 tab 向下分屏
+              </button>
+              <button
+                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!canSplitActiveTab}
+                onClick={() => splitActiveTab('left')}
+              >
+                当前 tab 向左分屏
+              </button>
+              <button
+                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!canSplitActiveTab}
+                onClick={() => splitActiveTab('up')}
+              >
+                当前 tab 向上分屏
+              </button>
+              <div className="my-0.5 border-t border-[var(--color-border)]" />
+              <button
+                className={PANE_ACTION_MENU_ITEM}
+                onClick={() => {
+                  usePanesStore.getState().mergeAllPanes()
+                  setPaneActionMenu(null)
+                }}
+              >
+                合并全部 pane
+              </button>
+              <button
+                className={`${PANE_ACTION_MENU_ITEM} text-[var(--color-error)] hover:text-[var(--color-error)]`}
+                onClick={() => {
+                  usePanesStore.getState().mergePane(paneId)
+                  setPaneActionMenu(null)
+                }}
+              >
+                关闭当前 pane
+              </button>
+            </div>
+          </>,
+          document.body,
         )}
       </div>
 

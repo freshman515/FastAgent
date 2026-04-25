@@ -12,7 +12,7 @@ import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
-import { usePanesStore } from '@/stores/panes'
+import { getPaneLeafIds, usePanesStore } from '@/stores/panes'
 import { useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
@@ -773,6 +773,32 @@ function MainApp(): JSX.Element {
 
     window.addEventListener('keydown', handleF11, true)
     return () => window.removeEventListener('keydown', handleF11, true)
+  }, [])
+
+  // Capture Alt+1~9 before terminals/editors consume it.
+  useEffect(() => {
+    const handlePaneNumberShortcut = (e: KeyboardEvent): void => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.key < '1' || e.key > '9') return
+
+      const paneStore = usePanesStore.getState()
+      const paneId = getPaneLeafIds(paneStore.root)[Number(e.key) - 1]
+      if (!paneId) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      paneStore.setActivePaneId(paneId)
+
+      const targetPaneSessions = paneStore.paneSessions[paneId] ?? []
+      const activeTabId = paneStore.paneActiveSession[paneId] && targetPaneSessions.includes(paneStore.paneActiveSession[paneId]!)
+        ? paneStore.paneActiveSession[paneId]
+        : (targetPaneSessions[0] ?? null)
+      if (activeTabId && !activeTabId.startsWith('editor-')) {
+        useSessionsStore.getState().setActive(activeTabId)
+      }
+    }
+
+    window.addEventListener('keydown', handlePaneNumberShortcut, true)
+    return () => window.removeEventListener('keydown', handlePaneNumberShortcut, true)
   }, [])
 
   // Global keyboard shortcuts — operate on the active pane

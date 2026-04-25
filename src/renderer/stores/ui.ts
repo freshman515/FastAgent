@@ -7,8 +7,10 @@ import { usePanesStore } from './panes'
 
 export type VisualizerMode = 'melody' | 'bars'
 export type DockSide = 'left' | 'right'
-export type DockPanelId = 'projects' | 'recentSessions' | 'sessionHistory' | 'agent' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
+export type DockPanelId = 'projects' | 'recentSessions' | 'sessionHistory' | 'agent' | 'agentBoard' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
 export type TodoPriority = 'low' | 'medium' | 'high'
+export type AgentBoardStatus = 'todo' | 'in_progress' | 'review' | 'done'
+export type AgentBoardPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export type CanvasArrangeMode = 'free' | 'grid' | 'rowFlow' | 'colFlow'
@@ -23,6 +25,7 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
   'recentSessions',
   'sessionHistory',
   'agent',
+  'agentBoard',
   'tasks',
   'commands',
   'prompts',
@@ -38,7 +41,7 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
 
 export const DEFAULT_DOCK_PANEL_ORDER: Record<DockSide, DockPanelId[]> = {
   left: ['projects', 'recentSessions', 'sessionHistory', 'git', 'files'],
-  right: ['agent', 'tasks', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
+  right: ['agent', 'agentBoard', 'tasks', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
 }
 
 const DEFAULT_DOCK_PANEL_ACTIVE: Record<DockSide, DockPanelId | null> = {
@@ -75,6 +78,23 @@ export interface TodoItem {
   createdAt: number
   updatedAt: number
   priority: TodoPriority
+}
+
+export interface AgentBoardItem {
+  id: string
+  projectId: string | null
+  worktreeId?: string
+  title: string
+  description: string
+  status: AgentBoardStatus
+  priority: AgentBoardPriority
+  sessionType: Exclude<SessionType, 'claude-gui'>
+  sessionId?: string
+  createdAt: number
+  updatedAt: number
+  launchedAt?: number
+  completedAt?: number
+  error?: string
 }
 
 export interface PromptItem {
@@ -114,6 +134,7 @@ export interface AppSettings {
   editorStickyScroll: boolean
   editorFontLigatures: boolean
   visibleGroupId: string | null // null = show all groups
+  visibleProjectId: string | null // null = show all projects
   defaultSessionType: 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'opencode'
   /** Pop up a naming dialog when creating a new session */
   promptSessionNameOnCreate: boolean
@@ -149,6 +170,7 @@ export interface AppSettings {
   quickCommandGroups: QuickCommandGroup[]
   quickCommands: QuickCommand[]
   todoItems: TodoItem[]
+  agentBoardItems: AgentBoardItem[]
   promptItems: PromptItem[]
   terminalTheme: string
   customThemes: Record<string, GhosttyTheme>
@@ -193,6 +215,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   editorStickyScroll: true,
   editorFontLigatures: true,
   visibleGroupId: null,
+  visibleProjectId: null,
   defaultSessionType: 'claude-code',
   promptSessionNameOnCreate: false,
   recentPaths: [],
@@ -217,6 +240,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   quickCommandGroups: [],
   quickCommands: [...DEFAULT_QUICK_COMMANDS],
   todoItems: [],
+  agentBoardItems: [],
   promptItems: [],
   terminalTheme: 'FastAgents Default',
   customThemes: {},
@@ -473,6 +497,112 @@ function normalizeTodoItems(raw: unknown): { items: TodoItem[]; seeded: boolean 
         || (item as { priority?: unknown }).priority === 'high'
           ? (item as { priority: TodoPriority }).priority
           : 'medium',
+    })
+  }
+
+  return { items, seeded }
+}
+
+function isAgentBoardStatus(value: unknown): value is AgentBoardStatus {
+  return value === 'todo' || value === 'in_progress' || value === 'review' || value === 'done'
+}
+
+function isAgentBoardPriority(value: unknown): value is AgentBoardPriority {
+  return value === 'low' || value === 'medium' || value === 'high'
+}
+
+function isAgentBoardSessionType(value: unknown): value is AgentBoardItem['sessionType'] {
+  return value === 'claude-code'
+    || value === 'claude-code-yolo'
+    || value === 'codex'
+    || value === 'codex-yolo'
+    || value === 'opencode'
+    || value === 'terminal'
+}
+
+function normalizeAgentBoardItems(raw: unknown): { items: AgentBoardItem[]; seeded: boolean } {
+  if (!Array.isArray(raw)) return { items: [], seeded: false }
+
+  let seeded = false
+  const seenIds = new Set<string>()
+  const items: AgentBoardItem[] = []
+
+  for (const item of raw) {
+    if (
+      !item
+      || typeof item !== 'object'
+      || typeof (item as { id?: unknown }).id !== 'string'
+      || typeof (item as { title?: unknown }).title !== 'string'
+    ) {
+      seeded = true
+      continue
+    }
+
+    const id = (item as { id: string }).id
+    if (seenIds.has(id)) {
+      seeded = true
+      continue
+    }
+
+    const title = (item as { title: string }).title.trim()
+    if (!title) {
+      seeded = true
+      continue
+    }
+
+    const rawDescription = typeof (item as { description?: unknown }).description === 'string'
+      ? (item as { description: string }).description
+      : ''
+    const description = rawDescription.trim()
+    const projectId = typeof (item as { projectId?: unknown }).projectId === 'string'
+      ? (item as { projectId: string }).projectId
+      : null
+    const worktreeId = typeof (item as { worktreeId?: unknown }).worktreeId === 'string'
+      ? (item as { worktreeId: string }).worktreeId
+      : undefined
+    const sessionId = typeof (item as { sessionId?: unknown }).sessionId === 'string'
+      ? (item as { sessionId: string }).sessionId
+      : undefined
+    const now = Date.now()
+
+    if (title !== (item as { title: string }).title) seeded = true
+    if (description !== rawDescription) seeded = true
+    if (!isAgentBoardStatus((item as { status?: unknown }).status)) seeded = true
+    if (!isAgentBoardPriority((item as { priority?: unknown }).priority)) seeded = true
+    if (!isAgentBoardSessionType((item as { sessionType?: unknown }).sessionType)) seeded = true
+
+    seenIds.add(id)
+    items.push({
+      id,
+      projectId,
+      worktreeId,
+      title,
+      description,
+      status: isAgentBoardStatus((item as { status?: unknown }).status)
+        ? (item as { status: AgentBoardStatus }).status
+        : 'todo',
+      priority: isAgentBoardPriority((item as { priority?: unknown }).priority)
+        ? (item as { priority: AgentBoardPriority }).priority
+        : 'medium',
+      sessionType: isAgentBoardSessionType((item as { sessionType?: unknown }).sessionType)
+        ? (item as { sessionType: AgentBoardItem['sessionType'] }).sessionType
+        : 'claude-code',
+      sessionId,
+      createdAt: typeof (item as { createdAt?: unknown }).createdAt === 'number'
+        ? (item as { createdAt: number }).createdAt
+        : now,
+      updatedAt: typeof (item as { updatedAt?: unknown }).updatedAt === 'number'
+        ? (item as { updatedAt: number }).updatedAt
+        : now,
+      launchedAt: typeof (item as { launchedAt?: unknown }).launchedAt === 'number'
+        ? (item as { launchedAt: number }).launchedAt
+        : undefined,
+      completedAt: typeof (item as { completedAt?: unknown }).completedAt === 'number'
+        ? (item as { completedAt: number }).completedAt
+        : undefined,
+      error: typeof (item as { error?: unknown }).error === 'string'
+        ? (item as { error: string }).error
+        : undefined,
     })
   }
 
@@ -953,6 +1083,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.editorStickyScroll === 'boolean') s.editorStickyScroll = raw.editorStickyScroll
       if (typeof raw.editorFontLigatures === 'boolean') s.editorFontLigatures = raw.editorFontLigatures
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
+      if (raw.visibleProjectId === null || typeof raw.visibleProjectId === 'string') s.visibleProjectId = raw.visibleProjectId as string | null
       if (typeof raw.defaultSessionType === 'string' && ['claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
       if (typeof raw.promptSessionNameOnCreate === 'boolean') s.promptSessionNameOnCreate = raw.promptSessionNameOnCreate
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
@@ -1000,6 +1131,11 @@ export const useUIStore = create<UIState>((set, get) => ({
         const normalizedTodoItems = normalizeTodoItems(raw.todoItems)
         s.todoItems = normalizedTodoItems.items
         shouldPersistSettings ||= normalizedTodoItems.seeded
+      }
+      if (raw.agentBoardItems !== undefined) {
+        const normalizedAgentBoardItems = normalizeAgentBoardItems(raw.agentBoardItems)
+        s.agentBoardItems = normalizedAgentBoardItems.items
+        shouldPersistSettings ||= normalizedAgentBoardItems.seeded
       }
       if (raw.promptItems !== undefined) {
         const normalizedPromptItems = normalizePromptItems(raw.promptItems)

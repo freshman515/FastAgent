@@ -1,7 +1,7 @@
-import { ArrowRightLeft, ChevronRight, ExternalLink, Folder, GitBranch, Layers, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ChevronRight, ExternalLink, Eye, Folder, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Project, SessionType, TaskBundle, Worktree } from '@shared/types'
+import type { Group, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
 import { isAnonymousProject, removeAnonymousProject } from '@/lib/anonymous-project'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
@@ -15,6 +15,7 @@ import { useTemplatesStore } from '@/stores/templates'
 import { useTasksStore } from '@/stores/tasks'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { useLaunchesStore } from '@/stores/launches'
+import { useUIStore } from '@/stores/ui'
 import { LaunchMenu } from './LaunchMenu'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex_white.svg'
@@ -37,6 +38,13 @@ const INPUT_CLS = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-
 const OVERLAY_PANEL = 'fixed left-1/2 top-1/3 z-50 -translate-x-1/2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3 shadow-lg shadow-black/30'
 const WT_ROW = 'flex h-7 w-full cursor-pointer items-center gap-1.5 pl-8 pr-2 text-[var(--ui-font-2xs)] transition-colors duration-75'
 
+type ProjectContextSubmenuType = 'sessions' | 'tasks' | 'move'
+
+interface ProjectContextSubmenuState {
+  type: ProjectContextSubmenuType
+  anchorRect: DOMRect
+}
+
 function SectionDivider({ icon: Icon, label }: { icon: typeof GitBranch; label: string }): JSX.Element {
   return (
     <div className="px-3 py-1 border-t border-[var(--color-border)]">
@@ -46,6 +54,15 @@ function SectionDivider({ icon: Icon, label }: { icon: typeof GitBranch; label: 
       </div>
     </div>
   )
+}
+
+function getSubmenuStyle(anchorRect: DOMRect, width: number): { top: number; left: number; width: number; zIndex: number } {
+  const gap = 2
+  const left = anchorRect.right + gap + width > window.innerWidth - 4
+    ? Math.max(4, anchorRect.left - width - gap)
+    : anchorRect.right + gap
+  const top = Math.max(4, Math.min(anchorRect.top, window.innerHeight - 4))
+  return { top, left, width, zIndex: 9999 }
 }
 
 // ── New Branch Input (portal overlay) ──
@@ -283,6 +300,74 @@ function BranchSubmenu({ project, branchInfo, anchorRect, onClose, onMouseEnter,
   )
 }
 
+function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onStartTask, onMoveToGroup, onMouseEnter, onMouseLeave }: {
+  submenu: ProjectContextSubmenuState
+  bundles: TaskBundle[]
+  groups: Group[]
+  onCreateSession: (type: SessionType) => void
+  onStartTask: (bundle: TaskBundle) => void
+  onMoveToGroup: (groupId: string) => void
+  onMouseEnter: () => void
+  onMouseLeave: () => void
+}): JSX.Element | null {
+  const width = submenu.type === 'sessions' ? 196 : 220
+  const style = getSubmenuStyle(submenu.anchorRect, width)
+
+  if (submenu.type === 'sessions') {
+    return (
+      <div
+        style={style}
+        className="fixed max-h-[60vh] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-1 shadow-lg shadow-black/30"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {SESSION_OPTS.map((opt) => (
+          <button key={opt.type} className={MENU_ITEM} onClick={() => onCreateSession(opt.type)}>
+            <img src={opt.icon} alt="" className="h-3.5 w-3.5" />{opt.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  if (submenu.type === 'tasks') {
+    if (bundles.length === 0) return null
+    return (
+      <div
+        style={style}
+        className="fixed max-h-[60vh] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-1 shadow-lg shadow-black/30"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {bundles.map((bundle) => (
+          <button key={bundle.id} className={MENU_ITEM} onClick={() => onStartTask(bundle)}>
+            <Rocket size={11} />
+            <span className="truncate">{bundle.name}</span>
+            <span className="ml-auto text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{bundle.steps.length} 步</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  if (groups.length === 0) return null
+  return (
+    <div
+      style={style}
+      className="fixed max-h-[60vh] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-1 shadow-lg shadow-black/30"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {groups.map((group) => (
+        <button key={group.id} className={MENU_ITEM} onClick={() => onMoveToGroup(group.id)}>
+          <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
+          <span className="truncate">{group.name}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Worktree Child Row ──
 
 function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project; isActive: boolean }): JSX.Element {
@@ -435,6 +520,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   const moveProject = useProjectsStore((s) => s.moveProject)
   const reorderProjectInGroup = useGroupsStore((s) => s.reorderProjectInGroup)
   const moveProjectToGroupAt = useGroupsStore((s) => s.moveProjectToGroupAt)
+  const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
+  const updateSettings = useUIStore((s) => s.updateSettings)
 
   const branchInfo = useGitStore((s) => s.branchInfo[project.id])
   const templates = useTemplatesStore((s) => s.templates)
@@ -453,11 +540,45 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   const [taskDialog, setTaskDialog] = useState<TaskBundle | null>(null)
   const [projDragOver, setProjDragOver] = useState(false)
   const [branchSubmenuAnchor, setBranchSubmenuAnchor] = useState<DOMRect | null>(null)
+  const [projectSubmenu, setProjectSubmenu] = useState<ProjectContextSubmenuState | null>(null)
   const branchMenuRef = useRef<HTMLButtonElement>(null)
   const branchCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const projectSubmenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const openProjectSubmenu = useCallback((type: ProjectContextSubmenuType, anchor: HTMLElement) => {
+    if (projectSubmenuCloseTimer.current) {
+      clearTimeout(projectSubmenuCloseTimer.current)
+      projectSubmenuCloseTimer.current = null
+    }
+    if (branchCloseTimer.current) {
+      clearTimeout(branchCloseTimer.current)
+      branchCloseTimer.current = null
+    }
+    setBranchSubmenuAnchor(null)
+    setProjectSubmenu({ type, anchorRect: anchor.getBoundingClientRect() })
+  }, [])
+
+  const scheduleProjectSubmenuClose = useCallback(() => {
+    projectSubmenuCloseTimer.current = setTimeout(() => setProjectSubmenu(null), 150)
+  }, [])
+
+  const cancelProjectSubmenuClose = useCallback(() => {
+    if (projectSubmenuCloseTimer.current) {
+      clearTimeout(projectSubmenuCloseTimer.current)
+      projectSubmenuCloseTimer.current = null
+    }
+  }, [])
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null)
+    setBranchSubmenuAnchor(null)
+    setProjectSubmenu(null)
+  }, [])
 
   const openBranchSub = useCallback(() => {
     if (branchCloseTimer.current) { clearTimeout(branchCloseTimer.current); branchCloseTimer.current = null }
+    if (projectSubmenuCloseTimer.current) { clearTimeout(projectSubmenuCloseTimer.current); projectSubmenuCloseTimer.current = null }
+    setProjectSubmenu(null)
     if (branchMenuRef.current) setBranchSubmenuAnchor(branchMenuRef.current.getBoundingClientRect())
   }, [])
 
@@ -469,6 +590,11 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     if (branchCloseTimer.current) { clearTimeout(branchCloseTimer.current); branchCloseTimer.current = null }
   }, [])
 
+  useEffect(() => () => {
+    if (branchCloseTimer.current) clearTimeout(branchCloseTimer.current)
+    if (projectSubmenuCloseTimer.current) clearTimeout(projectSubmenuCloseTimer.current)
+  }, [])
+
   const nonMainWorktrees = useMemo(
     () => (isAnonymous ? [] : worktrees.filter((w) => !w.isMain)),
     [isAnonymous, worktrees],
@@ -477,6 +603,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   const mainWorktree = useMemo(() => worktrees.find((w) => w.isMain), [worktrees])
 
   const sessions = useMemo(() => allSessions.filter((s) => s.projectId === project.id), [allSessions, project.id])
+  const runningSessionCount = useMemo(() => sessions.filter((s) => s.status === 'running').length, [sessions])
   const otherGroups = useMemo(
     () => (isAnonymous ? [] : allGroups.filter((g) => g.id !== project.groupId)),
     [allGroups, isAnonymous, project.groupId],
@@ -516,6 +643,33 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     setShowMenu(null)
   }, [isAnonymous, project.groupId, project.id, removeProject, removeProjectFromGroup])
 
+  const handleCreateSession = useCallback((type: SessionType) => {
+    selectProject(project.id)
+    setContextMenu(null)
+    setProjectSubmenu(null)
+    createSessionWithPrompt(
+      { projectId: project.id, type, worktreeId: getDefaultWorktreeIdForProject(project.id) },
+      (id) => {
+        usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
+        setActive(id)
+      },
+    )
+  }, [project.id, selectProject, setActive])
+
+  const handleStartTaskFromMenu = useCallback((bundle: TaskBundle) => {
+    setContextMenu(null)
+    setProjectSubmenu(null)
+    setTaskDialog(bundle)
+  }, [])
+
+  const handleMoveToGroup = useCallback((groupId: string) => {
+    removeProjectFromGroupFn(project.groupId, project.id)
+    addProjectToGroup(groupId, project.id)
+    moveProject(project.id, groupId)
+    setContextMenu(null)
+    setProjectSubmenu(null)
+  }, [addProjectToGroup, moveProject, project.groupId, project.id, removeProjectFromGroupFn])
+
   const handleApplyTemplate = useCallback((tid: string) => {
     const t = useTemplatesStore.getState().templates.find((x) => x.id === tid)
     if (!t) return
@@ -528,6 +682,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
       setActive(sid)
     }
     setContextMenu(null)
+    setProjectSubmenu(null)
   }, [project.id, selectProject, addSession, setActive])
 
   const handleToggleExpand = useCallback((e: React.MouseEvent) => {
@@ -559,7 +714,13 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         )}
         onClick={handleSelect}
         onDoubleClick={handleRowDoubleClick}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setBranchSubmenuAnchor(null)
+          setProjectSubmenu(null)
+          setContextMenu({ x: e.clientX, y: e.clientY })
+        }}
         onDragOver={(e) => {
           if (isAnonymous) return
           if (e.dataTransfer.types.includes('project-id')) {
@@ -588,6 +749,19 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
 
         <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]')} />
         <span className="flex-1 truncate text-[var(--ui-font-sm)] font-medium">{project.name}</span>
+        <span
+          className={cn(
+            'shrink-0 rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+            sessions.length > 0
+              ? 'border-[var(--color-border)] text-[var(--color-text-secondary)]'
+              : 'border-transparent text-[var(--color-text-tertiary)] opacity-60',
+          )}
+          title={runningSessionCount > 0
+            ? `${sessions.length} 个会话，${runningSessionCount} 个运行中`
+            : `${sessions.length} 个会话`}
+        >
+          {sessions.length}
+        </span>
 
         {/* Status indicators */}
         {hasOutputting && <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)]" />}
@@ -649,7 +823,7 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
       {/* Right-click context menu */}
       {contextMenu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => { setContextMenu(null); setBranchSubmenuAnchor(null) }} />
+          <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
           <div
             ref={(el) => {
               if (!el) return
@@ -663,24 +837,33 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             className={cn('fixed z-50 w-52 rounded-[var(--radius-md)] py-1', 'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30 max-h-[80vh] overflow-y-auto')}>
 
             {/* 新建会话 */}
-            <div className="px-3 py-1 border-b border-[var(--color-border)]">
-              <p className={SECTION_HEADER}>新建会话</p>
-            </div>
-            {SESSION_OPTS.map((opt) => (
-              <button key={opt.type} className={MENU_ITEM} onClick={() => {
-                selectProject(project.id)
+            <button
+              className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'sessions' && 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]')}
+              onMouseEnter={(e) => openProjectSubmenu('sessions', e.currentTarget)}
+              onMouseLeave={scheduleProjectSubmenuClose}
+            >
+              <span className="flex items-center gap-2"><PlusIcon size={12} /> 新建会话</span>
+              <ChevronRight size={12} />
+            </button>
+            <div className="border-t border-[var(--color-border)] mt-0.5" />
+            <button
+              className={cn(MENU_ITEM, visibleProjectId === project.id && 'text-[var(--color-accent)]')}
+              onClick={() => {
+                updateSettings({ visibleProjectId: project.id, visibleGroupId: null })
                 setContextMenu(null)
-                createSessionWithPrompt(
-                  { projectId: project.id, type: opt.type, worktreeId: getDefaultWorktreeIdForProject(project.id) },
-                  (id) => {
-                    usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
-                    setActive(id)
-                  },
-                )
-              }}>
-                <img src={opt.icon} alt="" className="h-3.5 w-3.5" />{opt.label}
-              </button>
-            ))}
+              }}
+            >
+              <Eye size={12} /> 只显示当前项目
+            </button>
+            <button
+              className={MENU_ITEM}
+              onClick={() => {
+                updateSettings({ visibleProjectId: null, visibleGroupId: null })
+                setContextMenu(null)
+              }}
+            >
+              <List size={12} /> 显示所有项目
+            </button>
 
             {!isAnonymous && (
               <>
@@ -738,28 +921,30 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {/* Start Task */}
             {bundles.length > 0 && (
               <>
-                <SectionDivider icon={Rocket} label="启动任务" />
-                {bundles.map((b) => (
-                  <button key={b.id} className={MENU_ITEM} onClick={() => { setContextMenu(null); setTaskDialog(b) }}>
-                    <Rocket size={11} /><span className="truncate">{b.name}</span>
-                    <span className="ml-auto text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{b.steps.length} 步</span>
-                  </button>
-                ))}
+                <div className="border-t border-[var(--color-border)] mt-0.5" />
+                <button
+                  className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'tasks' && 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]')}
+                  onMouseEnter={(e) => openProjectSubmenu('tasks', e.currentTarget)}
+                  onMouseLeave={scheduleProjectSubmenuClose}
+                >
+                  <span className="flex items-center gap-2"><Rocket size={11} /> 启动任务</span>
+                  <ChevronRight size={12} />
+                </button>
               </>
             )}
 
             {/* Move to */}
             {!isAnonymous && otherGroups.length > 0 && (
               <>
-                <SectionDivider icon={ArrowRightLeft} label="移动到" />
-                {otherGroups.map((g) => (
-                  <button key={g.id} className={MENU_ITEM} onClick={() => {
-                    removeProjectFromGroupFn(project.groupId, project.id); addProjectToGroup(g.id, project.id)
-                    moveProject(project.id, g.id); setContextMenu(null)
-                  }}>
-                    <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: g.color }} />{g.name}
-                  </button>
-                ))}
+                <div className="border-t border-[var(--color-border)] mt-0.5" />
+                <button
+                  className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'move' && 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]')}
+                  onMouseEnter={(e) => openProjectSubmenu('move', e.currentTarget)}
+                  onMouseLeave={scheduleProjectSubmenuClose}
+                >
+                  <span className="flex items-center gap-2"><ArrowRightLeft size={11} /> 移动到</span>
+                  <ChevronRight size={12} />
+                </button>
               </>
             )}
 
@@ -773,6 +958,19 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               <Trash2 size={12} /> 移除
             </button>
           </div>
+
+          {projectSubmenu && (
+            <ProjectContextSubmenu
+              submenu={projectSubmenu}
+              bundles={bundles}
+              groups={otherGroups}
+              onCreateSession={handleCreateSession}
+              onStartTask={handleStartTaskFromMenu}
+              onMoveToGroup={handleMoveToGroup}
+              onMouseEnter={cancelProjectSubmenuClose}
+              onMouseLeave={scheduleProjectSubmenuClose}
+            />
+          )}
 
           {/* Branch submenu (hover popup) */}
           {!isAnonymous && branchSubmenuAnchor && branchInfo && (

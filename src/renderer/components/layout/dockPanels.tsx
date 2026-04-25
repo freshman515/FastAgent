@@ -1,11 +1,12 @@
 import type { ComponentType } from 'react'
-import { Activity, Archive, Bot, Command, Files, GitBranch, History, Layers3, ListTodo, MessageSquareText, Network, Search, Sparkles, Clock } from 'lucide-react'
+import { Activity, Archive, Bot, Clock, Command, Files, GitBranch, History, Layers3, ListTodo, MessageSquareText, Network, Search, Sparkles, SquareKanban } from 'lucide-react'
 import type { DockPanelId } from '@/stores/ui'
 import claudeIcon from '@/assets/icons/Claude.png'
 import { ProjectsPanel } from '@/components/sidebar/ProjectsPanel'
 import { RecentSessionsPanel } from '@/components/sidebar/RecentSessionsPanel'
 import { SessionHistoryPanel } from '@/components/sidebar/SessionHistoryPanel'
 import { AgentMonitor } from '@/components/rightpanel/AgentMonitor'
+import { AgentBoard } from '@/components/rightpanel/AgentBoard'
 import { QuickCommands } from '@/components/rightpanel/QuickCommands'
 import { PromptManager } from '@/components/rightpanel/PromptManager'
 import { PromptOptimizerPanel } from '@/components/rightpanel/PromptOptimizerPanel'
@@ -53,6 +54,12 @@ export const DOCK_PANEL_DEFINITIONS: Record<DockPanelId, DockPanelDefinition> = 
     label: '代理监控',
     icon: Activity,
     render: () => <AgentMonitor />,
+  },
+  agentBoard: {
+    id: 'agentBoard',
+    label: 'Agent Board',
+    icon: SquareKanban,
+    render: () => <AgentBoard />,
   },
   tasks: {
     id: 'tasks',

@@ -121,6 +121,10 @@ function getAllLeafIds(node: PaneNode): string[] {
   return [...getAllLeafIds(node.first), ...getAllLeafIds(node.second)]
 }
 
+export function getPaneLeafIds(node: PaneNode): string[] {
+  return getAllLeafIds(node)
+}
+
 function getFirstLeafId(node: PaneNode): string {
   if (node.type === 'leaf') return node.id
   return getFirstLeafId(node.first)

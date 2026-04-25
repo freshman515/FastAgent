@@ -1,4 +1,4 @@
-import { X, ChevronUp, ChevronDown, Copy, ClipboardPaste, ListChecks, Search, Eraser } from 'lucide-react'
+import { X, ChevronUp, ChevronDown, Copy, ClipboardPaste, ListChecks, Search, Eraser, Mic } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { Session } from '@shared/types'
@@ -104,6 +104,22 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     await pasteFromClipboardRef.current?.()
   }, [pasteFromClipboardRef])
 
+  const doVoiceInput = useCallback(() => {
+    setContextMenu(null)
+    terminalRef.current?.focus()
+
+    if (window.api.platform !== 'win32') return
+
+    window.setTimeout(() => {
+      terminalRef.current?.focus()
+      void window.api.window.startVoiceInput().then((result) => {
+        if (!result.ok && result.error) {
+          console.warn('[voice-input] failed to start:', result.error)
+        }
+      })
+    }, 80)
+  }, [terminalRef])
+
   const doSelectAll = useCallback(() => {
     setContextMenu(null)
     terminalRef.current?.selectAll()
@@ -146,7 +162,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   }, [])
 
   const menuWidth = 200
-  const menuHeight = 234
+  const menuHeight = 274
   const contextMenuStyle = contextMenu
     ? {
         left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - menuWidth - 8)),
@@ -236,6 +252,18 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
                 粘贴
               </span>
               <span className="text-[10px] text-[var(--color-text-tertiary)]">Ctrl+V</span>
+            </button>
+            <button
+              type="button"
+              className={CONTEXT_MENU_ITEM}
+              onClick={doVoiceInput}
+              disabled={window.api.platform !== 'win32'}
+            >
+              <span className="flex items-center gap-2">
+                <Mic size={13} />
+                语音输入
+              </span>
+              <span className="text-[10px] text-[var(--color-text-tertiary)]">Win+H</span>
             </button>
             <div className="my-1 h-px bg-[var(--color-border)]" />
             <button

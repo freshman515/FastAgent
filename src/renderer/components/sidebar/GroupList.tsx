@@ -13,9 +13,15 @@ export function GroupList({ searchQuery = '' }: GroupListProps): JSX.Element {
   const groups = useGroupsStore((s) => s.groups)
   const projects = useProjectsStore((s) => s.projects)
   const visibleGroupId = useUIStore((s) => s.settings.visibleGroupId)
+  const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
   const normalizedQuery = searchQuery.trim().toLowerCase()
 
   const filteredGroups = useMemo(() => {
+    if (visibleProjectId) {
+      const visibleProject = projects.find((project) => project.id === visibleProjectId)
+      return visibleProject ? groups.filter((group) => group.id === visibleProject.groupId) : []
+    }
+
     let result = visibleGroupId ? groups.filter((g) => g.id === visibleGroupId) : groups
     if (normalizedQuery) {
       result = result.filter((g) => {
@@ -26,16 +32,20 @@ export function GroupList({ searchQuery = '' }: GroupListProps): JSX.Element {
       })
     }
     return result
-  }, [groups, normalizedQuery, projects, visibleGroupId])
+  }, [groups, normalizedQuery, projects, visibleGroupId, visibleProjectId])
 
   const ungroupedProjects = useMemo(() => {
-    if (visibleGroupId) return []
     const validGroupIds = new Set(groups.map((group) => group.id))
+    if (visibleProjectId) {
+      return projects.filter((project) => project.id === visibleProjectId && !validGroupIds.has(project.groupId))
+    }
+
+    if (visibleGroupId) return []
     return projects.filter((project) => {
       if (validGroupIds.has(project.groupId)) return false
       return !normalizedQuery || project.name.toLowerCase().includes(normalizedQuery)
     })
-  }, [groups, normalizedQuery, projects, visibleGroupId])
+  }, [groups, normalizedQuery, projects, visibleGroupId, visibleProjectId])
 
   if (filteredGroups.length === 0 && ungroupedProjects.length === 0) {
     return (

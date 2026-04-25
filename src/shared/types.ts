@@ -717,6 +717,7 @@ export const IPC = {
   WINDOW_IS_MAXIMIZED: 'window:is-maximized',
   WINDOW_SET_FULLSCREEN: 'window:set-fullscreen',
   WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
+  WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
 
   DIALOG_SELECT_FOLDER: 'dialog:select-folder',
   SHELL_OPEN_PATH: 'shell:open-path',

@@ -53,6 +53,8 @@ const api = {
     isMaximized: () => ipcRenderer.invoke(IPC.WINDOW_IS_MAXIMIZED) as Promise<boolean>,
     setFullscreen: (fullscreen: boolean) => ipcRenderer.invoke(IPC.WINDOW_SET_FULLSCREEN, fullscreen) as Promise<boolean>,
     isFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_IS_FULLSCREEN) as Promise<boolean>,
+    startVoiceInput: () =>
+      ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
   },
 
   dialog: {
