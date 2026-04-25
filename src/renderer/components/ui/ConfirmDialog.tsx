@@ -16,10 +16,10 @@ export function ConfirmDialog({
 }: ConfirmDialogProps): JSX.Element {
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[300] bg-black/40" onClick={onCancel} />
+      <div className="fixed inset-0 z-[9500] bg-black/40" onClick={onCancel} />
       <div
         className={cn(
-          'fixed left-1/2 top-1/2 z-[301] w-[340px] -translate-x-1/2 -translate-y-1/2',
+          'fixed left-1/2 top-1/2 z-[9501] w-[340px] -translate-x-1/2 -translate-y-1/2',
           'rounded-[var(--radius-xl)]',
           'bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/40 p-5',
           'animate-[fade-in_0.1s_ease-out]',

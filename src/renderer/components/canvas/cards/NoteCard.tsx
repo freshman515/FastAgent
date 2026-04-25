@@ -1,13 +1,29 @@
 import { useCanvasStore } from '@/stores/canvas'
+import { cn } from '@/lib/utils'
 import type { CanvasCard } from '@shared/types'
 import { CardFrame, type CardCoordinateMode } from './CardFrame'
 
-const NOTE_COLORS: Record<string, { label: string; bg: string; border: string }> = {
-  yellow: { label: '黄', bg: 'color-mix(in srgb, #fde68a 20%, var(--color-bg-primary))', border: '#fde68a' },
-  blue: { label: '蓝', bg: 'color-mix(in srgb, #93c5fd 18%, var(--color-bg-primary))', border: '#93c5fd' },
-  green: { label: '绿', bg: 'color-mix(in srgb, #86efac 18%, var(--color-bg-primary))', border: '#86efac' },
-  pink: { label: '粉', bg: 'color-mix(in srgb, #f9a8d4 18%, var(--color-bg-primary))', border: '#f9a8d4' },
-  gray: { label: '灰', bg: 'var(--color-bg-surface)', border: 'var(--color-border)' },
+const NOTE_COLORS: Record<string, { label: string; accent: string }> = {
+  yellow: {
+    label: '黄',
+    accent: '#fbbf24',
+  },
+  blue: {
+    label: '蓝',
+    accent: '#60a5fa',
+  },
+  green: {
+    label: '绿',
+    accent: '#4ade80',
+  },
+  pink: {
+    label: '粉',
+    accent: '#f472b6',
+  },
+  gray: {
+    label: '灰',
+    accent: 'var(--color-text-tertiary)',
+  },
 }
 
 interface NoteCardProps {
@@ -23,10 +39,10 @@ export function NoteCard({ card, coordinateMode }: NoteCardProps): JSX.Element {
   const title = (
     <span className="flex items-center gap-2">
       <span
-        className="h-2 w-2 rounded-full"
-        style={{ backgroundColor: color.border }}
+        className="h-2.5 w-2.5 rounded-full shadow-sm"
+        style={{ backgroundColor: color.accent, boxShadow: `0 0 0 3px color-mix(in srgb, ${color.accent} 18%, transparent)` }}
       />
-      <span className="text-[var(--color-text-tertiary)]">便签</span>
+      <span className="font-medium text-[var(--color-text-secondary)]">便签</span>
     </span>
   )
 
@@ -37,8 +53,11 @@ export function NoteCard({ card, coordinateMode }: NoteCardProps): JSX.Element {
           key={key}
           type="button"
           onClick={(e) => { e.stopPropagation(); updateCard(card.id, { noteColor: key }) }}
-          className="h-4 w-4 rounded-full border"
-          style={{ backgroundColor: value.border, borderColor: value.border }}
+          className={cn(
+            'h-4 w-4 rounded-full border transition-transform hover:scale-110',
+            (card.noteColor ?? 'yellow') === key && 'scale-110 ring-1 ring-white/40',
+          )}
+          style={{ backgroundColor: value.accent, borderColor: value.accent }}
           title={value.label}
         />
       ))}
@@ -54,13 +73,21 @@ export function NoteCard({ card, coordinateMode }: NoteCardProps): JSX.Element {
       minWidth={160}
       minHeight={120}
       coordinateMode={coordinateMode}
+      focusOnClick
+      showSelectionRing={false}
+      frameClassName="canvas-note-frame"
+      headerClassName="canvas-note-header"
+      bodyClassName="canvas-note-body"
+      frameStyleOverride={{
+        background: 'var(--color-terminal-bg)',
+        borderColor: 'var(--color-border)',
+      }}
     >
       <textarea
         value={card.noteBody ?? ''}
         onChange={(e) => updateCard(card.id, { noteBody: e.target.value })}
         placeholder="写点什么..."
-        className="h-full w-full resize-none border-0 bg-transparent p-3 text-[var(--ui-font-sm)] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
-        style={{ backgroundColor: color.bg }}
+        className="h-full w-full resize-none border-0 bg-transparent px-4 pb-4 pt-3 text-[var(--ui-font-sm)] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
       />
     </CardFrame>
   )

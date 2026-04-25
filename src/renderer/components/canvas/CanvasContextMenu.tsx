@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { SessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { createSessionWithPrompt } from '@/lib/createSession'
 import { useCanvasStore } from '@/stores/canvas'
+import { usePanesStore } from '@/stores/panes'
+import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
+import { SESSION_OPTIONS } from '@/components/session/NewSessionMenu'
 
 export type CanvasContextMenuState =
   | {
@@ -26,6 +33,7 @@ interface CanvasContextMenuProps {
 
 export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
+  const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null)
 
   useEffect(() => {
     const onDown = (event: MouseEvent): void => {
@@ -42,17 +50,63 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[400] min-w-[180px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
+      className="fixed z-[400] min-w-[180px] overflow-visible rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
       style={{ left: state.screenX, top: state.screenY }}
     >
       {items.map((item, index) => (
         item.kind === 'separator' ? (
           <div key={index} className="my-1 h-px bg-[var(--color-border)]" />
+        ) : item.kind === 'submenu' ? (
+          <div
+            key={index}
+            className="relative"
+            onMouseEnter={() => setOpenSubmenuIndex(index)}
+          >
+            <button
+              type="button"
+              disabled={item.disabled}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--ui-font-sm)] transition-colors',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
+                'disabled:cursor-not-allowed disabled:opacity-40',
+              )}
+            >
+              <span className="flex-1">{item.label}</span>
+              <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">›</span>
+            </button>
+            {openSubmenuIndex === index && !item.disabled && (
+              <div className="absolute left-full top-0 ml-1 min-w-[190px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl">
+                {item.items.map((child) => (
+                  <button
+                    key={child.label}
+                    type="button"
+                    onClick={() => { child.onClick(); onClose() }}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 px-3 py-2 text-left text-[var(--ui-font-sm)] transition-colors',
+                      'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
+                    )}
+                  >
+                    {child.checked !== undefined && (
+                      <span className={cn(
+                        'w-3 shrink-0 text-center text-[var(--color-accent)]',
+                        child.checked ? 'opacity-100' : 'opacity-0',
+                      )}>
+                        ✓
+                      </span>
+                    )}
+                    {child.icon && <img src={child.icon} alt="" className="h-4 w-4 shrink-0" />}
+                    <span className="flex-1">{child.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <button
             key={index}
             type="button"
             disabled={item.disabled}
+            onMouseEnter={() => setOpenSubmenuIndex(null)}
             onClick={() => { item.onClick(); onClose() }}
             className={cn(
               'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--ui-font-sm)] transition-colors',
@@ -62,6 +116,14 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
               'hover:bg-[var(--color-bg-hover)] disabled:cursor-not-allowed disabled:opacity-40',
             )}
           >
+            {item.checked !== undefined && (
+              <span className={cn(
+                'w-3 shrink-0 text-center text-[var(--color-accent)]',
+                item.checked ? 'opacity-100' : 'opacity-0',
+              )}>
+                ✓
+              </span>
+            )}
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
               <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{item.shortcut}</span>
@@ -76,7 +138,19 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
 
 type MenuItem =
   | { kind: 'separator' }
-  | { kind: 'item'; label: string; onClick: () => void; disabled?: boolean; danger?: boolean; shortcut?: string }
+  | ActionMenuItem
+  | { kind: 'submenu'; label: string; items: ActionMenuItem[]; disabled?: boolean }
+
+type ActionMenuItem = {
+  kind: 'item'
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  danger?: boolean
+  shortcut?: string
+  icon?: string
+  checked?: boolean
+}
 
 function buildMenuItems(state: CanvasContextMenuState, onClose: () => void): MenuItem[] {
   if (state.target === 'canvas') {
@@ -92,6 +166,14 @@ function buildCanvasItems(
   const addCard = useCanvasStore.getState().addCard
   const fitAll = useCanvasStore.getState().fitAll
   const arrange = useCanvasStore.getState().arrange
+  const ui = useUIStore.getState()
+  const { canvasArrangeMode, canvasArrangeConstrained } = ui.settings
+  const updateSettings = ui.updateSettings
+  const projectId = useProjectsStore.getState().selectedProjectId
+  const setArrangeMode = (mode: CanvasArrangeMode): void => {
+    updateSettings({ canvasArrangeMode: mode })
+    if (mode !== 'free') arrange(mode)
+  }
 
   return [
     {
@@ -105,11 +187,30 @@ function buildCanvasItems(
         noteColor: 'yellow',
       }),
     },
+    {
+      kind: 'submenu',
+      label: projectId ? '新建会话' : '新建会话（未选择项目）',
+      disabled: !projectId,
+      items: projectId ? SESSION_OPTIONS.map((option) => ({
+        kind: 'item',
+        label: option.label,
+        icon: option.icon,
+        onClick: () => createCanvasSession(projectId, option.type, state.worldX, state.worldY),
+      })) : [],
+    },
     { kind: 'separator' },
-    { kind: 'item', label: '自动排列 · 网格', onClick: () => arrange('grid') },
-    { kind: 'item', label: '自动排列 · 横向流', onClick: () => arrange('rowFlow') },
-    { kind: 'item', label: '自动排列 · 纵向流', onClick: () => arrange('colFlow') },
-    { kind: 'item', label: '紧凑打包', onClick: () => arrange('pack') },
+    { kind: 'item', label: '自由排列', checked: canvasArrangeMode === 'free', onClick: () => setArrangeMode('free') },
+    { kind: 'item', label: '网格排列', checked: canvasArrangeMode === 'grid', onClick: () => setArrangeMode('grid') },
+    { kind: 'item', label: '横向排列', checked: canvasArrangeMode === 'rowFlow', onClick: () => setArrangeMode('rowFlow') },
+    { kind: 'item', label: '纵向排列', checked: canvasArrangeMode === 'colFlow', onClick: () => setArrangeMode('colFlow') },
+    {
+      kind: 'item',
+      label: '排列约束',
+      checked: canvasArrangeConstrained,
+      shortcut: canvasArrangeConstrained ? '开' : '关',
+      onClick: () => updateSettings({ canvasArrangeConstrained: !canvasArrangeConstrained }),
+    },
+    { kind: 'item', label: '紧凑打包', onClick: () => { updateSettings({ canvasArrangeMode: 'free' }); arrange('pack') } },
     { kind: 'separator' },
     {
       kind: 'item',
@@ -122,6 +223,25 @@ function buildCanvasItems(
     },
     { kind: 'item', label: '重置视图', onClick: () => useCanvasStore.getState().resetViewport() },
   ]
+}
+
+function createCanvasSession(projectId: string, type: SessionType, worldX: number, worldY: number): void {
+  const worktreeId = getDefaultWorktreeIdForProject(projectId)
+  const cardKind = type === 'terminal' ? 'terminal' : 'session'
+  const cardSize = cardKind === 'terminal'
+    ? { width: 880, height: 560 }
+    : { width: 520, height: 640 }
+
+  createSessionWithPrompt({ projectId, type, worktreeId }, (sessionId) => {
+    const paneStore = usePanesStore.getState()
+    paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
+
+    useSessionsStore.getState().setActive(sessionId)
+    useCanvasStore.getState().attachSession(sessionId, cardKind, {
+      x: worldX - cardSize.width / 2,
+      y: worldY - cardSize.height / 2,
+    })
+  })
 }
 
 function buildCardItems(

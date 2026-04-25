@@ -22,6 +22,10 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const [confirmKill, setConfirmKill] = useState(false)
 
   if (!session) return null
+  const frameCoordinateMode =
+    coordinateMode === 'screen' && session.type !== 'claude-gui'
+      ? 'screen-transform'
+      : coordinateMode
 
   const config = SESSION_TYPE_CONFIG[session.type]
   const title = (
@@ -71,7 +75,8 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
         borderless
         frameClassName="canvas-session-frame"
         bodyClassName={session.type === 'claude-gui' ? 'bg-[var(--color-bg-secondary)]' : 'bg-[var(--color-terminal-bg)]'}
-        coordinateMode={coordinateMode}
+        coordinateMode={frameCoordinateMode}
+        focusOnClick
       >
         {session.type === 'claude-gui' ? (
           <div className="h-full w-full overflow-hidden">

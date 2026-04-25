@@ -45,12 +45,12 @@ export function SessionNamePromptDialog(): JSX.Element | null {
     <>
       {/* Backdrop with blur */}
       <div
-        className="fixed inset-0 z-[300] bg-black/50 backdrop-blur-[2px] animate-[fade-in_0.12s_ease-out]"
+        className="fixed inset-0 z-[9500] bg-black/50 backdrop-blur-[2px] animate-[fade-in_0.12s_ease-out]"
         onClick={handleCancel}
       />
       <div
         className={cn(
-          'fixed left-1/2 top-1/2 z-[301] w-[420px] -translate-x-1/2 -translate-y-1/2',
+          'fixed left-1/2 top-1/2 z-[9501] w-[420px] -translate-x-1/2 -translate-y-1/2',
           'overflow-hidden rounded-[var(--radius-xl)]',
           'border border-[var(--color-border)]',
           'bg-[var(--color-bg-secondary)]',

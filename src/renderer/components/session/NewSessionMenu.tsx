@@ -9,13 +9,13 @@ import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 
-interface SessionOption {
+export interface SessionOption {
   type: SessionType
   label: string
   icon: string
 }
 
-const SESSION_OPTIONS: SessionOption[] = [
+export const SESSION_OPTIONS: SessionOption[] = [
   { type: 'terminal', label: '终端', icon: terminalIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },

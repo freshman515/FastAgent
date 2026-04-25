@@ -5,7 +5,7 @@ import { useCardDrag } from '../hooks/useCardDrag'
 import { useCardResize, type ResizeHandle } from '../hooks/useCardResize'
 import type { CanvasCard } from '@shared/types'
 
-export type CardCoordinateMode = 'world' | 'screen'
+export type CardCoordinateMode = 'world' | 'screen' | 'screen-transform'
 
 interface CardFrameProps {
   card: CanvasCard
@@ -18,7 +18,11 @@ interface CardFrameProps {
   borderless?: boolean
   bodyClassName?: string
   frameClassName?: string
+  headerClassName?: string
+  frameStyleOverride?: React.CSSProperties
   coordinateMode?: CardCoordinateMode
+  focusOnClick?: boolean
+  showSelectionRing?: boolean
 }
 
 const RESIZE_HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
@@ -69,17 +73,33 @@ export function CardFrame({
   borderless = false,
   bodyClassName,
   frameClassName,
+  headerClassName,
+  frameStyleOverride,
   coordinateMode = 'world',
+  focusOnClick = false,
+  showSelectionRing = true,
 }: CardFrameProps): JSX.Element {
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null)
   const outerRef = useRef<HTMLDivElement | null>(null)
-  useCardDrag({ cardId: card.id, element: hostEl })
+  const clickStartRef = useRef<{ x: number; y: number } | null>(null)
+  useCardDrag({ cardId: card.id, element: hostEl, enableDoubleClickFocus: !focusOnClick })
   useCardResize({ cardId: card.id, element: hostEl, minWidth, minHeight, coordinateMode })
   const selected = useCanvasStore((state) => state.selectedCardIds.includes(card.id))
-  const viewport = useCanvasStore((state) => coordinateMode === 'screen' ? state.getLayout().viewport : null)
+  const viewport = useCanvasStore((state) => coordinateMode.startsWith('screen') ? state.getLayout().viewport : null)
 
-  const frameStyle: React.CSSProperties = viewport
-    ? {
+  const baseFrameStyle: React.CSSProperties = viewport
+    ? coordinateMode === 'screen-transform'
+      ? {
+        left: Math.round(card.x * viewport.scale + viewport.offsetX),
+        top: Math.round(card.y * viewport.scale + viewport.offsetY),
+        width: card.width,
+        height: card.height,
+        zIndex: card.zIndex,
+        contain: 'layout paint style',
+        transform: `translate(var(--card-live-dx, 0px), var(--card-live-dy, 0px)) scale(${viewport.scale})`,
+        transformOrigin: 'top left',
+      }
+      : {
         left: Math.round(card.x * viewport.scale + viewport.offsetX),
         top: Math.round(card.y * viewport.scale + viewport.offsetY),
         width: Math.max(1, Math.round(card.width * viewport.scale)),
@@ -95,20 +115,49 @@ export function CardFrame({
         zIndex: card.zIndex,
         contain: 'layout paint style',
       }
+  const frameStyle = frameStyleOverride
+    ? { ...baseFrameStyle, ...frameStyleOverride }
+    : baseFrameStyle
 
   useEffect(() => {
     if (outerRef.current) setHostEl(outerRef.current)
   }, [])
+
+  const handlePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>): void => {
+    clickStartRef.current = focusOnClick && event.button === 0
+      ? { x: event.clientX, y: event.clientY }
+      : null
+  }
+
+  const handleClickCapture = (event: React.MouseEvent<HTMLDivElement>): void => {
+    if (!focusOnClick || event.button !== 0) return
+    const clickStart = clickStartRef.current
+    clickStartRef.current = null
+    if (clickStart && Math.hypot(event.clientX - clickStart.x, event.clientY - clickStart.y) > 8) return
+
+    const target = event.target as HTMLElement | null
+    if (target?.closest('[data-card-control],[data-card-resize]')) return
+
+    const canvas = useCanvasStore.getState()
+    if (canvas.focusReturn?.cardId === card.id) {
+      canvas.setSelection([card.id])
+      canvas.bringToFront(card.id)
+      return
+    }
+    canvas.focusOnCard(card.id)
+  }
 
   return (
     <div
       ref={outerRef}
       data-card-id={card.id}
       data-card-coordinate-mode={coordinateMode}
+      onPointerDownCapture={handlePointerDownCapture}
+      onClickCapture={handleClickCapture}
       className={cn(
         'pointer-events-auto absolute flex flex-col rounded-[var(--radius-lg)] bg-[var(--color-bg-primary)] shadow-lg',
         !borderless && 'border',
-        selected
+        selected && showSelectionRing
           ? cn(!borderless && 'border-[var(--color-accent)]', 'ring-2 ring-[var(--color-accent-muted)]')
           : !borderless && 'border-[var(--color-border)]',
         frameClassName,
@@ -121,6 +170,7 @@ export function CardFrame({
         className={cn(
           'flex h-9 shrink-0 cursor-grab items-center justify-between gap-2 rounded-t-[var(--radius-lg)] bg-[var(--color-bg-surface)] px-3 select-none',
           !borderless && 'border-b border-[var(--color-border)]',
+          headerClassName,
         )}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]">

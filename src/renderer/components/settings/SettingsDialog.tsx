@@ -1,7 +1,8 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { useUIStore, type AppSettings } from '@/stores/ui'
+import { useUIStore, type AppSettings, type CanvasArrangeMode } from '@/stores/ui'
+import { useCanvasStore } from '@/stores/canvas'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui'
 import { useGroupsStore } from '@/stores/groups'
@@ -239,6 +240,11 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
     setConfirmClearSessionsOpen(false)
   }, [])
 
+  const handleCanvasArrangeMode = (mode: CanvasArrangeMode): void => {
+    onUpdate('canvasArrangeMode', mode)
+    if (mode !== 'free') useCanvasStore.getState().arrange(mode)
+  }
+
   return (
     <div className={PAGE_STACK}>
       <PageIntro
@@ -336,6 +342,30 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
               description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘"
               checked={settings.canvasSnapEnabled}
               onChange={(v) => onUpdate('canvasSnapEnabled', v)}
+            />
+            <SegmentedChoice
+              value={settings.canvasArrangeMode}
+              options={[
+                { id: 'free', label: '自由排列', desc: '任意移动卡片' },
+                { id: 'grid', label: '网格排列', desc: '按网格重排' },
+                { id: 'rowFlow', label: '横向排列', desc: '保持单行顺序' },
+                { id: 'colFlow', label: '纵向排列', desc: '保持单列顺序' },
+              ]}
+              onChange={handleCanvasArrangeMode}
+            />
+            <ToggleRow
+              label="排列约束"
+              description="启用后拖拽只调整当前排列顺序，不把横向、纵向或网格模式拖变形"
+              checked={settings.canvasArrangeConstrained}
+              onChange={(v) => onUpdate('canvasArrangeConstrained', v)}
+            />
+            <SegmentedChoice
+              value={settings.canvasOverlapMode}
+              options={[
+                { id: 'free', label: '允许重叠', desc: '卡片可自由覆盖，保持当前行为' },
+                { id: 'avoid', label: '避免重叠', desc: '拖动时自动推开相邻卡片' },
+              ]}
+              onChange={(v) => onUpdate('canvasOverlapMode', v)}
             />
             <ToggleRow
               label="显示缩略图"
@@ -1350,10 +1380,10 @@ export function SettingsDialog(): JSX.Element | null {
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] bg-black/40" onClick={close} />
+      <div className="fixed inset-0 z-[9000] bg-black/40" onClick={close} />
       <div
         className={cn(
-          'fixed left-1/2 top-1/2 z-[101] flex -translate-x-1/2 -translate-y-1/2',
+          'fixed left-1/2 top-1/2 z-[9001] flex -translate-x-1/2 -translate-y-1/2',
           'w-[calc(100vw-40px)] h-[calc(100vh-40px)] overflow-hidden',
           'rounded-[var(--radius-xl)] border border-[var(--color-border)]',
           'bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/40',

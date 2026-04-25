@@ -114,6 +114,12 @@ export function useCardResize({
           cardEl.style.top = `${Math.round(nextY * viewport.scale + viewport.offsetY)}px`
           cardEl.style.width = `${Math.max(1, Math.round(nextWidth * viewport.scale))}px`
           cardEl.style.height = `${Math.max(1, Math.round(nextHeight * viewport.scale))}px`
+        } else if (coordinateMode === 'screen-transform') {
+          const viewport = useCanvasStore.getState().getLayout().viewport
+          cardEl.style.left = `${Math.round(nextX * viewport.scale + viewport.offsetX)}px`
+          cardEl.style.top = `${Math.round(nextY * viewport.scale + viewport.offsetY)}px`
+          cardEl.style.width = `${nextWidth}px`
+          cardEl.style.height = `${nextHeight}px`
         } else {
           cardEl.style.left = `${nextX}px`
           cardEl.style.top = `${nextY}px`

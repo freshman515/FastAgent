@@ -1,8 +1,8 @@
-import { StickyNote, Maximize2, RotateCcw, Grid3x3, Magnet, LayoutGrid } from 'lucide-react'
+import { StickyNote, Maximize2, RotateCcw, Grid3x3, Magnet, LayoutGrid, Lock } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useCanvasStore } from '@/stores/canvas'
-import { useUIStore } from '@/stores/ui'
+import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 
 interface CanvasToolbarProps {
   viewportRef: React.RefObject<HTMLDivElement | null>
@@ -17,6 +17,9 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
 
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const snapEnabled = useUIStore((state) => state.settings.canvasSnapEnabled)
+  const overlapMode = useUIStore((state) => state.settings.canvasOverlapMode)
+  const arrangeMode = useUIStore((state) => state.settings.canvasArrangeMode)
+  const arrangeConstrained = useUIStore((state) => state.settings.canvasArrangeConstrained)
   const updateSettings = useUIStore((state) => state.updateSettings)
 
   const [arrangeOpen, setArrangeOpen] = useState(false)
@@ -57,8 +60,15 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
       : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
   )
 
-  const handleArrange = (kind: 'grid' | 'rowFlow' | 'colFlow' | 'pack'): void => {
-    arrange(kind)
+  const handleArrangeMode = (mode: CanvasArrangeMode): void => {
+    updateSettings({ canvasArrangeMode: mode })
+    if (mode !== 'free') arrange(mode)
+    setArrangeOpen(false)
+  }
+
+  const handlePack = (): void => {
+    updateSettings({ canvasArrangeMode: 'free' })
+    arrange('pack')
     setArrangeOpen(false)
   }
 
@@ -73,20 +83,33 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
         <button
           type="button"
           onClick={() => setArrangeOpen((prev) => !prev)}
-          className={btn(arrangeOpen)}
-          title="自动排列"
+          className={btn(arrangeOpen || arrangeMode !== 'free')}
+          title={`排列模式：${getArrangeModeLabel(arrangeMode)}`}
         >
           <LayoutGrid size={16} />
         </button>
         {arrangeOpen && (
-          <div className="absolute bottom-full left-0 mb-1 min-w-[160px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl">
-            <ArrangeItem label="网格" onClick={() => handleArrange('grid')} />
-            <ArrangeItem label="横向流" onClick={() => handleArrange('rowFlow')} />
-            <ArrangeItem label="纵向流" onClick={() => handleArrange('colFlow')} />
-            <ArrangeItem label="紧凑打包" onClick={() => handleArrange('pack')} />
+          <div className="absolute bottom-full left-0 mb-1 min-w-[168px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl">
+            <ArrangeItem label="自由排列" checked={arrangeMode === 'free'} onClick={() => handleArrangeMode('free')} />
+            <ArrangeItem label="网格排列" checked={arrangeMode === 'grid'} onClick={() => handleArrangeMode('grid')} />
+            <ArrangeItem label="横向排列" checked={arrangeMode === 'rowFlow'} onClick={() => handleArrangeMode('rowFlow')} />
+            <ArrangeItem label="纵向排列" checked={arrangeMode === 'colFlow'} onClick={() => handleArrangeMode('colFlow')} />
+            <div className="my-1 h-px bg-[var(--color-border)]" />
+            <ArrangeItem label="紧凑打包" onClick={handlePack} />
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={() => updateSettings({ canvasArrangeConstrained: !arrangeConstrained })}
+        className={btn(arrangeConstrained)}
+        title={arrangeConstrained
+          ? `排列约束已启用：拖拽只调整${getArrangeModeLabel(arrangeMode)}顺序`
+          : '启用排列约束：拖拽只调整顺序，不改变排列模式'}
+      >
+        <Lock size={16} />
+      </button>
 
       <button type="button" onClick={handleFitAll} className={btn(false)} title="适配所有内容">
         <Maximize2 size={16} />
@@ -110,6 +133,19 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
       >
         <Magnet size={16} />
       </button>
+      <button
+        type="button"
+        onClick={() => updateSettings({ canvasOverlapMode: overlapMode === 'avoid' ? 'free' : 'avoid' })}
+        className={cn(
+          'flex h-8 min-w-12 items-center justify-center rounded-[var(--radius-md)] px-2 text-[var(--ui-font-2xs)] font-medium transition-colors',
+          overlapMode === 'avoid'
+            ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
+        )}
+        title={overlapMode === 'avoid' ? '当前：避免重叠。点击切换为允许重叠' : '当前：允许重叠。点击切换为避免重叠'}
+      >
+        {overlapMode === 'avoid' ? '避让' : '重叠'}
+      </button>
       <div className="mx-0.5 h-6 w-px bg-[var(--color-border)]" />
       <span
         className="px-2 text-[var(--ui-font-xs)] font-mono text-[var(--color-text-tertiary)]"
@@ -121,14 +157,24 @@ export function CanvasToolbar({ viewportRef }: CanvasToolbarProps): JSX.Element 
   )
 }
 
-function ArrangeItem({ label, onClick }: { label: string; onClick: () => void }): JSX.Element {
+function ArrangeItem({ label, checked, onClick }: { label: string; checked?: boolean; onClick: () => void }): JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
     >
-      {label}
+      <span className={cn('w-3 shrink-0 text-center text-[var(--color-accent)]', checked ? 'opacity-100' : 'opacity-0')}>✓</span>
+      <span className="flex-1">{label}</span>
     </button>
   )
+}
+
+function getArrangeModeLabel(mode: CanvasArrangeMode): string {
+  switch (mode) {
+    case 'grid': return '网格排列'
+    case 'rowFlow': return '横向排列'
+    case 'colFlow': return '纵向排列'
+    case 'free': return '自由排列'
+  }
 }

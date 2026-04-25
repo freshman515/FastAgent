@@ -167,7 +167,41 @@ export function useXterm(
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const pasteFromClipboardRef = useRef<(() => Promise<void>) | null>(null)
   const sessionRef = useRef(session)
+  const lastPtyDimensionsRef = useRef<{ ptyId: string; cols: number; rows: number } | null>(null)
+  const pendingPtyResizeRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   sessionRef.current = session
+
+  const requestPtyResize = (
+    ptyId: string,
+    cols: number,
+    rows: number,
+    debounceMs = 120,
+  ): void => {
+    if (cols <= 0 || rows <= 0) return
+
+    const last = lastPtyDimensionsRef.current
+    if (last?.ptyId === ptyId && last.cols === cols && last.rows === rows) return
+
+    if (pendingPtyResizeRef.current) {
+      clearTimeout(pendingPtyResizeRef.current)
+      pendingPtyResizeRef.current = null
+    }
+
+    const send = (): void => {
+      pendingPtyResizeRef.current = null
+      const latest = lastPtyDimensionsRef.current
+      if (latest?.ptyId === ptyId && latest.cols === cols && latest.rows === rows) return
+      lastPtyDimensionsRef.current = { ptyId, cols, rows }
+      window.api.session.resize(ptyId, cols, rows)
+    }
+
+    if (debounceMs <= 0) {
+      send()
+      return
+    }
+
+    pendingPtyResizeRef.current = setTimeout(send, debounceMs)
+  }
 
   // Track when project/worktree stores have enough data to resolve cwd.
   // On startup the stores may hydrate a microtask after this hook mounts;
@@ -356,7 +390,7 @@ export function useXterm(
         container,
         ({ cols, rows }) => {
           if (ptyId) {
-            window.api.session.resize(ptyId, cols, rows)
+            requestPtyResize(ptyId, cols, rows)
           }
         },
         focus,
@@ -646,7 +680,7 @@ export function useXterm(
     // Resize
     const onResizeDisposable = terminal.onResize(({ cols, rows }) => {
       if (ptyId) {
-        window.api.session.resize(ptyId, cols, rows)
+        requestPtyResize(ptyId, cols, rows)
       }
     })
 
@@ -698,6 +732,10 @@ export function useXterm(
       for (const cleanup of repaintCleanups) {
         cleanup()
       }
+      if (pendingPtyResizeRef.current) {
+        clearTimeout(pendingPtyResizeRef.current)
+        pendingPtyResizeRef.current = null
+      }
       terminal.dispose()
       // NOTE: Do NOT kill PTY here. PTY lifecycle is independent of the React component.
       // PTY is killed explicitly via session.kill() when user closes a tab.
@@ -715,7 +753,7 @@ export function useXterm(
       ({ cols, rows }) => {
         const currentPtyId = sessionRef.current.ptyId
         if (currentPtyId) {
-          window.api.session.resize(currentPtyId, cols, rows)
+          requestPtyResize(currentPtyId, cols, rows)
         }
       },
       true,
@@ -741,7 +779,7 @@ export function useXterm(
       if (dimensions) {
         const currentPtyId = sessionRef.current.ptyId
         if (currentPtyId) {
-          window.api.session.resize(currentPtyId, dimensions.cols, dimensions.rows)
+          requestPtyResize(currentPtyId, dimensions.cols, dimensions.rows)
         }
       }
     })

@@ -11,6 +11,7 @@ export type DockPanelId = 'projects' | 'recentSessions' | 'sessionHistory' | 'ag
 export type TodoPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
+export type CanvasArrangeMode = 'free' | 'grid' | 'rowFlow' | 'colFlow'
 
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
@@ -162,6 +163,12 @@ export interface AppSettings {
   canvasGridEnabled: boolean
   /** Snap card movement to the grid / sibling edges */
   canvasSnapEnabled: boolean
+  /** 'free' = cards may overlap, 'avoid' = cards push each other away while dragging */
+  canvasOverlapMode: 'free' | 'avoid'
+  /** Current visible canvas arrangement mode. */
+  canvasArrangeMode: CanvasArrangeMode
+  /** Keep the selected canvas arrangement while dragging; drag only changes order. */
+  canvasArrangeConstrained: boolean
   /** Show the minimap overlay on the canvas */
   canvasShowMinimap: boolean
 }
@@ -220,6 +227,9 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   workspaceLayout: 'panes',
   canvasGridEnabled: true,
   canvasSnapEnabled: true,
+  canvasOverlapMode: 'free',
+  canvasArrangeMode: 'free',
+  canvasArrangeConstrained: false,
   canvasShowMinimap: true,
 }
 
@@ -1021,6 +1031,11 @@ export const useUIStore = create<UIState>((set, get) => ({
       }
       if (typeof raw.canvasGridEnabled === 'boolean') s.canvasGridEnabled = raw.canvasGridEnabled
       if (typeof raw.canvasSnapEnabled === 'boolean') s.canvasSnapEnabled = raw.canvasSnapEnabled
+      if (raw.canvasOverlapMode === 'free' || raw.canvasOverlapMode === 'avoid') s.canvasOverlapMode = raw.canvasOverlapMode
+      if (raw.canvasArrangeMode === 'free' || raw.canvasArrangeMode === 'grid' || raw.canvasArrangeMode === 'rowFlow' || raw.canvasArrangeMode === 'colFlow') {
+        s.canvasArrangeMode = raw.canvasArrangeMode
+      }
+      if (typeof raw.canvasArrangeConstrained === 'boolean') s.canvasArrangeConstrained = raw.canvasArrangeConstrained
       if (typeof raw.canvasShowMinimap === 'boolean') s.canvasShowMinimap = raw.canvasShowMinimap
       if (typeof raw.terminalTheme === 'string') s.terminalTheme = raw.terminalTheme
       // Prefer the dedicated top-level customThemes key (more robust against ui-settings resets)

@@ -144,7 +144,7 @@ export function CanvasWorkspace(): JSX.Element {
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[var(--color-bg-primary)]">
+    <div className="relative isolate h-full w-full overflow-hidden bg-[var(--color-bg-primary)]">
       {/* Viewport (screen-space) — captures wheel/pan gestures */}
       <div
         ref={attachViewportRef}

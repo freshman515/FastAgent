@@ -10,6 +10,7 @@ import {
 } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { SESSIONS_LAYOUT_KEY } from './panes'
+import { useUIStore, type CanvasArrangeMode } from './ui'
 
 // ─── Canvas state ───
 //
@@ -32,10 +33,11 @@ function clampScale(scale: number): number {
 }
 
 /**
- * Fraction of the viewport's shorter axis a focused card should occupy.
- * 0.75 leaves a comfortable margin around the focused card.
+ * Target viewport fraction for focused cards. The focus scale blends width and
+ * height using area, then caps the tighter axis so focus stays comfortable.
  */
-export const FOCUS_ZOOM_FRACTION = 0.75
+export const FOCUS_ZOOM_FRACTION = 0.6
+const FOCUS_ZOOM_MAX_TIGHT_AXIS_FRACTION = 0.72
 
 /** Viewport transition duration when focusing a card, in ms. */
 const FOCUS_ANIMATION_MS = 360
@@ -127,8 +129,213 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
 
 const DEFAULT_CARD_SIZE: Record<CanvasCardKind, { width: number; height: number }> = {
   session: { width: 520, height: 640 },
-  terminal: { width: 560, height: 380 },
+  terminal: { width: 880, height: 560 },
   note: { width: 240, height: 180 },
+}
+
+const CARD_GAP = 24
+
+type CanvasPlacementSettings = {
+  arrangeMode: CanvasArrangeMode
+  overlapMode: 'free' | 'avoid'
+  snapEnabled: boolean
+}
+
+function getPlacementSettings(): CanvasPlacementSettings {
+  const settings = useUIStore.getState().settings
+  return {
+    arrangeMode: settings.canvasArrangeMode,
+    overlapMode: settings.canvasOverlapMode,
+    snapEnabled: settings.canvasSnapEnabled,
+  }
+}
+
+function placeCard(layout: CanvasLayout, card: CanvasCard, placement: CanvasPlacementSettings): CanvasCard[] {
+  if (placement.arrangeMode !== 'free') {
+    return insertArrangedCard(layout.cards, card, placement.arrangeMode)
+  }
+
+  const placed = placement.overlapMode === 'avoid'
+    ? { ...card, ...findNearestAvailablePosition(layout.cards, card, placement.snapEnabled) }
+    : card
+  return [...layout.cards, placed]
+}
+
+function insertArrangedCard(cards: CanvasCard[], card: CanvasCard, mode: Exclude<CanvasArrangeMode, 'free'>): CanvasCard[] {
+  const ordered = sortCardsForArrangeMode(cards, mode)
+  const origin = getArrangeOrigin([...cards, card])
+  const insertIndex = getArrangeInsertIndex(ordered, cards.length + 1, card, mode, origin)
+  const arranged = [
+    ...ordered.slice(0, insertIndex),
+    card,
+    ...ordered.slice(insertIndex),
+  ]
+  const positions = computeArrangePositions(arranged, mode, origin)
+  const now = Date.now()
+  return arranged.map((candidate) => {
+    const position = positions.get(candidate.id)
+    if (!position) return candidate
+    if (candidate.x === position.x && candidate.y === position.y) return candidate
+    return { ...candidate, x: position.x, y: position.y, updatedAt: now }
+  })
+}
+
+function sortCardsForArrangeMode(cards: CanvasCard[], mode: Exclude<CanvasArrangeMode, 'free'>): CanvasCard[] {
+  const byX = (a: CanvasCard, b: CanvasCard): number => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)
+  const byY = (a: CanvasCard, b: CanvasCard): number => (a.y - b.y) || (a.x - b.x) || (a.createdAt - b.createdAt)
+  if (mode === 'rowFlow') return [...cards].sort(byX)
+  if (mode === 'colFlow') return [...cards].sort(byY)
+  return [...cards].sort(byY)
+}
+
+function getArrangeOrigin(cards: CanvasCard[]): { x: number; y: number } {
+  return {
+    x: Math.min(...cards.map((card) => card.x)),
+    y: Math.min(...cards.map((card) => card.y)),
+  }
+}
+
+function getArrangeInsertIndex(
+  cards: CanvasCard[],
+  totalCount: number,
+  card: CanvasCard,
+  mode: Exclude<CanvasArrangeMode, 'free'>,
+  origin: { x: number; y: number },
+): number {
+  const centerX = card.x + card.width / 2
+  const centerY = card.y + card.height / 2
+
+  if (mode === 'rowFlow') {
+    return cards.filter((candidate) => centerX > candidate.x + candidate.width / 2).length
+  }
+  if (mode === 'colFlow') {
+    return cards.filter((candidate) => centerY > candidate.y + candidate.height / 2).length
+  }
+
+  const metrics = getGridMetrics([...cards, card], totalCount)
+  let nearestIndex = 0
+  let nearestDistance = Number.POSITIVE_INFINITY
+  for (let index = 0; index < totalCount; index += 1) {
+    const col = index % metrics.cols
+    const row = Math.floor(index / metrics.cols)
+    const slotCenterX = origin.x + col * metrics.cellWidth + metrics.cellWidth / 2
+    const slotCenterY = origin.y + row * metrics.cellHeight + metrics.cellHeight / 2
+    const distance = Math.hypot(centerX - slotCenterX, centerY - slotCenterY)
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearestIndex = index
+    }
+  }
+  return Math.max(0, Math.min(cards.length, nearestIndex))
+}
+
+function computeArrangePositions(
+  cards: CanvasCard[],
+  mode: Exclude<CanvasArrangeMode, 'free'>,
+  origin: { x: number; y: number },
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+
+  if (mode === 'rowFlow') {
+    let x = origin.x
+    for (const card of cards) {
+      positions.set(card.id, { x, y: origin.y })
+      x += card.width + CARD_GAP
+    }
+    return positions
+  }
+
+  if (mode === 'colFlow') {
+    let y = origin.y
+    for (const card of cards) {
+      positions.set(card.id, { x: origin.x, y })
+      y += card.height + CARD_GAP
+    }
+    return positions
+  }
+
+  const metrics = getGridMetrics(cards, cards.length)
+  let y = origin.y
+  for (let rowStart = 0; rowStart < cards.length; rowStart += metrics.cols) {
+    const rowCards = cards.slice(rowStart, rowStart + metrics.cols)
+    const rowHeight = Math.max(...rowCards.map((rowCard) => rowCard.height))
+    rowCards.forEach((rowCard, col) => {
+      positions.set(rowCard.id, {
+        x: origin.x + col * metrics.cellWidth,
+        y,
+      })
+    })
+    y += rowHeight + CARD_GAP
+  }
+  return positions
+}
+
+function getGridMetrics(cards: CanvasCard[], totalCount: number): { cols: number; cellWidth: number; cellHeight: number } {
+  return {
+    cols: Math.max(1, Math.ceil(Math.sqrt(totalCount))),
+    cellWidth: Math.max(...cards.map((card) => card.width)) + CARD_GAP,
+    cellHeight: Math.max(...cards.map((card) => card.height)) + CARD_GAP,
+  }
+}
+
+function findNearestAvailablePosition(
+  cards: CanvasCard[],
+  card: CanvasCard,
+  snapEnabled: boolean,
+): { x: number; y: number } {
+  if (cards.length === 0) return { x: card.x, y: card.y }
+
+  const normalize = (value: number): number => snapEnabled ? Math.round(value / CARD_GAP) * CARD_GAP : value
+  const requested = { x: normalize(card.x), y: normalize(card.y) }
+  const candidates: Array<{ x: number; y: number }> = [requested]
+
+  for (const existing of cards) {
+    candidates.push(
+      { x: normalize(existing.x + existing.width + CARD_GAP), y: normalize(existing.y) },
+      { x: normalize(existing.x - card.width - CARD_GAP), y: normalize(existing.y) },
+      { x: normalize(existing.x), y: normalize(existing.y + existing.height + CARD_GAP) },
+      { x: normalize(existing.x), y: normalize(existing.y - card.height - CARD_GAP) },
+    )
+  }
+
+  const step = snapEnabled ? CARD_GAP : 32
+  const rings = 18
+  for (let ring = 1; ring <= rings; ring += 1) {
+    const distance = ring * step
+    for (let x = -distance; x <= distance; x += step) {
+      candidates.push({ x: normalize(requested.x + x), y: normalize(requested.y - distance) })
+      candidates.push({ x: normalize(requested.x + x), y: normalize(requested.y + distance) })
+    }
+    for (let y = -distance + step; y <= distance - step; y += step) {
+      candidates.push({ x: normalize(requested.x - distance), y: normalize(requested.y + y) })
+      candidates.push({ x: normalize(requested.x + distance), y: normalize(requested.y + y) })
+    }
+  }
+
+  let best = requested
+  let bestDistance = Number.POSITIVE_INFINITY
+  const seen = new Set<string>()
+  for (const candidate of candidates) {
+    const key = `${candidate.x}:${candidate.y}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    if (overlapsAny(cards, { ...card, x: candidate.x, y: candidate.y }, CARD_GAP)) continue
+    const distance = Math.hypot(candidate.x - requested.x, candidate.y - requested.y)
+    if (distance < bestDistance) {
+      best = candidate
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
+function overlapsAny(cards: CanvasCard[], card: CanvasCard, gap: number): boolean {
+  return cards.some((other) =>
+    card.x < other.x + other.width + gap
+    && card.x + card.width + gap > other.x
+    && card.y < other.y + other.height + gap
+    && card.y + card.height + gap > other.y,
+  )
 }
 
 // ─── Store ───
@@ -164,6 +371,7 @@ interface CanvasState {
   // cards
   addCard: (partial: Partial<CanvasCard> & { kind: CanvasCardKind }) => string
   updateCard: (id: string, updates: Partial<CanvasCard>) => void
+  updateCardPositions: (positions: Map<string, { x: number; y: number }>) => void
   moveCards: (ids: string[], dx: number, dy: number) => void
   resizeCard: (id: string, width: number, height: number, x?: number, y?: number) => void
   removeCard: (id: string) => void
@@ -302,7 +510,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     const scaleX = (size.width * FOCUS_ZOOM_FRACTION) / card.width
     const scaleY = (size.height * FOCUS_ZOOM_FRACTION) / card.height
-    const targetScale = clampScale(Math.min(scaleX, scaleY))
+    const fitScale = Math.min(scaleX, scaleY)
+    const areaScale = Math.sqrt(scaleX * scaleY)
+    const maxScale = fitScale * (FOCUS_ZOOM_MAX_TIGHT_AXIS_FRACTION / FOCUS_ZOOM_FRACTION)
+    const targetScale = clampScale(Math.min(areaScale, maxScale))
     const centerX = card.x + card.width / 2
     const centerY = card.y + card.height / 2
     const targetOffsetX = size.width / 2 - centerX * targetScale
@@ -364,10 +575,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         createdAt: partial.createdAt ?? now,
         updatedAt: now,
       }
+      const cards = placeCard(layout, card, getPlacementSettings())
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards: [...layout.cards, card] },
+          [state.activeLayoutKey]: { ...layout, cards },
         },
         selectedCardIds: [id],
       }
@@ -383,6 +595,29 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const nextCard: CanvasCard = { ...layout.cards[index], ...updates, updatedAt: Date.now() }
       const cards = [...layout.cards]
       cards[index] = nextCard
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+      }
+    })
+  },
+
+  updateCardPositions: (positions) => {
+    if (positions.size === 0) return
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const now = Date.now()
+      let touched = false
+      const cards = layout.cards.map((card) => {
+        const position = positions.get(card.id)
+        if (!position) return card
+        if (card.x === position.x && card.y === position.y) return card
+        touched = true
+        return { ...card, x: position.x, y: position.y, updatedAt: now }
+      })
+      if (!touched) return state
       return {
         layouts: {
           ...state.layouts,
@@ -516,17 +751,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         }
         const toKey = state.activeLayoutKey
         const toLayout = nextLayouts[toKey] ?? defaultLayout()
+        const maxZ = toLayout.cards.reduce((acc, card) => Math.max(acc, card.zIndex), 0)
+        const card: CanvasCard = {
+          ...existing.card,
+          x: position?.x ?? existing.card.x,
+          y: position?.y ?? existing.card.y,
+          zIndex: maxZ + 1,
+          updatedAt: Date.now(),
+        }
         nextLayouts[toKey] = {
           ...toLayout,
-          cards: [
-            ...toLayout.cards,
-            {
-              ...existing.card,
-              x: position?.x ?? existing.card.x,
-              y: position?.y ?? existing.card.y,
-              updatedAt: Date.now(),
-            },
-          ],
+          cards: placeCard(toLayout, card, getPlacementSettings()),
         }
         return { layouts: nextLayouts, selectedCardIds: [existing.card.id] }
       })
@@ -567,21 +802,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const createdCardIds: string[] = []
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
-      const gap = 24
+      const placement = getPlacementSettings()
       let startX = 0
       let maxZ = layout.cards.reduce((acc, c) => Math.max(acc, c.zIndex), 0)
       if (layout.cards.length > 0) {
-        startX = Math.max(...layout.cards.map((c) => c.x + c.width)) + gap
+        startX = Math.max(...layout.cards.map((c) => c.x + c.width)) + CARD_GAP
       }
       const now = Date.now()
-      const cards = [...layout.cards]
+      let cards = [...layout.cards]
       for (const sessionId of newSessionIds) {
         const kind = kindFor(sessionId)
         const size = DEFAULT_CARD_SIZE[kind]
         maxZ += 1
         const cardId = `card-${generateId()}`
         createdCardIds.push(cardId)
-        cards.push({
+        const card: CanvasCard = {
           id: cardId,
           kind,
           refId: sessionId,
@@ -593,8 +828,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           collapsed: false,
           createdAt: now,
           updatedAt: now,
-        })
-        startX += size.width + gap
+        }
+        cards = placeCard({ ...layout, cards }, card, placement)
+        startX += size.width + CARD_GAP
       }
       return {
         layouts: {
@@ -631,11 +867,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const newIds: string[] = []
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const placement = getPlacementSettings()
       const now = Date.now()
       let maxZ = layout.cards.reduce((acc, c) => Math.max(acc, c.zIndex), 0)
-      const clones: CanvasCard[] = []
+      let cards = [...layout.cards]
       for (const id of ids) {
-        const src = layout.cards.find((c) => c.id === id)
+        const src = cards.find((c) => c.id === id)
         if (!src) continue
         // Only note cards make sense to clone standalone; session/terminal cards
         // can't have two cards pointing to the same PTY — clone as notes would
@@ -651,14 +888,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           createdAt: now,
           updatedAt: now,
         }
-        clones.push(clone)
+        cards = placeCard({ ...layout, cards }, clone, placement)
         newIds.push(clone.id)
       }
-      if (clones.length === 0) return state
+      if (newIds.length === 0) return state
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards: [...layout.cards, ...clones] },
+          [state.activeLayoutKey]: { ...layout, cards },
         },
         selectedCardIds: newIds,
       }
@@ -681,30 +918,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const startY = targets[0].y
       let layoutPositions = new Map<string, { x: number; y: number }>()
 
-      if (kind === 'rowFlow') {
-        let x = startX
-        for (const card of targets) {
-          layoutPositions.set(card.id, { x, y: startY })
-          x += card.width + gap
-        }
-      } else if (kind === 'colFlow') {
-        let y = startY
-        for (const card of targets) {
-          layoutPositions.set(card.id, { x: startX, y })
-          y += card.height + gap
-        }
-      } else if (kind === 'grid') {
-        const cols = Math.ceil(Math.sqrt(targets.length))
-        const cellWidth = Math.max(...targets.map((c) => c.width)) + gap
-        const cellHeight = Math.max(...targets.map((c) => c.height)) + gap
-        targets.forEach((card, index) => {
-          const col = index % cols
-          const row = Math.floor(index / cols)
-          layoutPositions.set(card.id, {
-            x: startX + col * cellWidth,
-            y: startY + row * cellHeight,
-          })
-        })
+      if (kind === 'rowFlow' || kind === 'colFlow' || kind === 'grid') {
+        layoutPositions = computeArrangePositions(
+          sortCardsForArrangeMode(targets, kind),
+          kind,
+          getArrangeOrigin(targets),
+        )
       } else if (kind === 'pack') {
         // Simple shelf packing: group rows by a shared max-width band.
         const bandWidth = 1400
