@@ -287,6 +287,10 @@ export function App(): JSX.Element {
     return <DetachedApp />
   }
 
+  return <MainApp />
+}
+
+function MainApp(): JSX.Element {
   const [ready, setReady] = useState(false)
 
   // Load config from file on startup
@@ -855,14 +859,7 @@ export function App(): JSX.Element {
     }).catch(() => {})
   }, [])
 
-  const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
-
-  useEffect(() => {
-    if (!windowFullscreen && fullscreenPaneId) {
-      usePanesStore.getState().exitPaneFullscreen()
-    }
-  }, [fullscreenPaneId, windowFullscreen])
 
   if (!ready) {
     return (
@@ -872,10 +869,9 @@ export function App(): JSX.Element {
     )
   }
 
-  // In fullscreen mode (F11 or OS fullscreen) AND when no single pane is
-  // specifically maximized, we hide all chrome but keep the main panel —
-  // including any splits — stretched to the whole window.
-  const hideChrome = windowFullscreen || Boolean(fullscreenPaneId)
+  // Window fullscreen hides chrome. Pane fullscreen is handled inside
+  // SplitContainer so it only expands within the central workspace.
+  const hideChrome = windowFullscreen
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-titlebar-bg)]">

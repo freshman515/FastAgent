@@ -152,26 +152,24 @@ async function applyCodeToTarget(target: ApplyTarget, code: string): Promise<voi
 function ApplyCodeButton({ content, applyTarget }: { content: string; applyTarget?: ApplyTarget }): JSX.Element | null {
   const [applied, setApplied] = useState(false)
   const codeBlock = extractCodeBlock(content)
-  if (!codeBlock) return null
 
   const addToast = useUIStore((s) => s.addToast)
   const activeSessionId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const activeEditorTab = useEditorsStore((s) =>
     activeSessionId?.startsWith('editor-') ? s.tabs.find((tab) => tab.id === activeSessionId) : undefined,
   )
-  const editorTab = applyTarget
-    ? useEditorsStore((s) => s.tabs.find((tab) => tab.id === applyTarget.editorTabId))
-    : activeEditorTab
-  const target = applyTarget ?? (activeEditorTab ? buildApplyTarget(activeEditorTab, useEditorsStore.getState().cursorInfo?.selection ?? null) : undefined)
-  const displayTarget = target ?? (editorTab ? buildApplyTarget(editorTab, null) : undefined)
-  const isSelectionApply = Boolean(displayTarget?.selection && !displayTarget.selection.isEmpty)
-
+  const applyTargetEditorTab = useEditorsStore((s) =>
+    applyTarget ? s.tabs.find((tab) => tab.id === applyTarget.editorTabId) : undefined,
+  )
   const cursorInfo = useEditorsStore((s) => s.cursorInfo)
+  const editorTab = applyTarget ? applyTargetEditorTab : activeEditorTab
   const fallbackTarget = activeEditorTab ? buildApplyTarget(activeEditorTab, cursorInfo?.selection ?? null) : undefined
   const finalTarget = applyTarget ?? fallbackTarget
+  const displayTarget = finalTarget ?? (editorTab ? buildApplyTarget(editorTab, null) : undefined)
+  const isSelectionApply = Boolean(displayTarget?.selection && !displayTarget.selection.isEmpty)
 
   const handleApply = async (): Promise<void> => {
-    if (!finalTarget) return
+    if (!finalTarget || !codeBlock) return
     try {
       await applyCodeToTarget(finalTarget, codeBlock.code)
       setApplied(true)
@@ -185,7 +183,7 @@ function ApplyCodeButton({ content, applyTarget }: { content: string; applyTarge
     }
   }
 
-  if (!displayTarget) return null
+  if (!codeBlock || !displayTarget) return null
 
   return (
     <div className="flex gap-1.5 mt-1.5">

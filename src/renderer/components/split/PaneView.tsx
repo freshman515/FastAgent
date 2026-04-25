@@ -1,9 +1,7 @@
-import { GitBranch, Minus, Plus, Square, X } from 'lucide-react'
+import { GitBranch, Maximize2, Minimize2, Minus, Plus, Square, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
-import { createSessionWithPrompt } from '@/lib/createSession'
 import { usePanesStore, registerPaneElement, type PaneNode, type SplitPosition } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -280,12 +278,13 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
         <span className="flex-1 truncate text-[var(--ui-font-xs)]">{tab.fileName}</span>
         {/* Modified indicator or close button */}
         {tab.modified ? (
-          <button onClick={handleClose} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[var(--color-warning)]" title="未保存更改">
+          <button onClick={handleClose} onDoubleClick={(e) => e.stopPropagation()} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[var(--color-warning)]" title="未保存更改">
             <span className="text-[10px]">●</span>
           </button>
         ) : (
           <button
             onClick={handleClose}
+            onDoubleClick={(e) => e.stopPropagation()}
             className={cn(
               'flex h-4 w-4 items-center justify-center rounded-sm shrink-0',
               'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
@@ -446,6 +445,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const isActivePane = activePaneId === paneId
   const rootType = usePanesStore((s) => s.root.type)
   const isMultiPane = rootType === 'split'
+  const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
+  const togglePaneFullscreen = usePanesStore((s) => s.togglePaneFullscreen)
+  const isFullscreenPane = fullscreenPaneId === paneId
   const showActivePaneBorder = useUIStore((s) => s.settings.showActivePaneBorder)
 
   // Get full session objects for this pane, in pane order
@@ -615,6 +617,17 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     handleWindowDragDoubleClick(e)
   }, [handleWindowDragDoubleClick])
 
+  const handlePaneHeaderDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (isDetached) {
+      if (e.target !== e.currentTarget) return
+      handleWindowDragDoubleClick(e)
+      return
+    }
+
+    e.preventDefault()
+    togglePaneFullscreen(paneId)
+  }, [handleWindowDragDoubleClick, paneId, togglePaneFullscreen])
+
   const attachDraggedTab = useCallback((dragToken: string, zone?: SplitPosition | 'center' | null) => {
     const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId) as DetachedTabDragPayload | null
     if (!payload) return false
@@ -680,12 +693,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           usePanesStore.getState().setPaneActiveSession(paneId, orderedTabs[next].id)
         }}
         onDoubleClick={(e) => {
-          if (isDetached || e.target !== e.currentTarget) return
-          const defaultType = useUIStore.getState().settings.defaultSessionType
-          const worktreeId = getDefaultWorktreeIdForProject(projectId)
-          createSessionWithPrompt({ projectId, type: defaultType, worktreeId }, (id) => {
-            usePanesStore.getState().addSessionToPane(paneId, id)
-          })
+          handlePaneHeaderDoubleClick(e)
         }}
         onDragOver={(e) => {
           if (isTabDrag(e)) {
@@ -807,6 +815,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           <button
             ref={btnRef}
             onClick={handlePlusClick}
+            onDoubleClick={(event) => event.stopPropagation()}
             onMouseEnter={handlePlusMouseEnter}
             onMouseLeave={scheduleCloseMenu}
             className={cn(
@@ -821,9 +830,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           </button>
 
           {/* Close pane button — only when multiple panes exist */}
-          {usePanesStore.getState().root.type === 'split' && (
+          {isMultiPane && (
             <button
               onClick={() => usePanesStore.getState().mergePane(paneId)}
+              onDoubleClick={(event) => event.stopPropagation()}
               className={cn(
                 'no-drag flex h-[28px] w-[28px] shrink-0 items-center justify-center self-center',
                 'rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]',
@@ -837,17 +847,40 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           )}
         </div>
 
+        {isMultiPane && (
+          <div className="no-drag flex h-full shrink-0 items-center pr-1">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                togglePaneFullscreen(paneId)
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              className={cn(
+                'flex h-[28px] w-[28px] items-center justify-center rounded-[var(--radius-sm)]',
+                'text-[var(--color-text-tertiary)] transition-all duration-120',
+                'hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)]',
+                'active:scale-95',
+              )}
+              title={isFullscreenPane ? '恢复分屏布局' : '放大当前分屏'}
+              aria-label={isFullscreenPane ? '恢复分屏布局' : '放大当前分屏'}
+            >
+              {isFullscreenPane ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+          </div>
+        )}
+
         {/* Detached window controls — pushed to far right */}
         {showDetachedWindowControls && (
           <>
             <div className="no-drag ml-auto flex shrink-0 items-center self-stretch">
-              <button onClick={() => window.api.detach.minimize()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
+              <button onClick={() => window.api.detach.minimize()} onDoubleClick={(event) => event.stopPropagation()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
                 <Minus size={14} />
               </button>
-              <button onClick={() => window.api.detach.maximize()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
+              <button onClick={() => window.api.detach.maximize()} onDoubleClick={(event) => event.stopPropagation()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
                 <Square size={11} />
               </button>
-              <button onClick={() => window.api.detach.close()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-error)] hover:text-white transition-colors">
+              <button onClick={() => window.api.detach.close()} onDoubleClick={(event) => event.stopPropagation()} className="flex h-full w-10 items-center justify-center text-[var(--color-text-secondary)] hover:bg-[var(--color-error)] hover:text-white transition-colors">
                 <X size={14} />
               </button>
             </div>

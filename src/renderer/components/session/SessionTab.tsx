@@ -253,14 +253,12 @@ export function SessionTab({
             onBlur={commitRename}
             onKeyDown={handleRenameKeyDown}
             onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             className="flex-1 bg-transparent text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none border-b border-[var(--color-accent)] w-12"
             autoFocus
           />
         ) : (
-          <span
-            className="flex-1 truncate text-[var(--ui-font-xs)]"
-            onDoubleClick={(e) => { e.stopPropagation(); startRename() }}
-          >
+          <span className="flex-1 truncate text-[var(--ui-font-xs)]">
             {session.name}
           </span>
         )}
@@ -285,6 +283,7 @@ export function SessionTab({
         ) : (
           <button
             onClick={handleClose}
+            onDoubleClick={(e) => e.stopPropagation()}
             className={cn(
               'flex h-4 w-4 items-center justify-center rounded-sm',
               'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',

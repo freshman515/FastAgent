@@ -729,6 +729,20 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     }
   }, [editorTabId, isActive, setLastFocusedTabId])
 
+  // Get running sessions for picker — only current project, deduplicated
+  const allSessions = useSessionsStore((s) => s.sessions)
+  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
+  const runningSessions = useMemo(() => {
+    const seen = new Set<string>()
+    return allSessions.filter((s) => {
+      if (!s.ptyId || s.status !== 'running') return false
+      if (s.projectId !== selectedProjectId) return false
+      if (seen.has(s.id)) return false
+      seen.add(s.id)
+      return true
+    })
+  }, [allSessions, selectedProjectId])
+
   if (error) {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--color-bg-primary)]">
@@ -750,20 +764,6 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       </div>
     )
   }
-
-  // Get running sessions for picker — only current project, deduplicated
-  const allSessions = useSessionsStore((s) => s.sessions)
-  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
-  const runningSessions = useMemo(() => {
-    const seen = new Set<string>()
-    return allSessions.filter((s) => {
-      if (!s.ptyId || s.status !== 'running') return false
-      if (s.projectId !== selectedProjectId) return false
-      if (seen.has(s.id)) return false
-      seen.add(s.id)
-      return true
-    })
-  }, [allSessions, selectedProjectId])
 
   const menuEditor = editorContextMenu ? contextMenuEditorRef.current : null
   const menuHasSelection = Boolean(menuEditor?.getSelection() && !menuEditor.getSelection()?.isEmpty())
