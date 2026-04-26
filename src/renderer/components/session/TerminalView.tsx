@@ -47,11 +47,11 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     if (searchText) searchAddonRef.current?.findPrevious(searchText, { decorations: searchDecorations })
   }, [searchText, searchAddonRef])
 
-  // Ctrl+Shift+F to open search
+  // Ctrl+F to open search. Shift does not change the behavior.
   useEffect(() => {
     if (!isActive) return
     const handler = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && e.key === 'f') {
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         openSearch()
       }

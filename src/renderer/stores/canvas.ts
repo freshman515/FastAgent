@@ -3,9 +3,11 @@ import {
   CANVAS_MAX_SCALE,
   CANVAS_MIN_SCALE,
   CANVAS_SCHEMA_VERSION,
+  type CanvasBookmark,
   type CanvasCard,
   type CanvasCardKind,
   type CanvasLayout,
+  type CanvasRelation,
   type CanvasViewport,
 } from '@shared/types'
 import { generateId } from '@/lib/utils'
@@ -19,13 +21,42 @@ import { useUIStore, type CanvasArrangeMode } from './ui'
 // switches project/worktree, `setActiveLayout` swaps the visible layout.
 
 const GLOBAL_LAYOUT_KEY = '__global__'
+const MAX_UNDO_HISTORY = 80
 
 function defaultViewport(): CanvasViewport {
   return { scale: 1, offsetX: 0, offsetY: 0 }
 }
 
 function defaultLayout(): CanvasLayout {
-  return { cards: [], viewport: defaultViewport() }
+  return { cards: [], viewport: defaultViewport(), bookmarks: [], relations: [] }
+}
+
+interface CanvasHistoryEntry {
+  activeLayoutKey: string
+  layouts: Record<string, CanvasLayout>
+  selectedCardIds: string[]
+  focusReturn: { cardId: string; viewport: CanvasViewport } | null
+}
+
+function cloneLayout(layout: CanvasLayout): CanvasLayout {
+  return {
+    cards: layout.cards.map((card) => ({
+      ...card,
+      collapsedPreview: card.collapsedPreview ? [...card.collapsedPreview] : undefined,
+    })),
+    viewport: { ...layout.viewport },
+    bookmarks: layout.bookmarks.map((bookmark) => ({
+      ...bookmark,
+      viewport: { ...bookmark.viewport },
+    })),
+    relations: layout.relations.map((relation) => ({ ...relation })),
+  }
+}
+
+function cloneLayouts(layouts: Record<string, CanvasLayout>): Record<string, CanvasLayout> {
+  return Object.fromEntries(
+    Object.entries(layouts).map(([key, layout]) => [key, cloneLayout(layout)]),
+  )
 }
 
 function clampScale(scale: number): number {
@@ -36,17 +67,13 @@ function clampScale(scale: number): number {
  * Focus zoom is based on perceived text size, not card bounds. This keeps
  * small cards from being enlarged when the current zoom is already readable.
  */
-const FOCUS_READABLE_FONT_TARGET_PX = 17
-const FOCUS_READABLE_FONT_MIN_PX = 14
-const FOCUS_READABLE_FONT_MAX_PX = 20
-
-/** Viewport transition duration when focusing a card, in ms. */
+/** Viewport transition duration for programmatic canvas navigation, in ms. */
 const FOCUS_ANIMATION_MS = 360
 
 // ─── Programmatic viewport animation ───
 //
-// Used by `focusOnCard` — eases from the current viewport to a target with
-// a soft ease-out curve. Any wheel / pointer gesture should call
+// Used by canvas navigation actions — eases from the current viewport to a
+// target with a soft ease-out curve. Any wheel / pointer gesture should call
 // `cancelViewportAnimation` first so user input isn't overwritten.
 
 let animationFrame: number | null = null
@@ -123,14 +150,18 @@ function getFocusTargetScale(card: CanvasCard, currentScale: number): number {
   if (!baseFontPx) return currentScale
 
   const currentReadableFontPx = baseFontPx * currentScale
+  const settings = useUIStore.getState().settings
+  const rangeMin = Math.min(settings.canvasFocusReadableFontMinPx, settings.canvasFocusReadableFontMaxPx)
+  const rangeMax = Math.max(settings.canvasFocusReadableFontMinPx, settings.canvasFocusReadableFontMaxPx)
+  const targetFontPx = Math.max(rangeMin, Math.min(rangeMax, settings.canvasFocusTargetFontPx))
   if (
-    currentReadableFontPx >= FOCUS_READABLE_FONT_MIN_PX
-    && currentReadableFontPx <= FOCUS_READABLE_FONT_MAX_PX
+    currentReadableFontPx >= rangeMin
+    && currentReadableFontPx <= rangeMax
   ) {
     return currentScale
   }
 
-  return clampScale(FOCUS_READABLE_FONT_TARGET_PX / baseFontPx)
+  return clampScale(targetFontPx / baseFontPx)
 }
 
 function isValidCard(value: unknown): value is CanvasCard {
@@ -138,7 +169,7 @@ function isValidCard(value: unknown): value is CanvasCard {
   const card = value as Record<string, unknown>
   return (
     typeof card.id === 'string'
-    && (card.kind === 'session' || card.kind === 'terminal' || card.kind === 'note')
+    && (card.kind === 'session' || card.kind === 'terminal' || card.kind === 'note' || card.kind === 'frame')
     && (card.refId === null || typeof card.refId === 'string')
     && typeof card.x === 'number'
     && typeof card.y === 'number'
@@ -148,16 +179,48 @@ function isValidCard(value: unknown): value is CanvasCard {
   )
 }
 
+function isValidBookmark(value: unknown): value is CanvasBookmark {
+  if (!value || typeof value !== 'object') return false
+  const bookmark = value as Record<string, unknown>
+  const viewport = bookmark.viewport as Record<string, unknown> | undefined
+  return (
+    typeof bookmark.id === 'string'
+    && typeof bookmark.name === 'string'
+    && Boolean(viewport)
+    && typeof viewport?.scale === 'number'
+    && typeof viewport?.offsetX === 'number'
+    && typeof viewport?.offsetY === 'number'
+  )
+}
+
+function isValidRelation(value: unknown): value is CanvasRelation {
+  if (!value || typeof value !== 'object') return false
+  const relation = value as Record<string, unknown>
+  return (
+    typeof relation.id === 'string'
+    && typeof relation.fromCardId === 'string'
+    && typeof relation.toCardId === 'string'
+    && relation.fromCardId !== relation.toCardId
+  )
+}
+
 function sanitizeLayout(raw: unknown): CanvasLayout | null {
   if (!raw || typeof raw !== 'object') return null
   const data = raw as Record<string, unknown>
   const rawCards = Array.isArray(data.cards) ? data.cards : []
   const cards = rawCards.filter(isValidCard).map((card) => ({
     ...card,
+    expandedWidth: typeof card.expandedWidth === 'number' ? card.expandedWidth : undefined,
+    expandedHeight: typeof card.expandedHeight === 'number' ? card.expandedHeight : undefined,
     collapsed: Boolean(card.collapsed),
+    collapsedPreview: Array.isArray(card.collapsedPreview)
+      ? card.collapsedPreview.filter((line): line is string => typeof line === 'string').slice(-6)
+      : undefined,
+    sessionRemark: typeof card.sessionRemark === 'string' ? card.sessionRemark : undefined,
     createdAt: typeof card.createdAt === 'number' ? card.createdAt : Date.now(),
     updatedAt: typeof card.updatedAt === 'number' ? card.updatedAt : Date.now(),
   }))
+  const cardIds = new Set(cards.map((card) => card.id))
 
   const rawViewport = data.viewport && typeof data.viewport === 'object'
     ? (data.viewport as Record<string, unknown>)
@@ -167,7 +230,39 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
     offsetX: typeof rawViewport.offsetX === 'number' ? rawViewport.offsetX : 0,
     offsetY: typeof rawViewport.offsetY === 'number' ? rawViewport.offsetY : 0,
   }
-  return { cards, viewport }
+
+  const rawBookmarks = Array.isArray(data.bookmarks) ? data.bookmarks : []
+  const bookmarks = rawBookmarks.filter(isValidBookmark).map((bookmark) => ({
+    ...bookmark,
+    viewport: {
+      scale: clampScale(bookmark.viewport.scale),
+      offsetX: bookmark.viewport.offsetX,
+      offsetY: bookmark.viewport.offsetY,
+    },
+    createdAt: typeof bookmark.createdAt === 'number' ? bookmark.createdAt : Date.now(),
+    updatedAt: typeof bookmark.updatedAt === 'number' ? bookmark.updatedAt : Date.now(),
+  }))
+
+  const seenRelations = new Set<string>()
+  const rawRelations = Array.isArray(data.relations) ? data.relations : []
+  const relations = rawRelations
+    .filter(isValidRelation)
+    .filter((relation) => cardIds.has(relation.fromCardId) && cardIds.has(relation.toCardId))
+    .filter((relation) => {
+      const key = relation.fromCardId < relation.toCardId
+        ? `${relation.fromCardId}:${relation.toCardId}`
+        : `${relation.toCardId}:${relation.fromCardId}`
+      if (seenRelations.has(key)) return false
+      seenRelations.add(key)
+      return true
+    })
+    .map((relation) => ({
+      ...relation,
+      createdAt: typeof relation.createdAt === 'number' ? relation.createdAt : Date.now(),
+      updatedAt: typeof relation.updatedAt === 'number' ? relation.updatedAt : Date.now(),
+    }))
+
+  return { cards, viewport, bookmarks, relations }
 }
 
 // ─── Card defaults ───
@@ -176,12 +271,13 @@ const DEFAULT_CARD_SIZE: Record<CanvasCardKind, { width: number; height: number 
   session: { width: 1040, height: 660 },
   terminal: { width: 1040, height: 660 },
   note: { width: 240, height: 180 },
+  frame: { width: 760, height: 460 },
 }
 
 const CARD_GAP = 24
 
 export function getDefaultCanvasCardSize(kind: CanvasCardKind): { width: number; height: number } {
-  if (kind === 'note') return DEFAULT_CARD_SIZE.note
+  if (kind === 'note' || kind === 'frame') return DEFAULT_CARD_SIZE[kind]
   const settings = useUIStore.getState().settings
   return {
     width: settings.canvasSessionCardWidth,
@@ -390,12 +486,13 @@ function findNearestAvailablePosition(
   snapEnabled: boolean,
 ): { x: number; y: number } {
   if (cards.length === 0) return { x: card.x, y: card.y }
+  const obstacleCards = cards.filter((candidate) => candidate.kind !== 'frame')
 
   const normalize = (value: number): number => snapEnabled ? Math.round(value / CARD_GAP) * CARD_GAP : value
   const requested = { x: normalize(card.x), y: normalize(card.y) }
   const candidates: Array<{ x: number; y: number }> = [requested]
 
-  for (const existing of cards) {
+  for (const existing of obstacleCards) {
     candidates.push(
       { x: normalize(existing.x + existing.width + CARD_GAP), y: normalize(existing.y) },
       { x: normalize(existing.x - card.width - CARD_GAP), y: normalize(existing.y) },
@@ -425,7 +522,7 @@ function findNearestAvailablePosition(
     const key = `${candidate.x}:${candidate.y}`
     if (seen.has(key)) continue
     seen.add(key)
-    if (overlapsAny(cards, { ...card, x: candidate.x, y: candidate.y }, CARD_GAP)) continue
+    if (overlapsAny(obstacleCards, { ...card, x: candidate.x, y: candidate.y }, CARD_GAP)) continue
     const distance = Math.hypot(candidate.x - requested.x, candidate.y - requested.y)
     if (distance < bestDistance) {
       best = candidate
@@ -444,6 +541,21 @@ function overlapsAny(cards: CanvasCard[], card: CanvasCard, gap: number): boolea
   )
 }
 
+function createHistoryEntry(state: CanvasState): CanvasHistoryEntry {
+  return {
+    activeLayoutKey: state.activeLayoutKey,
+    layouts: cloneLayouts(state.layouts),
+    selectedCardIds: [...state.selectedCardIds],
+    focusReturn: state.focusReturn
+      ? { cardId: state.focusReturn.cardId, viewport: { ...state.focusReturn.viewport } }
+      : null,
+  }
+}
+
+function pushUndo(state: CanvasState): CanvasHistoryEntry[] {
+  return [createHistoryEntry(state), ...state.undoStack].slice(0, MAX_UNDO_HISTORY)
+}
+
 // ─── Store ───
 
 interface CanvasState {
@@ -451,6 +563,7 @@ interface CanvasState {
   layouts: Record<string, CanvasLayout>
   selectedCardIds: string[]
   focusReturn: { cardId: string; viewport: CanvasViewport } | null
+  undoStack: CanvasHistoryEntry[]
 
   // getters
   getLayout: (key?: string) => CanvasLayout
@@ -461,6 +574,8 @@ interface CanvasState {
   // lifecycle
   loadFromConfig: (raw: Record<string, unknown>) => void
   setActiveLayout: (key: string | null) => void
+  canUndo: () => boolean
+  undo: () => boolean
 
   // viewport
   setViewport: (viewport: Partial<CanvasViewport>) => void
@@ -475,8 +590,11 @@ interface CanvasState {
 
   // cards
   addCard: (partial: Partial<CanvasCard> & { kind: CanvasCardKind }) => string
+  addFrameAroundCards: (ids: string[], fallback?: { x: number; y: number }) => string | null
   updateCard: (id: string, updates: Partial<CanvasCard>) => void
   updateCardPositions: (positions: Map<string, { x: number; y: number }>) => void
+  updateCardsGeometry: (geometry: Map<string, { x: number; y: number; width: number; height: number }>) => void
+  setCardCollapsed: (id: string, collapsed: boolean, previewLines?: string[]) => void
   moveCards: (ids: string[], dx: number, dy: number) => void
   resizeCard: (id: string, width: number, height: number, x?: number, y?: number) => void
   removeCard: (id: string) => void
@@ -511,6 +629,18 @@ interface CanvasState {
   removeCards: (ids: string[]) => void
   duplicateCards: (ids: string[]) => string[]
 
+  // bookmarks
+  addBookmark: (name?: string) => string
+  goToBookmark: (id: string) => void
+  updateBookmarkViewport: (id: string) => void
+  renameBookmark: (id: string, name: string) => void
+  removeBookmark: (id: string) => void
+
+  // relations
+  addRelation: (fromCardId: string, toCardId: string) => string | null
+  removeRelation: (id: string) => void
+  removeRelationsForCards: (ids: string[]) => void
+
   // arrangement
   arrange: (kind: 'grid' | 'rowFlow' | 'colFlow' | 'pack', ids?: string[]) => void
   alignCards: (axis: 'left' | 'right' | 'top' | 'bottom' | 'hCenter' | 'vCenter', ids: string[]) => void
@@ -531,6 +661,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   layouts: { [GLOBAL_LAYOUT_KEY]: defaultLayout() },
   selectedCardIds: [],
   focusReturn: null,
+  undoStack: [],
 
   getLayout: (key) => {
     const layoutKey = key ?? get().activeLayoutKey
@@ -553,7 +684,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (Object.keys(layouts).length === 0) {
       layouts[GLOBAL_LAYOUT_KEY] = defaultLayout()
     }
-    set({ layouts, selectedCardIds: [], focusReturn: null })
+    set({ layouts, selectedCardIds: [], focusReturn: null, undoStack: [] })
   },
 
   setActiveLayout: (key) => {
@@ -568,8 +699,27 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         layouts,
         selectedCardIds: [],
         focusReturn: null,
+        undoStack: [],
       }
     })
+  },
+
+  canUndo: () => get().undoStack.length > 0,
+
+  undo: () => {
+    const [entry, ...rest] = get().undoStack
+    if (!entry) return false
+    cancelViewportAnimation()
+    set({
+      activeLayoutKey: entry.activeLayoutKey,
+      layouts: cloneLayouts(entry.layouts),
+      selectedCardIds: [...entry.selectedCardIds],
+      focusReturn: entry.focusReturn
+        ? { cardId: entry.focusReturn.cardId, viewport: { ...entry.focusReturn.viewport } }
+        : null,
+      undoStack: rest,
+    })
+    return true
   },
 
   setViewport: (viewport) => {
@@ -632,7 +782,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   fitAll: (containerWidth, containerHeight) => {
     const { cards } = get().getLayout()
     if (cards.length === 0) {
-      get().resetViewport()
+      set({ focusReturn: null })
+      animateViewport(defaultViewport())
       return
     }
     const minX = Math.min(...cards.map((c) => c.x))
@@ -650,7 +801,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const offsetX = containerWidth / 2 - centerX * scale
     const offsetY = containerHeight / 2 - centerY * scale
     set({ focusReturn: null })
-    get().setViewport({ scale, offsetX, offsetY })
+    animateViewport({ scale, offsetX, offsetY })
   },
 
   addCard: (partial) => {
@@ -668,23 +819,82 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         y: partial.y ?? 0,
         width: partial.width ?? size.width,
         height: partial.height ?? size.height,
+        expandedWidth: partial.expandedWidth,
+        expandedHeight: partial.expandedHeight,
         zIndex: partial.zIndex ?? maxZ + 1,
         collapsed: partial.collapsed ?? false,
+        collapsedPreview: partial.collapsedPreview,
+        sessionRemark: partial.sessionRemark,
         noteBody: partial.noteBody,
         noteColor: partial.noteColor,
+        frameTitle: partial.frameTitle,
         createdAt: partial.createdAt ?? now,
         updatedAt: now,
       }
-      const cards = placeCard(layout, card, getPlacementSettings())
+      const cards = partial.kind === 'frame'
+        ? [...layout.cards, card]
+        : placeCard(layout, card, getPlacementSettings())
       return {
         layouts: {
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
         selectedCardIds: [id],
+        undoStack: pushUndo(state),
       }
     })
     return id
+  },
+
+  addFrameAroundCards: (ids, fallback) => {
+    const uniqueIds = Array.from(new Set(ids))
+    const id = `card-${generateId()}`
+    const now = Date.now()
+    let created = false
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const targets = layout.cards.filter((card) => uniqueIds.includes(card.id) && card.kind !== 'frame')
+      const padding = 56
+      const maxZ = layout.cards.reduce((acc, card) => Math.max(acc, card.zIndex), 0)
+      const minTargetZ = targets.reduce((acc, card) => Math.min(acc, card.zIndex), Number.POSITIVE_INFINITY)
+      const bounds = targets.length > 0
+        ? {
+            minX: Math.min(...targets.map((card) => card.x)),
+            minY: Math.min(...targets.map((card) => card.y)),
+            maxX: Math.max(...targets.map((card) => card.x + card.width)),
+            maxY: Math.max(...targets.map((card) => card.y + card.height)),
+          }
+        : {
+            minX: (fallback?.x ?? 0) - DEFAULT_CARD_SIZE.frame.width / 2 + padding,
+            minY: (fallback?.y ?? 0) - DEFAULT_CARD_SIZE.frame.height / 2 + padding,
+            maxX: (fallback?.x ?? 0) + DEFAULT_CARD_SIZE.frame.width / 2 - padding,
+            maxY: (fallback?.y ?? 0) + DEFAULT_CARD_SIZE.frame.height / 2 - padding,
+          }
+      const frame: CanvasCard = {
+        id,
+        kind: 'frame',
+        refId: null,
+        x: bounds.minX - padding,
+        y: bounds.minY - padding,
+        width: Math.max(DEFAULT_CARD_SIZE.frame.width, bounds.maxX - bounds.minX + padding * 2),
+        height: Math.max(DEFAULT_CARD_SIZE.frame.height, bounds.maxY - bounds.minY + padding * 2),
+        zIndex: Number.isFinite(minTargetZ) ? minTargetZ - 1 : maxZ + 1,
+        collapsed: false,
+        frameTitle: '分组',
+        createdAt: now,
+        updatedAt: now,
+      }
+      created = true
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards: [...layout.cards, frame] },
+        },
+        selectedCardIds: [id],
+        undoStack: pushUndo(state),
+      }
+    })
+    return created ? id : null
   },
 
   updateCard: (id, updates) => {
@@ -700,6 +910,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -723,6 +934,89 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  updateCardsGeometry: (geometry) => {
+    if (geometry.size === 0) return
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const now = Date.now()
+      let touched = false
+      const cards = layout.cards.map((card) => {
+        const rect = geometry.get(card.id)
+        if (!rect) return card
+        if (
+          card.x === rect.x
+          && card.y === rect.y
+          && card.width === rect.width
+          && card.height === rect.height
+        ) {
+          return card
+        }
+        touched = true
+        return {
+          ...card,
+          x: rect.x,
+          y: rect.y,
+          width: Math.max(120, rect.width),
+          height: Math.max(80, rect.height),
+          updatedAt: now,
+        }
+      })
+      if (!touched) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        focusReturn: state.focusReturn && geometry.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  setCardCollapsed: (id, collapsed, previewLines) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const index = layout.cards.findIndex((card) => card.id === id)
+      if (index === -1) return state
+      const card = layout.cards[index]
+      if (card.collapsed === collapsed) return state
+      const expandedWidth = collapsed ? card.width : card.expandedWidth
+      const expandedHeight = collapsed ? card.height : card.expandedHeight
+      const nextCard: CanvasCard = collapsed
+        ? {
+            ...card,
+            collapsed: true,
+            collapsedPreview: previewLines?.slice(-6),
+            expandedWidth,
+            expandedHeight,
+            height: Math.min(card.height, 132),
+            width: Math.max(320, Math.min(card.width, 520)),
+            updatedAt: Date.now(),
+          }
+        : {
+            ...card,
+            collapsed: false,
+            collapsedPreview: undefined,
+            width: expandedWidth ?? card.width,
+            height: expandedHeight ?? Math.max(card.height, 240),
+            expandedWidth: undefined,
+            expandedHeight: undefined,
+            updatedAt: Date.now(),
+          }
+      const cards = [...layout.cards]
+      cards[index] = nextCard
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        focusReturn: state.focusReturn?.cardId === id ? null : state.focusReturn,
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -744,6 +1038,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -762,6 +1057,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         y: y ?? card.y,
         updatedAt: Date.now(),
       }
+      if (
+        card.width === nextCard.width
+        && card.height === nextCard.height
+        && card.x === nextCard.x
+        && card.y === nextCard.y
+      ) {
+        return state
+      }
       const cards = [...layout.cards]
       cards[index] = nextCard
       return {
@@ -770,6 +1073,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           [state.activeLayoutKey]: { ...layout, cards },
         },
         focusReturn: state.focusReturn?.cardId === id ? null : state.focusReturn,
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -779,13 +1083,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
       const cards = layout.cards.filter((card) => card.id !== id)
       if (cards.length === layout.cards.length) return state
+      const relations = layout.relations.filter((relation) => relation.fromCardId !== id && relation.toCardId !== id)
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards },
+          [state.activeLayoutKey]: { ...layout, cards, relations },
         },
         selectedCardIds: state.selectedCardIds.filter((cardId) => cardId !== id),
         focusReturn: state.focusReturn?.cardId === id ? null : state.focusReturn,
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -805,6 +1111,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -845,9 +1152,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         const nextLayouts = { ...state.layouts }
         const fromLayout = nextLayouts[existing.layoutKey]
         if (fromLayout) {
+          const relations = fromLayout.relations.filter((relation) =>
+            relation.fromCardId !== existing.card.id && relation.toCardId !== existing.card.id,
+          )
           nextLayouts[existing.layoutKey] = {
             ...fromLayout,
             cards: fromLayout.cards.filter((c) => c.id !== existing.card.id),
+            relations,
           }
         }
         const toKey = state.activeLayoutKey
@@ -864,7 +1175,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...toLayout,
           cards: placeCard(toLayout, card, getPlacementSettings()),
         }
-        return { layouts: nextLayouts, selectedCardIds: [existing.card.id] }
+        return { layouts: nextLayouts, selectedCardIds: [existing.card.id], undoStack: pushUndo(state) }
       })
       return existing.card.id
     }
@@ -884,7 +1195,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const layouts: Record<string, CanvasLayout> = {}
       for (const [key, layout] of Object.entries(state.layouts)) {
         const cards = layout.cards.filter((c) => c.refId !== sessionId)
-        layouts[key] = cards.length === layout.cards.length ? layout : { ...layout, cards }
+        if (cards.length === layout.cards.length) {
+          layouts[key] = layout
+          continue
+        }
+        const remainingIds = new Set(cards.map((card) => card.id))
+        const relations = layout.relations.filter((relation) =>
+          remainingIds.has(relation.fromCardId) && remainingIds.has(relation.toCardId),
+        )
+        layouts[key] = { ...layout, cards, relations }
       }
       const selectedCardIds = state.selectedCardIds.filter((id) => {
         const card = Object.values(layouts).flatMap((l) => l.cards).find((c) => c.id === id)
@@ -938,6 +1257,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        undoStack: pushUndo(state),
       }
     })
     return createdCardIds
@@ -952,13 +1272,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
       const cards = layout.cards.filter((c) => !idSet.has(c.id))
       if (cards.length === layout.cards.length) return state
+      const relations = layout.relations.filter((relation) =>
+        !idSet.has(relation.fromCardId) && !idSet.has(relation.toCardId),
+      )
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards },
+          [state.activeLayoutKey]: { ...layout, cards, relations },
         },
         selectedCardIds: state.selectedCardIds.filter((id) => !idSet.has(id)),
         focusReturn: state.focusReturn && idSet.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        undoStack: pushUndo(state),
       }
     })
   },
@@ -999,9 +1323,169 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           [state.activeLayoutKey]: { ...layout, cards },
         },
         selectedCardIds: newIds,
+        undoStack: pushUndo(state),
       }
     })
     return newIds
+  },
+
+  // ─── Bookmarks ───
+
+  addBookmark: (name) => {
+    const id = `bookmark-${generateId()}`
+    const now = Date.now()
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const bookmark: CanvasBookmark = {
+        id,
+        name: name?.trim() || `视图 ${layout.bookmarks.length + 1}`,
+        viewport: { ...layout.viewport },
+        createdAt: now,
+        updatedAt: now,
+      }
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, bookmarks: [...layout.bookmarks, bookmark] },
+        },
+      }
+    })
+    return id
+  },
+
+  goToBookmark: (id) => {
+    const bookmark = get().getLayout().bookmarks.find((item) => item.id === id)
+    if (!bookmark) return
+    set({ focusReturn: null })
+    animateViewport(bookmark.viewport)
+  },
+
+  updateBookmarkViewport: (id) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const index = layout.bookmarks.findIndex((bookmark) => bookmark.id === id)
+      if (index === -1) return state
+      const current = layout.bookmarks[index]
+      const bookmarks = [...layout.bookmarks]
+      bookmarks[index] = {
+        ...current,
+        viewport: { ...layout.viewport },
+        updatedAt: Date.now(),
+      }
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, bookmarks },
+        },
+      }
+    })
+  },
+
+  renameBookmark: (id, name) => {
+    const nextName = name.trim()
+    if (!nextName) return
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const index = layout.bookmarks.findIndex((bookmark) => bookmark.id === id)
+      if (index === -1) return state
+      const current = layout.bookmarks[index]
+      if (current.name === nextName) return state
+      const bookmarks = [...layout.bookmarks]
+      bookmarks[index] = { ...current, name: nextName, updatedAt: Date.now() }
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, bookmarks },
+        },
+      }
+    })
+  },
+
+  removeBookmark: (id) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const bookmarks = layout.bookmarks.filter((bookmark) => bookmark.id !== id)
+      if (bookmarks.length === layout.bookmarks.length) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, bookmarks },
+        },
+      }
+    })
+  },
+
+  // ─── Relations ───
+
+  addRelation: (fromCardId, toCardId) => {
+    if (fromCardId === toCardId) return null
+    const id = `relation-${generateId()}`
+    const now = Date.now()
+    let relationId: string | null = null
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const fromExists = layout.cards.some((card) => card.id === fromCardId)
+      const toExists = layout.cards.some((card) => card.id === toCardId)
+      if (!fromExists || !toExists) return state
+      const existing = layout.relations.find((relation) =>
+        (relation.fromCardId === fromCardId && relation.toCardId === toCardId)
+        || (relation.fromCardId === toCardId && relation.toCardId === fromCardId),
+      )
+      if (existing) {
+        relationId = existing.id
+        return state
+      }
+      const relation: CanvasRelation = {
+        id,
+        fromCardId,
+        toCardId,
+        createdAt: now,
+        updatedAt: now,
+      }
+      relationId = id
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, relations: [...layout.relations, relation] },
+        },
+        undoStack: pushUndo(state),
+      }
+    })
+    return relationId
+  },
+
+  removeRelation: (id) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const relations = layout.relations.filter((relation) => relation.id !== id)
+      if (relations.length === layout.relations.length) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, relations },
+        },
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  removeRelationsForCards: (ids) => {
+    if (ids.length === 0) return
+    const idSet = new Set(ids)
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const relations = layout.relations.filter((relation) =>
+        !idSet.has(relation.fromCardId) && !idSet.has(relation.toCardId),
+      )
+      if (relations.length === layout.relations.length) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, relations },
+        },
+        undoStack: pushUndo(state),
+      }
+    })
   },
 
   // ─── Arrangement ───

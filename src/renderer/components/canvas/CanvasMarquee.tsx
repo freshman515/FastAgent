@@ -13,7 +13,7 @@ export function CanvasMarquee(): JSX.Element | null {
 
   return (
     <div
-      className="pointer-events-none absolute"
+      className="pointer-events-none absolute z-[3]"
       style={{
         left,
         top,

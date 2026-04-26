@@ -9,7 +9,7 @@ export function CanvasGuideLines(): JSX.Element | null {
 
   return (
     <svg
-      className="pointer-events-none absolute inset-0"
+      className="pointer-events-none absolute inset-0 z-[3]"
       style={{ width: '100%', height: '100%' }}
     >
       {guides.map((guide, index) => {

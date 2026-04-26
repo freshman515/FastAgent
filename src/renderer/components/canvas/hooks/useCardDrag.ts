@@ -19,7 +19,7 @@ interface CardRect {
   zIndex: number
 }
 
-interface AvoidanceState {
+export interface AvoidanceState {
   positions: Map<string, { x: number; y: number }>
   affectedIds: Set<string>
 }
@@ -125,25 +125,7 @@ export function useCardDrag({
         avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
       }
 
-      // Apply live movement in the coordinate space used by each card's layer.
-      // Screen-projected cards are not inside the scaled world layer, so their
-      // visual delta must be converted back to screen pixels.
-      for (const id of ids) {
-        const card = cards.find((c) => c.id === id)
-        if (!card) continue
-        const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)
-        if (!el) continue
-        const mode = el.dataset.cardCoordinateMode
-        const isScreenProjected = mode === 'screen' || mode === 'screen-transform'
-        const liveDx = isScreenProjected ? dx * scale : dx
-        const liveDy = isScreenProjected ? dy * scale : dy
-        if (mode === 'screen-transform') {
-          el.style.setProperty('--card-live-dx', `${liveDx}px`)
-          el.style.setProperty('--card-live-dy', `${liveDy}px`)
-        } else {
-          el.style.transform = `translate(${liveDx}px, ${liveDy}px)`
-        }
-      }
+      applyLiveCardMovement(ids, cards, dx, dy, scale)
     }
 
     const onPointerUp = (event: PointerEvent): void => {
@@ -161,17 +143,7 @@ export function useCardDrag({
       liveDeltaRef.current = { dx: 0, dy: 0 }
       avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
 
-      // Reset transforms so commit takes effect via re-render.
-      for (const id of ids) {
-        const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)
-        if (el) {
-          if (el.dataset.cardCoordinateMode !== 'screen-transform') {
-            el.style.transform = ''
-          }
-          el.style.removeProperty('--card-live-dx')
-          el.style.removeProperty('--card-live-dy')
-        }
-      }
+      resetLiveCardMovement(ids)
       useCanvasUiStore.getState().clearGuides()
       if (dx !== 0 || dy !== 0) {
         useCanvasStore.getState().moveCards(ids, dx, dy)
@@ -201,17 +173,59 @@ export function useCardDrag({
   }, [element, cardId, handleSelector, enableDoubleClickFocus])
 }
 
-function resolveAvoidOverlap(
+export function applyLiveCardMovement(
+  ids: string[],
+  cards: CanvasCard[],
+  dx: number,
+  dy: number,
+  scale: number,
+): void {
+  // Apply live movement in the coordinate space used by each card's layer.
+  // Screen-projected cards are not inside the scaled world layer, so their
+  // visual delta must be converted back to screen pixels.
+  for (const id of ids) {
+    const card = cards.find((c) => c.id === id)
+    if (!card) continue
+    const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)
+    if (!el) continue
+    const mode = el.dataset.cardCoordinateMode
+    const isScreenProjected = mode === 'screen' || mode === 'screen-transform'
+    const liveDx = isScreenProjected ? dx * scale : dx
+    const liveDy = isScreenProjected ? dy * scale : dy
+    if (mode === 'screen-transform') {
+      el.style.setProperty('--card-live-dx', `${liveDx}px`)
+      el.style.setProperty('--card-live-dy', `${liveDy}px`)
+    } else {
+      el.style.transform = `translate(${liveDx}px, ${liveDy}px)`
+    }
+  }
+}
+
+export function resetLiveCardMovement(ids: string[]): void {
+  for (const id of ids) {
+    const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)
+    if (el) {
+      if (el.dataset.cardCoordinateMode !== 'screen-transform') {
+        el.style.transform = ''
+      }
+      el.style.removeProperty('--card-live-dx')
+      el.style.removeProperty('--card-live-dy')
+    }
+  }
+}
+
+export function resolveAvoidOverlap(
   cards: CanvasCard[],
   draggedIds: string[],
   dx: number,
   dy: number,
 ): AvoidanceState {
   const dragged = new Set(draggedIds)
+  const collisionCards = cards.filter((card) => card.kind !== 'frame')
   const rects = new Map<string, CardRect>()
   const moved = new Set<string>()
 
-  for (const card of cards) {
+  for (const card of collisionCards) {
     rects.set(card.id, {
       id: card.id,
       x: card.x + (dragged.has(card.id) ? dx : 0),
@@ -222,8 +236,8 @@ function resolveAvoidOverlap(
     })
   }
 
-  const ordered = [...cards].sort((a, b) => a.zIndex - b.zIndex)
-  const maxIterations = Math.max(12, cards.length * 8)
+  const ordered = [...collisionCards].sort((a, b) => a.zIndex - b.zIndex)
+  const maxIterations = Math.max(12, collisionCards.length * 8)
 
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     let changed = false
@@ -253,7 +267,7 @@ function resolveAvoidOverlap(
   }
 
   const positions = new Map<string, { x: number; y: number }>()
-  for (const card of cards) {
+  for (const card of collisionCards) {
     if (dragged.has(card.id)) continue
     const rect = rects.get(card.id)
     if (!rect) continue
@@ -305,7 +319,7 @@ function computePush(anchor: CardRect, mover: CardRect, gap: number): { dx: numb
     : { dx: 0, dy: pushY }
 }
 
-function applyAvoidanceStyles(
+export function applyAvoidanceStyles(
   cards: CanvasCard[],
   next: AvoidanceState,
   previous: AvoidanceState,
@@ -333,7 +347,7 @@ function applyAvoidanceStyles(
   }
 }
 
-function cleanupAvoidanceTransitions(affectedIds: Set<string>): void {
+export function cleanupAvoidanceTransitions(affectedIds: Set<string>): void {
   if (affectedIds.size === 0) return
   setTimeout(() => {
     for (const id of affectedIds) {

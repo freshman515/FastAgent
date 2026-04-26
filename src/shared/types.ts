@@ -87,7 +87,7 @@ export interface Session {
 
 export type WorkspaceLayout = 'panes' | 'canvas'
 
-export type CanvasCardKind = 'session' | 'terminal' | 'note'
+export type CanvasCardKind = 'session' | 'terminal' | 'note' | 'frame'
 
 export interface CanvasCard {
   id: string
@@ -98,12 +98,19 @@ export interface CanvasCard {
   y: number
   width: number
   height: number
+  expandedWidth?: number
+  expandedHeight?: number
   zIndex: number
   collapsed: boolean
+  collapsedPreview?: string[]
+  /** Optional per-canvas label shown after the session name. */
+  sessionRemark?: string
   /** Note-card body (plain text). */
   noteBody?: string
   /** Note-card accent color token (e.g. 'yellow' | 'blue' | 'green' | 'pink'). */
   noteColor?: string
+  /** Frame-card title. */
+  frameTitle?: string
   createdAt: number
   updatedAt: number
 }
@@ -114,9 +121,27 @@ export interface CanvasViewport {
   offsetY: number
 }
 
+export interface CanvasBookmark {
+  id: string
+  name: string
+  viewport: CanvasViewport
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CanvasRelation {
+  id: string
+  fromCardId: string
+  toCardId: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface CanvasLayout {
   cards: CanvasCard[]
   viewport: CanvasViewport
+  bookmarks: CanvasBookmark[]
+  relations: CanvasRelation[]
 }
 
 export interface CanvasPersistedState {
@@ -124,7 +149,7 @@ export interface CanvasPersistedState {
   layouts: Record<string, CanvasLayout>
 }
 
-export const CANVAS_SCHEMA_VERSION = 1
+export const CANVAS_SCHEMA_VERSION = 2
 export const CANVAS_MIN_SCALE = 0.1
 export const CANVAS_MAX_SCALE = 8
 

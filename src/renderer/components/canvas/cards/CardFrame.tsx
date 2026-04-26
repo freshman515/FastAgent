@@ -26,6 +26,7 @@ interface CardFrameProps {
   coordinateMode?: CardCoordinateMode
   focusOnClick?: boolean
   showSelectionRing?: boolean
+  passThroughBody?: boolean
 }
 
 const RESIZE_HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
@@ -83,6 +84,7 @@ export function CardFrame({
   coordinateMode = 'world',
   focusOnClick = false,
   showSelectionRing = true,
+  passThroughBody = false,
 }: CardFrameProps): JSX.Element {
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null)
   const outerRef = useRef<HTMLDivElement | null>(null)
@@ -160,7 +162,8 @@ export function CardFrame({
       onPointerDownCapture={handlePointerDownCapture}
       onClickCapture={handleClickCapture}
       className={cn(
-        'pointer-events-auto absolute flex flex-col rounded-[var(--radius-lg)] bg-[var(--color-bg-primary)] shadow-lg',
+        'absolute flex flex-col rounded-[var(--radius-lg)] bg-[var(--color-bg-primary)] shadow-lg',
+        passThroughBody ? 'pointer-events-none' : 'pointer-events-auto',
         !borderless && 'border',
         selected && showSelectionRing
           ? cn(!borderless && 'border-[var(--color-accent)]', 'ring-2 ring-[var(--color-accent-muted)]')
@@ -180,6 +183,7 @@ export function CardFrame({
         }}
         className={cn(
           'flex h-9 shrink-0 cursor-grab items-center justify-between gap-2 rounded-t-[var(--radius-lg)] bg-[var(--color-bg-surface)] px-3 select-none',
+          passThroughBody && 'pointer-events-auto',
           !borderless && 'border-b border-[var(--color-border)]',
           headerClassName,
         )}
@@ -212,7 +216,7 @@ export function CardFrame({
       <div
         data-card-wheel-content
         onContextMenu={(event) => event.stopPropagation()}
-        className={cn('min-h-0 flex-1 overflow-hidden rounded-b-[var(--radius-lg)]', bodyClassName)}
+        className={cn('min-h-0 flex-1 overflow-hidden rounded-b-[var(--radius-lg)]', passThroughBody && 'pointer-events-none', bodyClassName)}
       >
         {children}
       </div>
@@ -222,6 +226,7 @@ export function CardFrame({
         <div
           key={handle}
           data-card-resize={handle}
+          className={passThroughBody ? 'pointer-events-auto' : undefined}
           style={handleStyle(handle)}
         />
       ))}

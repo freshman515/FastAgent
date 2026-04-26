@@ -2,6 +2,8 @@ import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLin
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
+  CANVAS_FOCUS_FONT_PX_MAX,
+  CANVAS_FOCUS_FONT_PX_MIN,
   CANVAS_SESSION_CARD_HEIGHT_MAX,
   CANVAS_SESSION_CARD_HEIGHT_MIN,
   CANVAS_SESSION_CARD_WIDTH_MAX,
@@ -433,6 +435,40 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
                   min={CANVAS_SESSION_CARD_HEIGHT_MIN}
                   max={CANVAS_SESSION_CARD_HEIGHT_MAX}
                   onChange={(v) => onUpdate('canvasSessionCardHeight', v)}
+                />
+              </div>
+            </div>
+            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+              <div className="mb-2 flex flex-col gap-0.5">
+                <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">点击聚焦缩放字体</span>
+                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                  字体显示大小在范围内时只居中；小于或大于范围时缩放到目标字体大小。
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <PixelNumberField
+                  label="最小"
+                  value={settings.canvasFocusReadableFontMinPx}
+                  min={CANVAS_FOCUS_FONT_PX_MIN}
+                  max={CANVAS_FOCUS_FONT_PX_MAX}
+                  step={1}
+                  onChange={(v) => onUpdate('canvasFocusReadableFontMinPx', v)}
+                />
+                <PixelNumberField
+                  label="最大"
+                  value={settings.canvasFocusReadableFontMaxPx}
+                  min={CANVAS_FOCUS_FONT_PX_MIN}
+                  max={CANVAS_FOCUS_FONT_PX_MAX}
+                  step={1}
+                  onChange={(v) => onUpdate('canvasFocusReadableFontMaxPx', v)}
+                />
+                <PixelNumberField
+                  label="目标"
+                  value={settings.canvasFocusTargetFontPx}
+                  min={CANVAS_FOCUS_FONT_PX_MIN}
+                  max={CANVAS_FOCUS_FONT_PX_MAX}
+                  step={1}
+                  onChange={(v) => onUpdate('canvasFocusTargetFontPx', v)}
                 />
               </div>
             </div>

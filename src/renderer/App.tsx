@@ -779,6 +779,7 @@ function MainApp(): JSX.Element {
   useEffect(() => {
     const handlePaneNumberShortcut = (e: KeyboardEvent): void => {
       if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.key < '1' || e.key > '9') return
+      if (useUIStore.getState().settings.workspaceLayout === 'canvas') return
 
       const paneStore = usePanesStore.getState()
       const paneId = getPaneLeafIds(paneStore.root)[Number(e.key) - 1]

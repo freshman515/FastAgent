@@ -17,8 +17,79 @@ import { orchestratorService } from './services/OrchestratorService'
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
+const canvasBookmarkShortcutWebContents = new Set<number>()
 
 type StartupWindowState = 'maximized' | 'normal'
+
+function getAltDigitShortcutIndex(input: Electron.Input): number | null {
+  if (
+    input.type !== 'keyDown'
+    || !input.alt
+    || input.control
+    || input.meta
+    || input.shift
+    || input.isAutoRepeat
+  ) {
+    return null
+  }
+
+  if (/^[1-9]$/.test(input.key)) return Number(input.key) - 1
+
+  const digitMatch = input.code.match(/^Digit([1-9])$/)
+  if (digitMatch) return Number(digitMatch[1]) - 1
+
+  const numpadMatch = input.code.match(/^Numpad([1-9])$/)
+  if (numpadMatch) return Number(numpadMatch[1]) - 1
+
+  return null
+}
+
+function isAltFitAllShortcut(input: Electron.Input): boolean {
+  if (
+    input.type !== 'keyDown'
+    || !input.alt
+    || input.control
+    || input.meta
+    || input.shift
+    || input.isAutoRepeat
+  ) {
+    return false
+  }
+
+  return input.key.toLowerCase() === 'a' || input.code === 'KeyA'
+}
+
+function installCanvasBookmarkShortcutBridge(win: BrowserWindow): void {
+  const webContents = win.webContents
+
+  webContents.on('before-input-event', (event, input) => {
+    if (!canvasBookmarkShortcutWebContents.has(webContents.id)) return
+
+    const bookmarkIndex = getAltDigitShortcutIndex(input)
+    if (bookmarkIndex !== null) {
+      event.preventDefault()
+      webContents.send('shortcuts:canvas-bookmark', bookmarkIndex)
+      return
+    }
+
+    if (isAltFitAllShortcut(input)) {
+      event.preventDefault()
+      webContents.send('shortcuts:canvas-fit-all')
+    }
+  })
+
+  webContents.on('destroyed', () => {
+    canvasBookmarkShortcutWebContents.delete(webContents.id)
+  })
+}
+
+ipcMain.on('shortcuts:set-canvas-bookmark-shortcuts-active', (event, active: boolean) => {
+  if (active) {
+    canvasBookmarkShortcutWebContents.add(event.sender.id)
+  } else {
+    canvasBookmarkShortcutWebContents.delete(event.sender.id)
+  }
+})
 
 function getStartupWindowState(): StartupWindowState {
   const config = readConfig()
@@ -45,6 +116,7 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+  installCanvasBookmarkShortcutBridge(mainWindow)
 
   // Auto-approve system audio capture for music visualizer (no picker dialog)
   mainWindow.webContents.session.setDisplayMediaRequestHandler(
@@ -208,6 +280,7 @@ app.whenReady().then(async () => {
       },
     })
 
+    installCanvasBookmarkShortcutBridge(win)
     detachedWindows.set(id, win)
     detachedSessionData.set(id, sessionData)
     detachedEditorData.set(id, editorData)

@@ -63,7 +63,7 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
   return (
     <div
       ref={mapRef}
-      className="absolute right-4 bottom-4 z-10 cursor-pointer overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/95 shadow-lg backdrop-blur"
+      className="absolute right-4 bottom-4 z-[100000] cursor-pointer overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/80 opacity-45 shadow-lg backdrop-blur transition-opacity duration-150 hover:opacity-100 active:opacity-100"
       style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT }}
       onPointerDown={(e) => { e.stopPropagation(); jumpTo(e.clientX, e.clientY) }}
       onPointerMove={(e) => {
@@ -73,6 +73,7 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
       <svg width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} style={{ display: 'block' }}>
         {cards.map((card) => {
           const isSession = card.kind === 'session' || card.kind === 'terminal'
+          const isFrame = card.kind === 'frame'
           return (
             <rect
               key={card.id}
@@ -80,7 +81,9 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
               y={worldToMapY(card.y)}
               width={Math.max(2, card.width * scale)}
               height={Math.max(2, card.height * scale)}
-              fill={isSession ? 'color-mix(in srgb, var(--color-accent) 60%, transparent)' : 'color-mix(in srgb, var(--color-text-tertiary) 40%, transparent)'}
+              fill={isFrame ? 'transparent' : isSession ? 'color-mix(in srgb, var(--color-accent) 60%, transparent)' : 'color-mix(in srgb, var(--color-text-tertiary) 40%, transparent)'}
+              stroke={isFrame ? 'color-mix(in srgb, var(--color-accent) 62%, transparent)' : undefined}
+              strokeWidth={isFrame ? 1 : undefined}
               rx={1}
             />
           )

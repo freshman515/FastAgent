@@ -1,5 +1,36 @@
 import { useEffect } from 'react'
-import { useCanvasStore } from '@/stores/canvas'
+import { cancelViewportAnimation, useCanvasStore } from '@/stores/canvas'
+
+function getAltBookmarkIndex(event: KeyboardEvent): number | null {
+  if (
+    !event.altKey
+    || event.ctrlKey
+    || event.metaKey
+    || event.shiftKey
+  ) {
+    return null
+  }
+
+  if (/^[1-9]$/.test(event.key)) return Number(event.key) - 1
+
+  const digitMatch = event.code.match(/^Digit([1-9])$/)
+  if (digitMatch) return Number(digitMatch[1]) - 1
+
+  const numpadMatch = event.code.match(/^Numpad([1-9])$/)
+  if (numpadMatch) return Number(numpadMatch[1]) - 1
+
+  return null
+}
+
+function isAltFitAllShortcut(event: KeyboardEvent): boolean {
+  return (
+    event.altKey
+    && !event.ctrlKey
+    && !event.metaKey
+    && !event.shiftKey
+    && (event.key.toLowerCase() === 'a' || event.code === 'KeyA')
+  )
+}
 
 /**
  * Canvas-specific keyboard shortcuts. Attached to `window` but scoped to the
@@ -20,9 +51,57 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
       return false
     }
 
+    const isEditableFocused = (): boolean => {
+      const active = document.activeElement
+      if (!active) return false
+      const activeElement = active as HTMLElement
+      if (activeElement.closest('.xterm')) return false
+      if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') return true
+      if (activeElement.isContentEditable) return true
+      return false
+    }
+
+    const fitAllToViewport = (): void => {
+      const rect = viewportEl.getBoundingClientRect()
+      if (!rect) return
+      cancelViewportAnimation()
+      useCanvasStore.getState().fitAll(rect.width, rect.height)
+    }
+
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (isTextInputFocused()) return
       const store = useCanvasStore.getState()
+      const bookmarkIndex = getAltBookmarkIndex(event)
+
+      if (bookmarkIndex !== null) {
+        if (isEditableFocused()) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        cancelViewportAnimation()
+        const bookmark = store.getLayout().bookmarks[bookmarkIndex]
+        if (bookmark) store.goToBookmark(bookmark.id)
+        return
+      }
+
+      if (isAltFitAllShortcut(event)) {
+        if (isEditableFocused()) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        fitAllToViewport()
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+        if (!store.canUndo() || isEditableFocused()) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        store.undo()
+        return
+      }
+
+      if (isTextInputFocused()) return
       const selection = store.selectedCardIds
 
       // Select all
@@ -42,16 +121,12 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
         return
       }
 
-      // Delete selected (note cards: silent; session cards: skipped — must use menu)
+      // Delete selected cards from the canvas. Session cards are detached from
+      // the canvas only; ending a running session still goes through the menu.
       if (event.key === 'Delete' || event.key === 'Backspace') {
         if (selection.length === 0) return
         event.preventDefault()
-        const cards = store.getCards()
-        const removableIds = selection.filter((id) => {
-          const card = cards.find((c) => c.id === id)
-          return card?.kind === 'note'
-        })
-        if (removableIds.length > 0) store.removeCards(removableIds)
+        store.removeCards(selection)
         return
       }
 
@@ -95,7 +170,27 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
       }
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.api.shortcuts.setCanvasBookmarkShortcutsActive(true)
+    const unsubscribeCanvasBookmarkShortcut = window.api.shortcuts.onCanvasBookmarkShortcut((bookmarkIndex) => {
+      if (isEditableFocused()) return
+      const store = useCanvasStore.getState()
+      const bookmark = store.getLayout().bookmarks[bookmarkIndex]
+      if (bookmark) {
+        cancelViewportAnimation()
+        store.goToBookmark(bookmark.id)
+      }
+    })
+    const unsubscribeCanvasFitAllShortcut = window.api.shortcuts.onCanvasFitAllShortcut(() => {
+      if (isEditableFocused()) return
+      fitAllToViewport()
+    })
+
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => {
+      window.api.shortcuts.setCanvasBookmarkShortcutsActive(false)
+      unsubscribeCanvasBookmarkShortcut()
+      unsubscribeCanvasFitAllShortcut()
+      window.removeEventListener('keydown', onKeyDown, { capture: true })
+    }
   }, [viewportEl])
 }

@@ -57,6 +57,21 @@ const api = {
       ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
   },
 
+  shortcuts: {
+    setCanvasBookmarkShortcutsActive: (active: boolean) =>
+      ipcRenderer.send('shortcuts:set-canvas-bookmark-shortcuts-active', active),
+    onCanvasBookmarkShortcut: (callback: (index: number) => void) => {
+      const handler = (_: unknown, index: number) => callback(index)
+      ipcRenderer.on('shortcuts:canvas-bookmark', handler)
+      return () => ipcRenderer.removeListener('shortcuts:canvas-bookmark', handler)
+    },
+    onCanvasFitAllShortcut: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on('shortcuts:canvas-fit-all', handler)
+      return () => ipcRenderer.removeListener('shortcuts:canvas-fit-all', handler)
+    },
+  },
+
   dialog: {
     selectFolder: () => ipcRenderer.invoke(IPC.DIALOG_SELECT_FOLDER) as Promise<string | null>,
   },

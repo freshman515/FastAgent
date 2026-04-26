@@ -19,6 +19,11 @@ export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
 export const CANVAS_SESSION_CARD_HEIGHT_MIN = 320
 export const CANVAS_SESSION_CARD_HEIGHT_MAX = 1600
+export const CANVAS_FOCUS_FONT_PX_MIN = 8
+export const CANVAS_FOCUS_FONT_PX_MAX = 48
+export const CANVAS_FOCUS_FONT_TARGET_DEFAULT = 17
+export const CANVAS_FOCUS_FONT_RANGE_MIN_DEFAULT = 14
+export const CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT = 20
 
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
@@ -201,6 +206,12 @@ export interface AppSettings {
   canvasSessionCardWidth: number
   /** Default height for newly-created canvas session / terminal cards */
   canvasSessionCardHeight: number
+  /** Current visual font size lower bound where clicking a canvas card only centers it */
+  canvasFocusReadableFontMinPx: number
+  /** Current visual font size upper bound where clicking a canvas card only centers it */
+  canvasFocusReadableFontMaxPx: number
+  /** Visual font size to zoom to when a canvas card is outside the readable range */
+  canvasFocusTargetFontPx: number
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -265,6 +276,9 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   canvasShowMinimap: true,
   canvasSessionCardWidth: 1040,
   canvasSessionCardHeight: 660,
+  canvasFocusReadableFontMinPx: CANVAS_FOCUS_FONT_RANGE_MIN_DEFAULT,
+  canvasFocusReadableFontMaxPx: CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT,
+  canvasFocusTargetFontPx: CANVAS_FOCUS_FONT_TARGET_DEFAULT,
 }
 
 interface UIState {
@@ -714,6 +728,24 @@ function clampCanvasSessionCardHeight(height: number): number {
   return Math.round(Math.max(CANVAS_SESSION_CARD_HEIGHT_MIN, Math.min(CANVAS_SESSION_CARD_HEIGHT_MAX, height)))
 }
 
+function clampCanvasFocusFontPx(size: number): number {
+  return Math.round(Math.max(CANVAS_FOCUS_FONT_PX_MIN, Math.min(CANVAS_FOCUS_FONT_PX_MAX, size)))
+}
+
+function normalizeCanvasFocusFontSettings(settings: AppSettings): AppSettings {
+  const minPx = clampCanvasFocusFontPx(settings.canvasFocusReadableFontMinPx)
+  const maxPx = clampCanvasFocusFontPx(settings.canvasFocusReadableFontMaxPx)
+  const rangeMin = Math.min(minPx, maxPx)
+  const rangeMax = Math.max(minPx, maxPx)
+  const targetPx = Math.max(rangeMin, Math.min(rangeMax, clampCanvasFocusFontPx(settings.canvasFocusTargetFontPx)))
+  return {
+    ...settings,
+    canvasFocusReadableFontMinPx: rangeMin,
+    canvasFocusReadableFontMaxPx: rangeMax,
+    canvasFocusTargetFontPx: targetPx,
+  }
+}
+
 function normalizeDockPanelOrder(raw: unknown): {
   order: Record<DockSide, DockPanelId[]>
   seeded: boolean
@@ -1072,7 +1104,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
 
   _loadSettings: (raw, customThemesOverride) => {
-    const s = { ...DEFAULT_SETTINGS }
+    let s = { ...DEFAULT_SETTINGS }
     let shouldPersistSettings = false
     if (raw && typeof raw === 'object') {
       if (typeof raw.uiFontSize === 'number') s.uiFontSize = raw.uiFontSize
@@ -1197,6 +1229,10 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.canvasShowMinimap === 'boolean') s.canvasShowMinimap = raw.canvasShowMinimap
       if (typeof raw.canvasSessionCardWidth === 'number') s.canvasSessionCardWidth = clampCanvasSessionCardWidth(raw.canvasSessionCardWidth)
       if (typeof raw.canvasSessionCardHeight === 'number') s.canvasSessionCardHeight = clampCanvasSessionCardHeight(raw.canvasSessionCardHeight)
+      if (typeof raw.canvasFocusReadableFontMinPx === 'number') s.canvasFocusReadableFontMinPx = raw.canvasFocusReadableFontMinPx
+      if (typeof raw.canvasFocusReadableFontMaxPx === 'number') s.canvasFocusReadableFontMaxPx = raw.canvasFocusReadableFontMaxPx
+      if (typeof raw.canvasFocusTargetFontPx === 'number') s.canvasFocusTargetFontPx = raw.canvasFocusTargetFontPx
+      s = normalizeCanvasFocusFontSettings(s)
       if (typeof raw.terminalTheme === 'string') s.terminalTheme = raw.terminalTheme
       // Prefer the dedicated top-level customThemes key (more robust against ui-settings resets)
       const themesSource = (customThemesOverride && Object.keys(customThemesOverride).length > 0)
@@ -1230,7 +1266,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   updateSettings: (updates) => {
-    const settings = { ...get().settings, ...updates }
+    const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
     set({ settings })
     persistUI({
       settings,

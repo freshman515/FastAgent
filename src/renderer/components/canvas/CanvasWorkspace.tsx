@@ -10,6 +10,11 @@ import { CanvasContextMenu, type CanvasContextMenuState } from './CanvasContextM
 import { CanvasMarquee } from './CanvasMarquee'
 import { CanvasGuideLines } from './CanvasGuideLines'
 import { CanvasMinimap } from './CanvasMinimap'
+import { CanvasRelations } from './CanvasRelations'
+import { CanvasSearch } from './CanvasSearch'
+import { CanvasSessionList } from './CanvasSessionList'
+import { CanvasSelectionBounds } from './CanvasSelectionBounds'
+import { FrameCard } from './cards/FrameCard'
 import { NoteCard } from './cards/NoteCard'
 import { SessionCard } from './cards/SessionCard'
 import { useCanvasViewport, screenToWorld } from './hooks/useCanvasViewport'
@@ -21,8 +26,34 @@ import { useCanvasKeyboard } from './hooks/useCanvasKeyboard'
  * `AppSettings.workspaceLayout === 'canvas'`. Coexists with the BSP panes
  * tree — switching modes doesn't destroy either side's state.
  */
+function cleanupOrphanedCanvasCards(): void {
+  const sessionState = useSessionsStore.getState()
+  if (!sessionState._loaded) return
+
+  const validSessionIds = new Set(sessionState.sessions.map((session) => session.id))
+  const canvas = useCanvasStore.getState()
+  const staleRefIds = new Set<string>()
+
+  for (const layout of Object.values(canvas.layouts)) {
+    for (const card of layout.cards) {
+      if (
+        (card.kind === 'session' || card.kind === 'terminal')
+        && card.refId
+        && !validSessionIds.has(card.refId)
+      ) {
+        staleRefIds.add(card.refId)
+      }
+    }
+  }
+
+  for (const refId of staleRefIds) {
+    canvas.detachSessionEverywhere(refId)
+  }
+}
+
 export function CanvasWorkspace(): JSX.Element {
   const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const attachViewportRef = useCallback((el: HTMLDivElement | null) => {
     viewportRef.current = el
@@ -35,12 +66,20 @@ export function CanvasWorkspace(): JSX.Element {
   const activePaneId = usePanesStore((state) => state.activePaneId)
   const activeTabId = usePanesStore((state) => state.paneActiveSession[state.activePaneId] ?? null)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
+  const cards = useCanvasStore((state) => state.getLayout().cards)
+  const sessionsLoaded = useSessionsStore((state) => state._loaded)
+  const sessionIdsKey = useSessionsStore((state) => state.sessions.map((session) => session.id).join('\x1f'))
 
   // 1) Keep canvas layout key aligned with the current panes scope.
   useEffect(() => {
     const key = resolveCanvasLayoutKey(workspaceMode, currentProjectKey)
     useCanvasStore.getState().setActiveLayout(key)
   }, [workspaceMode, currentProjectKey])
+
+  useEffect(() => {
+    if (!sessionsLoaded) return
+    cleanupOrphanedCanvasCards()
+  }, [cards, sessionIdsKey, sessionsLoaded])
 
   // 2) Ongoing sync — whenever the panes tree gains a session that doesn't
   //    yet have a canvas card (either because the user just opened one from
@@ -121,12 +160,14 @@ export function CanvasWorkspace(): JSX.Element {
   // 4) Reverse-sync: when sessions are removed elsewhere, clean up their
   //    canvas cards so we don't render orphans.
   useEffect(() => {
+    cleanupOrphanedCanvasCards()
     const previousIds = new Set(useSessionsStore.getState().sessions.map((s) => s.id))
     const unsubscribe = useSessionsStore.subscribe((state) => {
       const currentIds = new Set(state.sessions.map((s) => s.id))
       for (const id of previousIds) {
         if (!currentIds.has(id)) useCanvasStore.getState().detachSessionEverywhere(id)
       }
+      cleanupOrphanedCanvasCards()
       previousIds.clear()
       for (const id of currentIds) previousIds.add(id)
     })
@@ -137,7 +178,36 @@ export function CanvasWorkspace(): JSX.Element {
   useMarqueeSelect(viewportEl)
   useCanvasKeyboard(viewportEl)
 
-  const cards = useCanvasStore((state) => state.getLayout().cards)
+  useEffect(() => {
+    if (!viewportEl) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
+      if (event.shiftKey) {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        setSearchOpen(true)
+        return
+      }
+      const active = document.activeElement
+      if (
+        active
+        && (
+          active.tagName === 'INPUT'
+          || active.tagName === 'TEXTAREA'
+          || (active as HTMLElement).isContentEditable
+          || active.closest('.xterm')
+        )
+      ) {
+        return
+      }
+      event.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
+  }, [viewportEl])
+
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const showMinimap = useUIStore((state) => state.settings.canvasShowMinimap)
   const clearSelection = useCanvasStore((state) => state.clearSelection)
@@ -157,13 +227,19 @@ export function CanvasWorkspace(): JSX.Element {
     // Only trigger on canvas empty space.
     const target = event.target as HTMLElement
     const cardEl = target.closest<HTMLElement>('[data-card-id]')
+    const selectionBoundsEl = target.closest<HTMLElement>('[data-canvas-selection-bounds]')
     event.preventDefault()
     if (!viewportRef.current) return
     const rect = viewportRef.current.getBoundingClientRect()
     const viewport = useCanvasStore.getState().getViewport()
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, viewport)
 
-    if (cardEl) {
+    if (selectionBoundsEl) {
+      const [cardId] = useCanvasStore.getState().selectedCardIds
+      if (cardId) {
+        setMenu({ screenX: event.clientX, screenY: event.clientY, target: 'card', cardId })
+      }
+    } else if (cardEl) {
       const id = cardEl.dataset.cardId!
       const selection = useCanvasStore.getState().selectedCardIds
       if (!selection.includes(id)) useCanvasStore.getState().setSelection([id])
@@ -195,12 +271,16 @@ export function CanvasWorkspace(): JSX.Element {
         onContextMenu={onContextMenu}
       >
         {gridEnabled && <CanvasGrid />}
+        <CanvasRelations />
         <CanvasProjectedCardLayer cards={cards} viewportEl={viewportEl} />
         <CanvasGuideLines />
         <CanvasMarquee />
+        <CanvasSelectionBounds />
       </div>
 
-      <CanvasToolbar viewportRef={viewportRef} />
+      <CanvasSessionList />
+      <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => setSearchOpen(true)} />
+      <CanvasSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       {showMinimap && <CanvasMinimap viewportRef={viewportRef} />}
 
       {cards.length === 0 && <CanvasEmptyState viewportRef={viewportRef} />}
@@ -212,13 +292,14 @@ export function CanvasWorkspace(): JSX.Element {
 
 function CanvasProjectedCardLayer({ cards, viewportEl }: { cards: CanvasCard[]; viewportEl: HTMLDivElement | null }): JSX.Element {
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0 z-[2]">
       {cards.map((card) => <CanvasCardRenderer key={card.id} card={card} viewportEl={viewportEl} />)}
     </div>
   )
 }
 
 function CanvasCardRenderer({ card, viewportEl }: { card: CanvasCard; viewportEl: HTMLDivElement | null }): JSX.Element | null {
+  if (card.kind === 'frame') return <FrameCard card={card} coordinateMode="screen" />
   if (card.kind === 'note') return <NoteCard card={card} coordinateMode="screen" />
   if (card.kind === 'session' || card.kind === 'terminal') {
     return <CulledSessionCard card={card} viewportEl={viewportEl} />

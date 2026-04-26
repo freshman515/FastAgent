@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
+import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -119,6 +120,7 @@ export function TitleBar(): JSX.Element | null {
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
   const activateDockPanel = useUIStore((s) => s.activateDockPanel)
   const addToast = useUIStore((s) => s.addToast)
+  const isDarkTheme = useIsDarkTheme()
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
@@ -494,7 +496,9 @@ export function TitleBar(): JSX.Element | null {
           onClick={handleToggleWorkspaceLayout}
           className={cn(
             'group relative isolate mr-2 flex h-7.5 w-[142px] items-center rounded-full p-[3px] cursor-pointer',
-            'bg-[#121214] ring-1 ring-inset ring-white/[0.05] shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]',
+            isDarkTheme
+              ? 'bg-[#121214] ring-1 ring-inset ring-white/[0.05] shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]'
+              : 'bg-[color-mix(in_srgb,var(--color-bg-tertiary)_82%,white)] ring-1 ring-inset ring-[var(--color-border)] shadow-[inset_0_1px_2px_rgba(15,23,42,0.08),0_1px_2px_rgba(15,23,42,0.08)]',
             'transition-all duration-200 active:scale-[0.97]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/80',
           )}
@@ -514,9 +518,10 @@ export function TitleBar(): JSX.Element | null {
           <div
             className={cn(
               'absolute left-[3px] top-[3px] h-[calc(100%-6px)] w-[calc(50%-3px)] rounded-full',
-              'bg-gradient-to-b from-white/[0.12] to-white/[0.04] backdrop-blur-md',
-              'ring-1 ring-inset ring-white/[0.15]',
-              'shadow-[0_2px_8px_rgba(0,0,0,0.5),0_0_0_1px_rgba(0,0,0,0.3)]',
+              isDarkTheme
+                ? 'bg-gradient-to-b from-white/[0.12] to-white/[0.04] ring-1 ring-inset ring-white/[0.15] shadow-[0_2px_8px_rgba(0,0,0,0.5),0_0_0_1px_rgba(0,0,0,0.3)]'
+                : 'bg-white ring-1 ring-inset ring-[var(--color-border)] shadow-[0_1px_5px_rgba(15,23,42,0.16),0_0_0_1px_rgba(255,255,255,0.9)]',
+              'backdrop-blur-md',
               'transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
               workspaceLayout === 'canvas' ? 'translate-x-full' : 'translate-x-0'
             )}
@@ -531,7 +536,12 @@ export function TitleBar(): JSX.Element | null {
               'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[11px] font-bold tracking-wider transition-all duration-300',
               workspaceLayout === 'canvas'
                 ? 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] scale-95'
-                : 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] scale-100'
+                : cn(
+                    'scale-100',
+                    isDarkTheme
+                      ? 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]'
+                      : 'text-[var(--color-text-primary)]'
+                  )
             )}
           >
             <Columns2
@@ -550,7 +560,12 @@ export function TitleBar(): JSX.Element | null {
             className={cn(
               'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[11px] font-bold tracking-wider transition-all duration-300',
               workspaceLayout === 'canvas'
-                ? 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] scale-100'
+                ? cn(
+                    'scale-100',
+                    isDarkTheme
+                      ? 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]'
+                      : 'text-[var(--color-text-primary)]'
+                  )
                 : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] scale-95'
             )}
           >
