@@ -46,35 +46,40 @@ export function ProjectsPanel(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      <DockActions>
-        <button
-          onClick={() => { void createAnonymousTerminal() }}
-          className={cn(
-            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
-            'transition-colors duration-100',
-          )}
-          title="匿名终端"
-        >
-          <Terminal size={18} />
-        </button>
-        <button
-          onClick={handleStartAdding}
-          className={cn(
-            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
-            'transition-colors duration-100',
-          )}
-          title="新建分组"
-        >
-          <Plus size={18} />
-        </button>
-      </DockActions>
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border)]/50 px-2.5 py-1.5">
+        <span className="pl-1 text-[11px] font-bold tracking-wider text-[var(--color-text-tertiary)] uppercase">Projects</span>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => { void createAnonymousTerminal() }}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+              'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+              'transition-all duration-150',
+            )}
+            title="匿名终端"
+          >
+            <Terminal size={14} />
+          </button>
+          <button
+            onClick={handleStartAdding}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+              'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+              'transition-all duration-150',
+            )}
+            title="新建分组"
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+      </div>
 
       {adding && (
-        <div className="border-b border-[var(--color-border)] px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <FolderPlus size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+        <div className="border-b border-[var(--color-border)]/60 bg-[var(--color-bg-primary)]/30 px-3 py-2.5 animate-[fade-in_0.2s_ease-out]">
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
+              <FolderPlus size={12} />
+            </div>
             <input
               autoFocus
               value={newName}
@@ -83,33 +88,33 @@ export function ProjectsPanel(): JSX.Element {
               onBlur={handleCommit}
               placeholder="分组名称..."
               className={cn(
-                'h-6 w-full rounded-[var(--radius-sm)] bg-[var(--color-bg-tertiary)] px-2 text-[var(--ui-font-sm)]',
+                'h-7 w-full rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)]/50 px-2.5 text-[var(--ui-font-sm)]',
                 'text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-                'border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none',
+                'border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none transition-all',
               )}
             />
           </div>
         </div>
       )}
 
-      <div className="shrink-0 px-2.5 py-2">
+      <div className="shrink-0 px-3 py-3">
         <div className="group/search relative">
           {/* Leading search icon — always visible, tints to accent on focus */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
-            <Search size={14} strokeWidth={2.25} />
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-9 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
+            <Search size={14} strokeWidth={2.5} />
           </div>
 
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索项目…"
+            placeholder="搜索项目与分组…"
             spellCheck={false}
             className={cn(
-              'peer h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/70 bg-[var(--color-bg-tertiary)]/45 pl-8 pr-8',
+              'peer h-8.5 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/80 bg-[var(--color-bg-primary)]/40 pl-9 pr-8',
               'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-              'outline-none transition-all duration-150',
-              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]/70',
-              'focus:border-[var(--color-accent)]/70 focus:bg-[var(--color-bg-primary)]',
+              'outline-none transition-all duration-200',
+              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-primary)]/60',
+              'focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-primary)]',
               'focus:shadow-[0_0_0_3px_var(--color-accent-muted)]',
             )}
           />
@@ -119,16 +124,16 @@ export function ProjectsPanel(): JSX.Element {
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-1 my-auto flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              className="absolute inset-y-0 right-1.5 my-auto flex h-5.5 w-5.5 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
               title="清除搜索"
             >
-              <X size={13} />
+              <X size={12} />
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto scrollbar-none pb-4">
         <GroupList searchQuery={searchQuery} />
       </div>
 

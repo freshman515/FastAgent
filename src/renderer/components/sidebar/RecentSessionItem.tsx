@@ -82,42 +82,42 @@ export function RecentSessionItem({
           }
         }}
         className={cn(
-          'group relative flex h-11 cursor-pointer items-center gap-2.5 pl-3 pr-2 mx-1.5 rounded-[var(--radius-md)]',
-          'transition-colors duration-100 will-change-transform',
+          'group relative flex h-12 cursor-pointer items-center gap-2.5 px-3 mx-1 rounded-[var(--radius-sm)]',
+          'transition-all duration-200 will-change-transform',
           isActive
-            ? 'bg-[var(--color-accent-muted)]'
-            : 'hover:bg-[var(--color-bg-tertiary)]/55',
+            ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]/40 hover:text-[var(--color-text-primary)]',
         )}
         title={sourceGroupId ? '点击激活 · 右键移出分组' : '点击激活 · 拖到分组归类'}
       >
         {/* Active / color accent bar */}
-        <span
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r-full transition-opacity duration-100',
-            isActive || session.color ? 'opacity-100' : 'opacity-0 group-hover:opacity-40',
-          )}
-          style={{ backgroundColor: isActive ? 'var(--color-accent)' : accent }}
-        />
+        {isActive && (
+          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent)]" />
+        )}
 
         {/* Type icon */}
-        <img
-          src={iconSrc}
-          alt=""
-          className={cn(
-            'h-5 w-5 shrink-0 transition-transform duration-100',
-            isActive && 'scale-[1.05]',
+        <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+          <img
+            src={iconSrc}
+            alt=""
+            className={cn(
+              'h-5 w-5 shrink-0 transition-all duration-200',
+              isActive ? 'scale-110' : 'group-hover:scale-110',
+            )}
+            draggable={false}
+          />
+          {running && (
+            <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[var(--color-bg-secondary)] bg-[var(--color-success)] shadow-[0_0_4px_var(--color-success)]" />
           )}
-          draggable={false}
-        />
+        </div>
 
         {/* Project / session name — both readable at sm, distinguished by weight/color */}
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-[1.2]">
+        <div className="flex min-w-0 flex-1 flex-col gap-0 leading-tight">
           <span
             className={cn(
-              'truncate text-[var(--ui-font-sm)]',
+              'truncate text-[10px] font-medium tracking-tight transition-colors duration-200',
               isActive
-                ? 'text-[var(--color-accent)]'
+                ? 'text-[var(--color-accent)]/80'
                 : 'text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]',
             )}
           >
@@ -125,10 +125,10 @@ export function RecentSessionItem({
           </span>
           <span
             className={cn(
-              'truncate text-[var(--ui-font-sm)] font-medium',
+              'truncate text-[12px] transition-colors duration-200',
               isActive
-                ? 'font-semibold text-[var(--color-text-primary)]'
-                : 'text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)]',
+                ? 'font-bold text-[var(--color-text-primary)]'
+                : 'font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)]',
             )}
           >
             {session.name}
@@ -138,30 +138,16 @@ export function RecentSessionItem({
         {/* Optional label */}
         {session.label && (
           <span
-            className="shrink-0 rounded px-1 py-px text-[8px] font-semibold leading-tight tracking-wide"
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold leading-tight tracking-wide shadow-sm"
             style={{
-              backgroundColor: (session.color ?? 'var(--color-text-tertiary)') + '22',
+              backgroundColor: (session.color ?? 'var(--color-text-tertiary)') + '18',
               color: session.color ?? 'var(--color-text-secondary)',
+              border: `1px solid ${session.color ?? 'var(--color-text-tertiary)'}22`,
             }}
           >
             {session.label}
           </span>
         )}
-
-        {/* Status dot + running halo */}
-        <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
-          <span
-            className={cn(
-              'h-2 w-2 rounded-full transition-colors',
-              running
-                ? 'bg-[var(--color-success)] shadow-[0_0_6px_var(--color-success)]'
-                : 'bg-[var(--color-text-tertiary)]/40',
-            )}
-          />
-          {running && (
-            <span className="pointer-events-none absolute inset-0 animate-ping rounded-full bg-[var(--color-success)]/45" />
-          )}
-        </span>
       </div>
       {dropAfter && (
         <div className="pointer-events-none absolute -bottom-px inset-x-2 h-0.5 rounded-full bg-[var(--color-accent)] z-10" />

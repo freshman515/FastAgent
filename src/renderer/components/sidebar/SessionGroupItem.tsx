@@ -86,11 +86,11 @@ export function SessionGroupItem({ group, searchQuery = '' }: SessionGroupItemPr
           e.dataTransfer.effectAllowed = 'move'
         }}
         className={cn(
-          'group relative flex h-7 cursor-pointer items-center gap-2 px-2 mx-1.5 mt-1 mb-0.5',
-          'transition-colors duration-100 rounded-[var(--radius-sm)]',
+          'group relative flex h-8.5 cursor-pointer items-center gap-2.5 px-3 mt-1.5 mb-0.5',
+          'transition-all duration-200 hover:bg-[var(--color-bg-surface)]/40 rounded-[var(--radius-sm)] mx-1',
           dragOver
-            ? 'bg-[var(--color-accent-muted)] ring-1 ring-inset ring-[var(--color-accent)]/70'
-            : 'hover:bg-[var(--color-bg-tertiary)]/50',
+            ? 'bg-[var(--color-accent-muted)] ring-1 ring-inset ring-[var(--color-accent)]/30'
+            : '',
         )}
         onClick={() => toggleCollapse(group.id)}
         onDragOver={(e) => {
@@ -118,15 +118,13 @@ export function SessionGroupItem({ group, searchQuery = '' }: SessionGroupItemPr
           }
         }}
       >
-        {group.collapsed ? (
-          <ChevronRight size={11} className="shrink-0 text-[var(--color-text-tertiary)]" />
-        ) : (
-          <ChevronDown size={11} className="shrink-0 text-[var(--color-text-tertiary)]" />
-        )}
-
-        <span
-          className="inline-block h-3 w-1 shrink-0 rounded-full"
-          style={{ backgroundColor: group.color, boxShadow: `0 0 6px ${group.color}55` }}
+        {/* Brand mark — subtle vertical pill with glow */}
+        <div
+          className="h-3.5 w-1 rounded-full transition-all duration-300 group-hover:h-4.5"
+          style={{
+            backgroundColor: group.color,
+            boxShadow: `0 0 8px ${group.color}44`,
+          }}
         />
 
         {editing ? (
@@ -142,13 +140,13 @@ export function SessionGroupItem({ group, searchQuery = '' }: SessionGroupItemPr
             onClick={(e) => e.stopPropagation()}
             style={{ outline: 'none' }}
             className={cn(
-              'h-6 flex-1 rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)] px-1.5 text-[var(--ui-font-sm)]',
-              'text-[var(--color-text-primary)] border border-[var(--color-accent)]',
+              'h-6.5 flex-1 rounded-[var(--radius-sm)] bg-[var(--color-bg-primary)] px-2 text-[var(--ui-font-sm)]',
+              'text-[var(--color-text-primary)] border border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-accent-muted)]',
             )}
           />
         ) : (
           <span
-            className="flex-1 truncate text-[var(--ui-font-sm)] font-semibold"
+            className="flex-1 truncate text-[12.5px] font-bold tracking-tight transition-colors duration-200 group-hover:text-[var(--color-text-primary)]"
             style={{ color: group.color }}
           >
             {group.name}
@@ -157,26 +155,25 @@ export function SessionGroupItem({ group, searchQuery = '' }: SessionGroupItemPr
 
         {!editing && sessions.length > 0 && (
           <span
-            className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-medium"
-            style={{ backgroundColor: `${group.color}22`, color: group.color }}
+            className="flex h-4.5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-200"
+            style={{
+              backgroundColor: `${group.color}18`,
+              color: group.color,
+              border: `1px solid ${group.color}22`,
+            }}
           >
             {sessions.length}
           </span>
         )}
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            setShowMenu(!showMenu)
-          }}
-          className={cn(
-            'flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
-            'hover:bg-[var(--color-bg-surface)] transition-all duration-75',
+        {/* Collapse chevron — moved to end */}
+        <div className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-all duration-200 hover:text-[var(--color-text-secondary)]">
+          {group.collapsed ? (
+            <ChevronRight size={12} strokeWidth={2.5} className="transition-transform duration-200" />
+          ) : (
+            <ChevronDown size={12} strokeWidth={2.5} className="transition-transform duration-200" />
           )}
-        >
-          <MoreHorizontal size={12} />
-        </button>
+        </div>
       </div>
 
       {showMenu && (

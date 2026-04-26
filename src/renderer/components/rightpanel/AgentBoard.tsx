@@ -30,19 +30,20 @@ type BoardSessionType = AgentBoardItem['sessionType']
 type BoardScope = 'current' | 'all'
 
 const INPUT =
-  'w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-colors focus:border-[var(--color-accent)]'
+  'w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/80 bg-[var(--color-bg-primary)]/40 px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-all focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-primary)] focus:shadow-[0_0_0_2px_var(--color-accent-muted)]'
 const BUTTON =
-  'inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40'
+  'inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[10px] font-bold text-[var(--color-text-secondary)] transition-all hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40'
 
 const COLUMNS: Array<{
   id: AgentBoardStatus
   label: string
   icon: typeof Circle
+  color: string
 }> = [
-  { id: 'todo', label: '待办', icon: Circle },
-  { id: 'in_progress', label: '进行中', icon: CircleDot },
-  { id: 'review', label: '验收', icon: ClipboardCheck },
-  { id: 'done', label: '完成', icon: CheckCircle2 },
+  { id: 'todo', label: '待办', icon: Circle, color: 'var(--color-text-tertiary)' },
+  { id: 'in_progress', label: '进行中', icon: CircleDot, color: 'var(--color-accent)' },
+  { id: 'review', label: '验收', icon: ClipboardCheck, color: 'var(--color-warning)' },
+  { id: 'done', label: '完成', icon: CheckCircle2, color: 'var(--color-success)' },
 ]
 
 const PRIORITY_OPTIONS: Array<{ id: AgentBoardPriority; label: string }> = [
@@ -454,23 +455,35 @@ export function AgentBoard(): JSX.Element {
                 }}
                 onDrop={(event) => handleColumnDrop(column.id, event)}
                 className={cn(
-                  'flex min-h-[220px] w-[260px] shrink-0 flex-col rounded-[var(--radius-md)] border bg-[var(--color-bg-primary)]',
+                  'flex min-h-[400px] w-[280px] shrink-0 flex-col rounded-[var(--radius-lg)] border bg-[var(--color-bg-primary)]/30',
                   COLUMN_ACCENT[column.id],
-                  isDropTarget && 'bg-[var(--color-accent)]/5',
+                  isDropTarget && 'bg-[var(--color-accent)]/5 ring-2 ring-inset ring-[var(--color-accent)]/20',
                 )}
               >
-                <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-2">
-                  <Icon size={14} className="text-[var(--color-accent)]" />
-                  <span className="flex-1 text-[var(--ui-font-xs)] font-semibold text-[var(--color-text-primary)]">{column.label}</span>
-                  <span className="rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+                <div className="flex shrink-0 items-center justify-between px-3.5 py-3">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-surface)]/50 shadow-sm"
+                      style={{ color: column.color }}
+                    >
+                      <Icon size={13} strokeWidth={2.5} />
+                    </div>
+                    <span className="text-[13px] font-bold tracking-tight text-[var(--color-text-primary)]">
+                      {column.label}
+                    </span>
+                  </div>
+                  <span className="rounded-full bg-[var(--color-bg-surface)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-text-secondary)] shadow-inner">
                     {columnItems.length}
                   </span>
                 </div>
 
-                <div className="flex flex-1 flex-col gap-2 p-2">
+                <div className="flex flex-1 flex-col gap-2.5 p-2.5">
                   {columnItems.length === 0 ? (
-                    <div className="flex min-h-28 flex-1 items-center justify-center rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] px-3 text-center text-[10px] text-[var(--color-text-tertiary)]">
-                      拖任务到这里
+                    <div className="flex min-h-[120px] flex-1 flex-col items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)]/60 bg-[var(--color-bg-primary)]/20 px-4 text-center">
+                      <div className="text-[var(--color-text-tertiary)] opacity-30">
+                        <Plus size={24} strokeWidth={1.5} />
+                      </div>
+                      <div className="text-[10px] font-medium text-[var(--color-text-tertiary)]">拖入任务卡片</div>
                     </div>
                   ) : (
                     columnItems.map((card) => {
@@ -491,8 +504,9 @@ export function AgentBoard(): JSX.Element {
                           onDragStart={(event) => handleCardDragStart(card.id, event)}
                           onDragEnd={() => setDraggingCardId(null)}
                           className={cn(
-                            'rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-2.5 shadow-sm transition-colors',
-                            !isEditing && 'cursor-grab active:cursor-grabbing hover:border-[var(--color-accent)]/45',
+                            'group/card rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3.5 shadow-sm transition-all duration-200',
+                            !isEditing && 'cursor-grab active:cursor-grabbing hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-bg-secondary)]/80 hover:shadow-md hover:shadow-black/20',
+                            isLaunching && 'ring-1 ring-[var(--color-accent)]/30',
                           )}
                         >
                           {isEditing ? (
@@ -529,12 +543,12 @@ export function AgentBoard(): JSX.Element {
                                   ))}
                                 </select>
                               </div>
-                              <div className="flex gap-1.5">
+                              <div className="flex gap-1.5 pt-1">
                                 <button
                                   type="button"
                                   onClick={() => saveEdit(card.id)}
                                   disabled={!editTitle.trim()}
-                                  className={BUTTON}
+                                  className={cn(BUTTON, 'bg-[var(--color-accent)] text-white border-transparent hover:bg-[var(--color-accent)] hover:opacity-90')}
                                 >
                                   保存
                                 </button>
@@ -545,35 +559,35 @@ export function AgentBoard(): JSX.Element {
                             </div>
                           ) : (
                             <>
-                              <div className="flex items-start gap-2">
+                              <div className="flex items-start gap-2.5">
                                 <div className="min-w-0 flex-1">
-                                  <div className="break-words text-[var(--ui-font-xs)] font-semibold leading-5 text-[var(--color-text-primary)]">
+                                  <div className="break-words text-[13px] font-bold leading-tight tracking-tight text-[var(--color-text-primary)] group-hover/card:text-[var(--color-accent)] transition-colors">
                                     {card.title}
                                   </div>
                                   {card.description && (
-                                    <div className="mt-1 line-clamp-3 break-words text-[10px] leading-4 text-[var(--color-text-secondary)]">
+                                    <div className="mt-1.5 line-clamp-3 break-words text-[11px] leading-relaxed text-[var(--color-text-secondary)]">
                                       {card.description}
                                     </div>
                                   )}
                                 </div>
-                                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold', PRIORITY_BADGE[card.priority])}>
+                                <span className={cn('shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold shadow-sm', PRIORITY_BADGE[card.priority])}>
                                   {PRIORITY_OPTIONS.find((option) => option.id === card.priority)?.label}
                                 </span>
                               </div>
 
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)]">
-                                <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--color-bg-primary)] px-2 py-0.5">
-                                  <Bot size={11} />
+                              <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--color-bg-primary)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] border border-[var(--color-border)]/50 transition-colors group-hover/card:border-[var(--color-accent)]/20">
+                                  <Bot size={11} className="text-[var(--color-accent)]" />
                                   <span className="truncate">{SESSION_TYPE_CONFIG[card.sessionType].label}</span>
                                 </span>
                                 {cardProject && (
-                                  <span className="max-w-full truncate rounded-full bg-[var(--color-bg-primary)] px-2 py-0.5">
+                                  <span className="max-w-full truncate rounded-md bg-[var(--color-bg-primary)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-tertiary)] border border-[var(--color-border)]/40 transition-colors group-hover/card:border-[var(--color-accent)]/10">
                                     {cardProject.name}
                                   </span>
                                 )}
                                 {cardWorktree && (
-                                  <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--color-bg-primary)] px-2 py-0.5">
-                                    <GitBranch size={11} />
+                                  <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--color-bg-primary)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-tertiary)] border border-[var(--color-border)]/40">
+                                    <GitBranch size={11} className="opacity-60" />
                                     <span className="truncate">{cardWorktree.branch}</span>
                                   </span>
                                 )}
@@ -583,33 +597,51 @@ export function AgentBoard(): JSX.Element {
                                 <button
                                   type="button"
                                   onClick={() => activateSession(linkedSession.id)}
-                                  className="mt-2 flex w-full items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-left text-[10px] text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]"
+                                  className="mt-3 flex w-full items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-bg-primary)]/60 p-2 text-left text-[10px] text-[var(--color-text-secondary)] transition-all hover:bg-[var(--color-bg-primary)] hover:text-[var(--color-text-primary)] border border-[var(--color-border)]/40 group-hover/card:border-[var(--color-accent)]/20"
                                 >
-                                  <ExternalLink size={12} />
-                                  <span className="min-w-0 flex-1 truncate">{linkedSession.name}</span>
-                                  <span>{linkedSession.status}</span>
+                                  <ExternalLink size={12} className="text-[var(--color-accent)] opacity-70" />
+                                  <span className="min-w-0 flex-1 truncate font-medium">{linkedSession.name}</span>
+                                  <span className="opacity-60 text-[9px] uppercase font-bold">{linkedSession.status}</span>
                                 </button>
                               )}
 
                               {card.error && (
-                                <div className="mt-2 rounded-[var(--radius-sm)] bg-[var(--color-error)]/10 px-2 py-1.5 text-[10px] leading-4 text-[var(--color-error)]">
+                                <div className="mt-3 rounded-[var(--radius-md)] border border-[var(--color-error)]/20 bg-[var(--color-error)]/10 px-2.5 py-2 text-[10px] font-medium leading-relaxed text-[var(--color-error)] animate-[fade-in_0.2s_ease-out]">
                                   {card.error}
                                 </div>
                               )}
 
-                              <div className="mt-2 text-[10px] text-[var(--color-text-tertiary)]">
-                                更新于 {formatRelativeTime(card.updatedAt)}
+                              <div className="mt-3.5 flex items-center justify-between">
+                                <div className="text-[10px] font-medium text-[var(--color-text-tertiary)]">
+                                  {formatRelativeTime(card.updatedAt)}
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/card:opacity-100">
+                                  <button type="button" onClick={() => startEdit(card)} className="flex h-6.5 w-6.5 items-center justify-center rounded-md hover:bg-[var(--color-bg-primary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors" title="编辑">
+                                    <Pencil size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(card.id)}
+                                    className="flex h-6.5 w-6.5 items-center justify-center rounded-md hover:bg-[var(--color-error)]/10 text-[var(--color-text-tertiary)] hover:text-[var(--color-error)] transition-colors"
+                                    title="删除"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="mt-2 flex flex-wrap gap-1.5">
+                              <div className="mt-2.5 flex flex-wrap gap-2 pt-2 border-t border-[var(--color-border)]/40">
                                 <button
                                   type="button"
                                   onClick={() => void launchCard(card)}
                                   disabled={isLaunching || (card.projectId !== selectedProjectId)}
-                                  className={cn(BUTTON, 'border-[var(--color-accent)]/45 text-[var(--color-accent)]')}
+                                  className={cn(
+                                    'flex-1 h-8 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] text-[11px] font-bold transition-all',
+                                    'bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-40 shadow-sm'
+                                  )}
                                   title={card.projectId !== selectedProjectId ? '切换到卡片所属项目后再启动' : '启动或重新发送任务'}
                                 >
-                                  {isLaunching ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                                  {isLaunching ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} fill="currentColor" />}
                                   启动
                                 </button>
                                 {linkedSession && (
@@ -622,23 +654,12 @@ export function AgentBoard(): JSX.Element {
                                         void window.api.session.submit(ptyId, composePrompt(card), false)
                                       }
                                     }}
-                                    className={BUTTON}
+                                    className={cn(BUTTON, 'h-8 px-2.5')}
                                     title="把任务内容写入已关联会话，不自动回车"
                                   >
-                                    <SendHorizontal size={12} />
+                                    <SendHorizontal size={13} />
                                   </button>
                                 )}
-                                <button type="button" onClick={() => startEdit(card)} className={cn(BUTTON, 'w-8 px-0')} title="编辑">
-                                  <Pencil size={12} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(card.id)}
-                                  className={cn(BUTTON, 'w-8 px-0 hover:text-[var(--color-error)]')}
-                                  title="删除"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
                               </div>
                             </>
                           )}

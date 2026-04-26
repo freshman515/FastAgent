@@ -706,11 +706,11 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
           e.dataTransfer.effectAllowed = 'move'
         }}
         className={cn(
-          'group flex h-8 cursor-pointer items-center gap-1 pl-2 pr-2 transition-colors duration-75',
+          'group relative flex h-8.5 cursor-pointer items-center gap-2.5 px-3 mx-1 rounded-[var(--radius-sm)] transition-all duration-200',
           isMainWtActive
-            ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] border-l-2 border-l-[var(--color-accent)]'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] border-l-2 border-l-transparent',
-          projDragOver && 'border-t border-t-[var(--color-accent)]',
+            ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]/40 hover:text-[var(--color-text-primary)]',
+          projDragOver && 'ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-secondary)]',
         )}
         onClick={handleSelect}
         onDoubleClick={handleRowDoubleClick}
@@ -742,50 +742,68 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
           else { moveProjectToGroupAt(did, sg, project.groupId, project.id); moveProject(did, project.groupId) }
         }}
       >
-        {/* Expand/collapse chevron */}
-        <button onClick={handleToggleExpand} className={cn('flex h-4 w-4 shrink-0 items-center justify-center', hasWorktreeChildren ? 'cursor-pointer' : 'cursor-default opacity-0')}>
-          <ChevronRight size={11} className={cn('transition-transform duration-100', expanded && 'rotate-90')} />
-        </button>
+        {/* Left vertical indicator for active project */}
+        {isMainWtActive && (
+          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent)]" />
+        )}
 
-        <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]')} />
-        <span className="flex-1 truncate text-[var(--ui-font-sm)] font-medium">{project.name}</span>
-        <span
-          className={cn(
-            'shrink-0 rounded-[var(--radius-sm)] border px-1.5 py-0.5 text-[10px] font-medium leading-none',
-            sessions.length > 0
-              ? 'border-[var(--color-border)] text-[var(--color-text-secondary)]'
-              : 'border-transparent text-[var(--color-text-tertiary)] opacity-60',
+        <div className="flex h-4 w-4 shrink-0 items-center justify-center">
+          {hasWorktreeChildren ? (
+            <button onClick={handleToggleExpand} className="flex h-full w-full items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+              <ChevronRight size={11} strokeWidth={2.5} className={cn('transition-transform duration-200', expanded && 'rotate-90')} />
+            </button>
+          ) : (
+            <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]')} />
           )}
-          title={runningSessionCount > 0
-            ? `${sessions.length} 个会话，${runningSessionCount} 个运行中`
-            : `${sessions.length} 个会话`}
-        >
-          {sessions.length}
+        </div>
+
+        <span className={cn(
+          'flex-1 truncate text-[var(--ui-font-sm)] transition-colors duration-200 font-medium'
+        )}>
+          {project.name}
         </span>
 
         {/* Status indicators */}
-        {hasOutputting && <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)]" />}
-        {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
+        <div className="flex items-center gap-1.5">
+          {hasOutputting && <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)] shadow-[0_0_4px_var(--color-accent)]" />}
+          {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
+
+          <span
+            className={cn(
+              'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none transition-all duration-200',
+              sessions.length > 0
+                ? isMainWtActive ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+                : 'text-[var(--color-text-tertiary)] opacity-40',
+            )}
+          >
+            {sessions.length}
+          </span>
+        </div>
 
         {/* Branch badge */}
         {!isAnonymous && branchInfo?.current && (
-          <span
+          <div
             className={cn(
-              'flex max-w-[92px] shrink-0 items-center gap-1 text-[var(--ui-font-2xs)] leading-none',
-              'text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]',
+              'flex max-w-[80px] shrink-0 items-center gap-1 rounded-sm px-1 py-0.5 text-[10px] font-medium leading-none transition-all duration-200',
+              'bg-[var(--color-bg-primary)]/40 text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]',
+              isMainWtActive && 'bg-black/20 text-[var(--color-text-secondary)]'
             )}
             title={branchInfo.isDirty
               ? `当前分支：${branchInfo.current}（有未提交更改）`
               : `当前分支：${branchInfo.current}`}
           >
-            <GitBranch size={10} className="shrink-0 opacity-75" />
+            <GitBranch size={10} className="shrink-0 opacity-70" />
             <span className="truncate">{branchInfo.current}</span>
-            {branchInfo.isDirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
-          </span>
+            {branchInfo.isDirty && <span className="h-1 w-1 shrink-0 rounded-full bg-[var(--color-warning)] shadow-[0_0_2px_var(--color-warning)]" />}
+          </div>
         )}
 
         <button onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setShowMenu(showMenu ? null : { x: r.right, y: r.bottom + 4 }) }}
-          className={cn('flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)]', 'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100', 'hover:bg-[var(--color-bg-surface)] transition-all duration-75')}>
+          className={cn(
+            'flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
+            'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
+            'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] transition-all duration-150'
+          )}>
           <MoreHorizontal size={12} />
         </button>
       </div>

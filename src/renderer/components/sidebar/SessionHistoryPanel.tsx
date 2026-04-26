@@ -309,43 +309,56 @@ function HistoryItem({
         onContextMenu(session, e.clientX, e.clientY)
       }}
       className={cn(
-        'group relative flex w-full flex-col gap-0.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left',
-        'transition-colors duration-100',
+        'group relative flex w-full flex-col gap-1 rounded-[var(--radius-sm)] px-3 py-2.5 text-left transition-all duration-200 mx-1 w-[calc(100%-8px)]',
         isActive
-          ? 'bg-[var(--color-accent-muted)]'
-          : 'hover:bg-[var(--color-bg-tertiary)]/70',
+          ? 'bg-[var(--color-accent)]/10 ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
+          : 'hover:bg-[var(--color-bg-surface)]/40',
       )}
       title={`${session.source === 'codex' ? 'Codex' : 'Claude Code'} · ${session.id}\n最近更新：${fullTime}\n${session.cwd}\n${isActive ? '已激活，点击切回' : isOpen ? '已在其他标签页打开，点击切换' : '点击恢复'} · 右键删除`}
     >
-      {/* Left accent bar — shown for any open session, brighter when active */}
-      {(isActive || isOpen) && (
-        <span
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r-full',
-            isActive ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-accent)]/45',
-          )}
-        />
+      {/* Active marker */}
+      {isActive && (
+        <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent)]" />
       )}
-      <div className="flex items-center gap-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]">
-        <SourceIcon source={session.source} isDark={isDark} />
-        <span className={cn('truncate', isActive && 'font-semibold text-[var(--color-accent)]')}>
-          {preview}
-        </span>
-        {isOpen && !isActive && (
-          <span
-            className="ml-auto shrink-0 rounded-full bg-[var(--color-accent)]/15 px-1.5 py-px text-[var(--ui-font-2xs)] font-medium text-[var(--color-accent)]"
-            title="已在其他标签页打开"
-          >
-            打开中
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2 pl-[22px] text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-        {absTime && <span className="tabular-nums">{absTime}</span>}
-        <span>· {relTime}</span>
-        <span className="tabular-nums">· {session.userTurns} 轮</span>
-        {showCwd && <span className="truncate">· {shortCwd(session.cwd)}</span>}
+
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity">
+          <SourceIcon source={session.source} isDark={isDark} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className={cn(
+              'truncate text-[12.5px] transition-colors duration-200 flex-1 font-medium',
+              isActive ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-primary)] group-hover:text-[var(--color-accent)]'
+            )}>
+              {preview}
+            </span>
+            {isOpen && (
+              <span className={cn(
+                'shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-medium shadow-sm transition-all',
+                isActive ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg-primary)] text-[var(--color-accent)] border border-[var(--color-accent)]/20'
+              )}>
+                打开中
+              </span>
+            )}
+          </div>
+          
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
+            {absTime && <span className="tabular-nums">{absTime}</span>}
+            <span className="opacity-30 text-[9px]">/</span>
+            <span className="text-[var(--color-text-tertiary)]">{relTime}</span>
+            <span className="opacity-30 text-[9px]">/</span>
+            <span className="tabular-nums">{session.userTurns} 轮对话</span>
+            {showCwd && (
+              <>
+                <span className="opacity-30 text-[9px]">/</span>
+                <span className="truncate max-w-[140px] bg-[var(--color-bg-primary)] px-2 py-0.5 rounded border border-[var(--color-border)]/60 text-[10px] text-[var(--color-text-tertiary)]">
+                  {shortCwd(session.cwd)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </button>
   )
@@ -749,27 +762,28 @@ export function SessionHistoryPanel(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      <DockActions>
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border)]/50 px-2.5 py-1.5">
+        <span className="pl-1 text-[11px] font-bold tracking-wider text-[var(--color-text-tertiary)] uppercase">Session History</span>
         <button
           onClick={() => { void refresh() }}
           disabled={loading}
           className={cn(
-            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
-            'transition-colors duration-100',
+            'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+            'transition-all duration-150',
             loading && 'cursor-not-allowed opacity-50',
           )}
           title="刷新"
         >
-          <RefreshCw size={18} className={loading ? 'animate-spin' : undefined} />
+          <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} />
         </button>
-      </DockActions>
+      </div>
 
       {/* Search */}
-      <div className="shrink-0 px-2.5 pt-2">
+      <div className="shrink-0 px-3 py-3">
         <div className="group/search relative">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
-            <Search size={14} strokeWidth={2.25} />
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-9 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
+            <Search size={14} strokeWidth={2.5} />
           </div>
           <input
             value={searchQuery}
@@ -777,11 +791,11 @@ export function SessionHistoryPanel(): JSX.Element {
             placeholder="搜索首句或目录…"
             spellCheck={false}
             className={cn(
-              'peer h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/70 bg-[var(--color-bg-tertiary)]/45 pl-8 pr-8',
+              'peer h-8.5 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/80 bg-[var(--color-bg-primary)]/40 pl-9 pr-8',
               'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-              'outline-none transition-all duration-150',
-              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]/70',
-              'focus:border-[var(--color-accent)]/70 focus:bg-[var(--color-bg-primary)]',
+              'outline-none transition-all duration-200',
+              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-primary)]/60',
+              'focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-primary)]',
               'focus:shadow-[0_0_0_3px_var(--color-accent-muted)]',
             )}
           />
@@ -789,27 +803,27 @@ export function SessionHistoryPanel(): JSX.Element {
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-1 my-auto flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              className="absolute inset-y-0 right-1.5 my-auto flex h-5.5 w-5.5 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
               title="清除搜索"
             >
-              <X size={13} />
+              <X size={12} />
             </button>
           )}
         </div>
       </div>
 
       {/* Filter row */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 px-2.5 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-3">
         {SOURCE_FILTERS.map((f) => (
           <button
             key={f.id}
             type="button"
             onClick={() => setSourceFilter(f.id)}
             className={cn(
-              'rounded-full px-2.5 py-0.5 text-[var(--ui-font-2xs)] transition-colors duration-100',
+              'rounded-md px-2.5 py-1 text-[11px] font-bold transition-all duration-200 border',
               sourceFilter === f.id
-                ? 'bg-[var(--color-accent)] text-white'
-                : 'bg-[var(--color-bg-tertiary)]/60 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]',
+                ? 'bg-[var(--color-accent)] text-white border-transparent shadow-sm'
+                : 'bg-[var(--color-bg-primary)]/40 border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-secondary)]',
             )}
           >
             {f.label}
@@ -820,17 +834,17 @@ export function SessionHistoryPanel(): JSX.Element {
             type="button"
             onClick={toggleOnlyCurrentProject}
             className={cn(
-              'rounded-full px-2.5 py-0.5 text-[var(--ui-font-2xs)] transition-colors duration-100',
+              'rounded-md px-2.5 py-1 text-[11px] font-bold transition-all duration-200 border',
               onlyCurrentProject
-                ? 'bg-[var(--color-accent)] text-white'
-                : 'bg-[var(--color-bg-tertiary)]/60 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]',
+                ? 'bg-[var(--color-accent)] text-white border-transparent shadow-sm'
+                : 'bg-[var(--color-bg-primary)]/40 border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-secondary)]',
             )}
             title="仅显示与当前项目匹配的会话"
           >
             仅当前项目
           </button>
         )}
-        <div className="ml-auto text-[var(--ui-font-2xs)] tabular-nums text-[var(--color-text-tertiary)]">
+        <div className="ml-auto text-[10px] font-bold tabular-nums text-[var(--color-text-tertiary)]/70 uppercase tracking-wider">
           {hasFilter ? `${shownCount} / ${totalCount}` : totalCount}
         </div>
       </div>
@@ -879,36 +893,44 @@ export function SessionHistoryPanel(): JSX.Element {
                   openGroupContextMenu(group, e.clientX, e.clientY)
                 }}
                 className={cn(
-                  'sticky top-0 z-[1] flex w-full items-center gap-1.5 border-y border-[var(--color-border)]/40 px-2.5 py-1.5',
-                  'bg-[var(--color-bg-secondary)]/95 backdrop-blur-sm',
-                  'text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]',
-                  'hover:bg-[var(--color-bg-tertiary)]/60 transition-colors duration-100',
-                  isCurrentProject && 'border-l-2 border-l-[var(--color-accent)]',
+                  'sticky top-0 z-[1] flex w-full items-center gap-2 px-3 py-2.5',
+                  'bg-[var(--color-bg-secondary)]/95 backdrop-blur-md',
+                  'text-[12.5px] font-medium tracking-tight text-[var(--color-text-primary)]',
+                  'hover:bg-[var(--color-bg-surface)]/40 transition-all duration-200',
+                  'border-y border-[var(--color-border)]/40',
                 )}
                 title={`${group.pathHint ?? group.label}\n右键删除该组全部历史`}
               >
-                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                {expanded ? (
-                  <FolderOpen size={13} className="shrink-0 text-[var(--color-text-secondary)]" />
-                ) : (
-                  <Folder size={13} className="shrink-0 text-[var(--color-text-secondary)]" />
-                )}
-                <span className="truncate text-left">
-                  {group.label}
-                  {isOrphan && (
-                    <span className="ml-1 text-[var(--ui-font-2xs)] font-normal text-[var(--color-text-tertiary)]">
-                      · 未归类
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className={cn(
+                    'flex h-5 w-5 items-center justify-center rounded-md transition-colors',
+                    isCurrentProject ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg-primary)] text-[var(--color-text-tertiary)]'
+                  )}>
+                    {expanded ? <FolderOpen size={12} strokeWidth={2.5} /> : <Folder size={12} strokeWidth={2.5} />}
+                  </div>
+                  <span className="truncate">
+                    {group.label}
+                    {isOrphan && (
+                      <span className="ml-1.5 text-[10px] font-bold text-[var(--color-text-tertiary)]/60 uppercase tracking-wider">
+                        · 未归类
+                      </span>
+                    )}
+                  </span>
+                  {isCurrentProject && (
+                    <span className="shrink-0 rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-[9px] font-medium text-white shadow-[0_0_8px_var(--color-accent-muted)]">
+                      当前项目
                     </span>
                   )}
-                </span>
-                {isCurrentProject && (
-                  <span className="rounded-full bg-[var(--color-accent)]/15 px-1.5 py-px text-[var(--ui-font-2xs)] font-medium text-[var(--color-accent)]">
-                    当前
+                </div>
+                
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="tabular-nums text-[10px] font-medium text-[var(--color-text-tertiary)] bg-[var(--color-bg-primary)] px-2 py-0.5 rounded-full shadow-inner">
+                    {group.sessions.length}
                   </span>
-                )}
-                <span className="ml-auto tabular-nums text-[var(--ui-font-2xs)] font-normal text-[var(--color-text-tertiary)]">
-                  {group.sessions.length}
-                </span>
+                  <div className="text-[var(--color-text-tertiary)]/40 group-hover:text-[var(--color-text-tertiary)] transition-colors">
+                    {expanded ? <ChevronDown size={14} strokeWidth={2.5} /> : <ChevronRight size={14} strokeWidth={2.5} />}
+                  </div>
+                </div>
               </button>
               {expanded && (
                 <div className="flex flex-col gap-0.5 px-1 pt-0.5">

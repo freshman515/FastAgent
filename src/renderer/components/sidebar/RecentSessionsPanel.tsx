@@ -91,25 +91,28 @@ export function RecentSessionsPanel(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      <DockActions>
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border)]/50 px-2.5 py-1.5">
+        <span className="pl-1 text-[11px] font-bold tracking-wider text-[var(--color-text-tertiary)] uppercase">Recent Sessions</span>
         <button
           onClick={handleStartAdding}
           className={cn(
-            'flex h-8 w-8 items-center justify-center self-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
-            'transition-colors duration-100',
+            'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+            'transition-all duration-150',
           )}
           title="新建分组"
         >
-          <Plus size={18} />
+          <Plus size={15} />
         </button>
-      </DockActions>
+      </div>
 
       {/* New group input */}
       {adding && (
-        <div className="border-b border-[var(--color-border)] px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <FolderPlus size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+        <div className="border-b border-[var(--color-border)]/60 bg-[var(--color-bg-primary)]/30 px-3 py-2.5 animate-[fade-in_0.2s_ease-out]">
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
+              <FolderPlus size={12} />
+            </div>
             <input
               autoFocus
               value={newName}
@@ -118,9 +121,9 @@ export function RecentSessionsPanel(): JSX.Element {
               onBlur={handleCommit}
               placeholder="分组名称..."
               className={cn(
-                'h-6 w-full rounded-[var(--radius-sm)] bg-[var(--color-bg-tertiary)] px-2 text-[var(--ui-font-sm)]',
+                'h-7 w-full rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)]/50 px-2.5 text-[var(--ui-font-sm)]',
                 'text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-                'border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none',
+                'border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none transition-all',
               )}
             />
           </div>
@@ -128,10 +131,10 @@ export function RecentSessionsPanel(): JSX.Element {
       )}
 
       {/* Search */}
-      <div className="shrink-0 px-2.5 py-2">
+      <div className="shrink-0 px-3 py-3">
         <div className="group/search relative">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
-            <Search size={14} strokeWidth={2.25} />
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex w-9 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-focus-within/search:text-[var(--color-accent)]">
+            <Search size={14} strokeWidth={2.5} />
           </div>
           <input
             value={searchQuery}
@@ -139,11 +142,11 @@ export function RecentSessionsPanel(): JSX.Element {
             placeholder="搜索会话…"
             spellCheck={false}
             className={cn(
-              'peer h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/70 bg-[var(--color-bg-tertiary)]/45 pl-8 pr-8',
+              'peer h-8.5 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/80 bg-[var(--color-bg-primary)]/40 pl-9 pr-8',
               'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-              'outline-none transition-all duration-150',
-              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]/70',
-              'focus:border-[var(--color-accent)]/70 focus:bg-[var(--color-bg-primary)]',
+              'outline-none transition-all duration-200',
+              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-primary)]/60',
+              'focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-primary)]',
               'focus:shadow-[0_0_0_3px_var(--color-accent-muted)]',
             )}
           />
@@ -151,17 +154,17 @@ export function RecentSessionsPanel(): JSX.Element {
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-1 my-auto flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              className="absolute inset-y-0 right-1.5 my-auto flex h-5.5 w-5.5 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
               title="清除搜索"
             >
-              <X size={13} />
+              <X size={12} />
             </button>
           )}
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto scrollbar-none pb-4">
         {/* Groups */}
         {groups.map((group) => (
           <SessionGroupItem key={group.id} group={group} searchQuery={searchQuery} />
@@ -179,15 +182,15 @@ export function RecentSessionsPanel(): JSX.Element {
           onDragLeave={() => setRecentDragOver(false)}
           onDrop={handleRecentDrop}
           className={cn(
-            'mx-1.5 mt-2 rounded-[var(--radius-md)] transition-colors duration-100',
-            recentDragOver && 'bg-[var(--color-accent)]/8 ring-1 ring-inset ring-[var(--color-accent)]/40',
+            'mx-1 mt-2 rounded-[var(--radius-md)] transition-all duration-200',
+            recentDragOver && 'bg-[var(--color-accent-muted)] ring-1 ring-inset ring-[var(--color-accent)]/30',
           )}
         >
           {showTopHeader && (
-            <div className="px-2.5 pt-1.5 pb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
+            <div className="px-3.5 pt-3 pb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]/70">
               <span>最近 · 未分组</span>
               {recentSessions.length > 0 && (
-                <span className="tabular-nums rounded-full bg-[var(--color-bg-tertiary)]/60 px-1.5 py-px text-[9px] text-[var(--color-text-tertiary)]">
+                <span className="tabular-nums rounded-full bg-[var(--color-bg-surface)]/60 px-2 py-0.5 text-[9px] font-bold text-[var(--color-text-tertiary)] shadow-inner">
                   {recentSessions.length}
                 </span>
               )}
@@ -196,33 +199,32 @@ export function RecentSessionsPanel(): JSX.Element {
           {timeBuckets.map((bucket) => {
             const collapsed = !searchActive && !!collapsedBuckets[bucket.key]
             return (
-              <div key={bucket.key} className="pb-0.5">
+              <div key={bucket.key} className="pb-1">
                 <button
                   type="button"
                   onClick={() => toggleBucket(bucket.key)}
                   className={cn(
-                    'group/bucket flex w-full items-center gap-1.5 text-left',
-                    'text-[var(--ui-font-sm)] font-medium text-[var(--color-text-secondary)]',
-                    'transition-colors hover:text-[var(--color-text-primary)]',
-                    showTopHeader ? 'pl-2.5 pr-2.5' : 'px-2.5',
-                    'pt-1.5 pb-1',
+                    'group/bucket flex w-full items-center gap-2 text-left',
+                    'text-[12.5px] font-bold tracking-tight text-[var(--color-text-secondary)]',
+                    'transition-all duration-200 hover:bg-[var(--color-bg-surface)]/40 rounded-[var(--radius-sm)] mx-1 w-[calc(100%-8px)]',
+                    'px-2 py-1.5',
                   )}
                 >
                   <ChevronRight
                     size={12}
-                    strokeWidth={2.25}
+                    strokeWidth={2.5}
                     className={cn(
-                      'shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-150',
+                      'shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200',
                       !collapsed && 'rotate-90',
                     )}
                   />
-                  <span className="flex-1">{bucket.label}</span>
-                  <span className="tabular-nums rounded-full bg-[var(--color-bg-tertiary)]/60 px-1.5 py-0.5 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                  <span className="flex-1 group-hover/bucket:text-[var(--color-text-primary)]">{bucket.label}</span>
+                  <span className="tabular-nums rounded-full bg-[var(--color-bg-primary)]/60 px-2 py-0.5 text-[10px] font-bold text-[var(--color-text-tertiary)] group-hover/bucket:bg-[var(--color-accent-muted)] group-hover/bucket:text-[var(--color-accent)] transition-all">
                     {bucket.sessions.length}
                   </span>
                 </button>
                 {!collapsed && (
-                  <div className="flex flex-col gap-0.5 pt-0.5">
+                  <div className="flex flex-col gap-0.5 pt-1">
                     {bucket.sessions.map((session) => (
                       <RecentSessionItem
                         key={session.id}
@@ -236,8 +238,16 @@ export function RecentSessionsPanel(): JSX.Element {
             )
           })}
           {recentSessions.length === 0 && (
-            <div className="mx-2 my-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)]/70 px-3 py-3 text-center text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-              {searchQuery ? '无匹配会话' : '这里会显示所有未归组的会话'}
+            <div className="mx-3 my-2 rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)]/50 bg-[var(--color-bg-primary)]/20 px-4 py-8 text-center animate-[fade-in_0.3s_ease-out]">
+              <div className="mb-2 flex justify-center text-[var(--color-text-tertiary)] opacity-20">
+                <Search size={24} />
+              </div>
+              <p className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">
+                {searchQuery ? '无匹配会话' : '暂无最近会话'}
+              </p>
+              <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
+                {searchQuery ? '请尝试搜索其他内容' : '新启动的会话将显示在这里'}
+              </p>
             </div>
           )}
         </div>

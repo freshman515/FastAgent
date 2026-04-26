@@ -54,8 +54,13 @@ const IGNORED = new Set([
   '.DS_Store', 'Thumbs.db',
 ])
 
-const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
-const ACTION_BUTTON = 'inline-flex flex-1 h-[30px] items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)]'
+const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] whitespace-nowrap hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] transition-colors'
+const ACTION_BUTTON = cn(
+  'inline-flex flex-1 h-8 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3',
+  'text-[11px] font-bold text-[var(--color-text-secondary)] transition-all duration-200',
+  'hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] hover:shadow-sm',
+  'active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed'
+)
 const FILE_TREE_DRAG_MIME = 'application/x-fastagents-file-tree-node'
 
 function joinPath(basePath: string, name: string): string {
@@ -106,16 +111,16 @@ function FileTypeIcon({ name }: { name: string }): JSX.Element {
   const iconInfo = FILE_ICONS[detectLanguage(name)]
 
   if (!iconInfo) {
-    return <File size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+    return <File size={13} strokeWidth={2.5} className="shrink-0 text-[var(--color-text-tertiary)] opacity-60" />
   }
 
   return (
     <span
-      className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded px-1 text-[9px] font-semibold leading-none"
+      className="inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded px-1 text-[9px] font-bold leading-none shadow-sm transition-transform group-hover:scale-110"
       style={{
         color: iconInfo.color,
         backgroundColor: `${iconInfo.color}18`,
-        border: `1px solid ${iconInfo.color}33`,
+        border: `1px solid ${iconInfo.color}22`,
       }}
     >
       {iconInfo.icon}
@@ -336,31 +341,37 @@ function TreeNode({
           setCtxMenu({ x: event.clientX, y: event.clientY })
         }}
         className={cn(
-          'group flex items-center gap-1 py-[3px] pr-2 cursor-pointer text-[var(--ui-font-xs)] transition-colors',
-          dropActive && isDir && 'bg-[var(--color-accent)]/18 ring-1 ring-inset ring-[var(--color-accent)]',
+          'group relative flex h-7.5 cursor-pointer items-center gap-2 px-3 mx-1 rounded-[var(--radius-sm)] transition-all duration-200',
+          dropActive && isDir && 'bg-[var(--color-accent)]/15 ring-1 ring-inset ring-[var(--color-accent)]/40',
           isSelected
-            ? 'bg-[var(--color-accent)]/14 text-[var(--color-text-primary)]'
-            : 'hover:bg-[var(--color-bg-tertiary)]',
+            ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]/40 hover:text-[var(--color-text-primary)]',
         )}
-        style={{ paddingLeft: depth * 16 + 8 }}
+        style={{ paddingLeft: depth * 16 + 12 }}
       >
+        {/* Active marker */}
+        {isSelected && (
+          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent)]" />
+        )}
+
         {isDir ? (
           <>
             <ChevronRight
               size={12}
-              className={cn('shrink-0 text-[var(--color-text-tertiary)] transition-transform', expanded && 'rotate-90')}
+              strokeWidth={2.5}
+              className={cn('shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200', expanded && 'rotate-90')}
             />
             {expanded
-              ? <FolderOpen size={13} className="shrink-0 text-[var(--color-warning)]" />
-              : <Folder size={13} className="shrink-0 text-[var(--color-warning)]" />}
+              ? <FolderOpen size={14} className="shrink-0 text-[var(--color-warning)] drop-shadow-sm" />
+              : <Folder size={14} className="shrink-0 text-[var(--color-warning)] drop-shadow-sm" />}
           </>
         ) : (
           <>
-            <span className="w-3 shrink-0" />
+            <div className="w-3 shrink-0" />
             <FileTypeIcon name={name} />
           </>
         )}
-        <span className={cn('flex-1 truncate', isSelected ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)]')}>
+        <span className={cn('flex-1 truncate text-[12px] transition-colors duration-200', isSelected ? 'font-bold' : 'font-medium')}>
           {name}
         </span>
       </div>
@@ -636,53 +647,70 @@ export function FileTree(): JSX.Element {
   }
 
   return (
-    <div className="py-1">
-      <div
-        className="flex items-center gap-1.5 px-3 py-1.5 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)] truncate"
-        title={projectPath}
-      >
-        <Folder size={14} className="shrink-0 text-[var(--color-accent)]" />
-        <span className="truncate">{selectedProject?.name ?? projectPath.split(/[/\\]/).pop()}</span>
+    <div className="flex flex-col h-full bg-[var(--color-bg-secondary)] overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border)]/50 px-2.5 py-1.5">
+        <span className="pl-1 text-[11px] font-bold tracking-wider text-[var(--color-text-tertiary)] uppercase">File Explorer</span>
+        <div className="flex items-center">
+          {selectedProject && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--color-bg-primary)]/40 border border-[var(--color-border)]/50">
+              <Folder size={11} className="text-[var(--color-accent)]" />
+              <span className="max-w-[120px] truncate text-[10px] font-bold text-[var(--color-text-secondary)] uppercase tracking-tight">{selectedProject.name}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-stretch gap-1.5 px-3 pb-2">
+      <div className="shrink-0 flex items-stretch gap-1.5 px-3 py-3">
         <button type="button" onClick={() => beginCreation('file')} className={ACTION_BUTTON} title="在当前选中位置新建文件">
-          <FilePlus size={14} /> 新建文件
+          <FilePlus size={14} strokeWidth={2.5} /> 新建文件
         </button>
         <button type="button" onClick={() => beginCreation('folder')} className={ACTION_BUTTON} title="在当前选中位置新建文件夹">
-          <FolderPlus size={14} /> 新建文件夹
+          <FolderPlus size={14} strokeWidth={2.5} /> 新建文件夹
         </button>
       </div>
 
-      {pendingCreation?.directoryPath === projectPath && pendingCreation.afterPath === null && (
-        <PendingCreationRow
-          kind={pendingCreation.kind}
-          depth={0}
-          onSubmit={handleSubmitPending}
-          onCancel={handleCancelPending}
-        />
-      )}
+      <div className="flex-1 overflow-y-auto scrollbar-none pb-4">
+        {pendingCreation?.directoryPath === projectPath && pendingCreation.afterPath === null && (
+          <PendingCreationRow
+            kind={pendingCreation.kind}
+            depth={0}
+            onSubmit={handleSubmitPending}
+            onCancel={handleCancelPending}
+          />
+        )}
 
-      {entries.map((entry) => (
-        <TreeNode
-          key={entry.name}
-          name={entry.name}
-          path={joinPath(projectPath, entry.name)}
-          isDir={entry.isDir}
-          depth={0}
-          projectId={selectedProjectId}
-          worktreeId={editorWorktreeId}
-          selectedPath={selectedEntry?.path ?? null}
-          refreshToken={refreshToken}
-          pendingCreation={pendingCreation}
-          onSelect={setSelectedEntry}
-          onBeginCreation={beginCreation}
-          onSubmitPending={handleSubmitPending}
-          onCancelPending={handleCancelPending}
-          onMovePath={handleMovePath}
-          onRequestDelete={handleRequestDelete}
-        />
-      ))}
+        <div className="flex flex-col gap-px">
+          {entries.map((entry) => (
+            <TreeNode
+              key={entry.name}
+              name={entry.name}
+              path={joinPath(projectPath, entry.name)}
+              isDir={entry.isDir}
+              depth={0}
+              projectId={selectedProjectId}
+              worktreeId={editorWorktreeId}
+              selectedPath={selectedEntry?.path ?? null}
+              refreshToken={refreshToken}
+              pendingCreation={pendingCreation}
+              onSelect={setSelectedEntry}
+              onBeginCreation={beginCreation}
+              onSubmitPending={handleSubmitPending}
+              onCancelPending={handleCancelPending}
+              onMovePath={handleMovePath}
+              onRequestDelete={handleRequestDelete}
+            />
+          ))}
+        </div>
+        
+        {entries.length === 0 && !pendingCreation && (
+          <div className="flex flex-col items-center justify-center px-6 py-12 text-center opacity-20">
+            <FolderPlus size={40} strokeWidth={1} className="mb-2 text-[var(--color-text-tertiary)]" />
+            <p className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-tertiary)]">
+              文件夹为空
+            </p>
+          </div>
+        )}
+      </div>
 
       {pendingDelete && (
         <ConfirmDialog
