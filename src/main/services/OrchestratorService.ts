@@ -5,6 +5,7 @@ import {
   IPC,
   type McpCreateSessionRequest,
   type McpCreateSessionResponse,
+  type McpCreatableSessionType,
   type McpSessionInfo,
   type SessionType,
 } from '@shared/types'
@@ -440,7 +441,7 @@ export class OrchestratorService {
       errorResponse(res, 400, `Unknown session type "${String(body.type)}"`)
       return
     }
-    const type = typeRaw as Exclude<SessionType, 'claude-gui'>
+    const type = typeRaw as McpCreatableSessionType
     const cwd = typeof body.cwd === 'string' ? body.cwd : ''
     const projectId = typeof body.project_id === 'string' ? body.project_id : null
     const worktreeId = typeof body.worktree_id === 'string' ? body.worktree_id : null

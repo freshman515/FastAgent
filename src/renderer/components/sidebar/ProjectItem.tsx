@@ -22,9 +22,11 @@ import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 import { geminiIcon } from '@/lib/geminiIcon'
+import { browserIcon } from '@/lib/browserIcon'
 
 const SESSION_OPTS: Array<{ type: SessionType; label: string; icon: string }> = [
-  { type: 'terminal', label: '终端', icon: terminalIcon },
+  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
+  { type: 'browser', label: 'Browser', icon: browserIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
   { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCanvasStore } from '@/stores/canvas'
@@ -89,7 +89,17 @@ export function CardFrame({
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null)
   const outerRef = useRef<HTMLDivElement | null>(null)
   const clickStartRef = useRef<{ x: number; y: number } | null>(null)
-  useCardDrag({ cardId: card.id, element: hostEl, enableDoubleClickFocus: !focusOnClick })
+  const isMaximized = useCanvasStore((state) => state.maximizedCardId === card.id)
+  const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
+  const handleHeaderDoubleClick = useCallback(() => {
+    toggleMaximizedCard(card.id)
+  }, [card.id, toggleMaximizedCard])
+  useCardDrag({
+    cardId: card.id,
+    element: hostEl,
+    enableDoubleClickFocus: !focusOnClick,
+    onHandleDoubleClick: handleHeaderDoubleClick,
+  })
   useCardResize({ cardId: card.id, element: hostEl, minWidth, minHeight, coordinateMode })
   const selected = useCanvasStore((state) => state.selectedCardIds.includes(card.id))
   const viewport = useCanvasStore((state) => coordinateMode.startsWith('screen') ? state.getLayout().viewport : null)
@@ -122,9 +132,21 @@ export function CardFrame({
         zIndex: card.zIndex,
         contain: 'layout paint style',
       }
-  const frameStyle = frameStyleOverride
-    ? { ...baseFrameStyle, ...frameStyleOverride }
-    : baseFrameStyle
+  const maximizedFrameStyle: React.CSSProperties | null = isMaximized
+    ? {
+        left: 0,
+        top: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: 100000,
+        transform: 'none',
+      }
+    : null
+  const frameStyle = {
+    ...baseFrameStyle,
+    ...frameStyleOverride,
+    ...maximizedFrameStyle,
+  }
 
   useEffect(() => {
     if (outerRef.current) setHostEl(outerRef.current)
@@ -146,6 +168,10 @@ export function CardFrame({
     if (target?.closest('[data-card-control],[data-card-resize]')) return
 
     const canvas = useCanvasStore.getState()
+    if (isMaximized) {
+      canvas.setSelection([card.id])
+      return
+    }
     if (canvas.focusReturn?.cardId === card.id) {
       canvas.setSelection([card.id])
       canvas.bringToFront(card.id)
@@ -159,10 +185,12 @@ export function CardFrame({
       ref={outerRef}
       data-card-id={card.id}
       data-card-coordinate-mode={coordinateMode}
+      data-card-maximized={isMaximized ? 'true' : undefined}
       onPointerDownCapture={handlePointerDownCapture}
       onClickCapture={handleClickCapture}
       className={cn(
         'absolute flex flex-col rounded-[var(--radius-lg)] bg-[var(--color-bg-primary)] shadow-lg',
+        isMaximized && 'canvas-card-maximized',
         passThroughBody ? 'pointer-events-none' : 'pointer-events-auto',
         !borderless && 'border',
         selected && showSelectionRing

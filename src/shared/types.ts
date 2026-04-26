@@ -32,7 +32,10 @@ export function isAnonymousProjectId(projectId: string): boolean {
   return projectId === ANONYMOUS_PROJECT_ID
 }
 
-export type SessionType = 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal'
+export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal'
+export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal'>
+export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui'>
+export const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 
 /** Returns true for any Claude Code variant (normal or yolo mode) */
 export function isClaudeCodeType(type: SessionType): boolean {
@@ -74,6 +77,8 @@ export interface Session {
   codexResumeId?: string
   /** Gemini session UUID to resume on next spawn. */
   geminiResumeId?: string
+  /** Last URL loaded by the built-in browser tab. */
+  browserUrl?: string
 }
 
 // ─── Canvas Mode ───
@@ -103,6 +108,8 @@ export interface CanvasCard {
   zIndex: number
   collapsed: boolean
   collapsedPreview?: string[]
+  /** Hidden from the canvas surface but still available in the canvas session list. */
+  hidden?: boolean
   /** Optional per-canvas label shown after the session name. */
   sessionRemark?: string
   /** Note-card body (plain text). */
@@ -224,7 +231,7 @@ export interface McpSessionInfo {
 export interface McpCreateSessionRequest {
   requestId: string
   sourceSessionId: string | null
-  type: Exclude<SessionType, 'claude-gui'>
+  type: McpCreatableSessionType
   /** Absolute working directory. Empty string = inherit from source session / project. */
   cwd: string
   projectId?: string | null
@@ -630,7 +637,7 @@ export interface WorkerTemplate {
   id: string
   name: string
   description: string
-  type: Exclude<SessionType, 'terminal' | 'claude-gui'>
+  type: AgentSessionType
   defaultName: string
   prompt: string
   ownershipHint?: string
@@ -689,7 +696,7 @@ export interface TaskGraphNode {
   id: string
   templateId?: string
   name: string
-  type: Exclude<SessionType, 'terminal' | 'claude-gui'>
+  type: AgentSessionType
   prompt: string
   dependsOn: string[]
   ownership: string[]
@@ -783,6 +790,7 @@ export const SESSION_TYPE_CONFIG: Record<
   SessionType,
   { label: string; command: string; icon: string }
 > = {
+  browser: { label: 'Browser', command: '', icon: 'globe' },
   'claude-code': { label: 'Claude Code', command: 'claude', icon: 'brain' },
   'claude-code-yolo': { label: 'Claude Code YOLO', command: 'claude', icon: 'brain' },
   'claude-gui': { label: 'Claude GUI', command: '', icon: 'brain' },

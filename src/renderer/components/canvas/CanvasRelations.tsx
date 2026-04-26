@@ -8,7 +8,7 @@ export function CanvasRelations(): JSX.Element | null {
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
 
   const paths = useMemo(() => {
-    const byId = new Map(cards.map((card) => [card.id, card]))
+    const byId = new Map(cards.filter((card) => !card.hidden).map((card) => [card.id, card]))
     const selected = new Set(selectedCardIds)
     return relations.flatMap((relation) => {
       const from = byId.get(relation.fromCardId)

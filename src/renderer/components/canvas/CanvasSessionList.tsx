@@ -1,18 +1,22 @@
-import { useRef, useState, type WheelEvent } from 'react'
+import { useEffect, useRef, useState, type WheelEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { SESSION_TYPE_CONFIG } from '@shared/types'
+import { SESSION_TYPE_CONFIG, type Session } from '@shared/types'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { useCanvasStore } from '@/stores/canvas'
+import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 
 export function CanvasSessionList(): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(true)
+  const [menu, setMenu] = useState<{ x: number; y: number; cardId: string } | null>(null)
   const lastWheelSwitchAtRef = useRef(0)
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
+  const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
   const sessions = useSessionsStore((state) => state.sessions)
   const theme = useUIStore((state) => state.settings.theme)
   const isDarkTheme = theme !== 'light'
@@ -26,12 +30,64 @@ export function CanvasSessionList(): JSX.Element | null {
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
 
+  useEffect(() => {
+    if (!menu) return
+    const onPointerDown = (): void => setMenu(null)
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menu])
+
   if (items.length === 0) return null
+
+  const revealCard = (cardId: string): void => {
+    const canvas = useCanvasStore.getState()
+    const card = canvas.getCard(cardId)
+    if (card?.hidden) canvas.updateCard(cardId, { hidden: false })
+  }
 
   const focusCard = (cardId: string): void => {
     const canvas = useCanvasStore.getState()
+    revealCard(cardId)
+    canvas.clearMaximizedCard()
     canvas.clearFocusReturn()
-    canvas.focusOnCard(cardId)
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
+  }
+
+  const maximizeCard = (cardId: string): void => {
+    revealCard(cardId)
+    requestAnimationFrame(() => {
+      const canvas = useCanvasStore.getState()
+      canvas.toggleMaximizedCard(cardId)
+    })
+  }
+
+  const toggleHidden = (cardId: string): void => {
+    const canvas = useCanvasStore.getState()
+    const card = canvas.getCard(cardId)
+    if (!card) return
+    canvas.updateCard(cardId, { hidden: !card.hidden })
+  }
+
+  const closeSession = (session: Session): void => {
+    if (session.pinned) return
+    if (session.ptyId) {
+      void window.api.session.kill(session.ptyId)
+    }
+    const panes = usePanesStore.getState()
+    const paneIds = Object.entries(panes.paneSessions)
+      .filter(([, sessionIds]) => sessionIds.includes(session.id))
+      .map(([paneId]) => paneId)
+    for (const paneId of paneIds) {
+      panes.removeSessionFromPane(paneId, session.id)
+    }
+    useSessionsStore.getState().removeSession(session.id)
   }
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>): void => {
@@ -59,6 +115,7 @@ export function CanvasSessionList(): JSX.Element | null {
       )}
     >
       <button
+        data-canvas-session-list-toggle
         type="button"
         onClick={() => setCollapsed((value) => !value)}
         className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
@@ -78,6 +135,7 @@ export function CanvasSessionList(): JSX.Element | null {
       >
         {items.map(({ card, session }) => {
           const selected = selectedCardIds.includes(card.id)
+          const hidden = Boolean(card.hidden)
           const config = SESSION_TYPE_CONFIG[session.type]
           const icon = getSessionIcon(session.type, isDarkTheme)
           const displayName = formatSessionCardTitle(session.name, card.sessionRemark)
@@ -86,11 +144,22 @@ export function CanvasSessionList(): JSX.Element | null {
               key={card.id}
               type="button"
               onClick={() => focusCard(card.id)}
+              onDoubleClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                maximizeCard(card.id)
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setMenu({ x: event.clientX, y: event.clientY, cardId: card.id })
+              }}
               className={cn(
                 'group relative flex w-full items-start gap-2 overflow-hidden rounded-[var(--radius-md)] px-2.5 py-2 text-left transition-all duration-150',
                 selected
                   ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_30%,transparent)]'
                   : 'text-[var(--color-text-secondary)] hover:bg-[color-mix(in_srgb,var(--color-accent)_16%,var(--color-bg-hover))] hover:text-[var(--color-text-primary)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_22%,transparent),0_8px_20px_rgba(0,0,0,0.18)]',
+                hidden && 'opacity-55',
               )}
               title={displayName}
             >
@@ -108,14 +177,113 @@ export function CanvasSessionList(): JSX.Element | null {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[var(--ui-font-sm)] font-medium transition-colors group-hover:text-[var(--color-text-primary)]">{displayName}</span>
                 <span className="block truncate text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
-                  {config.label} · {getStatusLabel(session.status)}
+                  {config.label} · {hidden ? '已隐藏' : getStatusLabel(session.status)}
                 </span>
               </span>
             </button>
           )
         })}
       </div>
+      {menu && createPortal(
+        <CanvasSessionListMenu
+          x={menu.x}
+          y={menu.y}
+          item={items.find(({ card }) => card.id === menu.cardId) ?? null}
+          maximizedCardId={maximizedCardId}
+          onFocus={(cardId) => {
+            focusCard(cardId)
+            setMenu(null)
+          }}
+          onMaximize={(cardId) => {
+            maximizeCard(cardId)
+            setMenu(null)
+          }}
+          onCloseSession={(session) => {
+            closeSession(session)
+            setMenu(null)
+          }}
+          onToggleHidden={(cardId) => {
+            toggleHidden(cardId)
+            setMenu(null)
+          }}
+        />,
+        document.body,
+      )}
     </aside>
+  )
+}
+
+function CanvasSessionListMenu({
+  x,
+  y,
+  item,
+  maximizedCardId,
+  onFocus,
+  onMaximize,
+  onCloseSession,
+  onToggleHidden,
+}: {
+  x: number
+  y: number
+  item: { card: { id: string; hidden?: boolean }; session: Session } | null
+  maximizedCardId: string | null
+  onFocus: (cardId: string) => void
+  onMaximize: (cardId: string) => void
+  onCloseSession: (session: Session) => void
+  onToggleHidden: (cardId: string) => void
+}): JSX.Element | null {
+  if (!item) return null
+  const left = Math.max(8, Math.min(x, window.innerWidth - 164))
+  const top = Math.max(8, Math.min(y, window.innerHeight - 156))
+  const isMaximized = maximizedCardId === item.card.id
+  const isHidden = Boolean(item.card.hidden)
+  return (
+    <div
+      className="fixed z-[9500] w-[156px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-2xl"
+      style={{ left, top }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <SessionMenuItem label="聚焦" onClick={() => onFocus(item.card.id)} />
+      <SessionMenuItem label={isMaximized ? '取消最大化' : '最大化'} onClick={() => onMaximize(item.card.id)} />
+      <SessionMenuItem
+        label="关闭会话"
+        danger
+        disabled={item.session.pinned}
+        onClick={() => onCloseSession(item.session)}
+      />
+      <div className="my-1 h-px bg-[var(--color-border)]" />
+      <SessionMenuItem label={isHidden ? '显示' : '隐藏'} onClick={() => onToggleHidden(item.card.id)} />
+    </div>
+  )
+}
+
+function SessionMenuItem({
+  label,
+  onClick,
+  danger = false,
+  disabled = false,
+}: {
+  label: string
+  onClick: () => void
+  danger?: boolean
+  disabled?: boolean
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] transition-colors',
+        danger
+          ? 'text-[var(--color-error)] hover:bg-[color-mix(in_srgb,var(--color-error)_18%,transparent)]'
+          : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]',
+        disabled && 'cursor-not-allowed opacity-45 hover:bg-transparent',
+      )}
+    >
+      {label}
+    </button>
   )
 }
 

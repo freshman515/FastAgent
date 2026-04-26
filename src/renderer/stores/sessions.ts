@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Session, SessionType, SessionStatus, OutputState, SessionActivity } from '@shared/types'
-import { SESSION_TYPE_CONFIG, isClaudeCodeType, isGeminiType } from '@shared/types'
+import { DEFAULT_BROWSER_URL, SESSION_TYPE_CONFIG, isClaudeCodeType, isGeminiType } from '@shared/types'
 import { isClaudeSessionUuid } from '@shared/claudeSession'
 import { generateId } from '@/lib/utils'
 
@@ -52,7 +52,7 @@ function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
   if (typeof obj.id !== 'string' || typeof obj.projectId !== 'string') return null
-  const type = (['claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode', 'terminal'].includes(obj.type as string)
+  const type = (['browser', 'claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode', 'terminal'].includes(obj.type as string)
     ? obj.type
     : 'terminal') as SessionType
   return {
@@ -73,6 +73,9 @@ function sanitizeSession(s: unknown): Session | null {
     cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
     codexResumeId: getCodexResumeId(type, obj.codexResumeId),
     geminiResumeId: getGeminiResumeId(type, obj.geminiResumeId),
+    browserUrl: type === 'browser'
+      ? (typeof obj.browserUrl === 'string' && obj.browserUrl.trim() ? obj.browserUrl : DEFAULT_BROWSER_URL)
+      : undefined,
   }
 }
 
@@ -180,6 +183,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
       worktreeId,
+      browserUrl: type === 'browser' ? DEFAULT_BROWSER_URL : undefined,
     }
 
     set((state) => {
@@ -205,6 +209,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
       worktreeId,
+      browserUrl: item.type === 'browser' ? DEFAULT_BROWSER_URL : undefined,
     }
     set((state) => {
       const sessions = [...state.sessions, session]

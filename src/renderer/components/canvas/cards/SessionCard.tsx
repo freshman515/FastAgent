@@ -7,6 +7,7 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import type { CanvasCard } from '@shared/types'
 import { TerminalView } from '@/components/session/TerminalView'
+import { BrowserSessionView } from '@/components/session/BrowserSessionView'
 import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getTerminalPreviewText } from '@/hooks/useXterm'
@@ -24,6 +25,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
     card.refId ? state.sessions.find((s) => s.id === card.refId) ?? null : null,
   )
   const selected = useCanvasStore((state) => state.selectedCardIds.includes(card.id))
+  const isMaximized = useCanvasStore((state) => state.maximizedCardId === card.id)
   const removeCard = useCanvasStore((state) => state.removeCard)
   const setCardCollapsed = useCanvasStore((state) => state.setCardCollapsed)
   const updateCard = useCanvasStore((state) => state.updateCard)
@@ -67,7 +69,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
 
   if (!session) return null
   const frameCoordinateMode =
-    coordinateMode === 'screen' && session.type !== 'claude-gui'
+    coordinateMode === 'screen' && session.type !== 'claude-gui' && session.type !== 'browser'
       ? 'screen-transform'
       : coordinateMode
   const sessionIcon = getSessionIcon(session.type, theme !== 'light')
@@ -135,6 +137,16 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
     useCanvasStore.getState().bringToFront(card.id)
   }
 
+  const restoreCard = (): void => {
+    setTitleMenu(null)
+    useCanvasStore.getState().clearMaximizedCard()
+  }
+
+  const maximizeCard = (): void => {
+    setTitleMenu(null)
+    useCanvasStore.getState().toggleMaximizedCard(card.id)
+  }
+
   const detachCardFromCanvas = (): void => {
     setTitleMenu(null)
     removeCard(card.id)
@@ -188,7 +200,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
         minHeight={card.collapsed ? 104 : 240}
         borderless
         frameClassName="canvas-session-frame"
-        bodyClassName={session.type === 'claude-gui' ? 'bg-[var(--color-bg-secondary)]' : 'bg-[var(--color-terminal-bg)]'}
+        bodyClassName={session.type === 'claude-gui' || session.type === 'browser' ? 'bg-[var(--color-bg-secondary)]' : 'bg-[var(--color-terminal-bg)]'}
         coordinateMode={frameCoordinateMode}
         focusOnClick
       >
@@ -201,6 +213,10 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
         ) : session.type === 'claude-gui' ? (
           <div className="h-full w-full overflow-hidden">
             <ClaudeCodePanel sessionId={session.id} />
+          </div>
+        ) : session.type === 'browser' ? (
+          <div className="h-full w-full overflow-hidden">
+            <BrowserSessionView session={session} isActive={selected} />
           </div>
         ) : (
           <div className="h-full w-full overflow-hidden bg-[var(--color-terminal-bg)]">
@@ -216,9 +232,16 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
             className="fixed z-[421] min-w-[148px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
             style={{
               left: Math.max(8, Math.min(titleMenu.x, window.innerWidth - 156)),
-              top: Math.max(8, Math.min(titleMenu.y, window.innerHeight - 180)),
+              top: Math.max(8, Math.min(titleMenu.y, window.innerHeight - (isMaximized ? 216 : 180))),
             }}
           >
+            <button
+              type="button"
+              onClick={isMaximized ? restoreCard : maximizeCard}
+              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]"
+            >
+              {isMaximized ? '还原' : '最大化'}
+            </button>
             <button
               type="button"
               onClick={startRename}

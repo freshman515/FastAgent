@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionTab } from '@/components/session/SessionTab'
 import { NewSessionMenu } from '@/components/session/NewSessionMenu'
 import { TerminalView } from '@/components/session/TerminalView'
+import { BrowserSessionView } from '@/components/session/BrowserSessionView'
 import { EditorView } from '@/components/session/EditorView'
 import { EmptyState } from '@/components/session/EmptyState'
 import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
@@ -1090,6 +1091,8 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             >
               {session.type === 'claude-gui'
                 ? <ClaudeCodePanel sessionId={session.id} />
+                : session.type === 'browser'
+                  ? <BrowserSessionView session={session} isActive={isActive && isActivePane} />
                 : <TerminalView session={session} isActive={isActive && isActivePane} />}
             </div>
           )

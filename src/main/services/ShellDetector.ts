@@ -79,7 +79,7 @@ export function buildAgentCommand(
   type: SessionType,
   options: BuildAgentCommandOptions = {},
 ): { command: string; args: string[] } | null {
-  if (type === 'terminal' || type === 'claude-gui') {
+  if (type === 'terminal' || type === 'claude-gui' || type === 'browser') {
     return null
   }
 

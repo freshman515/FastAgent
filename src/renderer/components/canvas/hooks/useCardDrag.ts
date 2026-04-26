@@ -31,6 +31,7 @@ interface UseCardDragOptions {
   /** DOM selector that, when matched by the pointerdown target, starts the drag. */
   handleSelector?: string
   enableDoubleClickFocus?: boolean
+  onHandleDoubleClick?: () => void
 }
 
 /**
@@ -43,6 +44,7 @@ export function useCardDrag({
   element,
   handleSelector = '[data-card-drag]',
   enableDoubleClickFocus = true,
+  onHandleDoubleClick,
 }: UseCardDragOptions): void {
   const startRef = useRef<{ x: number; y: number } | null>(null)
   const clickCandidateRef = useRef<{ x: number; y: number; time: number } | null>(null)
@@ -60,9 +62,6 @@ export function useCardDrag({
       if (!target || !target.closest(handleSelector)) return
       // Let controls within the handle (buttons etc.) still work.
       if (target.closest('[data-card-control]')) return
-      event.preventDefault()
-      event.stopPropagation()
-
       const now = performance.now()
       const lastClick = lastClickRef.current
       const isDoubleClick = Boolean(
@@ -70,15 +69,28 @@ export function useCardDrag({
           && now - lastClick.time <= DOUBLE_CLICK_MS
           && Math.hypot(event.clientX - lastClick.x, event.clientY - lastClick.y) <= DOUBLE_CLICK_SLOP_PX,
       )
-      if (isDoubleClick && enableDoubleClickFocus) {
+      if (isDoubleClick && (onHandleDoubleClick || enableDoubleClickFocus)) {
+        event.preventDefault()
+        event.stopPropagation()
         startRef.current = null
         clickCandidateRef.current = null
         lastClickRef.current = null
-        useCanvasStore.getState().focusOnCard(cardId)
+        if (onHandleDoubleClick) {
+          onHandleDoubleClick()
+        } else {
+          useCanvasStore.getState().focusOnCard(cardId)
+        }
         return
       }
 
       const store = useCanvasStore.getState()
+      if (useUIStore.getState().settings.canvasLayoutLocked || store.maximizedCardId === cardId) {
+        lastClickRef.current = { x: event.clientX, y: event.clientY, time: now }
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+
       const selection = store.selectedCardIds
       const additive = event.shiftKey || event.ctrlKey || event.metaKey
       if (!selection.includes(cardId)) {
@@ -170,7 +182,7 @@ export function useCardDrag({
       element.removeEventListener('pointerup', onPointerUp)
       element.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [element, cardId, handleSelector, enableDoubleClickFocus])
+  }, [element, cardId, handleSelector, enableDoubleClickFocus, onHandleDoubleClick])
 }
 
 export function applyLiveCardMovement(

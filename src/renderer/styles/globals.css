@@ -430,6 +430,42 @@ body,
   box-shadow: var(--shadow-panel-frame);
 }
 
+body.canvas-layout-animating [data-card-id] {
+  transition:
+    left 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    top 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    height 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: left, top, width, height;
+}
+
+.canvas-layout-locked [data-card-drag] {
+  cursor: default !important;
+}
+
+.canvas-layout-locked [data-card-resize],
+.canvas-layout-locked [data-selection-resize] {
+  display: none;
+}
+
+.canvas-card-maximized {
+  border-radius: 0 !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.46) !important;
+}
+
+.canvas-card-maximized [data-card-drag],
+.canvas-card-maximized [data-card-wheel-content] {
+  border-radius: 0 !important;
+}
+
+.canvas-card-maximized [data-card-drag] {
+  cursor: default !important;
+}
+
+.canvas-card-maximized [data-card-resize] {
+  display: none;
+}
+
 .theme-light .canvas-session-frame {
   box-shadow: var(--shadow-panel-frame);
 }

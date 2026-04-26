@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { cancelViewportAnimation, useCanvasStore } from '@/stores/canvas'
+import { useUIStore } from '@/stores/ui'
 
 function getAltBookmarkIndex(event: KeyboardEvent): number | null {
   if (
@@ -103,6 +104,7 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
 
       if (isTextInputFocused()) return
       const selection = store.selectedCardIds
+      const layoutLocked = useUIStore.getState().settings.canvasLayoutLocked
 
       // Select all
       if (event.key === 'a' && (event.ctrlKey || event.metaKey)) {
@@ -124,6 +126,7 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
       // Delete selected cards from the canvas. Session cards are detached from
       // the canvas only; ending a running session still goes through the menu.
       if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (layoutLocked) return
         if (selection.length === 0) return
         event.preventDefault()
         store.removeCards(selection)
@@ -132,6 +135,7 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
 
       // Duplicate (notes only)
       if ((event.ctrlKey || event.metaKey) && event.key === 'd') {
+        if (layoutLocked) return
         if (selection.length === 0) return
         event.preventDefault()
         store.duplicateCards(selection)
@@ -140,6 +144,7 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
 
       // Arrow keys — nudge selection
       if (selection.length > 0 && event.key.startsWith('Arrow')) {
+        if (layoutLocked) return
         event.preventDefault()
         const step = event.shiftKey ? 10 : 1
         let dx = 0, dy = 0

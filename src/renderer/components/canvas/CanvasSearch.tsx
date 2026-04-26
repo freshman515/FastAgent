@@ -124,10 +124,12 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const sessions = useSessionsStore((state) => state.sessions)
   const focusOnCard = useCanvasStore((state) => state.focusOnCard)
+  const previewCardInViewport = useCanvasStore((state) => state.previewCardInViewport)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const previewedCardRef = useRef<string | null>(null)
 
   const results = useMemo(() => {
     const sessionById = new Map(sessions.map((session) => [session.id, session]))
@@ -192,12 +194,33 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
     if (activeIndex >= results.length) setActiveIndex(Math.max(0, results.length - 1))
   }, [activeIndex, results.length])
 
+  useEffect(() => {
+    if (!open || !query.trim()) {
+      previewedCardRef.current = null
+      return
+    }
+    const result = results[activeIndex]
+    if (!result || previewedCardRef.current === result.card.id) return
+    previewedCardRef.current = result.card.id
+    const frame = requestAnimationFrame(() => {
+      const canvas = useCanvasStore.getState()
+      if (!canvas.getCard(result.card.id)) return
+      previewCardInViewport(result.card.id)
+      inputRef.current?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activeIndex, open, previewCardInViewport, query, results])
+
   if (!open) return null
 
   const focusResult = (index: number): void => {
     const result = results[index]
     if (!result) return
-    focusOnCard(result.card.id)
+    const canvas = useCanvasStore.getState()
+    if (result.card.hidden) canvas.updateCard(result.card.id, { hidden: false })
+    canvas.clearMaximizedCard()
+    canvas.clearFocusReturn()
+    requestAnimationFrame(() => focusOnCard(result.card.id))
     onClose()
   }
 

@@ -13,14 +13,18 @@ import {
   Grid3x3,
   LayoutGrid,
   Link2,
+  Lock,
   Magnet,
   Maximize2,
+  PanelsTopLeft,
   Pencil,
   RefreshCw,
   RotateCcw,
   Search,
+  SquareEqual,
   StickyNote,
   Trash2,
+  Unlock,
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -33,6 +37,8 @@ interface CanvasToolbarProps {
   viewportRef: React.RefObject<HTMLDivElement | null>
   onOpenSearch: () => void
 }
+
+const CARD_NORMALIZATION_NAVIGATION_DELAY_MS = 300
 
 export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps): JSX.Element {
   const scale = useCanvasStore((state) => state.getLayout().viewport.scale)
@@ -51,35 +57,45 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
   const removeCards = useCanvasStore((state) => state.removeCards)
   const resetViewport = useCanvasStore((state) => state.resetViewport)
   const fitAll = useCanvasStore((state) => state.fitAll)
+  const normalizeCardsToFocusArea = useCanvasStore((state) => state.normalizeCardsToFocusArea)
+  const normalizeCardsToDefaultSessionSize = useCanvasStore((state) => state.normalizeCardsToDefaultSessionSize)
   const arrange = useCanvasStore((state) => state.arrange)
 
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const snapEnabled = useUIStore((state) => state.settings.canvasSnapEnabled)
+  const layoutLocked = useUIStore((state) => state.settings.canvasLayoutLocked)
   const overlapMode = useUIStore((state) => state.settings.canvasOverlapMode)
   const arrangeMode = useUIStore((state) => state.settings.canvasArrangeMode)
   const updateSettings = useUIStore((state) => state.updateSettings)
 
   const [arrangeOpen, setArrangeOpen] = useState(false)
   const [bookmarksOpen, setBookmarksOpen] = useState(false)
+  const [sizeMenuOpen, setSizeMenuOpen] = useState(false)
   const [editingBookmarkId, setEditingBookmarkId] = useState<string | null>(null)
   const [editingBookmarkName, setEditingBookmarkName] = useState('')
   const [pendingRecordBookmark, setPendingRecordBookmark] = useState<{ id: string; name: string } | null>(null)
   const arrangeRef = useRef<HTMLDivElement>(null)
   const bookmarksRef = useRef<HTMLDivElement>(null)
+  const sizeMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!arrangeOpen && !bookmarksOpen) return
+    if (!arrangeOpen && !bookmarksOpen && !sizeMenuOpen) return
     const onDown = (event: MouseEvent): void => {
       const target = event.target as Node
-      if (arrangeRef.current?.contains(target) || bookmarksRef.current?.contains(target)) return
+      if (
+        arrangeRef.current?.contains(target)
+        || bookmarksRef.current?.contains(target)
+        || sizeMenuRef.current?.contains(target)
+      ) return
       setArrangeOpen(false)
       setBookmarksOpen(false)
+      setSizeMenuOpen(false)
       setEditingBookmarkId(null)
       setEditingBookmarkName('')
     }
     window.addEventListener('pointerdown', onDown)
     return () => window.removeEventListener('pointerdown', onDown)
-  }, [arrangeOpen, bookmarksOpen])
+  }, [arrangeOpen, bookmarksOpen, sizeMenuOpen])
 
   const createNoteAtCenter = (): void => {
     const rect = viewportRef.current?.getBoundingClientRect()
@@ -121,6 +137,37 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return
     fitAll(rect.width, rect.height)
+  }
+
+  const navigateAfterCardNormalization = (selectedCardId: string | null): void => {
+    window.setTimeout(() => {
+      const canvas = useCanvasStore.getState()
+      if (selectedCardId && canvas.getCard(selectedCardId)) {
+        canvas.clearFocusReturn()
+        canvas.focusOnCard(selectedCardId)
+        return
+      }
+
+      const rect = viewportRef.current?.getBoundingClientRect()
+      if (!rect) return
+      canvas.fitAll(rect.width, rect.height)
+    }, CARD_NORMALIZATION_NAVIGATION_DELAY_MS)
+  }
+
+  const normalizeCardsAndNavigate = (normalize: () => void): void => {
+    const selectedCardId = useCanvasStore.getState().selectedCardIds[0] ?? null
+    normalize()
+    navigateAfterCardNormalization(selectedCardId)
+  }
+
+  const handleNormalizeToFocusArea = (): void => {
+    setSizeMenuOpen(false)
+    normalizeCardsAndNavigate(normalizeCardsToFocusArea)
+  }
+
+  const handleNormalizeToDefaultSize = (): void => {
+    setSizeMenuOpen(false)
+    normalizeCardsAndNavigate(normalizeCardsToDefaultSessionSize)
   }
 
   const btn = (active: boolean): string => cn(
@@ -169,7 +216,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
 
   return (
     <>
-    <div className="absolute bottom-4 left-4 z-10 flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/95 p-1 shadow-lg backdrop-blur">
+    <div data-canvas-toolbar className="absolute bottom-4 left-4 z-10 flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/95 p-1 shadow-lg backdrop-blur">
       <button type="button" onClick={createNoteAtCenter} className={btn(false)} title="新建便签">
         <StickyNote size={16} />
       </button>
@@ -260,6 +307,8 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
               }
               return next
             })
+            setArrangeOpen(false)
+            setSizeMenuOpen(false)
           }}
           className={btn(bookmarksOpen || bookmarks.length > 0)}
           title="视图书签"
@@ -360,7 +409,13 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
       <div ref={arrangeRef} className="relative">
         <button
           type="button"
-          onClick={() => setArrangeOpen((prev) => !prev)}
+          onClick={() => {
+            setArrangeOpen((prev) => !prev)
+            setBookmarksOpen(false)
+            setSizeMenuOpen(false)
+            setEditingBookmarkId(null)
+            setEditingBookmarkName('')
+          }}
           className={btn(arrangeOpen || arrangeMode !== 'free')}
           title={`排列模式：${getArrangeModeLabel(arrangeMode)}`}
         >
@@ -381,8 +436,38 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
       <button type="button" onClick={handleFitAll} className={btn(false)} title="适配所有内容 (Alt+A)">
         <Maximize2 size={16} />
       </button>
+      <div ref={sizeMenuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            setSizeMenuOpen((prev) => !prev)
+            setArrangeOpen(false)
+            setBookmarksOpen(false)
+            setEditingBookmarkId(null)
+            setEditingBookmarkName('')
+          }}
+          className={btn(sizeMenuOpen)}
+          title="调整整体尺寸"
+        >
+          <SquareEqual size={16} />
+        </button>
+        {sizeMenuOpen && (
+          <div className="absolute bottom-full left-0 mb-1 min-w-[220px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-xl">
+            <SizeItem icon={<SquareEqual size={14} />} label="适配聚焦工作区" onClick={handleNormalizeToFocusArea} />
+            <SizeItem icon={<PanelsTopLeft size={14} />} label="恢复新建会话尺寸" onClick={handleNormalizeToDefaultSize} />
+          </div>
+        )}
+      </div>
       <button type="button" onClick={resetViewport} className={btn(false)} title="重置视图 (100%)">
         <RotateCcw size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => updateSettings({ canvasLayoutLocked: !layoutLocked })}
+        className={btn(layoutLocked)}
+        title={layoutLocked ? '布局已锁定，点击解锁' : '锁定布局，防止误拖动和误调整'}
+      >
+        {layoutLocked ? <Lock size={16} /> : <Unlock size={16} />}
       </button>
       <button
         type="button"
@@ -457,6 +542,22 @@ function BookmarkItem({ label, onClick }: { label: string; onClick: () => void }
     >
       <span className="canvas-arrange-menu-item-indicator absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)]" />
       <span className="flex-1 truncate">{label}</span>
+    </button>
+  )
+}
+
+function SizeItem({ icon, label, onClick }: { icon: JSX.Element; label: string; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="canvas-arrange-menu-item group relative flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]"
+    >
+      <span className="canvas-arrange-menu-item-indicator absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)]" />
+      <span className="ml-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-accent)]">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   )
 }

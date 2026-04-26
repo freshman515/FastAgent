@@ -6,6 +6,7 @@ import type { SessionType, SessionTemplateItem } from '@shared/types'
 import { BUILT_IN_WORKER_TEMPLATES } from '@shared/workerTemplates'
 
 const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
+  { value: 'browser', label: 'Browser' },
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'claude-code-yolo', label: 'Claude Code YOLO' },
   { value: 'claude-gui', label: 'Claude GUI' },
@@ -14,7 +15,7 @@ const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'gemini', label: 'Gemini' },
   { value: 'gemini-yolo', label: 'Gemini YOLO' },
   { value: 'opencode', label: 'OpenCode' },
-  { value: 'terminal', label: '终端' },
+  { value: 'terminal', label: 'Terminal' },
 ]
 
 function TemplateItemRow({

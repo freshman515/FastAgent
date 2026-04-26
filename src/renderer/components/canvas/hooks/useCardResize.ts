@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useCanvasStore } from '@/stores/canvas'
+import { useUIStore } from '@/stores/ui'
 import type { CardCoordinateMode } from '../cards/CardFrame'
 
 export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -49,6 +50,7 @@ export function useCardResize({
       if (!handle) return
       const direction = handle.dataset.cardResize as ResizeHandle | undefined
       if (!direction) return
+      if (useUIStore.getState().settings.canvasLayoutLocked) return
       event.preventDefault()
       event.stopPropagation()
 

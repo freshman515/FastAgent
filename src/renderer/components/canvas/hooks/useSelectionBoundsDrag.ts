@@ -66,6 +66,7 @@ export function useSelectionBoundsDrag(element: HTMLDivElement | null): void {
 
     const onPointerDown = (event: PointerEvent): void => {
       if (event.button !== 0) return
+      if (useUIStore.getState().settings.canvasLayoutLocked) return
       const selectedCards = getSelectedCards()
       if (selectedCards.length <= 1) return
 

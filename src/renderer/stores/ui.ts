@@ -93,7 +93,7 @@ export interface AgentBoardItem {
   description: string
   status: AgentBoardStatus
   priority: AgentBoardPriority
-  sessionType: Exclude<SessionType, 'claude-gui'>
+  sessionType: Exclude<SessionType, 'browser' | 'claude-gui'>
   sessionId?: string
   createdAt: number
   updatedAt: number
@@ -140,7 +140,7 @@ export interface AppSettings {
   editorFontLigatures: boolean
   visibleGroupId: string | null // null = show all groups
   visibleProjectId: string | null // null = show all projects
-  defaultSessionType: 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode'
+  defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode'
   /** Pop up a naming dialog when creating a new session */
   promptSessionNameOnCreate: boolean
   recentPaths: string[]
@@ -202,6 +202,8 @@ export interface AppSettings {
   canvasArrangeMode: CanvasArrangeMode
   /** Show the minimap overlay on the canvas */
   canvasShowMinimap: boolean
+  /** Prevent accidental canvas layout edits such as dragging, resizing, deleting, or nudging cards */
+  canvasLayoutLocked: boolean
   /** Default width for newly-created canvas session / terminal cards */
   canvasSessionCardWidth: number
   /** Default height for newly-created canvas session / terminal cards */
@@ -274,6 +276,7 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   canvasOverlapMode: 'free',
   canvasArrangeMode: 'free',
   canvasShowMinimap: true,
+  canvasLayoutLocked: false,
   canvasSessionCardWidth: 1040,
   canvasSessionCardHeight: 660,
   canvasFocusReadableFontMinPx: CANVAS_FOCUS_FONT_RANGE_MIN_DEFAULT,
@@ -1120,7 +1123,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.editorFontLigatures === 'boolean') s.editorFontLigatures = raw.editorFontLigatures
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
       if (raw.visibleProjectId === null || typeof raw.visibleProjectId === 'string') s.visibleProjectId = raw.visibleProjectId as string | null
-      if (typeof raw.defaultSessionType === 'string' && ['claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
+      if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
       if (typeof raw.promptSessionNameOnCreate === 'boolean') s.promptSessionNameOnCreate = raw.promptSessionNameOnCreate
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
       if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
@@ -1227,6 +1230,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         s.canvasArrangeMode = raw.canvasArrangeMode
       }
       if (typeof raw.canvasShowMinimap === 'boolean') s.canvasShowMinimap = raw.canvasShowMinimap
+      if (typeof raw.canvasLayoutLocked === 'boolean') s.canvasLayoutLocked = raw.canvasLayoutLocked
       if (typeof raw.canvasSessionCardWidth === 'number') s.canvasSessionCardWidth = clampCanvasSessionCardWidth(raw.canvasSessionCardWidth)
       if (typeof raw.canvasSessionCardHeight === 'number') s.canvasSessionCardHeight = clampCanvasSessionCardHeight(raw.canvasSessionCardHeight)
       if (typeof raw.canvasFocusReadableFontMinPx === 'number') s.canvasFocusReadableFontMinPx = raw.canvasFocusReadableFontMinPx

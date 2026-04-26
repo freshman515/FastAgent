@@ -261,6 +261,10 @@ export class PtyManager {
   }
 
   create(options: SessionCreateOptions): SessionCreateResult {
+    if (options.type === 'browser' || options.type === 'claude-gui') {
+      throw new Error(`${options.type} sessions do not use a PTY`)
+    }
+
     const id = `pty-${++this.idCounter}-${Date.now()}`
     const shell = detectShell()
 
@@ -382,7 +386,7 @@ export class PtyManager {
     // The shell prompt + command echo arrive before the agent banner.
     // Strategy: after the command is written (500ms), wait for agent-specific text,
     // or fall back to a short timeout.
-    const isAgentSession = options.type !== 'terminal'
+    const isAgentSession = options.type !== 'terminal' && options.type !== 'browser' && options.type !== 'claude-gui'
     let agentStarted = !isAgentSession
     let suppressedOutput = ''
 

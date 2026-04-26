@@ -302,6 +302,7 @@ function SegmentedChoice<T extends string>({ value, options, onChange }: {
 }
 
 const SESSION_TYPE_OPTIONS = [
+  { id: 'browser', label: 'Browser' },
   { id: 'claude-code', label: 'Claude Code' },
   { id: 'claude-code-yolo', label: 'Claude Code YOLO' },
   { id: 'codex', label: 'Codex' },
@@ -309,7 +310,7 @@ const SESSION_TYPE_OPTIONS = [
   { id: 'gemini', label: 'Gemini' },
   { id: 'gemini-yolo', label: 'Gemini YOLO' },
   { id: 'opencode', label: 'OpenCode' },
-  { id: 'terminal', label: '终端' },
+  { id: 'terminal', label: 'Terminal' },
 ] as const
 
 function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {

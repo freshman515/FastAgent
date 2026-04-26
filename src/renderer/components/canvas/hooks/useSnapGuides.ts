@@ -2,6 +2,7 @@ import type { CanvasCard } from '@shared/types'
 import type { SnapGuide } from '@/stores/canvasUi'
 
 const GRID_SIZE = 20
+const FRAME_INSET = 32
 
 export interface SnapResult {
   dx: number
@@ -59,6 +60,22 @@ export function computeSnap(
 
   const dragAnchors = buildAnchors(dragged, dx, dy)
   const otherAnchors = buildAnchors(others, 0, 0)
+  for (const frame of others.filter((card) => card.kind === 'frame')) {
+    const left = frame.x + FRAME_INSET
+    const right = frame.x + frame.width - FRAME_INSET
+    const top = frame.y + FRAME_INSET
+    const bottom = frame.y + frame.height - FRAME_INSET
+    if (right > left) {
+      otherAnchors.xAnchors.push({ value: left, span: [frame.y, frame.y + frame.height] })
+      otherAnchors.xAnchors.push({ value: left + (right - left) / 2, span: [frame.y, frame.y + frame.height] })
+      otherAnchors.xAnchors.push({ value: right, span: [frame.y, frame.y + frame.height] })
+    }
+    if (bottom > top) {
+      otherAnchors.yAnchors.push({ value: top, span: [frame.x, frame.x + frame.width] })
+      otherAnchors.yAnchors.push({ value: top + (bottom - top) / 2, span: [frame.x, frame.x + frame.width] })
+      otherAnchors.yAnchors.push({ value: bottom, span: [frame.x, frame.x + frame.width] })
+    }
+  }
 
   const findClosest = (
     draggedList: typeof dragAnchors.xAnchors,

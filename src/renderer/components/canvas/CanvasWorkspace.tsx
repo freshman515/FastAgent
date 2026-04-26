@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CanvasCard } from '@shared/types'
 import { useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
-import type { CanvasCard } from '@shared/types'
+import { cn } from '@/lib/utils'
 import { CanvasGrid } from './CanvasGrid'
 import { CanvasToolbar } from './CanvasToolbar'
 import { CanvasContextMenu, type CanvasContextMenuState } from './CanvasContextMenu'
@@ -210,6 +211,8 @@ export function CanvasWorkspace(): JSX.Element {
 
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const showMinimap = useUIStore((state) => state.settings.canvasShowMinimap)
+  const layoutLocked = useUIStore((state) => state.settings.canvasLayoutLocked)
+  const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
   const clearSelection = useCanvasStore((state) => state.clearSelection)
 
   // ── Context menu state ───────────────────────────────────────────
@@ -259,7 +262,7 @@ export function CanvasWorkspace(): JSX.Element {
   }
 
   return (
-    <div className="relative isolate h-full w-full overflow-hidden bg-[var(--color-bg-primary)]">
+    <div className={cn('relative isolate h-full w-full overflow-hidden bg-[var(--color-bg-primary)]', layoutLocked && 'canvas-layout-locked')}>
       {/* Viewport (screen-space) — captures wheel/pan gestures */}
       <div
         ref={attachViewportRef}
@@ -281,7 +284,7 @@ export function CanvasWorkspace(): JSX.Element {
       <CanvasSessionList />
       <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => setSearchOpen(true)} />
       <CanvasSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
-      {showMinimap && <CanvasMinimap viewportRef={viewportRef} />}
+      {showMinimap && !maximizedCardId && <CanvasMinimap viewportRef={viewportRef} />}
 
       {cards.length === 0 && <CanvasEmptyState viewportRef={viewportRef} />}
 
@@ -291,14 +294,16 @@ export function CanvasWorkspace(): JSX.Element {
 }
 
 function CanvasProjectedCardLayer({ cards, viewportEl }: { cards: CanvasCard[]; viewportEl: HTMLDivElement | null }): JSX.Element {
+  const hasMaximizedCard = useCanvasStore((state) => Boolean(state.maximizedCardId))
   return (
-    <div className="pointer-events-none absolute inset-0 z-[2]">
+    <div className={cn('pointer-events-none absolute inset-0', hasMaximizedCard ? 'z-[60]' : 'z-[2]')}>
       {cards.map((card) => <CanvasCardRenderer key={card.id} card={card} viewportEl={viewportEl} />)}
     </div>
   )
 }
 
 function CanvasCardRenderer({ card, viewportEl }: { card: CanvasCard; viewportEl: HTMLDivElement | null }): JSX.Element | null {
+  if (card.hidden && useCanvasStore.getState().maximizedCardId !== card.id) return null
   if (card.kind === 'frame') return <FrameCard card={card} coordinateMode="screen" />
   if (card.kind === 'note') return <NoteCard card={card} coordinateMode="screen" />
   if (card.kind === 'session' || card.kind === 'terminal') {
@@ -326,8 +331,9 @@ function focusCanvasCardForSession(sessionId: string): void {
 function CulledSessionCard({ card, viewportEl }: { card: CanvasCard; viewportEl: HTMLDivElement | null }): JSX.Element | null {
   const totalCards = useCanvasStore((state) => state.getLayout().cards.length)
   const viewport = useCanvasStore((state) => totalCards > 50 ? state.getLayout().viewport : null)
+  const isMaximized = useCanvasStore((state) => state.maximizedCardId === card.id)
 
-  if (totalCards <= 50 || !viewportEl || !viewport) return <SessionCard card={card} coordinateMode="screen" />
+  if (isMaximized || totalCards <= 50 || !viewportEl || !viewport) return <SessionCard card={card} coordinateMode="screen" />
 
   const rect = viewportEl.getBoundingClientRect()
   const padding = 200

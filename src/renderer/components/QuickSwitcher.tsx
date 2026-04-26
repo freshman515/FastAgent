@@ -11,8 +11,10 @@ import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 import { geminiIcon } from '@/lib/geminiIcon'
+import { browserIcon } from '@/lib/browserIcon'
 
 const TYPE_ICONS: Record<string, string> = {
+  browser: browserIcon,
   'claude-code': claudeIcon,
   'claude-code-yolo': claudeIcon,
   'claude-gui': claudeIcon,

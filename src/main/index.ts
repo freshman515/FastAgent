@@ -114,6 +114,7 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   })
   installCanvasBookmarkShortcutBridge(mainWindow)
@@ -277,6 +278,7 @@ app.whenReady().then(async () => {
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
+        webviewTag: true,
       },
     })
 

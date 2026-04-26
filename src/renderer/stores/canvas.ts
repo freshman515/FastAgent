@@ -63,12 +63,19 @@ function clampScale(scale: number): number {
   return Math.max(CANVAS_MIN_SCALE, Math.min(CANVAS_MAX_SCALE, scale))
 }
 
-/**
- * Focus zoom is based on perceived text size, not card bounds. This keeps
- * small cards from being enlarged when the current zoom is already readable.
- */
 /** Viewport transition duration for programmatic canvas navigation, in ms. */
 const FOCUS_ANIMATION_MS = 360
+const LAYOUT_ANIMATION_MS = 260
+const FOCUS_CARD_PADDING = 48
+const FOCUS_CONTROL_GAP = 24
+const FOCUS_CARD_MIN_VISIBLE_SPACE = 160
+
+interface CanvasFocusScreenArea {
+  width: number
+  height: number
+  centerX: number
+  centerY: number
+}
 
 // ─── Programmatic viewport animation ───
 //
@@ -77,6 +84,7 @@ const FOCUS_ANIMATION_MS = 360
 // `cancelViewportAnimation` first so user input isn't overwritten.
 
 let animationFrame: number | null = null
+let layoutAnimationTimer: number | null = null
 
 export function cancelViewportAnimation(): void {
   if (animationFrame !== null) {
@@ -108,12 +116,55 @@ function animateViewport(target: CanvasViewport): void {
   animationFrame = requestAnimationFrame(step)
 }
 
-function getViewportSize(): { width: number; height: number } | null {
+function triggerCanvasLayoutAnimation(): void {
+  if (typeof document === 'undefined') return
+  document.body.classList.add('canvas-layout-animating')
+  if (layoutAnimationTimer !== null) {
+    window.clearTimeout(layoutAnimationTimer)
+  }
+  layoutAnimationTimer = window.setTimeout(() => {
+    document.body.classList.remove('canvas-layout-animating')
+    layoutAnimationTimer = null
+  }, LAYOUT_ANIMATION_MS + 80)
+}
+
+function getCanvasFocusScreenArea(): CanvasFocusScreenArea | null {
   const el = document.querySelector('[data-canvas-viewport]') as HTMLDivElement | null
   if (!el) return null
   const rect = el.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
-  return { width: rect.width, height: rect.height }
+
+  const sessionToggle = document.querySelector('[data-canvas-session-list-toggle]') as HTMLElement | null
+  const toolbar = document.querySelector('[data-canvas-toolbar]') as HTMLElement | null
+  const sessionToggleRect = sessionToggle?.getBoundingClientRect()
+  const toolbarRect = toolbar?.getBoundingClientRect()
+
+  let top = FOCUS_CARD_PADDING
+  if (sessionToggleRect) top = Math.max(top, sessionToggleRect.bottom - rect.top + FOCUS_CONTROL_GAP)
+
+  let bottom = rect.height - FOCUS_CARD_PADDING
+  if (toolbarRect) bottom = Math.min(bottom, toolbarRect.top - rect.top - FOCUS_CONTROL_GAP)
+
+  if (bottom - top < FOCUS_CARD_MIN_VISIBLE_SPACE) {
+    const verticalInset = Math.max(0, (rect.height - FOCUS_CARD_MIN_VISIBLE_SPACE) / 2)
+    top = verticalInset
+    bottom = rect.height - verticalInset
+  }
+
+  const preferredHorizontalInset = Math.max(FOCUS_CARD_PADDING, top)
+  const maxHorizontalInset = Math.max(0, (rect.width - FOCUS_CARD_MIN_VISIBLE_SPACE) / 2)
+  const horizontalInset = Math.min(preferredHorizontalInset, maxHorizontalInset)
+  const left = horizontalInset
+  const right = rect.width - horizontalInset
+  const width = Math.max(1, right - left)
+  const height = Math.max(1, bottom - top)
+
+  return {
+    width,
+    height,
+    centerX: left + width / 2,
+    centerY: top + height / 2,
+  }
 }
 
 function getCardElement(cardId: string): HTMLElement | null {
@@ -162,6 +213,86 @@ function getFocusTargetScale(card: CanvasCard, currentScale: number): number {
   }
 
   return clampScale(targetFontPx / baseFontPx)
+}
+
+function getConfiguredSessionFocusScale(): number {
+  const settings = useUIStore.getState().settings
+  const rangeMin = Math.min(settings.canvasFocusReadableFontMinPx, settings.canvasFocusReadableFontMaxPx)
+  const rangeMax = Math.max(settings.canvasFocusReadableFontMinPx, settings.canvasFocusReadableFontMaxPx)
+  const targetFontPx = Math.max(rangeMin, Math.min(rangeMax, settings.canvasFocusTargetFontPx))
+  return clampScale(targetFontPx / settings.terminalFontSize)
+}
+
+function getFocusVisibleScaleCap(
+  card: CanvasCard,
+  focusArea: CanvasFocusScreenArea,
+): number {
+  return clampScale(Math.min(focusArea.width / card.width, focusArea.height / card.height))
+}
+
+function getCardFocusViewport(card: CanvasCard, currentViewport: CanvasViewport): CanvasViewport | null {
+  const focusArea = getCanvasFocusScreenArea()
+  if (!focusArea) return null
+
+  const readableScale = getFocusTargetScale(card, currentViewport.scale)
+  const visibleScaleCap = getFocusVisibleScaleCap(card, focusArea)
+  const targetScale = clampScale(Math.min(readableScale, visibleScaleCap))
+  const centerX = card.x + card.width / 2
+  const centerY = card.y + card.height / 2
+
+  return {
+    scale: targetScale,
+    offsetX: focusArea.centerX - centerX * targetScale,
+    offsetY: focusArea.centerY - centerY * targetScale,
+  }
+}
+
+function resizeSessionCardsToGrid(
+  layout: CanvasLayout,
+  targetWidth: number,
+  targetHeight: number,
+  now: number,
+): { cards: CanvasCard[]; touched: boolean } {
+  const targetIds = new Set<string>()
+  const resizedCards = layout.cards.map((card) => {
+    if (card.kind !== 'session' && card.kind !== 'terminal') return card
+    targetIds.add(card.id)
+    return {
+      ...card,
+      width: targetWidth,
+      height: targetHeight,
+      updatedAt: now,
+    }
+  })
+  if (targetIds.size === 0) return { cards: layout.cards, touched: false }
+
+  const targets = resizedCards.filter((card) => targetIds.has(card.id))
+  const layoutPositions = computeArrangePositions(
+    sortCardsForArrangeMode(targets, 'grid'),
+    'grid',
+    getArrangeOrigin(targets),
+  )
+  const previousById = new Map(layout.cards.map((card) => [card.id, card]))
+
+  let touched = false
+  const cards = resizedCards.map((card) => {
+    const pos = layoutPositions.get(card.id)
+    if (!pos) return card
+    const previous = previousById.get(card.id)
+    if (
+      previous
+      && previous.width === targetWidth
+      && previous.height === targetHeight
+      && previous.x === pos.x
+      && previous.y === pos.y
+    ) {
+      return previous
+    }
+    touched = true
+    return { ...card, x: pos.x, y: pos.y, updatedAt: now }
+  })
+
+  return { cards, touched }
 }
 
 function isValidCard(value: unknown): value is CanvasCard {
@@ -216,6 +347,7 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
     collapsedPreview: Array.isArray(card.collapsedPreview)
       ? card.collapsedPreview.filter((line): line is string => typeof line === 'string').slice(-6)
       : undefined,
+    hidden: Boolean(card.hidden),
     sessionRemark: typeof card.sessionRemark === 'string' ? card.sessionRemark : undefined,
     createdAt: typeof card.createdAt === 'number' ? card.createdAt : Date.now(),
     updatedAt: typeof card.updatedAt === 'number' ? card.updatedAt : Date.now(),
@@ -563,6 +695,7 @@ interface CanvasState {
   layouts: Record<string, CanvasLayout>
   selectedCardIds: string[]
   focusReturn: { cardId: string; viewport: CanvasViewport } | null
+  maximizedCardId: string | null
   undoStack: CanvasHistoryEntry[]
 
   // getters
@@ -581,16 +714,22 @@ interface CanvasState {
   setViewport: (viewport: Partial<CanvasViewport>) => void
   resetViewport: () => void
   clearFocusReturn: () => void
+  toggleMaximizedCard: (cardId: string) => void
+  clearMaximizedCard: () => void
   fitAll: (containerWidth: number, containerHeight: number) => void
   /**
    * Animate the viewport so `cardId` lands centered. Scale only changes when
    * the card's transformed text is outside the readable font-size range.
    */
   focusOnCard: (cardId: string) => void
+  /** Preview a card from search by moving the viewport without activating the session. */
+  previewCardInViewport: (cardId: string) => void
 
   // cards
   addCard: (partial: Partial<CanvasCard> & { kind: CanvasCardKind }) => string
   addFrameAroundCards: (ids: string[], fallback?: { x: number; y: number }) => string | null
+  normalizeCardsToFocusArea: () => void
+  normalizeCardsToDefaultSessionSize: () => void
   updateCard: (id: string, updates: Partial<CanvasCard>) => void
   updateCardPositions: (positions: Map<string, { x: number; y: number }>) => void
   updateCardsGeometry: (geometry: Map<string, { x: number; y: number; width: number; height: number }>) => void
@@ -661,6 +800,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   layouts: { [GLOBAL_LAYOUT_KEY]: defaultLayout() },
   selectedCardIds: [],
   focusReturn: null,
+  maximizedCardId: null,
   undoStack: [],
 
   getLayout: (key) => {
@@ -684,7 +824,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (Object.keys(layouts).length === 0) {
       layouts[GLOBAL_LAYOUT_KEY] = defaultLayout()
     }
-    set({ layouts, selectedCardIds: [], focusReturn: null, undoStack: [] })
+    set({ layouts, selectedCardIds: [], focusReturn: null, maximizedCardId: null, undoStack: [] })
   },
 
   setActiveLayout: (key) => {
@@ -699,6 +839,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         layouts,
         selectedCardIds: [],
         focusReturn: null,
+        maximizedCardId: null,
         undoStack: [],
       }
     })
@@ -717,6 +858,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       focusReturn: entry.focusReturn
         ? { cardId: entry.focusReturn.cardId, viewport: { ...entry.focusReturn.viewport } }
         : null,
+      maximizedCardId: null,
       undoStack: rest,
     })
     return true
@@ -746,6 +888,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   clearFocusReturn: () => set({ focusReturn: null }),
 
+  toggleMaximizedCard: (cardId) => {
+    cancelViewportAnimation()
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const cardExists = layout.cards.some((card) => card.id === cardId)
+      if (!cardExists) return state
+      return {
+        maximizedCardId: state.maximizedCardId === cardId ? null : cardId,
+        selectedCardIds: [cardId],
+        focusReturn: null,
+      }
+    })
+  },
+
+  clearMaximizedCard: () => set({ maximizedCardId: null }),
+
   focusOnCard: (cardId) => {
     cancelViewportAnimation()
     const focusReturn = get().focusReturn
@@ -759,24 +917,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     const card = get().getCard(cardId)
     if (!card) return
-    const size = getViewportSize()
-    if (!size) return
     const returnViewport = get().getViewport()
-
-    const targetScale = getFocusTargetScale(card, returnViewport.scale)
-    const centerX = card.x + card.width / 2
-    const centerY = card.y + card.height / 2
-    const targetOffsetX = size.width / 2 - centerX * targetScale
-    const targetOffsetY = size.height / 2 - centerY * targetScale
+    const targetViewport = getCardFocusViewport(card, returnViewport)
+    if (!targetViewport) return
 
     get().setSelection([cardId])
     get().bringToFront(cardId)
     set({ focusReturn: { cardId, viewport: returnViewport } })
-    animateViewport({
-      scale: targetScale,
-      offsetX: targetOffsetX,
-      offsetY: targetOffsetY,
-    })
+    animateViewport(targetViewport)
+  },
+
+  previewCardInViewport: (cardId) => {
+    cancelViewportAnimation()
+    const card = get().getCard(cardId)
+    if (!card) return
+    const targetViewport = getCardFocusViewport(card, get().getViewport())
+    if (!targetViewport) return
+    set({ focusReturn: null })
+    animateViewport(targetViewport)
   },
 
   fitAll: (containerWidth, containerHeight) => {
@@ -897,6 +1055,50 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return created ? id : null
   },
 
+  normalizeCardsToFocusArea: () => {
+    const focusArea = getCanvasFocusScreenArea()
+    if (!focusArea) return
+
+    const targetScale = getConfiguredSessionFocusScale()
+    const targetWidth = Math.max(320, Math.round(focusArea.width / targetScale))
+    const targetHeight = Math.max(240, Math.round(focusArea.height / targetScale))
+
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const now = Date.now()
+      const { cards, touched } = resizeSessionCardsToGrid(layout, targetWidth, targetHeight, now)
+      if (!touched) return state
+      triggerCanvasLayoutAnimation()
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        focusReturn: null,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  normalizeCardsToDefaultSessionSize: () => {
+    const size = getDefaultCanvasCardSize('session')
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const now = Date.now()
+      const { cards, touched } = resizeSessionCardsToGrid(layout, size.width, size.height, now)
+      if (!touched) return state
+      triggerCanvasLayoutAnimation()
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        focusReturn: null,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
   updateCard: (id, updates) => {
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
@@ -905,11 +1107,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const nextCard: CanvasCard = { ...layout.cards[index], ...updates, updatedAt: Date.now() }
       const cards = [...layout.cards]
       cards[index] = nextCard
+      const hiding = updates.hidden === true
       return {
         layouts: {
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        selectedCardIds: hiding ? state.selectedCardIds.filter((cardId) => cardId !== id) : state.selectedCardIds,
+        focusReturn: hiding && state.focusReturn?.cardId === id ? null : state.focusReturn,
+        maximizedCardId: hiding && state.maximizedCardId === id ? null : state.maximizedCardId,
         undoStack: pushUndo(state),
       }
     })
@@ -1091,6 +1297,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         },
         selectedCardIds: state.selectedCardIds.filter((cardId) => cardId !== id),
         focusReturn: state.focusReturn?.cardId === id ? null : state.focusReturn,
+        maximizedCardId: state.maximizedCardId === id ? null : state.maximizedCardId,
         undoStack: pushUndo(state),
       }
     })
@@ -1209,7 +1416,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         const card = Object.values(layouts).flatMap((l) => l.cards).find((c) => c.id === id)
         return Boolean(card)
       })
-      return { layouts, selectedCardIds }
+      const maximizedExists = state.maximizedCardId
+        ? Object.values(layouts).some((layout) => layout.cards.some((card) => card.id === state.maximizedCardId))
+        : false
+      return {
+        layouts,
+        selectedCardIds,
+        maximizedCardId: maximizedExists ? state.maximizedCardId : null,
+      }
     })
   },
 
@@ -1282,6 +1496,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         },
         selectedCardIds: state.selectedCardIds.filter((id) => !idSet.has(id)),
         focusReturn: state.focusReturn && idSet.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        maximizedCardId: state.maximizedCardId && idSet.has(state.maximizedCardId) ? null : state.maximizedCardId,
         undoStack: pushUndo(state),
       }
     })
@@ -1533,6 +1748,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         if (!pos) return card
         return { ...card, x: pos.x, y: pos.y, updatedAt: now }
       })
+      triggerCanvasLayoutAnimation()
       return {
         layouts: {
           ...state.layouts,

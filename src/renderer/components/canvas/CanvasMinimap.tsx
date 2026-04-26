@@ -13,18 +13,19 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const viewport = useCanvasStore((state) => state.getLayout().viewport)
   const mapRef = useRef<HTMLDivElement>(null)
+  const visibleCards = useMemo(() => cards.filter((card) => !card.hidden), [cards])
 
   const bounds = useMemo(() => {
-    if (cards.length === 0) {
+    if (visibleCards.length === 0) {
       return { minX: -PADDING, minY: -PADDING, maxX: PADDING, maxY: PADDING }
     }
     return {
-      minX: Math.min(...cards.map((c) => c.x)) - PADDING,
-      minY: Math.min(...cards.map((c) => c.y)) - PADDING,
-      maxX: Math.max(...cards.map((c) => c.x + c.width)) + PADDING,
-      maxY: Math.max(...cards.map((c) => c.y + c.height)) + PADDING,
+      minX: Math.min(...visibleCards.map((c) => c.x)) - PADDING,
+      minY: Math.min(...visibleCards.map((c) => c.y)) - PADDING,
+      maxX: Math.max(...visibleCards.map((c) => c.x + c.width)) + PADDING,
+      maxY: Math.max(...visibleCards.map((c) => c.y + c.height)) + PADDING,
     }
-  }, [cards])
+  }, [visibleCards])
 
   const boundsWidth = Math.max(bounds.maxX - bounds.minX, 200)
   const boundsHeight = Math.max(bounds.maxY - bounds.minY, 140)
@@ -71,7 +72,7 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
       }}
     >
       <svg width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} style={{ display: 'block' }}>
-        {cards.map((card) => {
+        {visibleCards.map((card) => {
           const isSession = card.kind === 'session' || card.kind === 'terminal'
           const isFrame = card.kind === 'frame'
           return (

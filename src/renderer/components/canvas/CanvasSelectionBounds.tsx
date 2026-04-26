@@ -48,7 +48,7 @@ export function CanvasSelectionBounds(): JSX.Element | null {
 
   if (selectedCardIds.length <= 1) return null
 
-  const selected = cards.filter((card) => selectedCardIds.includes(card.id))
+  const selected = cards.filter((card) => selectedCardIds.includes(card.id) && !card.hidden)
   if (selected.length <= 1) return null
 
   const minX = Math.min(...selected.map((card) => card.x))

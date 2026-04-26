@@ -9,6 +9,7 @@ import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 import { geminiIcon } from '@/lib/geminiIcon'
+import { browserIcon } from '@/lib/browserIcon'
 
 export interface SessionOption {
   type: SessionType
@@ -17,7 +18,8 @@ export interface SessionOption {
 }
 
 export const SESSION_OPTIONS: SessionOption[] = [
-  { type: 'terminal', label: '终端', icon: terminalIcon },
+  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
+  { type: 'browser', label: 'Browser', icon: browserIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
   { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
@@ -71,9 +73,6 @@ export function NewSessionMenu({
         'animate-in fade-in zoom-in-95 duration-150',
       )}
     >
-      <div className="px-3 py-1.5 mb-1 border-b border-white/[0.05]">
-        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">新建会话</span>
-      </div>
       <div className="flex flex-col gap-0.5">
         {SESSION_OPTIONS.map((opt) => (
           <button
