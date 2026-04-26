@@ -32,9 +32,13 @@ function clampScale(scale: number): number {
   return Math.max(CANVAS_MIN_SCALE, Math.min(CANVAS_MAX_SCALE, scale))
 }
 
-/** Target viewport width fraction for focused cards, capped by height. */
-export const FOCUS_ZOOM_FRACTION = 0.66
-const FOCUS_ZOOM_MAX_HEIGHT_FRACTION = 0.82
+/**
+ * Focus zoom is based on perceived text size, not card bounds. This keeps
+ * small cards from being enlarged when the current zoom is already readable.
+ */
+const FOCUS_READABLE_FONT_TARGET_PX = 17
+const FOCUS_READABLE_FONT_MIN_PX = 14
+const FOCUS_READABLE_FONT_MAX_PX = 20
 
 /** Viewport transition duration when focusing a card, in ms. */
 const FOCUS_ANIMATION_MS = 360
@@ -83,6 +87,50 @@ function getViewportSize(): { width: number; height: number } | null {
   const rect = el.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
   return { width: rect.width, height: rect.height }
+}
+
+function getCardElement(cardId: string): HTMLElement | null {
+  const escaped = cardId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return document.querySelector(`[data-card-id="${escaped}"]`) as HTMLElement | null
+}
+
+function parsePixelSize(value: string): number | null {
+  const size = Number.parseFloat(value)
+  return Number.isFinite(size) && size > 0 ? size : null
+}
+
+function getTransformedCardBaseFontPx(card: CanvasCard, cardElement: HTMLElement): number | null {
+  if (cardElement.dataset.cardCoordinateMode !== 'screen-transform') return null
+
+  if (card.kind === 'session' || card.kind === 'terminal') {
+    return useUIStore.getState().settings.terminalFontSize
+  }
+
+  const xtermEl = cardElement.querySelector('.xterm-rows, .xterm') as HTMLElement | null
+  const xtermFont = xtermEl ? parsePixelSize(getComputedStyle(xtermEl).fontSize) : null
+  if (xtermFont) return xtermFont
+
+  const textEl = cardElement.querySelector('[data-card-drag]') as HTMLElement | null
+  const textFont = textEl ? parsePixelSize(getComputedStyle(textEl).fontSize) : null
+  return textFont
+}
+
+function getFocusTargetScale(card: CanvasCard, currentScale: number): number {
+  const cardElement = getCardElement(card.id)
+  if (!cardElement) return currentScale
+
+  const baseFontPx = getTransformedCardBaseFontPx(card, cardElement)
+  if (!baseFontPx) return currentScale
+
+  const currentReadableFontPx = baseFontPx * currentScale
+  if (
+    currentReadableFontPx >= FOCUS_READABLE_FONT_MIN_PX
+    && currentReadableFontPx <= FOCUS_READABLE_FONT_MAX_PX
+  ) {
+    return currentScale
+  }
+
+  return clampScale(FOCUS_READABLE_FONT_TARGET_PX / baseFontPx)
 }
 
 function isValidCard(value: unknown): value is CanvasCard {
@@ -420,9 +468,8 @@ interface CanvasState {
   clearFocusReturn: () => void
   fitAll: (containerWidth: number, containerHeight: number) => void
   /**
-   * Animate the viewport so `cardId` lands centered and scaled to
-   * `FOCUS_ZOOM_FRACTION` of the viewport width. Also selects and
-   * brings the card to front so the session terminal gets keyboard focus.
+   * Animate the viewport so `cardId` lands centered. Scale only changes when
+   * the card's transformed text is outside the readable font-size range.
    */
   focusOnCard: (cardId: string) => void
 
@@ -566,9 +613,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (!size) return
     const returnViewport = get().getViewport()
 
-    const widthScale = (size.width * FOCUS_ZOOM_FRACTION) / card.width
-    const maxHeightScale = (size.height * FOCUS_ZOOM_MAX_HEIGHT_FRACTION) / card.height
-    const targetScale = clampScale(Math.min(widthScale, maxHeightScale))
+    const targetScale = getFocusTargetScale(card, returnViewport.scale)
     const centerX = card.x + card.width / 2
     const centerY = card.y + card.height / 2
     const targetOffsetX = size.width / 2 - centerX * targetScale
@@ -724,6 +769,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        focusReturn: state.focusReturn?.cardId === id ? null : state.focusReturn,
       }
     })
   },

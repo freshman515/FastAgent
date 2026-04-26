@@ -136,6 +136,11 @@ export function useCardResize({
       const { liveWidth, liveHeight, liveX, liveY } = state
       stateRef.current = null
       useCanvasStore.getState().resizeCard(cardId, liveWidth, liveHeight, liveX, liveY)
+      if (event.type === 'pointerup') {
+        requestAnimationFrame(() => {
+          useCanvasStore.getState().focusOnCard(cardId)
+        })
+      }
     }
 
     element.addEventListener('pointerdown', onPointerDown)
