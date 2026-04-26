@@ -205,7 +205,7 @@ export function RecentSessionsPanel(): JSX.Element {
                   onClick={() => toggleBucket(bucket.key)}
                   className={cn(
                     'group/bucket flex w-full items-center gap-2 text-left',
-                    'text-[12.5px] font-bold tracking-tight text-[var(--color-text-secondary)]',
+                    'text-[var(--ui-font-sm)] font-medium tracking-tight text-[var(--color-text-secondary)]',
                     'transition-all duration-200 hover:bg-[var(--color-bg-surface)]/40 rounded-[var(--radius-sm)] mx-1 w-[calc(100%-8px)]',
                     'px-2 py-1.5',
                   )}

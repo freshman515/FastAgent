@@ -5,6 +5,7 @@ import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
+import { geminiIcon } from '@/lib/geminiIcon'
 import { cn } from '@/lib/utils'
 import { switchProjectContext } from '@/lib/project-context'
 import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
@@ -45,6 +46,8 @@ const TYPE_ICONS: Record<string, string> = {
   'claude-gui': claudeIcon,
   codex: codexIcon,
   'codex-yolo': codexIcon,
+  gemini: geminiIcon,
+  'gemini-yolo': geminiIcon,
   opencode: opencodeIcon,
   terminal: terminalIcon,
 }

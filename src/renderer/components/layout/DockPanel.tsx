@@ -308,7 +308,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
         <>
           {resizeHandle}
           <div className={cn(
-            'flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
+            'dock-panel-frame flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
             isAppendDropTarget && 'bg-[var(--color-accent)]/6',
           )}>
             {content}

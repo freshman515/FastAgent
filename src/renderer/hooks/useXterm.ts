@@ -27,7 +27,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import type { Session, SessionDataEvent } from '@shared/types'
-import { isClaudeCodeType } from '@shared/types'
+import { isClaudeCodeType, isGeminiType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
@@ -264,6 +264,7 @@ export function useXterm(
     const shouldResume = currentSession.initialized && isClaudeCodeType(currentSession.type)
     const resumeUUID = currentSession.resumeUUID ?? undefined
     const codexResumeId = currentSession.codexResumeId
+    const geminiResumeId = isGeminiType(currentSession.type) ? currentSession.geminiResumeId : undefined
     const { settings } = useUIStore.getState()
     let ptyId: string | null = null
     let destroyed = false
@@ -489,6 +490,7 @@ export function useXterm(
           resume: shouldResume,
           resumeUUID,
           codexResumeId,
+          geminiResumeId,
           cols: terminal.cols || 80,
           rows: terminal.rows || 24,
         })
@@ -628,11 +630,12 @@ export function useXterm(
         return false
       }
 
-      // Ctrl/Cmd+V: smart paste for Claude Code / Codex — image → Alt+V, text → inject.
+      // Ctrl/Cmd+V: smart paste for agent CLIs — image → Alt+V, text → inject.
       // Terminal sessions fall through to xterm's default paste path.
       const isSmartPasteTarget =
         sessionType === 'codex' || sessionType === 'codex-yolo'
         || sessionType === 'claude-code' || sessionType === 'claude-code-yolo'
+        || sessionType === 'gemini' || sessionType === 'gemini-yolo'
       if (isSmartPasteTarget
         && (e.ctrlKey || e.metaKey)
         && !e.altKey

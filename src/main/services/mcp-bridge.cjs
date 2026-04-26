@@ -142,13 +142,13 @@ const TOOLS = [
   {
     name: 'fa_create_session',
     description:
-      'Create a new FastAgents session in the active pane. Use this to spawn a worker agent (claude-code / codex / opencode) or a plain terminal for a follow-up task.',
+      'Create a new FastAgents session in the active pane. Use this to spawn a worker agent (claude-code / codex / gemini / opencode) or a plain terminal for a follow-up task.',
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['terminal', 'claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode'],
+          enum: ['terminal', 'claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'],
           description: 'Session type. Defaults to claude-code.',
         },
         cwd: {

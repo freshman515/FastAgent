@@ -1,6 +1,6 @@
 # FastAgents
 
-A lightweight multi-agent terminal manager built with Electron. Run multiple AI coding agents (Claude Code, Codex, OpenCode) and terminals side-by-side, organized by projects and workspaces.
+A lightweight multi-agent terminal manager built with Electron. Run multiple AI coding agents (Claude Code, Codex, Gemini, OpenCode) and terminals side-by-side, organized by projects and workspaces.
 
 ![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
@@ -96,7 +96,7 @@ Available tools:
 | `fastagents_list_sessions` | List running sessions in the same project/worktree scope |
 | `fastagents_read_session` | Read recent terminal output from a target session |
 | `fastagents_write_session` | Send terminal input to another session |
-| `fastagents_create_session` | Create a new Claude Code, Codex, OpenCode, or Terminal session in the same scope |
+| `fastagents_create_session` | Create a new Claude Code, Codex, Gemini, OpenCode, or Terminal session in the same scope |
 | `fastagents_wait_for_idle` | Wait until a target session stops producing output, then return recent output |
 
 Claude Code receives the MCP configuration through `--mcp-config` at launch. The generated config and bridge script are written under the app user data `mcp` directory at runtime, so no manual Claude configuration is required.

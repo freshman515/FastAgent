@@ -73,12 +73,16 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[400] min-w-[180px] overflow-visible rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
+      className={cn(
+        'fixed z-[400] min-w-[200px] overflow-visible rounded-[var(--radius-lg)] border border-white/[0.08]',
+        'bg-[var(--color-bg-secondary)]/90 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] py-1.5 p-1',
+        'animate-in fade-in zoom-in-95 duration-150',
+      )}
       style={{ left: menuPosition.left, top: menuPosition.top }}
     >
       {items.map((item, index) => (
         item.kind === 'separator' ? (
-          <div key={index} className="my-1 h-px bg-[var(--color-border)]" />
+          <div key={index} className="my-1.5 h-px bg-white/[0.06] mx-2" />
         ) : item.kind === 'submenu' ? (
           <div
             key={index}
@@ -89,19 +93,22 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
               type="button"
               disabled={item.disabled}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--ui-font-sm)] transition-colors',
-                'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
-                'disabled:cursor-not-allowed disabled:opacity-40',
+                'group/item relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left text-[13px] transition-all duration-200',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white',
+                'disabled:cursor-not-allowed disabled:opacity-30',
               )}
             >
-              <span className="flex-1">{item.label}</span>
-              <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">›</span>
+              {/* Left accent bar on hover */}
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/item:scale-y-100 group-hover/item:opacity-100 group-hover/item:shadow-[0_0_8px_var(--color-accent)]" />
+              
+              <span className="flex-1 font-medium">{item.label}</span>
+              <span className="text-[14px] text-[var(--color-text-tertiary)] opacity-40 group-hover/item:opacity-100 transition-opacity">›</span>
             </button>
             {openSubmenuIndex === index && !item.disabled && (
               <div
                 className={cn(
-                  'absolute top-0 min-w-[190px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl',
-                  submenuDirection === 'right' ? 'left-full ml-1' : 'right-full mr-1',
+                  'absolute top-0 min-w-[200px] overflow-hidden rounded-[var(--radius-lg)] border border-white/[0.08] bg-[var(--color-bg-secondary)]/95 backdrop-blur-3xl p-1 shadow-2xl animate-in fade-in slide-in-from-top-1 duration-200',
+                  submenuDirection === 'right' ? 'left-full ml-1.5' : 'right-full mr-1.5',
                 )}
               >
                 {item.items.map((child) => (
@@ -110,12 +117,19 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
                     type="button"
                     onClick={() => { child.onClick(); onClose() }}
                     className={cn(
-                      'flex w-full items-center gap-2.5 px-3 py-2 text-left text-[var(--ui-font-sm)] transition-colors',
-                      'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
+                      'group/subitem relative flex h-9 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left text-[13px] transition-all duration-200',
+                      'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white',
                     )}
                   >
-                    {child.icon && <img src={child.icon} alt="" className="h-4 w-4 shrink-0" />}
-                    <span className="flex-1">{child.label}</span>
+                    {/* Left accent bar on hover */}
+                    <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/subitem:scale-y-100 group-hover/subitem:opacity-100 group-hover/subitem:shadow-[0_0_8px_var(--color-accent)]" />
+
+                    {child.icon && (
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 group-hover/subitem:scale-110">
+                        <img src={child.icon} alt="" className="h-4.5 w-4.5 shrink-0" />
+                      </div>
+                    )}
+                    <span className="flex-1 font-medium">{child.label}</span>
                   </button>
                 ))}
               </div>
@@ -129,16 +143,23 @@ export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): J
             onMouseEnter={() => setOpenSubmenuIndex(null)}
             onClick={() => { item.onClick(); onClose() }}
             className={cn(
-              'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--ui-font-sm)] transition-colors',
+              'group/item relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left text-[13px] transition-all duration-200',
               item.danger
-                ? 'text-[var(--color-error)]'
-                : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
-              'hover:bg-[var(--color-bg-hover)] disabled:cursor-not-allowed disabled:opacity-40',
+                ? 'text-[var(--color-error)] hover:bg-[var(--color-error)]/15 hover:text-[var(--color-error)]'
+                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white',
+              'disabled:cursor-not-allowed disabled:opacity-30',
             )}
           >
-            <span className="flex-1">{item.label}</span>
+            {/* Left accent bar on hover (non-danger) */}
+            {!item.danger && (
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/item:scale-y-100 group-hover/item:opacity-100 group-hover/item:shadow-[0_0_8px_var(--color-accent)]" />
+            )}
+            
+            <span className="flex-1 font-medium">{item.label}</span>
             {item.shortcut && (
-              <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{item.shortcut}</span>
+              <span className="text-[10px] font-bold tabular-nums text-[var(--color-text-tertiary)] opacity-40 uppercase tracking-tighter group-hover/item:opacity-70 transition-opacity">
+                {item.shortcut}
+              </span>
             )}
           </button>
         )

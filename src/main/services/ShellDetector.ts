@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { buildClaudeCodeArgs, type ClaudeSessionLaunchMode } from '@shared/claudeSession'
+import type { SessionType } from '@shared/types'
 
 const isWindows = process.platform === 'win32'
 
@@ -61,6 +62,7 @@ function detectUnixShell(): ShellInfo {
 }
 
 const CODEX_RESUME_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const GEMINI_RESUME_ID_RE = CODEX_RESUME_ID_RE
 
 export interface BuildAgentCommandOptions {
   sessionId?: string
@@ -69,10 +71,12 @@ export interface BuildAgentCommandOptions {
   claudeLaunchMode?: ClaudeSessionLaunchMode
   /** Codex rollout id — when present, runs `codex resume <id>` (and `--dangerously-bypass-approvals-and-sandbox` for codex-yolo). */
   codexResumeId?: string
+  /** Gemini session id — when present, runs `gemini --resume <id>` (and `--yolo` for gemini-yolo). */
+  geminiResumeId?: string
 }
 
 export function buildAgentCommand(
-  type: 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal',
+  type: SessionType,
   options: BuildAgentCommandOptions = {},
 ): { command: string; args: string[] } | null {
   if (type === 'terminal' || type === 'claude-gui') {
@@ -93,6 +97,14 @@ export function buildAgentCommand(
       return { command: 'codex', args: ['resume', options.codexResumeId, ...baseArgs] }
     }
     return { command: 'codex', args: baseArgs }
+  }
+
+  if (type === 'gemini' || type === 'gemini-yolo') {
+    const baseArgs = type === 'gemini-yolo' ? ['--yolo'] : []
+    if (options.geminiResumeId && GEMINI_RESUME_ID_RE.test(options.geminiResumeId)) {
+      return { command: 'gemini', args: ['--resume', options.geminiResumeId, ...baseArgs] }
+    }
+    return { command: 'gemini', args: baseArgs }
   }
 
   if (type === 'opencode') {

@@ -54,10 +54,68 @@ public static class Program {
     }
   }
 
+  private static bool IsNeteaseCloudMusicSource(string sourceAppId) {
+    if (String.IsNullOrEmpty(sourceAppId)) return false;
+    var lower = sourceAppId.ToLowerInvariant();
+    return lower.Contains("cloudmusic") || lower.Contains("music.163") || lower.Contains("netease");
+  }
+
+  private static int ScoreSession(
+    GlobalSystemMediaTransportControlsSession session,
+    GlobalSystemMediaTransportControlsSession currentSession
+  ) {
+    if (session == null) return -1;
+
+    var score = 0;
+    if (Object.ReferenceEquals(session, currentSession)) score += 20;
+    if (IsNeteaseCloudMusicSource(session.SourceAppUserModelId ?? "")) score += 300;
+
+    var playbackInfo = session.GetPlaybackInfo();
+    if (playbackInfo != null) {
+      switch (playbackInfo.PlaybackStatus) {
+        case GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing:
+          score += 1000;
+          break;
+        case GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused:
+          score += 300;
+          break;
+        case GlobalSystemMediaTransportControlsSessionPlaybackStatus.Stopped:
+          score += 50;
+          break;
+      }
+    }
+
+    try {
+      var props = session.TryGetMediaPropertiesAsync().AsTask().GetAwaiter().GetResult();
+      if (props != null && !String.IsNullOrWhiteSpace(props.Title)) score += 120;
+    } catch {}
+
+    return score;
+  }
+
+  private static GlobalSystemMediaTransportControlsSession SelectSession(
+    GlobalSystemMediaTransportControlsSessionManager manager
+  ) {
+    var currentSession = manager.GetCurrentSession();
+    var sessions = manager.GetSessions();
+    GlobalSystemMediaTransportControlsSession selected = null;
+    var bestScore = -1;
+
+    foreach (var candidate in sessions) {
+      var score = ScoreSession(candidate, currentSession);
+      if (score > bestScore) {
+        bestScore = score;
+        selected = candidate;
+      }
+    }
+
+    return selected ?? currentSession;
+  }
+
   public static int Main() {
     try {
       var manager = GlobalSystemMediaTransportControlsSessionManager.RequestAsync().AsTask().GetAwaiter().GetResult();
-      var session = manager.GetCurrentSession();
+      var session = SelectSession(manager);
       if (session == null) {
         Console.Write("{\\"title\\":\\"\\",\\"artist\\":\\"\\",\\"albumTitle\\":\\"\\",\\"albumArtist\\":\\"\\",\\"sourceAppId\\":\\"\\",\\"trackNumber\\":null,\\"status\\":\\"Stopped\\",\\"artwork\\":\\"\\"}");
         return 0;
@@ -178,7 +236,45 @@ Function Await($WinRtTask, $ResultType) {
 
 $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
 $manager = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
-$session = $manager.GetCurrentSession()
+
+Function Is-NeteaseCloudMusicSource($sourceAppId) {
+  if ([string]::IsNullOrWhiteSpace($sourceAppId)) { return $false }
+  $lower = $sourceAppId.ToLowerInvariant()
+  return $lower.Contains("cloudmusic") -or $lower.Contains("music.163") -or $lower.Contains("netease")
+}
+
+Function Get-SessionScore($candidate, $currentSession) {
+  if ($null -eq $candidate) { return -1 }
+  $score = 0
+  if ($candidate -eq $currentSession) { $score += 20 }
+  if (Is-NeteaseCloudMusicSource $candidate.SourceAppUserModelId) { $score += 300 }
+
+  try {
+    $status = $candidate.GetPlaybackInfo().PlaybackStatus.ToString()
+    if ($status -eq "Playing") { $score += 1000 }
+    elseif ($status -eq "Paused") { $score += 300 }
+    elseif ($status -eq "Stopped") { $score += 50 }
+  } catch {}
+
+  try {
+    $propsForScore = Await ($candidate.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+    if ($null -ne $propsForScore -and -not [string]::IsNullOrWhiteSpace($propsForScore.Title)) { $score += 120 }
+  } catch {}
+
+  return $score
+}
+
+$currentSession = $manager.GetCurrentSession()
+$session = $null
+$bestScore = -1
+foreach ($candidate in $manager.GetSessions()) {
+  $score = Get-SessionScore $candidate $currentSession
+  if ($score -gt $bestScore) {
+    $bestScore = $score
+    $session = $candidate
+  }
+}
+if ($null -eq $session) { $session = $currentSession }
 
 if ($null -eq $session) {
   Write-Output '{"title":"","artist":"","albumTitle":"","albumArtist":"","sourceAppId":"","trackNumber":null,"status":"Stopped","artwork":""}'
@@ -251,6 +347,17 @@ public class MK {
 const VK_MEDIA_PLAY_PAUSE = 0xb3
 const VK_MEDIA_NEXT_TRACK = 0xb0
 const VK_MEDIA_PREV_TRACK = 0xb1
+
+const NETEASE_WINDOW_TITLE_SCRIPT = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$proc = Get-Process -Name cloudmusic -ErrorAction SilentlyContinue |
+  Where-Object { $null -ne $_.MainWindowTitle -and $_.MainWindowTitle.Trim().Length -gt 0 } |
+  Select-Object -First 1
+
+if ($null -ne $proc) {
+  Write-Output $proc.MainWindowTitle
+}
+`
 
 class MediaMonitor {
   private timer: ReturnType<typeof setInterval> | null = null
@@ -335,10 +442,77 @@ class MediaMonitor {
 
   private parseInfo(stdout: string): MediaInfo | null {
     try {
-      return JSON.parse(stdout.trim()) as MediaInfo
+      return this.normalizeInfo(JSON.parse(stdout.trim()) as Partial<MediaInfo>)
     } catch {
       return null
     }
+  }
+
+  private normalizeInfo(info: Partial<MediaInfo> | null | undefined): MediaInfo | null {
+    if (!info || typeof info !== 'object') return null
+    const status = info.status === 'Playing'
+      || info.status === 'Paused'
+      || info.status === 'Stopped'
+      || info.status === 'Unknown'
+      ? info.status
+      : 'Unknown'
+    return {
+      title: typeof info.title === 'string' ? info.title : '',
+      artist: typeof info.artist === 'string' ? info.artist : '',
+      albumTitle: typeof info.albumTitle === 'string' ? info.albumTitle : '',
+      albumArtist: typeof info.albumArtist === 'string' ? info.albumArtist : '',
+      sourceAppId: typeof info.sourceAppId === 'string' ? info.sourceAppId : '',
+      trackNumber: typeof info.trackNumber === 'number' ? info.trackNumber : null,
+      status,
+      artwork: typeof info.artwork === 'string' ? info.artwork : '',
+    }
+  }
+
+  private shouldQueryNeteaseFallback(info: MediaInfo | null): boolean {
+    if (process.platform !== 'win32') return false
+    if (!info) return true
+    return info.title.trim().length === 0
+  }
+
+  private parseNeteaseWindowTitle(windowTitle: string): MediaInfo | null {
+    let text = windowTitle.replace(/\s+/g, ' ').trim()
+    if (!text) return null
+
+    text = text
+      .replace(/(?:\s*[-–—|]\s*)?(?:网易云音乐|NetEase Cloud Music|Netease Cloud Music|CloudMusic)\s*$/i, '')
+      .trim()
+
+    if (!text || /^(?:网易云音乐|NetEase Cloud Music|Netease Cloud Music|CloudMusic)$/i.test(text)) {
+      return null
+    }
+
+    const parts = text.split(/\s+[-–—|]\s+/).map((part) => part.trim()).filter(Boolean)
+    const title = parts[0] ?? text
+    const artist = parts.length > 1 ? parts.slice(1).join(' - ') : ''
+
+    return {
+      title,
+      artist,
+      albumTitle: '',
+      albumArtist: '',
+      sourceAppId: 'cloudmusic.exe',
+      trackNumber: null,
+      status: 'Unknown',
+      artwork: '',
+    }
+  }
+
+  private queryNeteaseCloudMusic(callback: (info: MediaInfo | null) => void): void {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', NETEASE_WINDOW_TITLE_SCRIPT], {
+      timeout: 3000,
+      windowsHide: true,
+    }, (err, stdout) => {
+      if (err) {
+        callback(null)
+        return
+      }
+      callback(this.parseNeteaseWindowTitle(stdout))
+    })
   }
 
   private applyInfo(info: MediaInfo | null): void {
@@ -381,8 +555,19 @@ class MediaMonitor {
     const probePath = this.getProbePath()
 
     const finish = (info: MediaInfo | null): void => {
-      this.querying = false
-      this.applyInfo(info)
+      const apply = (next: MediaInfo | null): void => {
+        this.querying = false
+        this.applyInfo(next)
+      }
+
+      if (!this.shouldQueryNeteaseFallback(info)) {
+        apply(info)
+        return
+      }
+
+      this.queryNeteaseCloudMusic((neteaseInfo) => {
+        apply(neteaseInfo ?? info)
+      })
     }
 
     if (!probePath) {

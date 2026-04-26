@@ -122,8 +122,10 @@ export function TitleBar(): JSX.Element | null {
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
+  const sessions = useSessionsStore((s) => s.sessions)
 
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
+  const projects = useProjectsStore((s) => s.projects)
   const selectedProject = useProjectsStore((s) =>
     s.projects.find((p) => p.id === s.selectedProjectId),
   )
@@ -133,6 +135,12 @@ export function TitleBar(): JSX.Element | null {
   )
   const activeProjectPath = selectedWorktree?.path ?? selectedProject?.path ?? null
   const menuVisible = titleBarMenuVisibility === 'always' || menuAreaHovered || activeMenu !== null
+  const activeSession = activeTabId && !activeTabId.startsWith('editor-')
+    ? sessions.find((session) => session.id === activeTabId)
+    : undefined
+  const titleProject = activeSession
+    ? projects.find((project) => project.id === activeSession.projectId) ?? selectedProject
+    : selectedProject
 
   const handleOpenInIde = useCallback(async (ide: ExternalIdeOption) => {
     if (!activeProjectPath || !selectedProject) {
@@ -452,13 +460,21 @@ export function TitleBar(): JSX.Element | null {
             <MusicPlayer />
           ) : (
             <div className="px-3">
-              {selectedProject ? (
-                <span className="max-w-[260px] truncate text-base font-semibold text-[var(--color-text-primary)]">
-                  {selectedProject.name}
+              {titleProject ? (
+                <span className="flex max-w-[360px] items-baseline gap-1.5 truncate text-base font-semibold text-[var(--color-text-primary)]">
+                  <span className="min-w-0 truncate">{titleProject.name}</span>
                   {selectedWorktree && !selectedWorktree.isMain && (
                     <span className="ml-1.5 text-sm font-normal text-[var(--color-text-tertiary)]">
                       / {selectedWorktree.branch}
                     </span>
+                  )}
+                  {activeSession && (
+                    <>
+                      <span className="shrink-0 text-sm font-normal text-[var(--color-text-tertiary)]">·</span>
+                      <span className="min-w-0 truncate text-sm font-medium text-[var(--color-text-secondary)]">
+                        {activeSession.name}
+                      </span>
+                    </>
                   )}
                 </span>
               ) : (
@@ -477,73 +493,77 @@ export function TitleBar(): JSX.Element | null {
           aria-label={workspaceLayout === 'canvas' ? '当前为画布模式，点击切换为经典模式' : '当前为经典模式，点击切换为画布模式'}
           onClick={handleToggleWorkspaceLayout}
           className={cn(
-            'group relative isolate mr-2 flex h-7 w-[132px] items-center overflow-hidden rounded-full border p-0.5',
-            'border-white/[0.07] bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.012))]',
-            'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.25),0_1px_10px_rgba(0,0,0,0.22)] backdrop-blur-xl',
-            'transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out',
-            'hover:border-white/[0.13] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-1px_0_rgba(0,0,0,0.3),0_2px_14px_rgba(0,0,0,0.28)]',
-            'active:scale-[0.985]',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50',
+            'group relative isolate mr-2 flex h-7.5 w-[142px] items-center rounded-full p-[3px] cursor-pointer',
+            'bg-[#121214] ring-1 ring-inset ring-white/[0.05] shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]',
+            'transition-all duration-200 active:scale-[0.97]',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/80',
           )}
           title={workspaceLayout === 'canvas' ? '点击切换为经典模式' : '点击切换为画布模式'}
         >
-          {/* top sheen */}
-          <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(120%_70%_at_50%_-20%,rgba(255,255,255,0.14),transparent_55%)]" />
-          {/* accent halo behind the active side */}
-          <span
+          {/* Ambient Glow tracking the active state */}
+          <div
             className={cn(
-              'pointer-events-none absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full blur-[10px] transition-[left,opacity,background] duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
-              'bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-accent)_45%,transparent),transparent)]',
-              workspaceLayout === 'canvas' ? 'left-[calc(50%+1px)] opacity-90' : 'left-0.5 opacity-80',
+              'pointer-events-none absolute inset-y-0 w-[calc(50%-3px)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
+              workspaceLayout === 'canvas' ? 'translate-x-full' : 'translate-x-0'
             )}
-          />
-          {/* sliding thumb */}
-          <span
+          >
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-4 bg-[var(--color-accent)]/40 blur-[10px] rounded-full" />
+          </div>
+
+          {/* Sliding Glass Thumb */}
+          <div
             className={cn(
-              'absolute left-0.5 top-0.5 h-[calc(100%-4px)] w-[calc(50%-2px)] overflow-hidden rounded-full border',
-              'border-white/[0.14] bg-[radial-gradient(120%_120%_at_50%_-20%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,var(--color-bg-tertiary),var(--color-bg-secondary))]',
-              'shadow-[0_6px_18px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(0,0,0,0.35)]',
-              'transition-transform duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
-              workspaceLayout === 'canvas' && 'translate-x-full',
+              'absolute left-[3px] top-[3px] h-[calc(100%-6px)] w-[calc(50%-3px)] rounded-full',
+              'bg-gradient-to-b from-white/[0.12] to-white/[0.04] backdrop-blur-md',
+              'ring-1 ring-inset ring-white/[0.15]',
+              'shadow-[0_2px_8px_rgba(0,0,0,0.5),0_0_0_1px_rgba(0,0,0,0.3)]',
+              'transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
+              workspaceLayout === 'canvas' ? 'translate-x-full' : 'translate-x-0'
             )}
-          />
-          {/* labels */}
-          <span
+          >
+            {/* Top highlight line for extra crispness */}
+            <div className="absolute inset-x-2 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+          </div>
+
+          {/* Label 1: Classic */}
+          <div
             className={cn(
-              'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] transition-[color,text-shadow] duration-200',
+              'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[11px] font-bold tracking-wider transition-all duration-300',
               workspaceLayout === 'canvas'
-                ? 'text-[var(--color-text-tertiary)]/85'
-                : 'text-[var(--color-text-primary)] [text-shadow:0_0_12px_rgba(255,255,255,0.08)]',
+                ? 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] scale-95'
+                : 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] scale-100'
             )}
           >
             <Columns2
-              size={11}
-              strokeWidth={2.2}
+              size={12}
+              strokeWidth={workspaceLayout === 'canvas' ? 2 : 2.5}
               className={cn(
-                'transition-[opacity,transform] duration-200',
-                workspaceLayout === 'canvas' ? 'opacity-55' : 'opacity-100',
+                'transition-colors duration-300',
+                workspaceLayout === 'canvas' ? 'text-[var(--color-text-tertiary)]' : 'text-[var(--color-accent)]'
               )}
             />
             经典
-          </span>
-          <span
+          </div>
+
+          {/* Label 2: Canvas */}
+          <div
             className={cn(
-              'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[10.5px] font-semibold tracking-[0.04em] transition-[color,text-shadow] duration-200',
+              'relative z-10 flex flex-1 items-center justify-center gap-1.5 text-[11px] font-bold tracking-wider transition-all duration-300',
               workspaceLayout === 'canvas'
-                ? 'text-[var(--color-text-primary)] [text-shadow:0_0_12px_rgba(255,255,255,0.08)]'
-                : 'text-[var(--color-text-tertiary)]/85',
+                ? 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] scale-100'
+                : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] scale-95'
             )}
           >
             <LayoutGrid
-              size={11}
-              strokeWidth={2.2}
+              size={12}
+              strokeWidth={workspaceLayout === 'canvas' ? 2.5 : 2}
               className={cn(
-                'transition-[opacity,transform] duration-200',
-                workspaceLayout === 'canvas' ? 'opacity-100' : 'opacity-55',
+                'transition-colors duration-300',
+                workspaceLayout === 'canvas' ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]'
               )}
             />
             画布
-          </span>
+          </div>
         </button>
         <div ref={ideMenuRef} className="relative mr-1 flex h-7 items-center">
           <button

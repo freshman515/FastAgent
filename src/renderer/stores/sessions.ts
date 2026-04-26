@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Session, SessionType, SessionStatus, OutputState, SessionActivity } from '@shared/types'
-import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
+import { SESSION_TYPE_CONFIG, isClaudeCodeType, isGeminiType } from '@shared/types'
 import { isClaudeSessionUuid } from '@shared/claudeSession'
 import { generateId } from '@/lib/utils'
 
@@ -40,11 +40,19 @@ function getCodexResumeId(type: SessionType, value?: unknown): string | undefine
     : undefined
 }
 
+function getGeminiResumeId(type: SessionType, value?: unknown): string | undefined {
+  if (!isGeminiType(type)) return undefined
+  if (typeof value !== 'string') return undefined
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : undefined
+}
+
 function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
   if (typeof obj.id !== 'string' || typeof obj.projectId !== 'string') return null
-  const type = (['claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'opencode', 'terminal'].includes(obj.type as string)
+  const type = (['claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode', 'terminal'].includes(obj.type as string)
     ? obj.type
     : 'terminal') as SessionType
   return {
@@ -64,6 +72,7 @@ function sanitizeSession(s: unknown): Session | null {
     label: typeof obj.label === 'string' ? obj.label : undefined,
     cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
     codexResumeId: getCodexResumeId(type, obj.codexResumeId),
+    geminiResumeId: getGeminiResumeId(type, obj.geminiResumeId),
   }
 }
 
@@ -241,6 +250,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         ptyId: null,
         initialized: isClaudeCodeType(restored.type) ? restored.initialized : false,
         resumeUUID: getClaudeResumeUUID(restored.type, restored.resumeUUID),
+        codexResumeId: getCodexResumeId(restored.type, restored.codexResumeId),
+        geminiResumeId: getGeminiResumeId(restored.type, restored.geminiResumeId),
       }
       const sessions = [...state.sessions, session]
       persist(sessions)

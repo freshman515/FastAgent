@@ -3135,5 +3135,91 @@
             "warning": "#E58100",
             "error": "#D21A1A"
         }
-    }
-}
+        },
+        "Classic Black": {
+        "name": "Classic Black",
+        "dark": true,
+        "palette": [
+            "#000000",
+            "#ff5c5c",
+            "#4ade80",
+            "#fbbf24",
+            "#60a5fa",
+            "#c084fc",
+            "#22d3ee",
+            "#e5e5e5",
+            "#4a4a4a",
+            "#ff8080",
+            "#86efac",
+            "#fcd34d",
+            "#93c5fd",
+            "#d8b4fe",
+            "#67e8f9",
+            "#ffffff"
+        ],
+        "background": "#000000",
+        "foreground": "#ffffff",
+        "cursorColor": "#ffffff",
+        "cursorText": "#000000",
+        "selectionBackground": "#ffffff33",
+        "selectionForeground": "#ffffff",
+        "ui": {
+            "titleBarBg": "#111111",
+            "panelBg": "#000000",
+            "contentBg": "#181818",
+            "textPrimary": "#ffffff",
+            "textSecondary": "#b0b0b0",
+            "textTertiary": "#707070",
+            "border": "#222222",
+            "borderHover": "#333333",
+            "accent": "#ffffff",
+            "accentHover": "#e0e0e0",
+            "success": "#4ade80",
+            "warning": "#fbbf24",
+            "error": "#ff5c5c"
+        }
+        },
+        "Classic White": {
+        "name": "Classic White",
+        "dark": false,
+        "palette": [
+            "#f0f0f0",
+            "#d4183d",
+            "#1f7a34",
+            "#a35200",
+            "#0b63c9",
+            "#8b2fd4",
+            "#0e7c8a",
+            "#1a1a1a",
+            "#707070",
+            "#b91c1c",
+            "#166534",
+            "#854d0e",
+            "#1d4ed8",
+            "#7e22ce",
+            "#155e75",
+            "#000000"
+        ],
+        "background": "#ffffff",
+        "foreground": "#000000",
+        "cursorColor": "#000000",
+        "cursorText": "#ffffff",
+        "selectionBackground": "#00000022",
+        "selectionForeground": "#000000",
+        "ui": {
+            "titleBarBg": "#f7f8fa",
+            "panelBg": "#ffffff",
+            "contentBg": "#f4f5f7",
+            "textPrimary": "#000000",
+            "textSecondary": "#444444",
+            "textTertiary": "#888888",
+            "border": "#e1e5eb",
+            "borderHover": "#cfd6df",
+            "accent": "#000000",
+            "accentHover": "#333333",
+            "success": "#1f7a34",
+            "warning": "#a35200",
+            "error": "#d4183d"
+        }
+        }
+        }

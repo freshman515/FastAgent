@@ -191,167 +191,161 @@ export function MusicPlayer(): JSX.Element {
   ].filter((row): row is { label: string; value: string } => Boolean(row.value))
 
   return (
-    <div className="flex items-center gap-2 pl-1.5 pr-3 py-0.5">
-      {/* Controls group */}
+    <div className="flex items-center gap-4 pl-2 pr-4 py-0.5">
+      {/* ─── Controls: Floating Console Style ─── */}
       {showControls && (
-      <div className="no-drag flex items-center gap-1">
-        {/* Prev */}
-        <button
-          onClick={handlePrev}
-          disabled={!hasMedia}
-          className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-full',
-            'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
-            'hover:bg-white/8 hover:-translate-x-px',
-            'transition-all duration-150 active:scale-90',
-            !hasMedia && 'opacity-30 pointer-events-none',
-          )}
-          aria-label="上一首"
-        >
-          <SkipBack size={13} fill="currentColor" strokeWidth={0} />
-        </button>
+        <div className="no-drag flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/20 ring-1 ring-white/[0.03] shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]">
+          {/* Prev */}
+          <button
+            onClick={handlePrev}
+            disabled={!hasMedia}
+            className={cn(
+              'flex h-6.5 w-6.5 items-center justify-center rounded-full',
+              'text-[var(--color-text-tertiary)] hover:text-white',
+              'hover:bg-white/[0.08] transition-all duration-200 active:scale-90',
+              !hasMedia && 'opacity-20 pointer-events-none',
+            )}
+            title="上一首"
+          >
+            <SkipBack size={12} fill="currentColor" strokeWidth={0} />
+          </button>
 
-        {/* Play/Pause — gradient ring + soft halo when playing */}
-        <button
-          onClick={handlePlayPause}
-          disabled={!hasMedia}
-          className={cn(
-            'relative flex h-8 w-8 items-center justify-center rounded-full',
-            'bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-hover)] text-white',
-            'shadow-[0_2px_8px_-2px_var(--color-accent)]',
-            'hover:brightness-110 hover:scale-105 hover:shadow-[0_3px_12px_-2px_var(--color-accent)]',
-            'transition-all duration-150 active:scale-90',
-            playing && 'ring-2 ring-[var(--color-accent)]/35 ring-offset-0',
-            !hasMedia && 'opacity-30 pointer-events-none',
-          )}
-          aria-label={playing ? '暂停' : '播放'}
-        >
-          {playing
-            ? <Pause size={14} fill="currentColor" strokeWidth={0} />
-            : <Play size={14} fill="currentColor" strokeWidth={0} className="ml-0.5" />}
-        </button>
+          {/* Play/Pause: Neon Pulsing Button */}
+          <button
+            onClick={handlePlayPause}
+            disabled={!hasMedia}
+            className={cn(
+              'group/play relative flex h-8.5 w-8.5 items-center justify-center rounded-full',
+              'bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-hover)] text-white',
+              'shadow-[0_4px_12px_-2px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.3)]',
+              'transition-all duration-300 active:scale-95',
+              playing ? 'animate-[pulse_4s_infinite]' : 'brightness-90 hover:brightness-110',
+              !hasMedia && 'opacity-30 grayscale pointer-events-none',
+            )}
+            aria-label={playing ? '暂停' : '播放'}
+          >
+            {/* Inner Glow */}
+            <div className="absolute inset-0 rounded-full bg-[var(--color-accent)] blur-[8px] opacity-0 group-hover/play:opacity-40 transition-opacity" />
+            {playing
+              ? <Pause size={15} fill="currentColor" strokeWidth={0} className="relative z-10" />
+              : <Play size={15} fill="currentColor" strokeWidth={0} className="relative z-10 ml-0.5" />}
+          </button>
 
-        {/* Next */}
-        <button
-          onClick={handleNext}
-          disabled={!hasMedia}
-          className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-full',
-            'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
-            'hover:bg-white/8 hover:translate-x-px',
-            'transition-all duration-150 active:scale-90',
-            !hasMedia && 'opacity-30 pointer-events-none',
-          )}
-          aria-label="下一首"
-        >
-          <SkipForward size={13} fill="currentColor" strokeWidth={0} />
-        </button>
-      </div>
+          {/* Next */}
+          <button
+            onClick={handleNext}
+            disabled={!hasMedia}
+            className={cn(
+              'flex h-6.5 w-6.5 items-center justify-center rounded-full',
+              'text-[var(--color-text-tertiary)] hover:text-white',
+              'hover:bg-white/[0.08] transition-all duration-200 active:scale-90',
+              !hasMedia && 'opacity-20 pointer-events-none',
+            )}
+            title="下一首"
+          >
+            <SkipForward size={12} fill="currentColor" strokeWidth={0} />
+          </button>
+        </div>
       )}
 
-      {/* Melody Visualizer — click-through to title bar drag */}
-      <div className="relative pointer-events-none">
-        <canvas ref={canvasRef} className="h-7 rounded" style={{ width: vizWidth }} />
+      {/* ─── Visualizer: Recessed Deep Container ─── */}
+      <div className="relative flex items-center justify-center px-1 py-1 rounded-[var(--radius-md)] bg-black/40 shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)] ring-1 ring-white/[0.04]">
+        <canvas ref={canvasRef} className="h-7 opacity-90" style={{ width: vizWidth }} />
+        {/* Subtle glass reflection overlay */}
+        <div className="pointer-events-none absolute inset-0 rounded-[var(--radius-md)] bg-gradient-to-b from-white/[0.03] to-transparent" />
       </div>
 
-      {/* Track info with artwork — inherits `drag` region from the parent
-          title bar (no `.no-drag`), so clicking the track name grabs the
-          window like the surrounding title bar. */}
+      {/* ─── Track Info: Premium Badge ─── */}
       {showTrackInfo && (
         hasMedia ? (
-          <div className="flex items-center gap-2 min-w-0 max-w-[240px] select-none">
+          <div className="flex items-center gap-3 min-w-0 max-w-[280px] select-none group/info">
             {media.artwork && (
               <div className="relative no-drag shrink-0">
                 <button
                   ref={coverButtonRef}
                   type="button"
                   onClick={toggleDetails}
-                  aria-label={detailsOpen ? '收起歌曲详情' : '展开歌曲详情'}
                   className={cn(
-                    'group relative block rounded-md transition-transform duration-150',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/55',
-                    detailsOpen && 'scale-[1.04]',
+                    'group relative block rounded-lg transition-all duration-300',
+                    'ring-2 ring-transparent hover:ring-[var(--color-accent)]/30',
+                    detailsOpen && 'scale-110 ring-[var(--color-accent)]/50',
                   )}
                 >
                   <img
                     src={media.artwork}
                     alt=""
                     className={cn(
-                      'h-7 w-7 rounded object-cover shadow-sm transition-all duration-200',
-                      detailsOpen
-                        ? 'shadow-[0_8px_22px_-8px_rgba(0,0,0,0.7)] brightness-110'
-                        : 'group-hover:brightness-110 group-hover:shadow-md',
+                      'h-8 w-8 rounded-lg object-cover shadow-lg transition-all duration-500',
+                      detailsOpen ? 'brightness-110' : 'group-hover:brightness-110',
                     )}
                     draggable={false}
                   />
-                  <span
-                    className={cn(
-                      'pointer-events-none absolute inset-0 rounded border transition-colors duration-200',
-                      detailsOpen
-                        ? 'border-white/35'
-                        : 'border-white/0 group-hover:border-white/20',
-                    )}
-                  />
+                  {/* Floating shine effect */}
+                  <div className="absolute inset-0 rounded-lg bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
 
-                <AnimatePresence initial={false}>
+                <AnimatePresence>
                   {detailsOpen && (
                     <motion.div
                       ref={detailsRef}
-                      initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
+                      initial={{ opacity: 0, y: -12, scale: 0.92, filter: 'blur(10px)' }}
+                      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+                      exit={{ opacity: 0, y: -8, scale: 0.95, filter: 'blur(8px)' }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                       className={cn(
-                        'absolute left-0 top-full z-[80] mt-2 w-72 overflow-hidden rounded-2xl',
-                        'border border-white/12 bg-[var(--color-bg-secondary)]/94 backdrop-blur-xl',
-                        'shadow-[0_18px_40px_-16px_rgba(0,0,0,0.82)]',
+                        'absolute left-0 top-full z-[80] mt-3 w-72 overflow-hidden rounded-[24px]',
+                        'border border-white/10 bg-[#0f0f11]/95 backdrop-blur-3xl',
+                        'shadow-[0_24px_50px_-12px_rgba(0,0,0,0.8)]',
                       )}
                     >
+                      {/* Artistic background blur based on artwork */}
                       <div
-                        className="absolute inset-0 opacity-30"
+                        className="absolute inset-0 opacity-40 blur-2xl scale-110"
                         style={{
-                          backgroundImage: `linear-gradient(160deg, rgba(255,255,255,0.16), rgba(0,0,0,0.06)), url(${media.artwork})`,
+                          backgroundImage: `url(${media.artwork})`,
                           backgroundPosition: 'center',
                           backgroundSize: 'cover',
                         }}
                       />
-                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(12,12,16,0.22),rgba(12,12,16,0.88)_48%,rgba(12,12,16,0.96))]" />
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0f0f11]/80 to-[#0f0f11]" />
 
-                      <div className="relative flex flex-col gap-3 px-3 py-3">
-                        <div className="flex items-start gap-3">
+                      <div className="relative flex flex-col gap-4 px-4 py-5">
+                        <div className="flex items-center gap-4">
                           <img
                             src={media.artwork}
                             alt=""
-                            className="h-14 w-14 shrink-0 rounded-xl object-cover shadow-lg shadow-black/35"
+                            className="h-16 w-16 shrink-0 rounded-2xl object-cover shadow-[0_12px_24px_rgba(0,0,0,0.5)] ring-1 ring-white/10"
                             draggable={false}
                           />
                           <div className="min-w-0 flex-1">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
-                              {formatPlaybackStatus(media.status)}
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] animate-pulse shadow-[0_0_8px_var(--color-accent)]" />
+                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-accent)]">
+                                {formatPlaybackStatus(media.status)}
+                              </div>
                             </div>
-                            <div className="mt-1 truncate text-sm font-semibold text-white">
+                            <div className="mt-1.5 truncate text-[15px] font-bold text-white tracking-tight">
                               {media.title}
                             </div>
-                            <div className="mt-0.5 truncate text-xs text-white/72">
+                            <div className="mt-0.5 truncate text-[12px] font-medium text-white/60">
                               {media.artist || '未知歌手'}
                             </div>
                           </div>
                         </div>
 
-                        <div className="grid gap-1.5 rounded-xl border border-white/8 bg-black/18 p-2.5">
+                        <div className="space-y-1.5 rounded-2xl border border-white/[0.06] bg-black/30 p-3.5 backdrop-blur-sm">
                           {detailRows.map((row) => (
-                            <div key={row.label} className="flex items-start justify-between gap-3 text-xs">
-                              <span className="shrink-0 text-white/48">{row.label}</span>
-                              <span className="min-w-0 text-right leading-relaxed text-white/82 break-all">
+                            <div key={row.label} className="flex items-start justify-between gap-4 text-[11px]">
+                              <span className="shrink-0 font-bold text-white/30 uppercase tracking-wider">{row.label}</span>
+                              <span className="min-w-0 text-right font-medium text-white/80 break-all">
                                 {row.value}
                               </span>
                             </div>
                           ))}
                         </div>
 
-                        <div className="text-[10px] text-white/42">
-                          点击其他区域可收起
+                        <div className="px-1 text-[10px] font-bold text-white/20 uppercase tracking-[0.1em]">
+                          点击外部区域收起详情
                         </div>
                       </div>
                     </motion.div>
@@ -359,18 +353,26 @@ export function MusicPlayer(): JSX.Element {
                 </AnimatePresence>
               </div>
             )}
-            <span
-              className="truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]"
-              title={displayText}
-            >
-              {displayText}
-            </span>
+            
+            <div className="flex flex-col min-w-0">
+              <span
+                className="truncate text-[12px] font-bold tracking-tight text-white group-hover/info:text-[var(--color-accent)] transition-colors duration-300"
+                title={displayText}
+              >
+                {media.title || '正在获取曲目...'}
+              </span>
+              <span className="truncate text-[10px] font-medium text-[var(--color-text-tertiary)] opacity-80 group-hover/info:opacity-100 transition-opacity">
+                {media.artist || '未知艺术家'}
+              </span>
+            </div>
           </div>
         ) : (
-          <span className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)]">
-            <Music size={10} />
-            No media
-          </span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.05] transition-all hover:bg-white/[0.06]">
+            <Music size={11} className="text-[var(--color-text-tertiary)] animate-bounce" />
+            <span className="text-[11px] font-bold tracking-tight text-[var(--color-text-tertiary)] opacity-60">
+              未检测到播放中的媒体
+            </span>
+          </div>
         )
       )}
     </div>

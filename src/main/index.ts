@@ -2,7 +2,7 @@ import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, shell } f
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
-import { resolveCodexResumeIdsForSessions, warmSessionHistoryCache } from './ipc/sessionHistory'
+import { resolveCodexResumeIdsForSessions, resolveGeminiResumeIdsForSessions, warmSessionHistoryCache } from './ipc/sessionHistory'
 import { ptyManager } from './services/PtyManager'
 import { activityMonitor } from './services/ActivityMonitor'
 import { readConfig, writeConfig } from './services/ConfigStore'
@@ -18,7 +18,16 @@ import { orchestratorService } from './services/OrchestratorService'
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
 
+type StartupWindowState = 'maximized' | 'normal'
+
+function getStartupWindowState(): StartupWindowState {
+  const config = readConfig()
+  return config.ui.startupWindowState === 'normal' ? 'normal' : 'maximized'
+}
+
 function createWindow(): void {
+  const startupWindowState = getStartupWindowState()
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -48,7 +57,11 @@ function createWindow(): void {
   )
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+    if (!mainWindow) return
+    if (startupWindowState === 'maximized') {
+      mainWindow.maximize()
+    }
+    mainWindow.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -347,6 +360,26 @@ app.on('before-quit', async (e) => {
         }]
       }),
     )
+    const geminiResumeMap = await resolveGeminiResumeIdsForSessions(
+      sessionsSnapshot.flatMap((session) => {
+        if (typeof session.id !== 'string') return []
+        if (session.type !== 'gemini' && session.type !== 'gemini-yolo') return []
+
+        const managed = managedBySessionId.get(session.id)
+        const existingResumeId = session.geminiResumeId
+        if (!managed && typeof existingResumeId !== 'string') return []
+
+        const cwd = managed?.cwd ?? (typeof session.cwd === 'string' ? session.cwd : '')
+        if (!cwd && typeof existingResumeId !== 'string') return []
+
+        return [{
+          sessionId: session.id,
+          cwd,
+          startedAt: managed?.startedAt ?? (typeof session.createdAt === 'number' ? session.createdAt : undefined),
+          existingResumeId,
+        }]
+      }),
+    )
 
     // Write back the snapshot with UUIDs applied (ignoring any renderer-side deletions)
     const updated = sessionsSnapshot.map((s) => {
@@ -356,6 +389,9 @@ app.on('before-quit', async (e) => {
       }
       if (typeof s.id === 'string' && codexResumeMap.has(s.id)) {
         result.codexResumeId = codexResumeMap.get(s.id)
+      }
+      if (typeof s.id === 'string' && geminiResumeMap.has(s.id)) {
+        result.geminiResumeId = geminiResumeMap.get(s.id)
       }
       return result
     })

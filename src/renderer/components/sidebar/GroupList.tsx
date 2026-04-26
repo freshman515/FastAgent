@@ -51,7 +51,6 @@ export function GroupList({ searchQuery = '' }: GroupListProps): JSX.Element {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-bg-primary)]/50 text-[var(--color-text-tertiary)] opacity-20">
-          <useGroupsStore.getState().groups.length === 0 ? null : null /* dummy to keep imports if needed */ }
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/><path d="M3 9V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4"/><path d="M12 12v6"/><path d="M9 15h6"/></svg>
         </div>
         <p className="text-[var(--ui-font-sm)] font-medium text-[var(--color-text-secondary)]">

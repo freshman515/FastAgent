@@ -895,7 +895,7 @@ export function SessionHistoryPanel(): JSX.Element {
                 className={cn(
                   'sticky top-0 z-[1] flex w-full items-center gap-2 px-3 py-2.5',
                   'bg-[var(--color-bg-secondary)]/95 backdrop-blur-md',
-                  'text-[12.5px] font-medium tracking-tight text-[var(--color-text-primary)]',
+                  'text-[var(--ui-font-sm)] font-medium tracking-tight text-[var(--color-text-primary)]',
                   'hover:bg-[var(--color-bg-surface)]/40 transition-all duration-200',
                   'border-y border-[var(--color-border)]/40',
                 )}

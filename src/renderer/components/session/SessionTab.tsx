@@ -221,8 +221,8 @@ export function SessionTab({
           setPreview(null)
         }}
         className={cn(
-          'no-drag group flex h-[32px] cursor-pointer items-center gap-1.5 px-3',
-          'max-w-[200px] min-w-[100px] transition-colors duration-75',
+          'no-drag group flex h-[34px] cursor-pointer items-center gap-2 px-3',
+          'max-w-[200px] min-w-[120px] transition-all duration-200',
           activeTabClass,
           isDragging && 'opacity-40',
         )}
@@ -231,19 +231,21 @@ export function SessionTab({
       >
         {session.color && (
           <span
-            className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_6px_currentColor] transition-shadow"
+            className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_8px_currentColor] transition-all group-hover:scale-110"
             style={{ backgroundColor: session.color, color: session.color }}
           />
         )}
-        <img
-          src={iconSrc}
-          alt=""
-          className={cn(
-            'h-[18px] w-[18px] shrink-0 transition-all duration-150',
-            isActive ? 'opacity-100' : 'opacity-70 group-hover:opacity-100',
-          )}
-          draggable={false}
-        />
+        <div className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+          <img
+            src={iconSrc}
+            alt=""
+            className={cn(
+              'h-[18px] w-[18px] shrink-0 transition-all duration-200',
+              isActive ? 'scale-110 opacity-100' : 'opacity-70 group-hover:opacity-100 group-hover:scale-110',
+            )}
+            draggable={false}
+          />
+        </div>
 
         {isRenaming ? (
           <input
@@ -258,7 +260,7 @@ export function SessionTab({
             autoFocus
           />
         ) : (
-          <span className="flex-1 truncate text-[var(--ui-font-xs)]">
+          <span className={cn('flex-1 truncate text-[var(--ui-font-xs)] transition-colors duration-200', isActive ? 'font-bold' : 'font-medium')}>
             {session.name}
           </span>
         )}
@@ -266,10 +268,11 @@ export function SessionTab({
         {/* Label tag */}
         {session.label && (
           <span
-            className="shrink-0 rounded px-1 py-px text-[8px] font-medium leading-tight"
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[8.5px] font-bold leading-tight shadow-sm"
             style={{
-              backgroundColor: (session.color ?? 'var(--color-bg-surface)') + '25',
+              backgroundColor: (session.color ?? 'var(--color-bg-surface)') + '20',
               color: session.color ?? 'var(--color-text-tertiary)',
+              border: `1px solid ${session.color ?? 'var(--color-text-tertiary)'}25`,
             }}
           >
             {session.label}
@@ -277,21 +280,21 @@ export function SessionTab({
         )}
 
         {session.pinned ? (
-          <div className="h-3 w-3 shrink-0 flex items-center justify-center text-[var(--color-accent)]" title="已固定">
-            <svg viewBox="0 0 16 16" width={10} height={10} fill="currentColor"><path d="M9.828.722a.5.5 0 01.354.146l4.95 4.95a.5.5 0 010 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.93 5.93 0 01.16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 01-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 010-.707c.688-.688 1.673-.767 2.375-.72a5.93 5.93 0 011.013.16l3.134-3.133a2.77 2.77 0 01-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 01.353-.146z"/></svg>
+          <div className="h-4 w-4 shrink-0 flex items-center justify-center text-[var(--color-accent)] drop-shadow-sm" title="已固定">
+            <svg viewBox="0 0 16 16" width={11} height={11} fill="currentColor"><path d="M9.828.722a.5.5 0 01.354.146l4.95 4.95a.5.5 0 010 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.93 5.93 0 01.16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 01-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 010-.707c.688-.688 1.673-.767 2.375-.72a5.93 5.93 0 011.013.16l3.134-3.133a2.77 2.77 0 01-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 01.353-.146z"/></svg>
           </div>
         ) : (
           <button
             onClick={handleClose}
             onDoubleClick={(e) => e.stopPropagation()}
             className={cn(
-              'flex h-4 w-4 items-center justify-center rounded-sm',
+              'flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)]',
               'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
               'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-              'transition-all duration-75',
+              'transition-all duration-200',
             )}
           >
-            <X size={10} />
+            <X size={12} strokeWidth={2.5} />
           </button>
         )}
       </div>

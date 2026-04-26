@@ -288,6 +288,7 @@ export class PtyManager {
       resumeUUID: effectiveResumeUUID ?? undefined,
       claudeLaunchMode,
       codexResumeId: options.codexResumeId,
+      geminiResumeId: options.geminiResumeId,
     })
     if (agentCmd && isClaudeCodeType(options.type) && options.sessionId && this.mcpEnv) {
       const mcpConfigPath = createFastAgentsMcpConfig({
@@ -386,7 +387,7 @@ export class PtyManager {
     let suppressedOutput = ''
 
     // Agent banner keywords (case-insensitive checked)
-    const AGENT_KEYWORDS = ['Claude Code', 'Codex', 'opencode', 'OpenCode', 'open-code']
+    const AGENT_KEYWORDS = ['Claude Code', 'Codex', 'Gemini', 'gemini', 'opencode', 'OpenCode', 'open-code']
 
     let agentStartFallback: NodeJS.Timeout | null = null
     if (isAgentSession) {
@@ -614,6 +615,8 @@ export class PtyManager {
       'claude-code-yolo',
       'codex',
       'codex-yolo',
+      'gemini',
+      'gemini-yolo',
       'opencode',
     ],
   ): string | null {

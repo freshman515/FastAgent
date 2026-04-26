@@ -149,7 +149,7 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
           />
         ) : (
           <span
-            className="flex-1 truncate text-[12.5px] font-bold tracking-tight transition-colors duration-200 group-hover:text-[var(--color-text-primary)]"
+            className="flex-1 truncate text-[var(--ui-font-sm)] font-medium tracking-tight transition-colors duration-200 group-hover:text-[var(--color-text-primary)]"
             style={{ color: group.color }}
           >
             {group.name}
@@ -220,11 +220,14 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
           <div
             style={{ top: contextMenu.y, left: contextMenu.x }}
             className={cn(
-              'fixed z-50 w-44 rounded-[var(--radius-md)] py-1',
-              'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]',
-              'shadow-lg shadow-black/30',
-            )}
-          >
+              'fixed z-50 min-w-[200px] overflow-visible rounded-[var(--radius-lg)] border border-white/[0.08]',
+              'bg-[var(--color-bg-secondary)]/90 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] py-1.5 p-1',
+              'animate-in fade-in zoom-in-95 duration-150',
+            )}>
+            <div className="px-3 py-1.5 mb-1 border-b border-white/[0.05]">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">分组操作</span>
+            </div>
+            
             <button
               onClick={async () => {
                 setContextMenu(null)
@@ -236,15 +239,16 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
                   if (group.collapsed) toggleCollapse(group.id)
                 }
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              className="group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200 text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white"
             >
-              <FolderPlus size={12} /> 浏览...
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <FolderPlus size={14} /> <span className="flex-1">浏览...</span>
             </button>
+
             {useUIStore.getState().settings.recentPaths.length > 0 && (
               <>
-                <div className="px-3 py-0.5 flex items-center gap-1.5">
-                  <Clock size={10} className="text-[var(--color-text-tertiary)]" />
-                  <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">最近</span>
+                <div className="px-3 py-1.5">
+                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">最近打开</span>
                 </div>
                 {useUIStore.getState().settings.recentPaths.slice(0, 5).map((p) => (
                   <button
@@ -256,35 +260,42 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
                       addProjectToGroup(group.id, projId)
                       if (group.collapsed) toggleCollapse(group.id)
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-1 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] truncate"
+                    className="group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[12px] transition-all duration-200 text-[var(--color-text-tertiary)] hover:bg-[var(--color-accent)]/15 hover:text-white"
                     title={p}
                   >
-                    {p.split(/[/\\]/).pop()}
+                    <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                    <Clock size={12} className="opacity-40" />
+                    <span className="flex-1 truncate">{p.split(/[/\\]/).pop()}</span>
                   </button>
                 ))}
               </>
             )}
-            <div className="border-t border-[var(--color-border)] mt-0.5" />
+
+            <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
+            
             <button
               onClick={() => {
                 updateSettings({ visibleGroupId: group.id, visibleProjectId: null })
                 setContextMenu(null)
               }}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+                'group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white',
                 visibleGroupId === group.id && !visibleProjectId && 'text-[var(--color-accent)]',
               )}
             >
-              <Eye size={12} /> 只显示当前分组
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <Eye size={14} /> <span className="flex-1">只显示当前分组</span>
             </button>
             <button
               onClick={() => {
                 updateSettings({ visibleGroupId: null, visibleProjectId: null })
                 setContextMenu(null)
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              className="group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200 text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white"
             >
-              <List size={12} /> 显示所有分组
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <List size={14} /> <span className="flex-1">显示所有分组</span>
             </button>
             <button
               onClick={() => {
@@ -292,15 +303,17 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
                 setEditing(true)
                 setEditName(group.name)
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              className="group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200 text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white"
             >
-              <Edit3 size={12} /> 重命名
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <Edit3 size={14} /> <span className="flex-1">重命名</span>
             </button>
             {/* Color picker */}
-            <div className="px-3 py-1.5 border-t border-[var(--color-border)]">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Palette size={12} className="text-[var(--color-text-tertiary)]" />
-                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">颜色</span>
+            <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
+            <div className="px-3 py-1.5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Palette size={12} className="text-[var(--color-text-tertiary)] opacity-60" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">标记颜色</span>
               </div>
               <div className="flex gap-1.5 flex-wrap">
                 {['#7c6aef', '#5fa0f5', '#45c8c8', '#3ecf7b', '#f0a23b', '#ef5757', '#c084fc', '#f472b6', '#8e8e96'].map((c) => (
@@ -308,8 +321,8 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
                     key={c}
                     onClick={() => { updateGroup(group.id, { color: c }); setContextMenu(null) }}
                     className={cn(
-                      'h-4 w-4 rounded-full border-2 transition-transform hover:scale-125',
-                      group.color === c ? 'border-white' : 'border-transparent',
+                      'h-4.5 w-4.5 rounded-full ring-2 ring-transparent transition-all hover:scale-110 active:scale-95',
+                      group.color === c ? 'ring-white shadow-[0_0_8px_rgba(255,255,255,0.4)]' : 'hover:ring-white/20',
                     )}
                     style={{ backgroundColor: c }}
                   />
@@ -318,9 +331,9 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
             </div>
             <button
               onClick={() => { setContextMenu(null); handleDelete() }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 border-t border-[var(--color-border)] text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]"
+              className="group/item relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200 text-[var(--color-error)] hover:bg-[var(--color-error)]/15 border-t border-white/[0.05] mt-1 pt-1"
             >
-              <Trash2 size={12} /> 删除
+              <Trash2 size={14} /> <span className="flex-1">删除</span>
             </button>
           </div>
         </>

@@ -57,6 +57,8 @@ const SESSION_TYPE_OPTIONS: Array<{ id: BoardSessionType; label: string }> = [
   { id: 'claude-code-yolo', label: SESSION_TYPE_CONFIG['claude-code-yolo'].label },
   { id: 'codex', label: SESSION_TYPE_CONFIG.codex.label },
   { id: 'codex-yolo', label: SESSION_TYPE_CONFIG['codex-yolo'].label },
+  { id: 'gemini', label: SESSION_TYPE_CONFIG.gemini.label },
+  { id: 'gemini-yolo', label: SESSION_TYPE_CONFIG['gemini-yolo'].label },
   { id: 'opencode', label: SESSION_TYPE_CONFIG.opencode.label },
   { id: 'terminal', label: SESSION_TYPE_CONFIG.terminal.label },
 ]

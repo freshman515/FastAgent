@@ -21,6 +21,7 @@ import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
+import { geminiIcon } from '@/lib/geminiIcon'
 
 const SESSION_OPTS: Array<{ type: SessionType; label: string; icon: string }> = [
   { type: 'terminal', label: '终端', icon: terminalIcon },
@@ -29,14 +30,16 @@ const SESSION_OPTS: Array<{ type: SessionType; label: string; icon: string }> = 
   { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
   { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
+  { type: 'gemini', label: 'Gemini', icon: geminiIcon },
+  { type: 'gemini-yolo', label: 'Gemini YOLO', icon: geminiIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
 ]
 
-const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
-const SECTION_HEADER = 'text-[var(--ui-font-2xs)] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]'
-const INPUT_CLS = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
-const OVERLAY_PANEL = 'fixed left-1/2 top-1/3 z-50 -translate-x-1/2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3 shadow-lg shadow-black/30'
-const WT_ROW = 'flex h-7 w-full cursor-pointer items-center gap-1.5 pl-8 pr-2 text-[var(--ui-font-2xs)] transition-colors duration-75'
+const MENU_ITEM = 'group/menuitem relative flex w-full h-8.5 items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white transition-all duration-200'
+const SECTION_HEADER = 'text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60'
+const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none focus:border-[var(--color-accent)] focus:bg-black/40 transition-all duration-200'
+const OVERLAY_PANEL = 'fixed left-1/2 top-1/3 z-50 -translate-x-1/2 rounded-[var(--radius-lg)] border border-white/[0.08] bg-[var(--color-bg-secondary)]/95 backdrop-blur-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.05)] animate-in fade-in zoom-in-95 duration-200'
+const WT_ROW = 'group/wt relative flex h-7.5 w-full cursor-pointer items-center gap-2 pl-8 pr-3 text-[12px] transition-all duration-200'
 
 type ProjectContextSubmenuType = 'sessions' | 'tasks' | 'move'
 
@@ -823,16 +826,22 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
         <>
           <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setShowMenu(null)} />
           <div style={{ top: showMenu.y, left: showMenu.x, zIndex: 9999 }}
-            className={cn('fixed min-w-[160px] rounded-[var(--radius-md)] py-1', 'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30')}>
-            <div className="border-b border-[var(--color-border)] px-3 py-1.5">
-              <p className="truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{project.path}</p>
+            className={cn(
+              'fixed min-w-[200px] overflow-visible rounded-[var(--radius-lg)] border border-white/[0.08]',
+              'bg-[var(--color-bg-secondary)]/90 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] py-1.5 p-1',
+              'animate-in fade-in zoom-in-95 duration-150',
+            )}>
+            <div className="px-3 py-1.5 mb-1 border-b border-white/[0.05]">
+              <p className="truncate text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">项目路径</p>
+              <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--color-text-secondary)] opacity-80">{project.path}</p>
             </div>
             <button onClick={() => { setShowMenu(null); window.api.shell.openPath(project.path) }} className={MENU_ITEM}>
-              <ExternalLink size={12} /> 在资源管理器中打开
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <ExternalLink size={14} /> <span className="flex-1">在资源管理器中打开</span>
             </button>
             <button onClick={() => { setShowMenu(null); handleRemove() }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]">
-              <Trash2 size={12} /> 移除
+              className="group/item relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left text-[13px] transition-all duration-200 text-[var(--color-error)] hover:bg-[var(--color-error)]/15">
+              <Trash2 size={14} /> <span className="flex-1">移除项目</span>
             </button>
           </div>
         </>, document.body,
@@ -852,18 +861,24 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               if (rect.right > vw) el.style.left = `${Math.max(4, vw - rect.width - 4)}px`
             }}
             style={{ top: contextMenu.y, left: contextMenu.x }}
-            className={cn('fixed z-50 w-52 rounded-[var(--radius-md)] py-1', 'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-lg shadow-black/30 max-h-[80vh] overflow-y-auto')}>
+            className={cn(
+              'fixed z-50 min-w-[200px] overflow-visible rounded-[var(--radius-lg)] border border-white/[0.08]',
+              'bg-[var(--color-bg-secondary)]/90 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] py-1.5 p-1',
+              'animate-in fade-in zoom-in-95 duration-150 max-h-[85vh] overflow-y-auto scrollbar-none'
+            )}>
 
             {/* 新建会话 */}
             <button
-              className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'sessions' && 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]')}
+              className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'sessions' && 'bg-[var(--color-accent)]/15 text-white')}
               onMouseEnter={(e) => openProjectSubmenu('sessions', e.currentTarget)}
               onMouseLeave={scheduleProjectSubmenuClose}
             >
-              <span className="flex items-center gap-2"><PlusIcon size={12} /> 新建会话</span>
-              <ChevronRight size={12} />
+              <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", projectSubmenu?.type === 'sessions' ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
+              <span className="flex items-center gap-3"><PlusIcon size={14} strokeWidth={2.5} /> 新建会话</span>
+              <ChevronRight size={14} opacity={0.4} />
             </button>
-            <div className="border-t border-[var(--color-border)] mt-0.5" />
+            <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
+            
             <button
               className={cn(MENU_ITEM, visibleProjectId === project.id && 'text-[var(--color-accent)]')}
               onClick={() => {
@@ -871,7 +886,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                 setContextMenu(null)
               }}
             >
-              <Eye size={12} /> 只显示当前项目
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <Eye size={14} /> 只显示当前项目
             </button>
             <button
               className={MENU_ITEM}
@@ -880,7 +896,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                 setContextMenu(null)
               }}
             >
-              <List size={12} /> 显示所有项目
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <List size={14} /> 显示所有项目
             </button>
 
             {!isAnonymous && (
@@ -891,15 +908,17 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                   <>
                     <button
                       ref={branchMenuRef}
-                      className={cn(MENU_ITEM, 'justify-between')}
+                      className={cn(MENU_ITEM, 'justify-between', branchSubmenuAnchor && 'bg-[var(--color-accent)]/15 text-white')}
                       onMouseEnter={openBranchSub}
                       onMouseLeave={scheduleBranchClose}
                     >
-                      <span className="flex items-center gap-2"><GitBranch size={11} /> 分支</span>
-                      <ChevronRight size={12} />
+                      <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", branchSubmenuAnchor ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
+                      <span className="flex items-center gap-3"><GitBranch size={14} /> 分支</span>
+                      <ChevronRight size={14} opacity={0.4} />
                     </button>
                     <button className={MENU_ITEM} onClick={() => { setContextMenu(null); setShowNewWorktree(true) }}>
-                      <PlusIcon size={12} /> 新建工作树...
+                      <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                      <PlusIcon size={14} /> 新建工作树...
                     </button>
                   </>
                 ) : (
@@ -908,7 +927,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                     await window.api.git.init(project.path)
                     await useGitStore.getState().fetchStatus(project.id, project.path)
                   }}>
-                    <PlusIcon size={12} /> 初始化仓库
+                    <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                    <PlusIcon size={14} /> 初始化仓库
                   </button>
                 )}
               </>
@@ -920,7 +940,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               setContextMenu(null)
               setShowLaunchMenu(contextMenu)
             }}>
-              <Play size={11} /> 启动配置...
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <Play size={14} /> 启动配置...
             </button>
 
             {/* Apply Template */}
@@ -929,8 +950,9 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
                 <SectionDivider icon={Layers} label="应用模板" />
                 {matchingTemplates.map((t) => (
                   <button key={t.id} className={MENU_ITEM} onClick={() => handleApplyTemplate(t.id)}>
-                    <Layers size={11} /><span className="truncate">{t.name}</span>
-                    <span className="ml-auto text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{t.items.length}</span>
+                    <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                    <Layers size={14} /><span className="flex-1 truncate">{t.name}</span>
+                    <span className="text-[10px] font-bold tabular-nums opacity-40">{t.items.length}</span>
                   </button>
                 ))}
               </>
@@ -939,14 +961,15 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {/* Start Task */}
             {bundles.length > 0 && (
               <>
-                <div className="border-t border-[var(--color-border)] mt-0.5" />
+                <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
                 <button
-                  className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'tasks' && 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]')}
+                  className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'tasks' && 'bg-[var(--color-accent)]/15 text-white')}
                   onMouseEnter={(e) => openProjectSubmenu('tasks', e.currentTarget)}
                   onMouseLeave={scheduleProjectSubmenuClose}
                 >
-                  <span className="flex items-center gap-2"><Rocket size={11} /> 启动任务</span>
-                  <ChevronRight size={12} />
+                  <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", projectSubmenu?.type === 'tasks' ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
+                  <span className="flex items-center gap-3"><Rocket size={14} /> 启动任务</span>
+                  <ChevronRight size={14} opacity={0.4} />
                 </button>
               </>
             )}
@@ -954,26 +977,28 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
             {/* Move to */}
             {!isAnonymous && otherGroups.length > 0 && (
               <>
-                <div className="border-t border-[var(--color-border)] mt-0.5" />
+                <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
                 <button
-                  className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'move' && 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)]')}
+                  className={cn(MENU_ITEM, 'justify-between', projectSubmenu?.type === 'move' && 'bg-[var(--color-accent)]/15 text-white')}
                   onMouseEnter={(e) => openProjectSubmenu('move', e.currentTarget)}
                   onMouseLeave={scheduleProjectSubmenuClose}
                 >
-                  <span className="flex items-center gap-2"><ArrowRightLeft size={11} /> 移动到</span>
-                  <ChevronRight size={12} />
+                  <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", projectSubmenu?.type === 'move' ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
+                  <span className="flex items-center gap-3"><ArrowRightLeft size={14} /> 移动到</span>
+                  <ChevronRight size={14} opacity={0.4} />
                 </button>
               </>
             )}
 
             {/* Remove + 在资源管理器中打开 */}
-            <div className="border-t border-[var(--color-border)] mt-0.5" />
+            <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
             <button onClick={() => { setContextMenu(null); window.api.shell.openPath(project.path) }} className={MENU_ITEM}>
-              <ExternalLink size={12} /> 在资源管理器中打开
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <ExternalLink size={14} /> <span className="flex-1">在资源管理器中打开</span>
             </button>
             <button onClick={() => { setContextMenu(null); handleRemove() }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]">
-              <Trash2 size={12} /> 移除
+              className="group/item relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left text-[13px] transition-all duration-200 text-[var(--color-error)] hover:bg-[var(--color-error)]/15">
+              <Trash2 size={14} /> <span className="flex-1">移除</span>
             </button>
           </div>
 

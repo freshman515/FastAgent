@@ -264,37 +264,39 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
           setContextMenu({ x: e.clientX, y: e.clientY })
         }}
         className={cn(
-          'no-drag group flex h-[32px] cursor-pointer items-center gap-1.5 px-3 max-w-[220px] min-w-[100px]',
-          'transition-colors duration-75',
+          'no-drag group flex h-[34px] cursor-pointer items-center gap-2 px-3 max-w-[220px] min-w-[120px]',
+          'transition-all duration-200',
           activeTabClass,
           isDragging && 'opacity-40',
         )}
       >
         {/* File type icon */}
         <span
-          className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded px-1 text-[10px] font-bold leading-none"
-          style={{ backgroundColor: iconInfo.color + '20', color: iconInfo.color }}
+          className="inline-flex h-4.5 min-w-[18px] shrink-0 items-center justify-center rounded px-1 text-[10px] font-bold leading-none shadow-sm"
+          style={{ backgroundColor: iconInfo.color + '20', color: iconInfo.color, border: `1px solid ${iconInfo.color}30` }}
         >
           {tab.isDiff ? '⇄' : iconInfo.icon}
         </span>
-        <span className="flex-1 truncate text-[var(--ui-font-xs)]">{tab.fileName}</span>
+        <span className={cn('flex-1 truncate text-[var(--ui-font-xs)]', isActive ? 'font-bold' : 'font-medium')}>
+          {tab.fileName}
+        </span>
         {/* Modified indicator or close button */}
         {tab.modified ? (
           <button onClick={handleClose} onDoubleClick={(e) => e.stopPropagation()} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[var(--color-warning)]" title="未保存更改">
-            <span className="text-[10px]">●</span>
+            <span className="text-[10px] animate-pulse">●</span>
           </button>
         ) : (
           <button
             onClick={handleClose}
             onDoubleClick={(e) => e.stopPropagation()}
             className={cn(
-              'flex h-4 w-4 items-center justify-center rounded-sm shrink-0',
+              'flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)] shrink-0',
               'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
               'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-              'transition-all duration-75',
+              'transition-all duration-200',
             )}
           >
-            <X size={10} />
+            <X size={12} strokeWidth={2.5} />
           </button>
         )}
       </div>
@@ -690,14 +692,16 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     <div
       ref={paneRootRef}
       className={cn(
-        'relative flex h-full flex-col',
-        isMultiPane && !showActivePaneBorder && 'border border-transparent',
+        'pane-surface relative flex h-full flex-col',
       )}
       onMouseDown={handleFocus}
     >
       {/* Active pane highlight overlay */}
       {isMultiPane && showActivePaneBorder && isActivePane && (
-        <div className="pointer-events-none absolute inset-0 z-50 rounded-[var(--radius-panel)] border-2 border-[var(--color-accent)]/60" />
+        <div
+          className="pointer-events-none absolute inset-0 z-50 rounded-[var(--radius-panel)]"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 4%, transparent)' }}
+        />
       )}
       {/* Tab bar */}
       <div
@@ -840,14 +844,14 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             onMouseEnter={handlePlusMouseEnter}
             onMouseLeave={scheduleCloseMenu}
             className={cn(
-              'no-drag group/new flex h-[28px] w-[28px] shrink-0 items-center justify-center self-center',
+              'no-drag group/new flex h-7 w-7 shrink-0 items-center justify-center self-center mx-1',
               'rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]',
-              'hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)]',
-              'active:scale-95 transition-all duration-120',
+              'hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)]',
+              'active:scale-95 transition-all duration-200',
             )}
             title="新建会话"
           >
-            <Plus size={14} className="transition-transform duration-150 group-hover/new:rotate-90" />
+            <Plus size={15} strokeWidth={2.5} className="transition-transform duration-300 group-hover/new:rotate-90" />
           </button>
 
           {/* Close pane button — only when multiple panes exist */}
@@ -856,20 +860,20 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               onClick={() => usePanesStore.getState().mergePane(paneId)}
               onDoubleClick={(event) => event.stopPropagation()}
               className={cn(
-                'no-drag flex h-[28px] w-[28px] shrink-0 items-center justify-center self-center',
+                'no-drag flex h-7 w-7 shrink-0 items-center justify-center self-center',
                 'rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]',
-                'hover:bg-[var(--color-error)]/15 hover:text-[var(--color-error)]',
-                'active:scale-95 transition-all duration-120',
+                'hover:bg-[var(--color-error)]/10 hover:text-[var(--color-error)]',
+                'active:scale-95 transition-all duration-200',
               )}
               title="关闭当前分屏（合并标签）"
             >
-              <X size={12} />
+              <X size={13} strokeWidth={2.5} />
             </button>
           )}
         </div>
 
         {isMultiPane && (
-          <div className="no-drag flex h-full shrink-0 items-center gap-0.5 pr-1">
+          <div className="no-drag flex h-full shrink-0 items-center gap-0.5 pr-1.5">
             <button
               ref={paneMenuButtonRef}
               type="button"
@@ -879,15 +883,15 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               }}
               onDoubleClick={(event) => event.stopPropagation()}
               className={cn(
-                'flex h-[28px] w-[28px] items-center justify-center rounded-[var(--radius-sm)]',
-                'text-[var(--color-text-tertiary)] transition-all duration-120',
-                'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+                'flex h-7.5 w-7.5 items-center justify-center rounded-[var(--radius-sm)]',
+                'text-[var(--color-text-tertiary)] transition-all duration-200',
+                'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
                 'active:scale-95',
               )}
               title="Pane 快捷动作"
               aria-label="Pane 快捷动作"
             >
-              <MoreHorizontal size={14} />
+              <MoreHorizontal size={14} strokeWidth={2.5} />
             </button>
             <button
               type="button"
@@ -897,15 +901,15 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               }}
               onDoubleClick={(event) => event.stopPropagation()}
               className={cn(
-                'flex h-[28px] w-[28px] items-center justify-center rounded-[var(--radius-sm)]',
-                'text-[var(--color-text-tertiary)] transition-all duration-120',
-                'hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)]',
+                'flex h-7.5 w-7.5 items-center justify-center rounded-[var(--radius-sm)]',
+                'text-[var(--color-text-tertiary)] transition-all duration-200',
+                'hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)]',
                 'active:scale-95',
               )}
               title={isFullscreenPane ? '恢复分屏布局' : '放大当前分屏'}
               aria-label={isFullscreenPane ? '恢复分屏布局' : '放大当前分屏'}
             >
-              {isFullscreenPane ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              {isFullscreenPane ? <Minimize2 size={13} strokeWidth={2.5} /> : <Maximize2 size={13} strokeWidth={2.5} />}
             </button>
           </div>
         )}

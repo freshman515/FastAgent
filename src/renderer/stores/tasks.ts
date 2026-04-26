@@ -21,7 +21,7 @@ function sanitizeGraphNode(value: unknown): TaskGraphNode | null {
   if (!value || typeof value !== 'object') return null
   const obj = value as Record<string, unknown>
   if (typeof obj.id !== 'string' || typeof obj.name !== 'string' || typeof obj.prompt !== 'string') return null
-  if (!['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'opencode'].includes(obj.type as string)) return null
+  if (!['claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'].includes(obj.type as string)) return null
   const status = VALID_NODE_STATUSES.includes(obj.status as TaskGraphNodeStatus)
     ? obj.status as TaskGraphNodeStatus
     : 'pending'

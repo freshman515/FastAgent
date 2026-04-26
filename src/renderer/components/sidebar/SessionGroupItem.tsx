@@ -146,7 +146,7 @@ export function SessionGroupItem({ group, searchQuery = '' }: SessionGroupItemPr
           />
         ) : (
           <span
-            className="flex-1 truncate text-[12.5px] font-bold tracking-tight transition-colors duration-200 group-hover:text-[var(--color-text-primary)]"
+            className="flex-1 truncate text-[var(--ui-font-sm)] font-medium tracking-tight transition-colors duration-200 group-hover:text-[var(--color-text-primary)]"
             style={{ color: group.color }}
           >
             {group.name}

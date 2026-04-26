@@ -45,6 +45,8 @@ const VALID_CREATABLE_TYPES = new Set<SessionType>([
   'claude-code-yolo',
   'codex',
   'codex-yolo',
+  'gemini',
+  'gemini-yolo',
   'opencode',
 ])
 

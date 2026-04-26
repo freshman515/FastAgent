@@ -14,11 +14,18 @@ import { ResizeHandle } from './ResizeHandle'
 interface SplitContainerProps {
   node: PaneNode
   projectId: string
+  framed?: boolean
 }
 
-function SplitNodeRenderer({ node, projectId }: SplitContainerProps): JSX.Element {
+function SplitNodeRenderer({ node, projectId, framed = false }: SplitContainerProps): JSX.Element {
   if (node.type === 'leaf') {
-    return <PaneView paneId={node.id} projectId={projectId} />
+    const pane = <PaneView paneId={node.id} projectId={projectId} />
+    if (framed) return pane
+    return (
+      <div className="h-full w-full overflow-hidden rounded-[var(--radius-panel)]">
+        {pane}
+      </div>
+    )
   }
 
   const { direction, ratio, first, second } = node
@@ -30,11 +37,11 @@ function SplitNodeRenderer({ node, projectId }: SplitContainerProps): JSX.Elemen
       style={{ flexDirection: isHorizontal ? 'row' : 'column' }}
     >
       <div className="rounded-[var(--radius-panel)] overflow-hidden" style={{ flex: `0 0 ${ratio * 100}%`, minWidth: 0, minHeight: 0 }}>
-        <SplitNodeRenderer node={first} projectId={projectId} />
+        <SplitNodeRenderer node={first} projectId={projectId} framed />
       </div>
       <ResizeHandle splitId={node.id} direction={direction} currentRatio={ratio} />
       <div className="rounded-[var(--radius-panel)] overflow-hidden" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-        <SplitNodeRenderer node={second} projectId={projectId} />
+        <SplitNodeRenderer node={second} projectId={projectId} framed />
       </div>
     </div>
   )

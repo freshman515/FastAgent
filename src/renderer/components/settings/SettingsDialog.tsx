@@ -58,10 +58,9 @@ const EDITOR_FONT_LABELS = TERMINAL_FONT_LABELS
 
 function PageIntro({ title, description }: { title: string; description: string }): JSX.Element {
   return (
-    <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_12%,var(--color-bg-primary)),var(--color-bg-primary))] px-5 py-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">设置中心</div>
-      <h3 className="mt-2 text-[22px] font-semibold tracking-tight text-[var(--color-text-primary)]">{title}</h3>
-      <p className="mt-2 max-w-[720px] text-[var(--ui-font-sm)] leading-6 text-[var(--color-text-secondary)]">{description}</p>
+    <div className="mb-4">
+      <h3 className="text-[28px] font-bold tracking-tight text-white drop-shadow-sm">{title}</h3>
+      <p className="mt-2 max-w-[640px] text-[13px] leading-relaxed text-[var(--color-text-secondary)]">{description}</p>
     </div>
   )
 }
@@ -70,15 +69,15 @@ function FontSizeSlider({ label, value, min, max, onChange }: {
   label: string; value: number; min: number; max: number; onChange: (v: number) => void
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{label}</span>
-        <span className="text-[var(--ui-font-sm)] font-mono text-[var(--color-text-primary)]">{value}px</span>
+        <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
+        <span className="text-[11px] font-mono font-bold text-[var(--color-text-secondary)]">{value}px</span>
       </div>
       <input
         type="range" min={min} max={max} step={1} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[var(--color-bg-surface)] accent-[var(--color-accent)]"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.08] accent-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
       />
     </div>
   )
@@ -88,24 +87,28 @@ function FontSelect({ label, value, options, labels, onChange }: {
   label: string; value: string; options: string[]; labels: string[]; onChange: (v: string) => void
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{label}</span>
-      <div className="flex flex-wrap gap-1">
-        {options.map((opt, i) => (
-          <button
-            key={opt}
-            onClick={() => onChange(opt)}
-            className={cn(
-              'rounded-[var(--radius-md)] border px-2.5 py-1 text-[var(--ui-font-xs)] transition-colors',
-              value === opt
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-            )}
-            style={{ fontFamily: opt }}
-          >
-            {labels[i]}
-          </button>
-        ))}
+    <div className="flex flex-col gap-2">
+      <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt, i) => {
+          const isSelected = value === opt;
+          return (
+            <button
+              key={opt}
+              onClick={() => onChange(opt)}
+              className={cn(
+                'rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200',
+                isSelected
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)] drop-shadow-sm shadow-[inset_0_1px_4px_rgba(0,0,0,0.1)]'
+                  : 'border-white/[0.06] bg-white/[0.02] text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-[var(--color-text-primary)]',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50'
+              )}
+              style={{ fontFamily: opt }}
+            >
+              {labels[i]}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -137,8 +140,8 @@ function PixelNumberField({ label, value, min, max, step = 20, onChange }: {
   }
 
   return (
-    <label className="flex flex-1 flex-col gap-1.5">
-      <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">{label}</span>
+    <label className="flex flex-1 flex-col gap-2">
+      <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
       <div className="relative">
         <input
           type="text"
@@ -156,13 +159,14 @@ function PixelNumberField({ label, value, min, max, step = 20, onChange }: {
             }
           }}
           className={cn(
-            'peer h-8 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/70 bg-[var(--color-bg-tertiary)]/45 pl-2.5 pr-8',
-            'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-            'outline-none transition-all duration-150',
-            'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)]/70',
+            'peer h-8 w-full rounded-md border border-white/[0.1] bg-black/20 pl-3 pr-8',
+            'text-[12px] font-mono font-medium text-white placeholder:text-[var(--color-text-tertiary)]',
+            'outline-none transition-all duration-200',
+            'hover:bg-black/40 hover:border-white/[0.15]',
+            'focus:border-[var(--color-accent)]/60 focus:bg-black/60 focus:shadow-[0_0_0_3px_var(--color-accent-muted)]'
           )}
         />
-        <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">px</span>
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-[var(--color-text-tertiary)]">px</span>
       </div>
     </label>
   )
@@ -175,19 +179,21 @@ function SettingsSection({ icon: Icon, title, description, children }: {
   children: React.ReactNode
 }): JSX.Element {
   return (
-    <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/40 px-5 py-4">
-      <header className="mb-3 flex items-start gap-2.5">
-        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
-          <Icon size={14} />
-        </span>
+    <section className="relative overflow-hidden rounded-[var(--radius-xl)] border border-white/[0.05] bg-[var(--color-bg-primary)]/30 px-6 py-5 shadow-sm backdrop-blur-md">
+      {/* Subtle top glow */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
+      <header className="mb-5 flex items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent)]/10 text-[var(--color-accent)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_8px_var(--color-accent-muted)]">
+          <Icon size={15} strokeWidth={2.5} />
+        </div>
         <div className="flex flex-col">
-          <h4 className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">{title}</h4>
+          <h4 className="text-[13px] font-bold tracking-tight text-[var(--color-text-primary)]">{title}</h4>
           {description && (
-            <p className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{description}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">{description}</p>
           )}
         </div>
       </header>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         {children}
       </div>
     </section>
@@ -201,18 +207,18 @@ function PercentSlider({ label, value, onChange, trailing }: {
   trailing?: React.ReactNode
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{label}</span>
+        <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
         <div className="flex items-center gap-2">
-          <span className="text-[var(--ui-font-sm)] font-mono text-[var(--color-text-primary)]">{Math.round(value * 100)}%</span>
+          <span className="text-[11px] font-mono font-bold text-[var(--color-text-secondary)]">{Math.round(value * 100)}%</span>
           {trailing}
         </div>
       </div>
       <input
         type="range" min={0} max={100} step={1} value={Math.round(value * 100)}
         onChange={(e) => onChange(Number(e.target.value) / 100)}
-        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[var(--color-bg-surface)] accent-[var(--color-accent)]"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.08] accent-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
       />
     </div>
   )
@@ -222,22 +228,24 @@ function ToggleRow({ label, description, checked, onChange }: {
   label: string; description: string; checked: boolean; onChange: (v: boolean) => void
 }): JSX.Element {
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex flex-col">
-        <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{label}</span>
-        <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{description}</span>
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col min-w-0">
+        <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
+        <span className="text-[11px] text-[var(--color-text-tertiary)] mt-0.5 leading-snug">{description}</span>
       </div>
       <button
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200',
-          checked ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-bg-surface)]',
+          'relative h-6 w-10 shrink-0 rounded-full transition-colors duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50',
+          checked ? 'bg-[var(--color-accent)]' : 'bg-white/[0.08] hover:bg-white/[0.12]',
+          'shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]'
         )}
       >
         <span
           className={cn(
-            'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
-            checked && 'translate-x-4',
+            'absolute top-[2px] left-[2px] h-5 w-5 rounded-full bg-white transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+            'shadow-[0_2px_4px_rgba(0,0,0,0.4),0_0_1px_rgba(0,0,0,0.5)]',
+            checked ? 'translate-x-4' : 'translate-x-0',
           )}
         />
       </button>
@@ -254,26 +262,39 @@ function SegmentedChoice<T extends string>({ value, options, onChange }: {
 }): JSX.Element {
   return (
     <div className="flex gap-2">
-      {options.map(({ id, label, desc, icon: Icon }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          className={cn(
-            'flex flex-1 flex-col rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors',
-            value === id
-              ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
-          )}
-        >
-          <span className="flex items-center gap-1.5 text-[var(--ui-font-sm)] font-medium">
-            {Icon && <Icon size={13} />}
-            {label}
-          </span>
-          {desc && (
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">{desc}</span>
-          )}
-        </button>
-      ))}
+      {options.map(({ id, label, desc, icon: Icon }) => {
+        const isSelected = value === id
+        return (
+          <button
+            key={id}
+            onClick={() => onChange(id)}
+            className={cn(
+              'group relative flex flex-1 flex-col overflow-hidden rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-all duration-200',
+              isSelected
+                ? 'border-[var(--color-accent)]/50 bg-[var(--color-accent)]/10 ring-1 ring-inset ring-[var(--color-accent)]/30 shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)]'
+                : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.1]',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50'
+            )}
+          >
+            {isSelected && (
+              <div className="absolute inset-0 bg-gradient-to-b from-[var(--color-accent)]/10 to-transparent pointer-events-none" />
+            )}
+            <span className={cn(
+              'relative z-10 flex items-center gap-1.5 text-[12px] font-bold tracking-tight transition-colors duration-200',
+              isSelected ? 'text-[var(--color-accent)] drop-shadow-sm' : 'text-[var(--color-text-primary)] group-hover:text-[var(--color-accent)]/70'
+            )}>
+              {Icon && <Icon size={14} strokeWidth={2.5} />}
+              {label}
+            </span>
+            {desc && (
+              <span className={cn(
+                'relative z-10 mt-1 text-[10px] leading-snug transition-colors duration-200',
+                isSelected ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'
+              )}>{desc}</span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -283,6 +304,8 @@ const SESSION_TYPE_OPTIONS = [
   { id: 'claude-code-yolo', label: 'Claude Code YOLO' },
   { id: 'codex', label: 'Codex' },
   { id: 'codex-yolo', label: 'Codex YOLO' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'gemini-yolo', label: 'Gemini YOLO' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'terminal', label: '终端' },
 ] as const
@@ -513,6 +536,17 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
 
       {/* ───── 窗口与分屏 ───── */}
       <SettingsSection icon={SplitSquareHorizontal} title="窗口与分屏" description="弹出窗口默认行为、分屏视觉反馈。">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">启动时窗口状态</span>
+          <SegmentedChoice
+            value={settings.startupWindowState}
+            options={[
+              { id: 'maximized', label: '最大化', desc: '启动后直接铺满屏幕' },
+              { id: 'normal', label: '正常窗口', desc: '使用默认窗口尺寸启动' },
+            ]}
+            onChange={(v) => onUpdate('startupWindowState', v)}
+          />
+        </div>
         <ToggleRow
           label="活动分屏高亮"
           description={settings.showActivePaneBorder ? '当前分屏显示高亮边框' : '不显示高亮边框'}
@@ -1433,7 +1467,6 @@ export function SettingsDialog(): JSX.Element | null {
   const settings = useUIStore((s) => s.settings)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const page = (settingsPage || 'general') as SettingsPage
-  const activeNavItem = NAV_ITEMS.find((item) => item.id === page) ?? NAV_ITEMS[0]
 
   const handleUpdate = useCallback(
     (key: keyof AppSettings, value: unknown) => {
@@ -1446,71 +1479,82 @@ export function SettingsDialog(): JSX.Element | null {
 
   return (
     <>
-      <div className="fixed inset-0 z-[9000] bg-black/40" onClick={close} />
+      <div className="fixed inset-0 z-[9000] bg-black/60 backdrop-blur-sm transition-opacity" onClick={close} />
       <div
         className={cn(
           'fixed left-1/2 top-1/2 z-[9001] flex -translate-x-1/2 -translate-y-1/2',
-          'w-[calc(100vw-40px)] h-[calc(100vh-40px)] overflow-hidden',
-          'rounded-[var(--radius-xl)] border border-[var(--color-border)]',
-          'bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/40',
-          'animate-[fade-in_0.15s_ease-out]',
+          'w-[calc(100vw-64px)] max-w-[1080px] h-[calc(100vh-64px)] max-h-[840px] overflow-hidden',
+          'rounded-[24px] border border-white/[0.1] ring-1 ring-black/50',
+          'bg-[var(--color-bg-secondary)]/95 shadow-[0_32px_64px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] backdrop-blur-3xl',
+          'animate-[fade-in_0.2s_ease-out]',
         )}
       >
+        {/* Close Button (Absolute) */}
+        <button
+          onClick={close}
+          className={cn(
+            'absolute right-4 top-4 z-[9010] flex h-8 w-8 items-center justify-center rounded-full',
+            'bg-white/[0.05] text-[var(--color-text-secondary)] backdrop-blur-md',
+            'border border-white/[0.05] shadow-[0_2px_8px_rgba(0,0,0,0.3)]',
+            'transition-all duration-200 hover:bg-white/[0.1] hover:text-white hover:scale-105 active:scale-95',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/80'
+          )}
+          title="关闭设置"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
+
         {/* Left nav */}
-        <div className="flex w-[220px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-bg-primary),color-mix(in_srgb,var(--color-bg-primary)_80%,var(--color-bg-secondary)))] p-3">
-          <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">FastAgents</div>
-            <h2 className="mt-2 text-[20px] font-semibold tracking-tight text-[var(--color-text-primary)]">设置中心</h2>
-            <p className="mt-2 text-[var(--ui-font-xs)] leading-6 text-[var(--color-text-tertiary)]">
-              调整界面、终端、编辑器与 AI 的默认行为。
-            </p>
+        <div className="flex w-[240px] shrink-0 flex-col border-r border-white/[0.05] bg-black/20 p-4">
+          <div className="mb-6 mt-2 px-2">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-accent)] drop-shadow-[0_0_8px_var(--color-accent-muted)]">FastAgents</div>
+            <h2 className="mt-1 text-[22px] font-bold tracking-tight text-white drop-shadow-sm">设置中心</h2>
           </div>
-          <div className="mt-3 flex flex-col gap-1">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setSettingsPage(item.id)}
-                className={cn(
-                  'flex items-start gap-3 rounded-[var(--radius-lg)] border px-3 py-2.5 text-left transition-colors',
-                  page === item.id
-                    ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
-                    : 'border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-tertiary)]/50',
-                )}
-              >
-                <div className={cn(
-                  'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)]',
-                  page === item.id
-                    ? 'bg-[var(--color-bg-primary)] text-[var(--color-accent)]'
-                    : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]',
-                )}>
-                  <item.icon size={14} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[var(--ui-font-sm)] font-medium">{item.label}</div>
-                  <div className="mt-1 text-[10px] leading-5 text-[var(--color-text-tertiary)]">{item.description}</div>
-                </div>
-              </button>
-            ))}
+          
+          <div className="flex flex-col gap-1 overflow-y-auto scrollbar-none pb-4">
+            {NAV_ITEMS.map((item) => {
+              const isActive = page === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setSettingsPage(item.id)}
+                  className={cn(
+                    'group relative flex items-center gap-3 rounded-[var(--radius-lg)] px-3 py-3 text-left transition-all duration-200',
+                    isActive
+                      ? 'bg-[var(--color-accent)]/15 ring-1 ring-inset ring-[var(--color-accent)]/30 shadow-[inset_0_2px_8px_rgba(0,0,0,0.2)]'
+                      : 'hover:bg-white/[0.06]'
+                  )}
+                >
+                  {isActive && (
+                    <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--color-accent)] shadow-[0_0_12px_var(--color-accent)]" />
+                  )}
+                  <div className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] transition-colors duration-200',
+                    isActive
+                      ? 'bg-white/[0.05] text-[var(--color-accent)] shadow-sm'
+                      : 'bg-black/20 text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]',
+                  )}>
+                    <item.icon size={15} strokeWidth={isActive ? 2.5 : 2} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className={cn(
+                      'text-[13px] transition-colors duration-200',
+                      isActive ? 'font-bold text-white' : 'font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)]'
+                    )}>{item.label}</div>
+                    <div className={cn(
+                      'mt-0.5 text-[10px] leading-tight transition-colors duration-200',
+                      isActive ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]/70'
+                    )}>{item.description}</div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
 
         {/* Right content */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
-            <div className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
-              当前页：{activeNavItem.label}
-            </div>
-            <button
-              onClick={close}
-              className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)]',
-                'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
-              )}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-bg-secondary)_88%,var(--color-bg-primary)),var(--color-bg-secondary))] px-6 py-5">
+        <div className="relative flex flex-1 flex-col bg-[linear-gradient(180deg,rgba(0,0,0,0.1),transparent)]">
+          <div className="flex-1 overflow-y-auto scrollbar-none px-10 py-10 pb-20">
             {page === 'appearance' && <AppearancePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'terminal' && <TerminalPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'editor' && <EditorPage settings={settings} onUpdate={handleUpdate} />}
@@ -1519,11 +1563,9 @@ export function SettingsDialog(): JSX.Element | null {
             {page === 'claudeGui' && <ClaudeGuiSettingsPage />}
             {!['appearance', 'terminal', 'editor', 'templates', 'ai', 'claudeGui'].includes(page) && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
           </div>
-          <div className="border-t border-[var(--color-border)] px-5 py-2">
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-              所有改动都会立即生效。
-            </span>
-          </div>
+          
+          {/* Subtle footer gradient to show scrollability */}
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[var(--color-bg-secondary)] to-transparent" />
         </div>
       </div>
     </>

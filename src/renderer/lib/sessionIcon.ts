@@ -5,11 +5,14 @@ import codexLightIcon from '@/assets/icons/codex_black.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIconDark from '@/assets/icons/terminal_white.png'
 import terminalIconLight from '@/assets/icons/terminal.png'
+import { geminiIcon } from '@/lib/geminiIcon'
 
 const TYPE_ICONS: Record<string, string> = {
   'claude-code': claudeIcon,
   'claude-code-yolo': claudeIcon,
   'claude-gui': claudeIcon,
+  gemini: geminiIcon,
+  'gemini-yolo': geminiIcon,
   opencode: opencodeIcon,
 }
 

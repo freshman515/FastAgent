@@ -32,11 +32,15 @@ export function isAnonymousProjectId(projectId: string): boolean {
   return projectId === ANONYMOUS_PROJECT_ID
 }
 
-export type SessionType = 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'opencode' | 'terminal'
+export type SessionType = 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal'
 
 /** Returns true for any Claude Code variant (normal or yolo mode) */
 export function isClaudeCodeType(type: SessionType): boolean {
   return type === 'claude-code' || type === 'claude-code-yolo'
+}
+
+export function isGeminiType(type: SessionType): boolean {
+  return type === 'gemini' || type === 'gemini-yolo'
 }
 
 export type SessionStatus = 'running' | 'idle' | 'waiting-input' | 'stopped'
@@ -68,6 +72,8 @@ export interface Session {
   cwd?: string          // resolved working directory override (set by MCP bridge / history resume)
   /** Codex rollout id to resume on next spawn. */
   codexResumeId?: string
+  /** Gemini session UUID to resume on next spawn. */
+  geminiResumeId?: string
 }
 
 // ─── Canvas Mode ───
@@ -132,6 +138,8 @@ export interface SessionCreateOptions {
   resumeUUID?: string  // session id / UUID from agent resume output
   /** Codex rollout UUID to resume — when set, launches `codex resume <id>` instead of plain `codex`. */
   codexResumeId?: string
+  /** Gemini session UUID to resume — when set, launches `gemini --resume <id>` instead of plain `gemini`. */
+  geminiResumeId?: string
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -755,6 +763,8 @@ export const SESSION_TYPE_CONFIG: Record<
   'claude-gui': { label: 'Claude GUI', command: '', icon: 'brain' },
   codex: { label: 'Codex', command: 'codex', icon: 'cpu' },
   'codex-yolo': { label: 'Codex YOLO', command: 'codex', icon: 'cpu' },
+  gemini: { label: 'Gemini', command: 'gemini', icon: 'sparkles' },
+  'gemini-yolo': { label: 'Gemini YOLO', command: 'gemini', icon: 'sparkles' },
   opencode: { label: 'OpenCode', command: 'opencode', icon: 'code' },
   terminal: { label: 'Terminal', command: '', icon: 'terminal' },
 }

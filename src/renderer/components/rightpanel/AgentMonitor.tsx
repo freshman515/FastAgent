@@ -141,8 +141,8 @@ function getSessionPath(session: Session, projectPath: string | undefined, workt
 }
 
 function getAgentMode(session: Session): string | null {
-  if (session.type === 'claude-code' || session.type === 'codex') return 'standard'
-  if (session.type === 'claude-code-yolo' || session.type === 'codex-yolo') return 'yolo'
+  if (session.type === 'claude-code' || session.type === 'codex' || session.type === 'gemini') return 'standard'
+  if (session.type === 'claude-code-yolo' || session.type === 'codex-yolo' || session.type === 'gemini-yolo') return 'yolo'
   return null
 }
 

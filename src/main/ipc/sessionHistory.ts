@@ -30,6 +30,7 @@ const HISTORY_CACHE_VERSION = 1
 // while still giving accurate message counts for typical conversations.
 const MAX_LINES_PER_FILE = 8000
 const CODEX_RESUME_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const GEMINI_RESUME_ID_RE = CODEX_RESUME_ID_RE
 
 // Patterns that indicate a user "message" is actually injected instructions
 // rather than something the user typed. Codex in particular prepends AGENTS.md
@@ -599,6 +600,176 @@ export async function resolveCodexResumeIdsForSessions(
       updatedAt: parseLookupTime(session.updatedAt),
     }))
     .filter((session) => session.cwd)
+
+  for (const target of pending.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))) {
+    const targetCwd = normalizeLookupCwd(target.cwd)
+    const targetStartedAt = target.startedAt ?? 0
+    let best: (typeof candidates)[number] | null = null
+    let bestScore = Number.POSITIVE_INFINITY
+
+    for (const candidate of candidates) {
+      if (usedIds.has(candidate.id) || candidate.cwd !== targetCwd) continue
+      const candidateStartedAt = candidate.startedAt || candidate.updatedAt
+      if (targetStartedAt && candidateStartedAt && candidateStartedAt < targetStartedAt - 2 * 60_000) {
+        continue
+      }
+
+      const score = targetStartedAt && candidateStartedAt
+        ? Math.abs(candidateStartedAt - targetStartedAt)
+        : -Math.max(candidate.updatedAt, candidate.startedAt)
+
+      if (score < bestScore) {
+        best = candidate
+        bestScore = score
+      }
+    }
+
+    if (!best) {
+      for (const candidate of candidates) {
+        if (usedIds.has(candidate.id) || candidate.cwd !== targetCwd) continue
+        const score = -Math.max(candidate.updatedAt, candidate.startedAt)
+        if (score < bestScore) {
+          best = candidate
+          bestScore = score
+        }
+      }
+    }
+
+    if (best) {
+      results.set(target.sessionId, best.id)
+      usedIds.add(best.id)
+    }
+  }
+
+  return results
+}
+
+export interface GeminiResumeLookupTarget {
+  sessionId: string
+  cwd: string
+  startedAt?: number
+  existingResumeId?: unknown
+}
+
+interface GeminiChatFile {
+  path: string
+  cwd: string
+  mtimeMs: number
+  size: number
+}
+
+interface GeminiChatMeta {
+  sessionId?: string
+  startTime?: string
+  lastUpdated?: string
+}
+
+function isGeminiResumeId(value: unknown): value is string {
+  return typeof value === 'string' && GEMINI_RESUME_ID_RE.test(value)
+}
+
+async function readFirstJsonLine<T>(filePath: string): Promise<T | null> {
+  const rl = createInterface({ input: createReadStream(filePath, { encoding: 'utf-8' }) })
+  try {
+    for await (const line of rl) {
+      if (!line.trim()) continue
+      try {
+        return JSON.parse(line) as T
+      } catch {
+        return null
+      }
+    }
+  } finally {
+    rl.close()
+  }
+  return null
+}
+
+async function listGeminiChatFiles(): Promise<GeminiChatFile[]> {
+  const root = join(homedir(), '.gemini', 'tmp')
+  let projectDirs: string[]
+  try {
+    projectDirs = (await readdir(root, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+  } catch {
+    return []
+  }
+
+  const files: GeminiChatFile[] = []
+  for (const dirName of projectDirs) {
+    const projectDir = join(root, dirName)
+    const chatsDir = join(projectDir, 'chats')
+    let cwd = ''
+    try {
+      cwd = (await readFile(join(projectDir, '.project_root'), 'utf-8')).trim()
+    } catch {
+      // Some Gemini temp dirs do not correspond to a persisted project history.
+    }
+    if (!cwd) continue
+
+    let names: string[]
+    try {
+      names = await readdir(chatsDir)
+    } catch {
+      continue
+    }
+
+    for (const name of names) {
+      if (!name.startsWith('session-') || (!name.endsWith('.jsonl') && !name.endsWith('.json'))) continue
+      const full = join(chatsDir, name)
+      try {
+        const info = await stat(full)
+        files.push({ path: full, cwd, mtimeMs: info.mtimeMs, size: info.size })
+      } catch {
+        // skip unreadable files
+      }
+    }
+  }
+
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  return files.slice(0, MAX_FILES_PER_SOURCE)
+}
+
+async function scanGeminiChatFile(file: GeminiChatFile): Promise<{
+  id: string
+  cwd: string
+  startedAt: number
+  updatedAt: number
+} | null> {
+  const meta = await readFirstJsonLine<GeminiChatMeta>(file.path)
+  if (!isGeminiResumeId(meta?.sessionId)) return null
+
+  return {
+    id: meta.sessionId,
+    cwd: normalizeLookupCwd(file.cwd),
+    startedAt: parseLookupTime(typeof meta.startTime === 'string' ? meta.startTime : null),
+    updatedAt: parseLookupTime(typeof meta.lastUpdated === 'string' ? meta.lastUpdated : null) || file.mtimeMs,
+  }
+}
+
+export async function resolveGeminiResumeIdsForSessions(
+  targets: GeminiResumeLookupTarget[],
+): Promise<Map<string, string>> {
+  const results = new Map<string, string>()
+  const pending: GeminiResumeLookupTarget[] = []
+  const usedIds = new Set<string>()
+
+  for (const target of targets) {
+    if (!target.sessionId) continue
+    if (isGeminiResumeId(target.existingResumeId)) {
+      results.set(target.sessionId, target.existingResumeId)
+      usedIds.add(target.existingResumeId)
+      continue
+    }
+    if (target.cwd) pending.push(target)
+  }
+
+  if (pending.length === 0) return results
+
+  const candidates = (
+    await scanAll((await listGeminiChatFiles()).map((file) => async () => scanGeminiChatFile(file)))
+  ).filter((candidate) => candidate.cwd)
 
   for (const target of pending.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))) {
     const targetCwd = normalizeLookupCwd(target.cwd)

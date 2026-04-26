@@ -11,6 +11,8 @@ const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'claude-gui', label: 'Claude GUI' },
   { value: 'codex', label: 'Codex' },
   { value: 'codex-yolo', label: 'Codex YOLO' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'gemini-yolo', label: 'Gemini YOLO' },
   { value: 'opencode', label: 'OpenCode' },
   { value: 'terminal', label: '终端' },
 ]
