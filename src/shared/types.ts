@@ -32,14 +32,26 @@ export function isAnonymousProjectId(projectId: string): boolean {
   return projectId === ANONYMOUS_PROJECT_ID
 }
 
-export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-gui' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal'
-export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal'>
+export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'claude-gui' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal' | 'terminal-wsl'
+export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal' | 'terminal-wsl'>
 export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui'>
 export const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 
 /** Returns true for any Claude Code variant (normal or yolo mode) */
 export function isClaudeCodeType(type: SessionType): boolean {
-  return type === 'claude-code' || type === 'claude-code-yolo'
+  return type === 'claude-code' || type === 'claude-code-yolo' || type === 'claude-code-wsl' || type === 'claude-code-yolo-wsl'
+}
+
+export function isCodexType(type: SessionType): boolean {
+  return type === 'codex' || type === 'codex-yolo' || type === 'codex-wsl' || type === 'codex-yolo-wsl'
+}
+
+export function isWslSessionType(type: SessionType): boolean {
+  return type === 'terminal-wsl' || type === 'claude-code-wsl' || type === 'claude-code-yolo-wsl' || type === 'codex-wsl' || type === 'codex-yolo-wsl'
+}
+
+export function isTerminalSessionType(type: SessionType): boolean {
+  return type === 'terminal' || type === 'terminal-wsl'
 }
 
 export function isGeminiType(type: SessionType): boolean {
@@ -225,6 +237,12 @@ export interface SessionCreateOptions {
   command?: string
   args?: string[]
   env?: Record<string, string>
+  wslDistroName?: string
+  wslShell?: string
+  wslUseLoginShell?: boolean
+  wslPathPrefix?: string
+  wslInitScript?: string
+  wslEnvVars?: string
   cols?: number
   rows?: number
 }
@@ -843,11 +861,16 @@ export const SESSION_TYPE_CONFIG: Record<
   browser: { label: 'Browser', command: '', icon: 'globe' },
   'claude-code': { label: 'Claude Code', command: 'claude', icon: 'brain' },
   'claude-code-yolo': { label: 'Claude Code YOLO', command: 'claude', icon: 'brain' },
+  'claude-code-wsl': { label: 'Claude Code(WSL)', command: 'wsl.exe claude', icon: 'brain' },
+  'claude-code-yolo-wsl': { label: 'Claude Code YOLO(WSL)', command: 'wsl.exe claude --dangerously-skip-permissions', icon: 'brain' },
   'claude-gui': { label: 'Claude GUI', command: '', icon: 'brain' },
   codex: { label: 'Codex', command: 'codex', icon: 'cpu' },
   'codex-yolo': { label: 'Codex YOLO', command: 'codex', icon: 'cpu' },
+  'codex-wsl': { label: 'Codex(WSL)', command: 'wsl.exe codex', icon: 'cpu' },
+  'codex-yolo-wsl': { label: 'Codex YOLO(WSL)', command: 'wsl.exe codex --dangerously-bypass-approvals-and-sandbox', icon: 'cpu' },
   gemini: { label: 'Gemini', command: 'gemini', icon: 'sparkles' },
   'gemini-yolo': { label: 'Gemini YOLO', command: 'gemini', icon: 'sparkles' },
   opencode: { label: 'OpenCode', command: 'opencode', icon: 'code' },
   terminal: { label: 'Terminal', command: '', icon: 'terminal' },
+  'terminal-wsl': { label: 'Terminal(WSL)', command: 'wsl.exe', icon: 'terminal' },
 }

@@ -27,7 +27,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import type { Session, SessionDataEvent } from '@shared/types'
-import { isClaudeCodeType, isGeminiType } from '@shared/types'
+import { isClaudeCodeType, isCodexType, isGeminiType, isWslSessionType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
@@ -261,6 +261,7 @@ export function useXterm(
     }
     const sessionId = currentSession.id
     const sessionType = currentSession.type
+    const isWslSession = isWslSessionType(sessionType)
     const shouldResume = currentSession.initialized && isClaudeCodeType(currentSession.type)
     const resumeUUID = currentSession.resumeUUID ?? undefined
     const codexResumeId = currentSession.codexResumeId
@@ -493,6 +494,12 @@ export function useXterm(
           geminiResumeId,
           command: currentSession.customSessionCommand,
           args: currentSession.customSessionArgs,
+          wslDistroName: isWslSession ? settings.wslDistroName : undefined,
+          wslShell: isWslSession ? settings.wslShell : undefined,
+          wslUseLoginShell: isWslSession ? settings.wslUseLoginShell : undefined,
+          wslPathPrefix: isWslSession ? settings.wslPathPrefix : undefined,
+          wslInitScript: isWslSession ? settings.wslInitScript : undefined,
+          wslEnvVars: isWslSession ? settings.wslEnvVars : undefined,
           cols: terminal.cols || 80,
           rows: terminal.rows || 24,
         })
@@ -527,7 +534,7 @@ export function useXterm(
     // "Paste" action so both paths record undo chunks and share the image /
     // text dispatch logic for Claude Code / Codex.
     const pasteFromClipboard = async (): Promise<void> => {
-      if (sessionType === 'terminal') {
+      if (sessionType === 'terminal' || sessionType === 'terminal-wsl') {
         try {
           const text = await navigator.clipboard.readText()
           if (!text) return
@@ -621,7 +628,7 @@ export function useXterm(
       // - claude-code / codex: pop last undo-stack entry and send that many backspaces
       if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'z') {
         if (ptyId) {
-          if (sessionType === 'terminal') {
+          if (sessionType === 'terminal' || sessionType === 'terminal-wsl') {
             window.api.session.write(ptyId, '\x1f')
           } else if (undoStack.length > 0) {
             const last = undoStack.pop()!
@@ -635,8 +642,8 @@ export function useXterm(
       // Ctrl/Cmd+V: smart paste for agent CLIs — image → Alt+V, text → inject.
       // Terminal sessions fall through to xterm's default paste path.
       const isSmartPasteTarget =
-        sessionType === 'codex' || sessionType === 'codex-yolo'
-        || sessionType === 'claude-code' || sessionType === 'claude-code-yolo'
+        isCodexType(sessionType)
+        || isClaudeCodeType(sessionType)
         || sessionType === 'gemini' || sessionType === 'gemini-yolo'
       if (isSmartPasteTarget
         && (e.ctrlKey || e.metaKey)
@@ -655,7 +662,7 @@ export function useXterm(
     const onDataDisposable = terminal.onData((data) => {
       if (ptyId) {
         // Track individual keystrokes for non-terminal sessions (pastes are tracked at call site)
-        if (sessionType !== 'terminal' && data.length === 1) {
+        if (sessionType !== 'terminal' && sessionType !== 'terminal-wsl' && data.length === 1) {
           const code = data.charCodeAt(0)
           if (code >= 32 && code !== 127) {
             undoStack.push(data)

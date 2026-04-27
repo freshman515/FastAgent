@@ -148,7 +148,7 @@ const TOOLS = [
       properties: {
         type: {
           type: 'string',
-          enum: ['terminal', 'claude-code', 'claude-code-yolo', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'],
+          enum: ['terminal', 'terminal-wsl', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode'],
           description: 'Session type. Defaults to claude-code.',
         },
         cwd: {

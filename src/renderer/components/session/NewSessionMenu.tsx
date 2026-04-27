@@ -29,12 +29,17 @@ export interface NewSessionOption {
 
 export const SESSION_OPTIONS: SessionOption[] = [
   { type: 'terminal', label: 'Terminal', icon: terminalIcon },
+  { type: 'terminal-wsl', label: 'Terminal(WSL)', icon: terminalIcon },
   { type: 'browser', label: 'Browser', icon: browserIcon },
   { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
   { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
+  { type: 'claude-code-wsl', label: 'Claude Code(WSL)', icon: claudeIcon },
+  { type: 'claude-code-yolo-wsl', label: 'Claude Code YOLO(WSL)', icon: claudeIcon },
   { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
   { type: 'codex', label: 'Codex', icon: codexIcon },
   { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
+  { type: 'codex-wsl', label: 'Codex(WSL)', icon: codexIcon },
+  { type: 'codex-yolo-wsl', label: 'Codex YOLO(WSL)', icon: codexIcon },
   { type: 'gemini', label: 'Gemini', icon: geminiIcon },
   { type: 'gemini-yolo', label: 'Gemini YOLO', icon: geminiIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },

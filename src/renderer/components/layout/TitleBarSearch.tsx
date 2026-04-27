@@ -45,13 +45,18 @@ const TYPE_ICONS: Record<string, string> = {
   browser: browserIcon,
   'claude-code': claudeIcon,
   'claude-code-yolo': claudeIcon,
+  'claude-code-wsl': claudeIcon,
+  'claude-code-yolo-wsl': claudeIcon,
   'claude-gui': claudeIcon,
   codex: codexIcon,
   'codex-yolo': codexIcon,
+  'codex-wsl': codexIcon,
+  'codex-yolo-wsl': codexIcon,
   gemini: geminiIcon,
   'gemini-yolo': geminiIcon,
   opencode: opencodeIcon,
   terminal: terminalIcon,
+  'terminal-wsl': terminalIcon,
 }
 
 function getSearchIndex(text: string, query: string): number {

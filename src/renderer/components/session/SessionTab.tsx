@@ -81,7 +81,7 @@ export function SessionTab({
     (e?: React.MouseEvent) => {
       e?.stopPropagation()
       if (session.pinned) return
-      if (session.ptyId && session.type !== 'terminal' && session.status === 'running') {
+      if (session.ptyId && session.type !== 'terminal' && session.type !== 'terminal-wsl' && session.status === 'running') {
         setShowCloseConfirm(true)
         return
       }

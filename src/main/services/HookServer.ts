@@ -170,7 +170,7 @@ export class HookServer {
         const hookSource = typeof data.fastagents_hook_source === 'string'
           ? data.fastagents_hook_source
           : ''
-        const isCodex = sessionType === 'codex' || sessionType === 'codex-yolo' || hookSource === 'codex'
+        const isCodex = sessionType === 'codex' || sessionType === 'codex-yolo' || sessionType === 'codex-wsl' || sessionType === 'codex-yolo-wsl' || hookSource === 'codex'
         const resolvedSessionId = faSessionId
           ?? (cwd && isCodex ? ptyManager.findCodexSessionByCwd(cwd) : null)
           ?? (cwd && !isCodex ? ptyManager.findClaudeSessionByCwd(cwd) : null)

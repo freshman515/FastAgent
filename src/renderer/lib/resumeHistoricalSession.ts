@@ -1,5 +1,5 @@
 import type { HistoricalSession, Session, SessionType } from '@shared/types'
-import { isClaudeCodeType } from '@shared/types'
+import { isClaudeCodeType, isCodexType } from '@shared/types'
 import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
 import { useProjectsStore } from '@/stores/projects'
@@ -49,10 +49,11 @@ function buildSessionName(entry: HistoricalSession): string {
 }
 
 function sessionTypeFor(entry: HistoricalSession): SessionType {
+  const defaultType = useUIStore.getState().settings.defaultSessionType
   if (entry.source === 'codex') {
-    return useUIStore.getState().settings.defaultSessionType === 'codex-yolo' ? 'codex-yolo' : 'codex'
+    return defaultType === 'codex-yolo' || defaultType === 'codex-wsl' || defaultType === 'codex-yolo-wsl' ? defaultType : 'codex'
   }
-  return useUIStore.getState().settings.defaultSessionType === 'claude-code-yolo' ? 'claude-code-yolo' : 'claude-code'
+  return defaultType === 'claude-code-yolo' || defaultType === 'claude-code-wsl' || defaultType === 'claude-code-yolo-wsl' ? defaultType : 'claude-code'
 }
 
 export interface ResumeResult {
@@ -73,7 +74,7 @@ function findExistingSession(entry: HistoricalSession, sessions: Session[]): Ses
     }
   } else {
     for (const s of sessions) {
-      if (s.type !== 'codex' && s.type !== 'codex-yolo') continue
+      if (!isCodexType(s.type)) continue
       if (s.codexResumeId === entry.id) return s
     }
   }

@@ -13,7 +13,9 @@ export function buildClaudeCodeArgs(
   mode: ClaudeSessionLaunchMode,
   sessionUUID?: string | null,
 ): string[] {
-  const args = type === 'claude-code-yolo' ? ['--dangerously-skip-permissions'] : []
+  const args = type === 'claude-code-yolo' || type === 'claude-code-yolo-wsl'
+    ? ['--dangerously-skip-permissions']
+    : []
 
   if (!isClaudeSessionUuid(sessionUUID)) {
     return args

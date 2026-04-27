@@ -328,7 +328,7 @@ function buildCanvasItems(
 
 function createCanvasSession(projectId: string, type: SessionType | undefined, worldX: number, worldY: number, customSessionDefinitionId?: string): void {
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = type === 'terminal' || customSessionDefinitionId ? 'terminal' : 'session'
+  const cardKind = type === 'terminal' || type === 'terminal-wsl' || customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
   createSessionWithPrompt({ projectId, type, customSessionDefinitionId, worktreeId }, (sessionId) => {

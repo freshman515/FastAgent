@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Session, SessionStatus, SessionType } from '@shared/types'
-import { SESSION_TYPE_CONFIG } from '@shared/types'
+import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getTerminalBufferText } from '@/hooks/useXterm'
 import { usePanesStore } from '@/stores/panes'
@@ -141,6 +141,8 @@ function getSessionPath(session: Session, projectPath: string | undefined, workt
 }
 
 function getAgentMode(session: Session): string | null {
+  if (session.type === 'claude-code-wsl' || session.type === 'codex-wsl') return 'wsl'
+  if (session.type === 'claude-code-yolo-wsl' || session.type === 'codex-yolo-wsl') return 'yolo-wsl'
   if (session.type === 'claude-code' || session.type === 'codex' || session.type === 'gemini') return 'standard'
   if (session.type === 'claude-code-yolo' || session.type === 'codex-yolo' || session.type === 'gemini-yolo') return 'yolo'
   return null
@@ -437,8 +439,8 @@ export function AgentMonitor(): JSX.Element {
     )
   }
 
-  const showAgentSpecific = activeSession.type !== 'terminal'
-  const showClaudeSpecific = activeSession.type === 'claude-code' || activeSession.type === 'claude-code-yolo'
+  const showAgentSpecific = activeSession.type !== 'terminal' && activeSession.type !== 'terminal-wsl'
+  const showClaudeSpecific = isClaudeCodeType(activeSession.type)
 
   return (
     <div className="flex flex-col gap-3 p-3">

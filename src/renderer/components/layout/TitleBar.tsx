@@ -263,7 +263,7 @@ export function TitleBar(): JSX.Element | null {
         items: [
           {
             icon: Plus,
-            label: `新建${defaultCustomSession?.name ?? (defaultSessionType === 'terminal' ? '终端' : '默认会话')}`,
+            label: `新建${defaultCustomSession?.name ?? ((defaultSessionType === 'terminal' || defaultSessionType === 'terminal-wsl') ? '终端' : '默认会话')}`,
             onSelect: handleCreateDefaultSession,
             disabled: !selectedProjectId,
           },

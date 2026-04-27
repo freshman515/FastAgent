@@ -6,7 +6,7 @@ import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { resumeHistoricalSession } from '@/lib/resumeHistoricalSession'
-import { UNGROUPED_PROJECT_GROUP_ID, isClaudeCodeType } from '@shared/types'
+import { UNGROUPED_PROJECT_GROUP_ID, isClaudeCodeType, isCodexType } from '@shared/types'
 import { useGroupsStore } from '@/stores/groups'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -117,10 +117,6 @@ function findMatchingProjectId(cwd: string, projects: Project[]): string | null 
     }
   }
   return exact ?? prefix?.id ?? null
-}
-
-function isCodexType(type: Session['type']): boolean {
-  return type === 'codex' || type === 'codex-yolo'
 }
 
 function parseTime(iso: string | null): number {
@@ -644,7 +640,7 @@ export function SessionHistoryPanel(): JSX.Element {
       const match = store.find((s) => (
         entry.source === 'claude-code'
           ? isClaudeCodeType(s.type) && s.resumeUUID === entry.id
-          : (s.type === 'codex' || s.type === 'codex-yolo') && s.codexResumeId === entry.id
+          : isCodexType(s.type) && s.codexResumeId === entry.id
       ))
       if (match) n += 1
     }
@@ -687,7 +683,7 @@ export function SessionHistoryPanel(): JSX.Element {
           if (entry.source === 'claude-code') {
             if (isClaudeCodeType(s.type) && s.resumeUUID === entry.id) return true
           } else {
-            if ((s.type === 'codex' || s.type === 'codex-yolo') && s.codexResumeId === entry.id) return true
+            if (isCodexType(s.type) && s.codexResumeId === entry.id) return true
           }
         }
         return false

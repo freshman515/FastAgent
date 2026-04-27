@@ -109,7 +109,7 @@ const PANE_TAB_GROUP_LABEL: Record<PaneTabGroup, string> = {
 }
 
 function getSessionTabGroup(type: string): PaneTabGroup {
-  if (type === 'terminal') return 'terminal'
+  if (type === 'terminal' || type === 'terminal-wsl') return 'terminal'
   if (type === 'browser') return 'browser'
   if (type.startsWith('claude')) return 'claude'
   if (type.startsWith('codex')) return 'codex'

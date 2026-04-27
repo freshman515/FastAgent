@@ -14,6 +14,7 @@ import { opencodeService } from './services/OpencodeService'
 import { claudeGuiService } from './services/ClaudeGuiService'
 import { updaterService } from './services/UpdaterService'
 import { orchestratorService } from './services/OrchestratorService'
+import { isCodexType, type SessionType } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
@@ -418,7 +419,7 @@ app.on('before-quit', async (e) => {
     const codexResumeMap = await resolveCodexResumeIdsForSessions(
       sessionsSnapshot.flatMap((session) => {
         if (typeof session.id !== 'string') return []
-        if (session.type !== 'codex' && session.type !== 'codex-yolo') return []
+        if (typeof session.type !== 'string' || !isCodexType(session.type as SessionType)) return []
 
         const managed = managedBySessionId.get(session.id)
         const existingResumeId = session.codexResumeId

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Session, SessionType, SessionStatus, OutputState, SessionActivity } from '@shared/types'
-import { DEFAULT_BROWSER_URL, SESSION_TYPE_CONFIG, isClaudeCodeType, isGeminiType } from '@shared/types'
+import { DEFAULT_BROWSER_URL, SESSION_TYPE_CONFIG, isClaudeCodeType, isCodexType, isGeminiType } from '@shared/types'
 import { isClaudeSessionUuid } from '@shared/claudeSession'
 import { generateId } from '@/lib/utils'
 
@@ -41,7 +41,7 @@ function getClaudeResumeUUID(type: SessionType, value?: unknown): string | null 
 }
 
 function getCodexResumeId(type: SessionType, value?: unknown): string | undefined {
-  if (type !== 'codex' && type !== 'codex-yolo') return undefined
+  if (!isCodexType(type)) return undefined
   if (typeof value !== 'string') return undefined
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
     ? value
@@ -60,7 +60,7 @@ function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
   if (typeof obj.id !== 'string' || typeof obj.projectId !== 'string') return null
-  const type = (['browser', 'claude-code', 'claude-code-yolo', 'claude-gui', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode', 'terminal'].includes(obj.type as string)
+  const type = (['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'claude-gui', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode', 'terminal', 'terminal-wsl'].includes(obj.type as string)
     ? obj.type
     : 'terminal') as SessionType
   return {

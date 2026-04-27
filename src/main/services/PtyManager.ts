@@ -5,13 +5,14 @@ import serializePkg from '@xterm/addon-serialize'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { BrowserWindow } from 'electron'
-import { IPC, isClaudeCodeType } from '@shared/types'
+import { IPC, isClaudeCodeType, isCodexType, isTerminalSessionType, isWslSessionType } from '@shared/types'
 import type { SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
-import type { ClaudeSessionLaunchMode } from '@shared/claudeSession'
+import { isClaudeSessionUuid, type ClaudeSessionLaunchMode } from '@shared/claudeSession'
 import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
 import { resolveClaudeSessionLaunch } from './ClaudeSessionResolver'
-import { createFastAgentsMcpConfig } from './FastAgentsMcpService'
+import { createFastAgentsMcpConfig, ensureFastAgentsMcpBridgePath } from './FastAgentsMcpService'
+import { escapeTomlString, windowsPathToWslPath } from './WslPath'
 
 const isWindows = process.platform === 'win32'
 const HeadlessTerminal = (headlessPkg as { Terminal: new (options?: Record<string, unknown>) => import('@xterm/headless').Terminal }).Terminal
@@ -66,6 +67,13 @@ const AGENT_SUBMIT_MAX_DELAY_MS = 1800
 const AGENT_SUBMIT_REINFORCE_DELAY_MS = 900
 const CODEX_STARTUP_INPUT_WARMUP_MS = 650
 const CODEX_STARTUP_SUBMIT_DELAY_MS = 1400
+const WSL_ENV_NAMES = [
+  'FASTAGENTS_SESSION_ID',
+  'FASTAGENTS_SESSION_TYPE',
+  'FASTAGENTS_IDE_PORT',
+  'FASTAGENTS_MCP_PORT',
+  'FASTAGENTS_MCP_TOKEN',
+]
 
 function createTerminalMirror(cols: number, rows: number): TerminalMirror {
   const terminal = new HeadlessTerminal({
@@ -123,8 +131,130 @@ function quoteShellArg(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`
 }
 
+function quotePosixArg(arg: string): string {
+  if (/^[A-Za-z0-9_./:=+@%,-]+$/.test(arg)) return arg
+  return `'${arg.replace(/'/g, "'\\''")}'`
+}
+
 function normalizeCwd(cwd: string): string {
   return cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+}
+
+function mergeWslEnv(existing: string | undefined): string {
+  const values = new Set((existing ?? '').split(':').map((item) => item.trim()).filter(Boolean))
+  for (const name of WSL_ENV_NAMES) values.add(name)
+  return Array.from(values).join(':')
+}
+
+function parseWslEnvVars(raw: string | undefined): Array<{ key: string; value: string }> {
+  if (!raw) return []
+  const result: Array<{ key: string; value: string }> = []
+  const seen = new Set<string>()
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const key = trimmed.slice(0, eq).trim()
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || seen.has(key)) continue
+    seen.add(key)
+    result.push({ key, value: trimmed.slice(eq + 1) })
+  }
+  return result
+}
+
+function insertAgentArgs(
+  agentCmd: { command: string; args: string[] },
+  type: SessionCreateOptions['type'],
+  args: string[],
+): void {
+  if (args.length === 0) return
+  agentCmd.args = [...args, ...agentCmd.args]
+}
+
+function buildCodexMcpArgs(
+  options: Pick<SessionCreateOptions, 'type' | 'sessionId'>,
+  mcpEnv: McpBridgeEnv,
+): string[] {
+  if (!options.sessionId) return []
+
+  const args: string[] = []
+  if (isWslSessionType(options.type)) {
+    const bridgePath = ensureFastAgentsMcpBridgePath('wsl')
+    if (bridgePath) {
+      args.push(
+        '-c',
+        'mcp_servers.fastagents.command="node"',
+        '-c',
+        `mcp_servers.fastagents.args=["${escapeTomlString(bridgePath)}"]`,
+        '-c',
+        `mcp_servers.fastagents.env.FASTAGENTS_MCP_PORT="${mcpEnv.port}"`,
+        '-c',
+        `mcp_servers.fastagents.env.FASTAGENTS_MCP_TOKEN="${escapeTomlString(mcpEnv.token)}"`,
+      )
+    }
+    args.push(
+      '-c',
+      `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID="${escapeTomlString(options.sessionId)}"`,
+    )
+    return args
+  }
+
+  args.push(
+    '-c',
+    `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${options.sessionId}`,
+  )
+  return args
+}
+
+function buildWslAgentCommand(
+  options: SessionCreateOptions,
+  agentCmd: { command: string; args: string[] },
+): { command: string; args: string[] } {
+  const commandParts: string[] = []
+  const initScript = options.wslInitScript?.trim()
+  const pathPrefix = options.wslPathPrefix?.trim()
+
+  if (initScript) commandParts.push(initScript)
+  if (pathPrefix) commandParts.push(`export PATH=${quotePosixArg(pathPrefix)}:$PATH`)
+  for (const item of parseWslEnvVars(options.wslEnvVars)) {
+    commandParts.push(`export ${item.key}=${quotePosixArg(item.value)}`)
+  }
+
+  commandParts.push(`exec ${[agentCmd.command, ...agentCmd.args].map(quotePosixArg).join(' ')}`)
+
+  const args: string[] = []
+  const distro = options.wslDistroName?.trim()
+  if (distro) args.push('-d', distro)
+  args.push('--cd', windowsPathToWslPath(options.cwd), '--')
+  args.push(options.wslShell?.trim() || 'bash')
+  args.push(options.wslUseLoginShell ? '-lc' : '-c')
+  args.push(commandParts.join('; '))
+  return { command: 'wsl.exe', args }
+}
+
+function buildWslTerminalCommand(options: SessionCreateOptions): { command: string; args: string[] } {
+  const commandParts: string[] = []
+  const initScript = options.wslInitScript?.trim()
+  const pathPrefix = options.wslPathPrefix?.trim()
+  const shell = options.wslShell?.trim() || 'bash'
+
+  if (initScript) commandParts.push(initScript)
+  if (pathPrefix) commandParts.push(`export PATH=${quotePosixArg(pathPrefix)}:$PATH`)
+  for (const item of parseWslEnvVars(options.wslEnvVars)) {
+    commandParts.push(`export ${item.key}=${quotePosixArg(item.value)}`)
+  }
+
+  commandParts.push(`exec ${quotePosixArg(shell)} ${options.wslUseLoginShell ? '-l' : '-i'}`)
+
+  const args: string[] = []
+  const distro = options.wslDistroName?.trim()
+  if (distro) args.push('-d', distro)
+  args.push('--cd', windowsPathToWslPath(options.cwd), '--')
+  args.push(shell)
+  args.push(options.wslUseLoginShell ? '-lc' : '-c')
+  args.push(commandParts.join('; '))
+  return { command: 'wsl.exe', args }
 }
 
 function getAgentSubmitDelay(input: string): number {
@@ -272,17 +402,23 @@ export class PtyManager {
     let shellArgs: string[] = [...shell.args]
     let effectiveResumeUUID = options.resumeUUID ?? null
     let claudeLaunchMode: ClaudeSessionLaunchMode | undefined
+    let launchAgentDirectly = false
 
     // For agent sessions, wrap the agent command
     if (isClaudeCodeType(options.type)) {
-      const launch = resolveClaudeSessionLaunch(options.cwd, options.resume, options.resumeUUID)
-      effectiveResumeUUID = launch.sessionUUID
-      claudeLaunchMode = launch.mode
+      if (isWslSessionType(options.type)) {
+        effectiveResumeUUID = isClaudeSessionUuid(options.resumeUUID) ? options.resumeUUID : null
+        claudeLaunchMode = options.resume && effectiveResumeUUID ? 'resume' : 'session-id'
+      } else {
+        const launch = resolveClaudeSessionLaunch(options.cwd, options.resume, options.resumeUUID)
+        effectiveResumeUUID = launch.sessionUUID
+        claudeLaunchMode = launch.mode
 
-      if (launch.replacedUUID) {
-        console.warn(
-          `[PtyManager] ignoring stale Claude resume id ${launch.replacedUUID} for ${options.cwd} (${launch.replacementReason ?? 'unknown'}); using ${launch.sessionUUID}`,
-        )
+        if (launch.replacedUUID) {
+          console.warn(
+            `[PtyManager] ignoring stale Claude resume id ${launch.replacedUUID} for ${options.cwd} (${launch.replacementReason ?? 'unknown'}); using ${launch.sessionUUID}`,
+          )
+        }
       }
     }
 
@@ -305,6 +441,7 @@ export class PtyManager {
         port: this.mcpEnv.port,
         token: this.mcpEnv.token,
         sessionId: options.sessionId,
+        target: isWslSessionType(options.type) ? 'wsl' : 'windows',
       })
       if (mcpConfigPath) {
         agentCmd.args.push('--mcp-config', mcpConfigPath)
@@ -326,17 +463,22 @@ export class PtyManager {
     // splits mid-value and codex sees a stray positional PROMPT.
     if (
       agentCmd
-      && (options.type === 'codex' || options.type === 'codex-yolo')
+      && isCodexType(options.type)
       && options.sessionId
       && this.mcpEnv
     ) {
-      agentCmd.args = [
-        '-c',
-        `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${options.sessionId}`,
-        ...agentCmd.args,
-      ]
+      insertAgentArgs(agentCmd, options.type, buildCodexMcpArgs(options, this.mcpEnv))
     }
-    if (agentCmd && !isWindows) {
+    if (!agentCmd && isWindows && options.type === 'terminal-wsl') {
+      const wslLaunch = buildWslTerminalCommand(options)
+      shellPath = wslLaunch.command
+      shellArgs = wslLaunch.args
+    } else if (agentCmd && isWindows && isWslSessionType(options.type)) {
+      const wslLaunch = buildWslAgentCommand(options, agentCmd)
+      shellPath = wslLaunch.command
+      shellArgs = wslLaunch.args
+      launchAgentDirectly = true
+    } else if (agentCmd && !isWindows) {
       const fullCmd = [agentCmd.command, ...agentCmd.args].map(quoteShellArg).join(' ')
       shellArgs = ['-c', fullCmd]
     }
@@ -358,6 +500,7 @@ export class PtyManager {
         FASTAGENTS_MCP_PORT: String(this.mcpEnv.port),
         FASTAGENTS_MCP_TOKEN: this.mcpEnv.token,
       } : {}),
+      ...(isWslSessionType(options.type) ? { WSLENV: mergeWslEnv(process.env.WSLENV) } : {}),
       ...(options.env ?? {}),
     }
 
@@ -380,7 +523,7 @@ export class PtyManager {
       mirror: createTerminalMirror(cols, rows),
       dataSeq: 0,
       resumeId: isClaudeCodeType(options.type) ? effectiveResumeUUID : null,
-      inputReady: options.type === 'terminal',
+      inputReady: isTerminalSessionType(options.type),
       queuedInput: [],
       inputReadyTimer: null,
       inputFlushInProgress: false,
@@ -392,7 +535,7 @@ export class PtyManager {
     // The shell prompt + command echo arrive before the agent banner.
     // Strategy: after the command is written (500ms), wait for agent-specific text,
     // or fall back to a short timeout.
-    const isAgentSession = options.type !== 'terminal' && options.type !== 'browser' && options.type !== 'claude-gui'
+    const isAgentSession = !isTerminalSessionType(options.type) && options.type !== 'browser' && options.type !== 'claude-gui'
     let agentStarted = !isAgentSession
     let suppressedOutput = ''
 
@@ -483,10 +626,10 @@ export class PtyManager {
 
     // For agent sessions on Windows, send the command after shell is ready
     // Append "; exit" so shell exits when agent exits → triggers PTY exit event
-    if (agentCmd && isWindows) {
+    if (agentCmd && isWindows && !launchAgentDirectly) {
       setTimeout(() => {
         const parts = [agentCmd.command, ...agentCmd.args]
-        const suffix = options.type !== 'terminal' ? ' ; exit' : ''
+        const suffix = !isTerminalSessionType(options.type) ? ' ; exit' : ''
         ptyProcess.write(parts.map(quoteShellArg).join(' ') + suffix + '\r')
       }, 500)
     }
@@ -514,7 +657,7 @@ export class PtyManager {
       return true
     }
 
-    if (managed.type === 'terminal') {
+    if (isTerminalSessionType(managed.type)) {
       this.write(id, input.endsWith('\r') || input.endsWith('\n') ? input : `${input}\r`)
       return true
     }
@@ -526,7 +669,7 @@ export class PtyManager {
 
     if (
       queuedBeforeReady
-      && (managed.type === 'codex' || managed.type === 'codex-yolo')
+      && isCodexType(managed.type)
     ) {
       // Codex can show the first prompt before its composer fully transitions
       // into a submit-ready state. When `initial_input` is queued during boot,
@@ -542,7 +685,7 @@ export class PtyManager {
       { data: '\r', delayAfterMs: AGENT_SUBMIT_REINFORCE_DELAY_MS },
     )
 
-    if (managed.type === 'codex' || managed.type === 'codex-yolo') {
+    if (isCodexType(managed.type)) {
       // Codex can keep multiline pasted prompts in the composer after the
       // first Enter. A delayed second Enter is harmless when the first one
       // only inserted a newline, and is the most reliable submit signal we
@@ -623,8 +766,12 @@ export class PtyManager {
     allowedTypes: Array<SessionCreateOptions['type']> = [
       'claude-code',
       'claude-code-yolo',
+      'claude-code-wsl',
+      'claude-code-yolo-wsl',
       'codex',
       'codex-yolo',
+      'codex-wsl',
+      'codex-yolo-wsl',
       'gemini',
       'gemini-yolo',
       'opencode',
@@ -642,12 +789,12 @@ export class PtyManager {
 
   /** Find a claude-code session by CWD path */
   findClaudeSessionByCwd(cwd: string): string | null {
-    return this.findAgentSessionByCwd(cwd, ['claude-code', 'claude-code-yolo'])
+    return this.findAgentSessionByCwd(cwd, ['claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl'])
   }
 
   /** Find a Codex session by CWD path */
   findCodexSessionByCwd(cwd: string): string | null {
-    return this.findAgentSessionByCwd(cwd, ['codex', 'codex-yolo'])
+    return this.findAgentSessionByCwd(cwd, ['codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl'])
   }
 
   resize(id: string, cols: number, rows: number): void {
@@ -714,7 +861,7 @@ export class PtyManager {
     const results = new Map<string, string>()
     const resumablePtys = Array.from(this.ptys.entries()).filter(
       ([, m]) =>
-        (m.type === 'claude-code' || m.type === 'claude-code-yolo')
+        isClaudeCodeType(m.type)
         && m.sessionId,
     )
 

@@ -55,12 +55,17 @@ const PRIORITY_OPTIONS: Array<{ id: AgentBoardPriority; label: string }> = [
 const SESSION_TYPE_OPTIONS: Array<{ id: BoardSessionType; label: string }> = [
   { id: 'claude-code', label: SESSION_TYPE_CONFIG['claude-code'].label },
   { id: 'claude-code-yolo', label: SESSION_TYPE_CONFIG['claude-code-yolo'].label },
+  { id: 'claude-code-wsl', label: SESSION_TYPE_CONFIG['claude-code-wsl'].label },
+  { id: 'claude-code-yolo-wsl', label: SESSION_TYPE_CONFIG['claude-code-yolo-wsl'].label },
   { id: 'codex', label: SESSION_TYPE_CONFIG.codex.label },
   { id: 'codex-yolo', label: SESSION_TYPE_CONFIG['codex-yolo'].label },
+  { id: 'codex-wsl', label: SESSION_TYPE_CONFIG['codex-wsl'].label },
+  { id: 'codex-yolo-wsl', label: SESSION_TYPE_CONFIG['codex-yolo-wsl'].label },
   { id: 'gemini', label: SESSION_TYPE_CONFIG.gemini.label },
   { id: 'gemini-yolo', label: SESSION_TYPE_CONFIG['gemini-yolo'].label },
   { id: 'opencode', label: SESSION_TYPE_CONFIG.opencode.label },
   { id: 'terminal', label: SESSION_TYPE_CONFIG.terminal.label },
+  { id: 'terminal-wsl', label: SESSION_TYPE_CONFIG['terminal-wsl'].label },
 ]
 
 const PRIORITY_BADGE: Record<AgentBoardPriority, string> = {

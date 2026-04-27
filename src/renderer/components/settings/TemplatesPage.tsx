@@ -7,15 +7,20 @@ import { BUILT_IN_WORKER_TEMPLATES } from '@shared/workerTemplates'
 
 const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'browser', label: 'Browser' },
+  { value: 'terminal', label: 'Terminal' },
+  { value: 'terminal-wsl', label: 'Terminal(WSL)' },
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'claude-code-yolo', label: 'Claude Code YOLO' },
+  { value: 'claude-code-wsl', label: 'Claude Code(WSL)' },
+  { value: 'claude-code-yolo-wsl', label: 'Claude Code YOLO(WSL)' },
   { value: 'claude-gui', label: 'Claude GUI' },
   { value: 'codex', label: 'Codex' },
   { value: 'codex-yolo', label: 'Codex YOLO' },
+  { value: 'codex-wsl', label: 'Codex(WSL)' },
+  { value: 'codex-yolo-wsl', label: 'Codex YOLO(WSL)' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'gemini-yolo', label: 'Gemini YOLO' },
   { value: 'opencode', label: 'OpenCode' },
-  { value: 'terminal', label: 'Terminal' },
 ]
 
 function TemplateItemRow({

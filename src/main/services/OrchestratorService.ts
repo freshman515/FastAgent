@@ -42,10 +42,15 @@ interface ParsedRoute {
 
 const VALID_CREATABLE_TYPES = new Set<SessionType>([
   'terminal',
+  'terminal-wsl',
   'claude-code',
   'claude-code-yolo',
+  'claude-code-wsl',
+  'claude-code-yolo-wsl',
   'codex',
   'codex-yolo',
+  'codex-wsl',
+  'codex-yolo-wsl',
   'gemini',
   'gemini-yolo',
   'opencode',

@@ -128,7 +128,7 @@ export function CanvasWorkspace(): JSX.Element {
     const sessionsStore = useSessionsStore.getState()
     const created = canvas.autoPopulateFromSessions(newIds, (id) => {
       const session = sessionsStore.sessions.find((s) => s.id === id)
-      return session?.type === 'terminal' ? 'terminal' : 'session'
+      return session?.type === 'terminal' || session?.type === 'terminal-wsl' ? 'terminal' : 'session'
     })
 
     if (shouldFocusActiveTab && activeTabId) {

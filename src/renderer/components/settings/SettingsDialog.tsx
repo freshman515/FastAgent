@@ -25,11 +25,12 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { parseCustomSessionArgs } from '@/lib/createSession'
 import { SessionIconView } from '@/components/session/SessionIconView'
 
-type SettingsPage = 'general' | 'sessions' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
+type SettingsPage = 'general' | 'sessions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
   { id: 'general', label: '通用', description: '基础偏好与数据清理', icon: Settings },
   { id: 'sessions', label: '会话', description: '默认会话与自定义启动器', icon: Terminal },
+  { id: 'wsl', label: 'WSL', description: 'WSL 会话环境与 PATH', icon: Terminal },
   { id: 'workspace', label: '工作区', description: '经典分屏与画布模式', icon: SplitSquareHorizontal },
   { id: 'notifications', label: '通知', description: '完成提醒与声音', icon: Bell },
   { id: 'titlebar', label: '标题栏', description: '顶部搜索与音乐显示', icon: Search },
@@ -311,14 +312,19 @@ function SegmentedChoice<T extends string>({ value, options, onChange }: {
 
 const SESSION_TYPE_OPTIONS = [
   { id: 'browser', label: 'Browser' },
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'terminal-wsl', label: 'Terminal(WSL)' },
   { id: 'claude-code', label: 'Claude Code' },
   { id: 'claude-code-yolo', label: 'Claude Code YOLO' },
+  { id: 'claude-code-wsl', label: 'Claude Code(WSL)' },
+  { id: 'claude-code-yolo-wsl', label: 'Claude Code YOLO(WSL)' },
   { id: 'codex', label: 'Codex' },
   { id: 'codex-yolo', label: 'Codex YOLO' },
+  { id: 'codex-wsl', label: 'Codex(WSL)' },
+  { id: 'codex-yolo-wsl', label: 'Codex YOLO(WSL)' },
   { id: 'gemini', label: 'Gemini' },
   { id: 'gemini-yolo', label: 'Gemini YOLO' },
   { id: 'opencode', label: 'OpenCode' },
-  { id: 'terminal', label: 'Terminal' },
 ] as const
 
 function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
@@ -655,6 +661,87 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
             添加自定义会话
           </button>
         )}
+      </SettingsSection>
+    </div>
+  )
+}
+
+function WslPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const inputClass = cn(
+    'h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
+    'font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
+    'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
+  )
+  const textareaClass = cn(
+    'min-h-[88px] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-2',
+    'font-mono text-[var(--ui-font-sm)] leading-relaxed text-[var(--color-text-primary)] outline-none transition-colors',
+    'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
+  )
+
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="WSL 设置" description="配置 Claude Code(WSL) / Codex(WSL) 会话启动前的 shell、PATH 和环境变量。" />
+
+      <SettingsSection icon={Terminal} title="启动环境" description="WSL 会话会先进入项目目录，再通过这里配置的 shell 执行初始化脚本和 Agent 命令。">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">发行版名称</span>
+            <input
+              value={settings.wslDistroName}
+              onChange={(event) => onUpdate('wslDistroName', event.target.value)}
+              placeholder="留空使用默认，例如 Ubuntu"
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Shell</span>
+            <input
+              value={settings.wslShell}
+              onChange={(event) => onUpdate('wslShell', event.target.value)}
+              placeholder="bash"
+              className={inputClass}
+            />
+          </label>
+        </div>
+
+        <ToggleRow
+          label="使用登录 shell"
+          description="开启后使用 -lc；如果你的 PATH 在 ~/.profile 或 ~/.bash_profile 中配置，可以打开。"
+          checked={settings.wslUseLoginShell}
+          onChange={(v) => onUpdate('wslUseLoginShell', v)}
+        />
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">PATH 前缀</span>
+          <input
+            value={settings.wslPathPrefix}
+            onChange={(event) => onUpdate('wslPathPrefix', event.target.value)}
+            placeholder="/home/mf/.nvm/versions/node/v24.15.0/bin"
+            className={inputClass}
+          />
+          <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+            会追加到 PATH 最前面，优先使用 WSL 内的 node/codex/claude，避免命中 Windows npm shim。
+          </span>
+        </label>
+      </SettingsSection>
+
+      <SettingsSection icon={FileCode2} title="初始化脚本" description="每次启动 WSL Agent 前都会先执行。默认会加载 nvm。">
+        <textarea
+          value={settings.wslInitScript}
+          onChange={(event) => onUpdate('wslInitScript', event.target.value)}
+          spellCheck={false}
+          className={textareaClass}
+        />
+      </SettingsSection>
+
+      <SettingsSection icon={FileCode2} title="额外环境变量" description="每行一个 KEY=value，会在 WSL shell 内 export。">
+        <textarea
+          value={settings.wslEnvVars}
+          onChange={(event) => onUpdate('wslEnvVars', event.target.value)}
+          placeholder={'OPENAI_API_KEY=...\nANTHROPIC_API_KEY=...'}
+          spellCheck={false}
+          className={textareaClass}
+        />
       </SettingsSection>
     </div>
   )
@@ -1791,6 +1878,7 @@ export function SettingsDialog(): JSX.Element | null {
           <div className="flex-1 overflow-y-auto scrollbar-none px-10 py-10 pb-20">
             {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'sessions' && <SessionsPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'wsl' && <WslPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'workspace' && <WorkspacePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'notifications' && <NotificationsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'titlebar' && <TitleBarPage settings={settings} onUpdate={handleUpdate} />}

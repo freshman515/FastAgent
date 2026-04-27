@@ -151,12 +151,18 @@ export interface AppSettings {
   editorFontLigatures: boolean
   visibleGroupId: string | null // null = show all groups
   visibleProjectId: string | null // null = show all projects
-  defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode'
+  defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'terminal' | 'terminal-wsl' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode'
   /** When set, default creation uses a custom launcher instead of defaultSessionType. */
   defaultCustomSessionId: string | null
   customSessionDefinitions: CustomSessionDefinition[]
   /** Pop up a naming dialog when creating a new session */
   promptSessionNameOnCreate: boolean
+  wslDistroName: string
+  wslShell: string
+  wslUseLoginShell: boolean
+  wslPathPrefix: string
+  wslInitScript: string
+  wslEnvVars: string
   recentPaths: string[]
   visualizerMode: VisualizerMode
   showMusicPlayer: boolean
@@ -254,6 +260,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultCustomSessionId: null,
   customSessionDefinitions: [],
   promptSessionNameOnCreate: false,
+  wslDistroName: '',
+  wslShell: 'bash',
+  wslUseLoginShell: false,
+  wslPathPrefix: '',
+  wslInitScript: 'if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi',
+  wslEnvVars: '',
   recentPaths: [],
   visualizerMode: 'melody',
   showMusicPlayer: false,
@@ -593,12 +605,17 @@ function isAgentBoardPriority(value: unknown): value is AgentBoardPriority {
 function isAgentBoardSessionType(value: unknown): value is AgentBoardItem['sessionType'] {
   return value === 'claude-code'
     || value === 'claude-code-yolo'
+    || value === 'claude-code-wsl'
+    || value === 'claude-code-yolo-wsl'
     || value === 'codex'
     || value === 'codex-yolo'
+    || value === 'codex-wsl'
+    || value === 'codex-yolo-wsl'
     || value === 'gemini'
     || value === 'gemini-yolo'
     || value === 'opencode'
     || value === 'terminal'
+    || value === 'terminal-wsl'
 }
 
 function normalizeAgentBoardItems(raw: unknown): { items: AgentBoardItem[]; seeded: boolean } {
@@ -1183,7 +1200,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.editorFontLigatures === 'boolean') s.editorFontLigatures = raw.editorFontLigatures
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
       if (raw.visibleProjectId === null || typeof raw.visibleProjectId === 'string') s.visibleProjectId = raw.visibleProjectId as string | null
-      if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
+      if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'terminal', 'terminal-wsl', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
       if (raw.customSessionDefinitions !== undefined) {
         const normalizedCustomSessions = normalizeCustomSessionDefinitions(raw.customSessionDefinitions)
         s.customSessionDefinitions = normalizedCustomSessions.definitions
@@ -1197,6 +1214,12 @@ export const useUIStore = create<UIState>((set, get) => ({
         shouldPersistSettings = true
       }
       if (typeof raw.promptSessionNameOnCreate === 'boolean') s.promptSessionNameOnCreate = raw.promptSessionNameOnCreate
+      if (typeof raw.wslDistroName === 'string') s.wslDistroName = raw.wslDistroName.trim()
+      if (typeof raw.wslShell === 'string') s.wslShell = raw.wslShell.trim() || DEFAULT_SETTINGS.wslShell
+      if (typeof raw.wslUseLoginShell === 'boolean') s.wslUseLoginShell = raw.wslUseLoginShell
+      if (typeof raw.wslPathPrefix === 'string') s.wslPathPrefix = raw.wslPathPrefix.trim()
+      if (typeof raw.wslInitScript === 'string') s.wslInitScript = raw.wslInitScript
+      if (typeof raw.wslEnvVars === 'string') s.wslEnvVars = raw.wslEnvVars
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
       if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
       if (typeof raw.showMusicPlayer === 'boolean') s.showMusicPlayer = raw.showMusicPlayer

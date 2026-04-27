@@ -58,7 +58,7 @@ const PANE_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
 ]
 
 function getPaneCommandGroupForSession(type: string): PaneCommandTabGroup {
-  if (type === 'terminal') return 'terminal'
+  if (type === 'terminal' || type === 'terminal-wsl') return 'terminal'
   if (type === 'browser') return 'browser'
   if (type.startsWith('claude')) return 'claude'
   if (type.startsWith('codex')) return 'codex'

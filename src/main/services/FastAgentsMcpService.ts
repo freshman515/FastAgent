@@ -3,11 +3,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { readConfig } from './ConfigStore'
+import { windowsPathToWslPath } from './WslPath'
 
 interface McpConfigOptions {
   port: number
   token: string
   sessionId: string
+  target?: 'windows' | 'wsl'
 }
 
 function getMcpDir(): string {
@@ -46,6 +48,12 @@ function ensureBridgeScript(): string | null {
   return target
 }
 
+export function ensureFastAgentsMcpBridgePath(target: 'windows' | 'wsl' = 'windows'): string | null {
+  const bridgePath = ensureBridgeScript()
+  if (!bridgePath) return null
+  return target === 'wsl' ? windowsPathToWslPath(bridgePath) : bridgePath
+}
+
 function normalizeClaudeProjectPath(projectPath: string): string {
   return projectPath.replace(/\\/g, '/').replace(/\/+$/, '')
 }
@@ -73,10 +81,11 @@ function writeClaudeJson(data: Record<string, unknown>): void {
 }
 
 export function createFastAgentsMcpConfig(options: McpConfigOptions): string | null {
-  const bridgePath = ensureBridgeScript()
+  const target = options.target ?? 'windows'
+  const bridgePath = ensureFastAgentsMcpBridgePath(target)
   if (!bridgePath) return null
 
-  const configPath = join(getMcpDir(), `fastagents-mcp-${options.sessionId}.json`)
+  const configPath = join(getMcpDir(), `fastagents-mcp-${target}-${options.sessionId}.json`)
   const config = {
     mcpServers: {
       fastagents: {
@@ -93,7 +102,7 @@ export function createFastAgentsMcpConfig(options: McpConfigOptions): string | n
 
   mkdirSync(dirname(configPath), { recursive: true })
   writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
-  return configPath
+  return target === 'wsl' ? windowsPathToWslPath(configPath) : configPath
 }
 
 // ─── Codex CLI (~/.codex/config.toml) ──────────────────────────────────────

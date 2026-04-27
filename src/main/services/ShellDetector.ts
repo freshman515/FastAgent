@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { buildClaudeCodeArgs, type ClaudeSessionLaunchMode } from '@shared/claudeSession'
-import type { SessionType } from '@shared/types'
+import { isClaudeCodeType, isCodexType, isTerminalSessionType, type SessionType } from '@shared/types'
 
 const isWindows = process.platform === 'win32'
 
@@ -79,17 +79,19 @@ export function buildAgentCommand(
   type: SessionType,
   options: BuildAgentCommandOptions = {},
 ): { command: string; args: string[] } | null {
-  if (type === 'terminal' || type === 'claude-gui' || type === 'browser') {
+  if (isTerminalSessionType(type) || type === 'claude-gui' || type === 'browser') {
     return null
   }
 
-  if (type === 'claude-code' || type === 'claude-code-yolo') {
+  if (isClaudeCodeType(type)) {
     const mode = options.claudeLaunchMode ?? (options.resume && options.resumeUUID ? 'resume' : 'plain')
     return { command: 'claude', args: buildClaudeCodeArgs(type, mode, options.resumeUUID) }
   }
 
-  if (type === 'codex' || type === 'codex-yolo') {
-    const baseArgs = type === 'codex-yolo' ? ['--dangerously-bypass-approvals-and-sandbox'] : []
+  if (isCodexType(type)) {
+    const baseArgs = type === 'codex-yolo' || type === 'codex-yolo-wsl'
+      ? ['--dangerously-bypass-approvals-and-sandbox']
+      : []
     if (options.codexResumeId && CODEX_RESUME_ID_RE.test(options.codexResumeId)) {
       // `codex resume` is a subcommand — it must be the FIRST positional arg,
       // followed by the session id. Flags like `--dangerously-bypass-...` still
