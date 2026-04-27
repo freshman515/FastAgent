@@ -14,6 +14,9 @@ export type AgentBoardPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export type CanvasArrangeMode = 'free' | 'grid' | 'rowFlow' | 'colFlow'
+export type PaneUiMode = 'separated' | 'classic'
+export type TabUiMode = 'rounded' | 'square'
+export type PaneDensityMode = 'comfortable' | 'compact'
 
 export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
@@ -192,6 +195,12 @@ export interface AppSettings {
   // ─── Canvas workspace ───
   /** 'panes' = classic BSP split tabs, 'canvas' = infinite canvas with free-form cards */
   workspaceLayout: WorkspaceLayout
+  /** Visual treatment for classic split panes. */
+  paneUiMode: PaneUiMode
+  /** Visual treatment for session/editor tabs. */
+  tabUiMode: TabUiMode
+  /** Density for classic pane chrome and tab bars. */
+  paneDensityMode: PaneDensityMode
   /** Show the grid background on the canvas */
   canvasGridEnabled: boolean
   /** Snap card movement to the grid / sibling edges */
@@ -234,7 +243,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   promptSessionNameOnCreate: false,
   recentPaths: [],
   visualizerMode: 'melody',
-  showMusicPlayer: true,
+  showMusicPlayer: false,
   showTitleBarSearch: false,
   showActivePaneBorder: false,
   titleBarMenuVisibility: 'always',
@@ -257,7 +266,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   todoItems: [],
   agentBoardItems: [],
   promptItems: [],
-  terminalTheme: 'FastAgents Default',
+  terminalTheme: 'Catppuccin Mocha',
   customThemes: {},
   aiProvider: 'openai',
   aiBaseUrl: 'https://api.openai.com/v1',
@@ -271,6 +280,9 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   sessionHistorySourceFilter: 'all',
   sessionHistoryOnlyCurrentProject: false,
   workspaceLayout: 'panes',
+  paneUiMode: 'separated',
+  tabUiMode: 'rounded',
+  paneDensityMode: 'comfortable',
   canvasGridEnabled: true,
   canvasSnapEnabled: true,
   canvasOverlapMode: 'free',
@@ -1222,6 +1234,15 @@ export const useUIStore = create<UIState>((set, get) => ({
       }
       if (raw.workspaceLayout === 'panes' || raw.workspaceLayout === 'canvas') {
         s.workspaceLayout = raw.workspaceLayout
+      }
+      if (raw.paneUiMode === 'separated' || raw.paneUiMode === 'classic') {
+        s.paneUiMode = raw.paneUiMode
+      }
+      if (raw.tabUiMode === 'rounded' || raw.tabUiMode === 'square') {
+        s.tabUiMode = raw.tabUiMode
+      }
+      if (raw.paneDensityMode === 'comfortable' || raw.paneDensityMode === 'compact') {
+        s.paneDensityMode = raw.paneDensityMode
       }
       if (typeof raw.canvasGridEnabled === 'boolean') s.canvasGridEnabled = raw.canvasGridEnabled
       if (typeof raw.canvasSnapEnabled === 'boolean') s.canvasSnapEnabled = raw.canvasSnapEnabled

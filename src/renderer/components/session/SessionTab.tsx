@@ -25,6 +25,9 @@ interface SessionTabProps {
   onDragLeave: () => void
   onDrop: (id: string) => void
   onDragEnd: () => void
+  canSplitSameType?: boolean
+  onSplitSameType?: (id: string) => void
+  sameTypeLabel?: string
 }
 
 const SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
@@ -37,6 +40,7 @@ const SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
 export function SessionTab({
   session, isActive, paneId, isPaneFocused = true, isDragging, showDivider = false, dropSide,
   onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
+  canSplitSameType = false, onSplitSameType, sameTypeLabel = '同类',
 }: SessionTabProps): JSX.Element {
   const removeSession = useSessionsStore((s) => s.removeSession)
   const updateSession = useSessionsStore((s) => s.updateSession)
@@ -87,6 +91,7 @@ export function SessionTab({
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY })
   }, [])
 
@@ -463,6 +468,24 @@ export function SessionTab({
                     {opt.label}
                   </button>
                 ))}
+              </>
+            )}
+
+            {onSplitSameType && (
+              <>
+                <div className="h-px my-0.5 bg-[var(--color-border)]" />
+                <button
+                  onClick={() => {
+                    setContextMenu(null)
+                    onSplitSameType(session.id)
+                  }}
+                  disabled={!canSplitSameType}
+                  className={canSplitSameType
+                    ? 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
+                    : 'flex w-full cursor-not-allowed items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'}
+                >
+                  把{sameTypeLabel}标签移到新 pane
+                </button>
               </>
             )}
 

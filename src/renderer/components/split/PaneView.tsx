@@ -1,8 +1,8 @@
-import { GitBranch, Maximize2, Minimize2, Minus, MoreHorizontal, Plus, Square, X } from 'lucide-react'
+import { GitBranch, List, Maximize2, Minimize2, Minus, MoreHorizontal, Plus, Square, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { usePanesStore, registerPaneElement, type PaneNode, type SplitPosition } from '@/stores/panes'
+import { usePanesStore, registerPaneElement, getPaneLeafIds, type PaneNode, type SplitPosition } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useEditorsStore, FILE_ICONS } from '@/stores/editors'
@@ -60,6 +60,74 @@ const FILE_TAB_SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> 
   { position: 'up', label: '向上分屏' },
 ]
 
+type DropZone = SplitPosition | 'center'
+
+const DROP_ZONE_EDGE_RATIO = 0.25
+const DROP_ZONE_COPY: Record<DropZone, { label: string; hint: string }> = {
+  left: { label: '拆到左侧新 pane', hint: '松开后创建左右分屏' },
+  right: { label: '拆到右侧新 pane', hint: '松开后创建左右分屏' },
+  up: { label: '拆到上方新 pane', hint: '松开后创建上下分屏' },
+  down: { label: '拆到下方新 pane', hint: '松开后创建上下分屏' },
+  center: { label: '移入此 pane', hint: '松开后作为标签加入当前 pane' },
+}
+
+function getDropZoneFromPointer(clientX: number, clientY: number, rect: DOMRect): DropZone {
+  const x = (clientX - rect.left) / rect.width
+  const y = (clientY - rect.top) / rect.height
+  const candidates: Array<{ zone: SplitPosition; distance: number }> = []
+
+  if (x < DROP_ZONE_EDGE_RATIO) candidates.push({ zone: 'left', distance: x })
+  if (x > 1 - DROP_ZONE_EDGE_RATIO) candidates.push({ zone: 'right', distance: 1 - x })
+  if (y < DROP_ZONE_EDGE_RATIO) candidates.push({ zone: 'up', distance: y })
+  if (y > 1 - DROP_ZONE_EDGE_RATIO) candidates.push({ zone: 'down', distance: 1 - y })
+
+  if (candidates.length === 0) return 'center'
+  candidates.sort((a, b) => a.distance - b.distance)
+  return candidates[0].zone
+}
+
+function getDropPreviewStyle(zone: DropZone): CSSProperties {
+  if (zone === 'left') return { left: 0, top: 0, width: '50%', height: '100%' }
+  if (zone === 'right') return { right: 0, top: 0, width: '50%', height: '100%' }
+  if (zone === 'up') return { left: 0, top: 0, width: '100%', height: '50%' }
+  if (zone === 'down') return { left: 0, bottom: 0, width: '100%', height: '50%' }
+  return { left: 18, right: 18, top: 18, bottom: 18 }
+}
+
+type PaneTabGroup = 'terminal' | 'claude' | 'codex' | 'gemini' | 'opencode' | 'browser' | 'file' | 'other'
+
+const PANE_TAB_GROUP_ORDER: PaneTabGroup[] = ['terminal', 'claude', 'codex', 'gemini', 'opencode', 'browser', 'file', 'other']
+const PANE_TAB_GROUP_LABEL: Record<PaneTabGroup, string> = {
+  terminal: '终端',
+  claude: 'Claude',
+  codex: 'Codex',
+  gemini: 'Gemini',
+  opencode: 'OpenCode',
+  browser: 'Browser',
+  file: '文件',
+  other: '其他',
+}
+
+function getSessionTabGroup(type: string): PaneTabGroup {
+  if (type === 'terminal') return 'terminal'
+  if (type === 'browser') return 'browser'
+  if (type.startsWith('claude')) return 'claude'
+  if (type.startsWith('codex')) return 'codex'
+  if (type.startsWith('gemini')) return 'gemini'
+  if (type.startsWith('opencode')) return 'opencode'
+  return 'other'
+}
+
+function getPaneTabGroup(tab: PaneTabItem): PaneTabGroup {
+  return tab.kind === 'editor' ? 'file' : getSessionTabGroup(tab.session.type)
+}
+
+function getPaneTabSplitKey(tab: PaneTabItem): string {
+  if (tab.kind === 'editor') return 'file'
+  const group = getSessionTabGroup(tab.session.type)
+  return group === 'other' ? `session:${tab.session.type}` : group
+}
+
 function getParentPath(path: string): string {
   return path.replace(/[/\\][^/\\]+$/, '') || path
 }
@@ -74,7 +142,7 @@ function getRelativePath(filePath: string, basePath: string | null): string | nu
   return normalizedFile.slice(prefix.length)
 }
 
-function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, currentWindowId, isDragging, showDivider, dropSide, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onSelect }: {
+function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, currentWindowId, isDragging, showDivider, dropSide, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onSelect, canSplitSameType = false, onSplitSameType, sameTypeLabel = '同类' }: {
   tab: EditorTabItem
   isActive: boolean
   isPaneFocused: boolean
@@ -90,6 +158,9 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
   onDrop: (id: string) => void
   onDragEnd: () => void
   onSelect: () => void
+  canSplitSameType?: boolean
+  onSplitSameType?: (id: string) => void
+  sameTypeLabel?: string
 }): JSX.Element {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [pendingClose, setPendingClose] = useState<{ ids: string[]; title: string; message: string } | null>(null)
@@ -376,7 +447,7 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
               弹出为独立窗口
             </button>
 
-            {(canSplit || isSplit) && <div className="h-px my-0.5 bg-[var(--color-border)]" />}
+            {(canSplit || onSplitSameType || isSplit) && <div className="h-px my-0.5 bg-[var(--color-border)]" />}
 
             {canSplit && FILE_TAB_SPLIT_OPTIONS.map((opt) => (
               <button
@@ -390,6 +461,19 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
                 {opt.label}
               </button>
             ))}
+
+            {onSplitSameType && (
+              <button
+                onClick={() => {
+                  setContextMenu(null)
+                  onSplitSameType(tab.id)
+                }}
+                disabled={!canSplitSameType}
+                className={canSplitSameType ? MENU_ITEM : MENU_ITEM_DISABLED}
+              >
+                把{sameTypeLabel}标签移到新 pane
+              </button>
+            )}
 
             {isSplit && (
               <button
@@ -454,6 +538,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const togglePaneFullscreen = usePanesStore((s) => s.togglePaneFullscreen)
   const isFullscreenPane = fullscreenPaneId === paneId
   const showActivePaneBorder = useUIStore((s) => s.settings.showActivePaneBorder)
+  const paneUiMode = useUIStore((s) => s.settings.paneUiMode)
+  const tabUiMode = useUIStore((s) => s.settings.tabUiMode)
+  const paneDensityMode = useUIStore((s) => s.settings.paneDensityMode)
 
   // Get full session objects for this pane, in pane order
   const sessions = useMemo(() => {
@@ -479,21 +566,43 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       return session ? [{ kind: 'session', id, session }] : []
     })
   }, [paneSessions, allEditorTabs, allSessions])
+  const tabGroupById = useMemo(() => {
+    const groups = new Map<string, PaneTabGroup>()
+    for (const tab of orderedTabs) {
+      groups.set(tab.id, getPaneTabGroup(tab))
+    }
+    return groups
+  }, [orderedTabs])
+  const tabSplitKeyById = useMemo(() => {
+    const keys = new Map<string, string>()
+    for (const tab of orderedTabs) {
+      keys.set(tab.id, getPaneTabSplitKey(tab))
+    }
+    return keys
+  }, [orderedTabs])
+  const groupedTabs = useMemo(() => {
+    return PANE_TAB_GROUP_ORDER.map((group) => ({
+      group,
+      tabs: orderedTabs.filter((tab) => getPaneTabGroup(tab) === group),
+    })).filter((item) => item.tabs.length > 0)
+  }, [orderedTabs])
   const showDetachedWindowControls = isDetached && paneId === getTopRightLeafId(root)
 
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [dropHighlight, setDropHighlight] = useState(false)
-  const [edgeDrop, setEdgeDrop] = useState<SplitPosition | 'center' | null>(null)
+  const [edgeDrop, setEdgeDrop] = useState<DropZone | null>(null)
   const [dragTabId, setDragTabId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null)
   const termAreaRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const paneMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const tabListButtonRef = useRef<HTMLButtonElement>(null)
   const windowDragRef = useRef<WindowDragState | null>(null)
   const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
   const [paneActionMenu, setPaneActionMenu] = useState<{ x: number; y: number } | null>(null)
+  const [tabListMenu, setTabListMenu] = useState<{ x: number; y: number } | null>(null)
 
   const closeMenuTimerRef = useRef<number | null>(null)
 
@@ -546,7 +655,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const activeTabIdForMenu = paneActiveSessionId && paneSessions.includes(paneActiveSessionId)
     ? paneActiveSessionId
     : (paneSessions[0] ?? null)
-  const canSplitActiveTab = Boolean(activeTabIdForMenu && paneSessions.length >= 2)
 
   const openPaneActionMenu = useCallback(() => {
     const rect = paneMenuButtonRef.current?.getBoundingClientRect()
@@ -554,11 +662,103 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     setPaneActionMenu((current) => current ? null : { x: Math.max(4, rect.right - 204), y: rect.bottom + 4 })
   }, [])
 
-  const splitActiveTab = useCallback((position: SplitPosition) => {
-    if (!activeTabIdForMenu || paneSessions.length < 2) return
-    usePanesStore.getState().splitPane(paneId, position, activeTabIdForMenu)
+  const getSameTypeTabIds = useCallback((tabId: string) => {
+    const targetKey = tabSplitKeyById.get(tabId)
+    if (!targetKey) return []
+    return paneSessions.filter((id) => tabSplitKeyById.get(id) === targetKey)
+  }, [paneSessions, tabSplitKeyById])
+
+  const canSplitSameType = useCallback((tabId: string) => {
+    const ids = getSameTypeTabIds(tabId)
+    return ids.length > 0 && ids.length < paneSessions.length
+  }, [getSameTypeTabIds, paneSessions.length])
+
+  const splitSameTypeToNewPane = useCallback((tabId: string) => {
+    const ids = getSameTypeTabIds(tabId)
+    if (ids.length === 0 || ids.length >= paneSessions.length) return
+    usePanesStore.getState().splitPaneWithSessions(paneId, 'right', ids)
     setPaneActionMenu(null)
-  }, [activeTabIdForMenu, paneId, paneSessions.length])
+    setTabListMenu(null)
+  }, [getSameTypeTabIds, paneId, paneSessions.length])
+
+  const organizePaneTabsByType = useCallback(() => {
+    const groupRank = new Map(PANE_TAB_GROUP_ORDER.map((group, index) => [group, index]))
+    const originalIndex = new Map(paneSessions.map((id, index) => [id, index]))
+    const nextOrder = [...paneSessions].sort((a, b) => {
+      const aRank = groupRank.get(tabGroupById.get(a) ?? 'other') ?? PANE_TAB_GROUP_ORDER.length
+      const bRank = groupRank.get(tabGroupById.get(b) ?? 'other') ?? PANE_TAB_GROUP_ORDER.length
+      if (aRank !== bRank) return aRank - bRank
+      return (originalIndex.get(a) ?? 0) - (originalIndex.get(b) ?? 0)
+    })
+    usePanesStore.getState().setPaneSessionOrder(paneId, nextOrder)
+    setPaneActionMenu(null)
+    setTabListMenu(null)
+  }, [paneId, paneSessions, tabGroupById])
+
+  const smartSplitByType = useCallback(() => {
+    const state = usePanesStore.getState()
+    const orderedIds = getPaneLeafIds(state.root).flatMap((leafId) => state.paneSessions[leafId] ?? [])
+    const groupRank = new Map(PANE_TAB_GROUP_ORDER.map((group, index) => [group, index]))
+    const buckets = new Map<string, { group: PaneTabGroup; firstIndex: number; ids: string[] }>()
+
+    orderedIds.forEach((id, index) => {
+      const tab: PaneTabItem | null = id.startsWith('editor-')
+        ? (() => {
+            const editor = allEditorTabs.find((item) => item.id === id)
+            return editor ? { kind: 'editor' as const, id, tab: editor } : null
+          })()
+        : (() => {
+            const session = allSessions.find((item) => item.id === id)
+            return session ? { kind: 'session' as const, id, session } : null
+          })()
+      if (!tab) return
+
+      const key = getPaneTabSplitKey(tab)
+      const existing = buckets.get(key)
+      if (existing) {
+        existing.ids.push(id)
+        return
+      }
+
+      buckets.set(key, {
+        group: getPaneTabGroup(tab),
+        firstIndex: index,
+        ids: [id],
+      })
+    })
+
+    const groups = [...buckets.values()]
+      .sort((a, b) => {
+        const rankDiff = (groupRank.get(a.group) ?? PANE_TAB_GROUP_ORDER.length)
+          - (groupRank.get(b.group) ?? PANE_TAB_GROUP_ORDER.length)
+        return rankDiff || a.firstIndex - b.firstIndex
+      })
+      .map((bucket) => bucket.ids)
+
+    if (groups.length === 0) return
+    usePanesStore.getState().applyPaneGroups(groups, activeTabIdForMenu)
+    setPaneActionMenu(null)
+    setTabListMenu(null)
+  }, [activeTabIdForMenu, allEditorTabs, allSessions])
+
+  const openTabListMenu = useCallback(() => {
+    const rect = tabListButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setTabListMenu((current) => current ? null : { x: Math.max(8, rect.right - 284), y: rect.bottom + 4 })
+  }, [])
+
+  const selectTabFromMenu = useCallback((tab: PaneTabItem) => {
+    usePanesStore.getState().setActivePaneId(paneId)
+    usePanesStore.getState().setPaneActiveSession(paneId, tab.id)
+    if (tab.kind === 'session') {
+      useSessionsStore.getState().setActive(tab.session.id)
+    }
+    setTabListMenu(null)
+  }, [paneId])
+
+  const openPaneActionMenuAt = useCallback((x: number, y: number) => {
+    setPaneActionMenu({ x: Math.max(4, x), y: Math.max(4, y) })
+  }, [])
 
   const paneRootRef = useRef<HTMLDivElement>(null)
 
@@ -652,7 +852,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     togglePaneFullscreen(paneId)
   }, [handleWindowDragDoubleClick, paneId, togglePaneFullscreen])
 
-  const attachDraggedTab = useCallback((dragToken: string, zone?: SplitPosition | 'center' | null) => {
+  const attachDraggedTab = useCallback((dragToken: string, zone?: DropZone | null) => {
     const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId) as DetachedTabDragPayload | null
     if (!payload) return false
 
@@ -694,13 +894,18 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       ref={paneRootRef}
       className={cn(
         'pane-surface relative flex h-full flex-col',
+        paneUiMode === 'classic' && 'pane-surface-classic',
+        paneDensityMode === 'compact' && 'pane-density-compact',
       )}
       onMouseDown={handleFocus}
     >
       {/* Active pane highlight overlay */}
       {isMultiPane && showActivePaneBorder && isActivePane && (
         <div
-          className="pointer-events-none absolute inset-0 z-50 rounded-[var(--radius-panel)]"
+          className={cn(
+            'pointer-events-none absolute inset-0 z-50',
+            paneUiMode !== 'classic' && 'rounded-[var(--radius-panel)]',
+          )}
           style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 4%, transparent)' }}
         />
       )}
@@ -708,9 +913,17 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       <div
         className={cn(
           'tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]',
+          tabUiMode === 'square' ? 'tab-style-square' : 'tab-style-rounded',
           dropHighlight && 'ring-2 ring-inset ring-[var(--color-accent)]',
         )}
-        style={{ height: 38 }}
+        style={{ height: paneDensityMode === 'compact' ? 32 : 38 }}
+        onContextMenu={(e) => {
+          const target = e.target as HTMLElement
+          if (target.closest('.tab-active, .tab-inactive, button')) return
+          e.preventDefault()
+          e.stopPropagation()
+          openPaneActionMenuAt(e.clientX, e.clientY)
+        }}
         onWheel={(e) => {
           if (orderedTabs.length === 0) return
           const activeIdx = orderedTabs.findIndex((tab) => tab.id === paneActiveSessionId)
@@ -753,7 +966,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       >
         {/* Scrollable tabs + buttons area */}
         <div
-          className="flex min-w-0 flex-1 items-end gap-0 overflow-x-auto px-2 scrollbar-none"
+          className={cn(
+            'flex min-w-0 flex-1 items-end gap-0 overflow-x-auto scrollbar-none',
+            paneDensityMode === 'compact' ? 'px-1' : 'px-2',
+          )}
           style={{ position: 'relative', zIndex: 1 }}
           onMouseDown={handleTopBarBlankMouseDown}
           onDoubleClick={handleTopBarBlankDoubleClick}
@@ -803,6 +1019,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
                 setDropTargetId(null); setDropSide(null)
               }}
               onDragEnd={() => { setDragTabId(null); setDropTargetId(null); setDropSide(null) }}
+              canSplitSameType={canSplitSameType(tab.id)}
+              onSplitSameType={splitSameTypeToNewPane}
+              sameTypeLabel={PANE_TAB_GROUP_LABEL[tabGroupById.get(tab.id) ?? 'other']}
             />
           ) : (
             <EditorTabButton
@@ -835,6 +1054,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
                 usePanesStore.getState().setPaneActiveSession(paneId, tab.id)
                 usePanesStore.getState().setActivePaneId(paneId)
               }}
+              canSplitSameType={canSplitSameType(tab.id)}
+              onSplitSameType={splitSameTypeToNewPane}
+              sameTypeLabel={PANE_TAB_GROUP_LABEL[tabGroupById.get(tab.id) ?? 'file']}
             />
           ))}
 
@@ -872,6 +1094,30 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             </button>
           )}
         </div>
+
+        {orderedTabs.length > 0 && (
+          <button
+            ref={tabListButtonRef}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              openTabListMenu()
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className={cn(
+              'no-drag mr-1 flex shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)]',
+              paneDensityMode === 'compact' ? 'h-[26px] px-1.5' : 'h-7.5 px-2',
+              'text-[var(--color-text-tertiary)] transition-all duration-200',
+              'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+              'active:scale-95',
+            )}
+            title="标签列表"
+            aria-label="标签列表"
+          >
+            <List size={13} strokeWidth={2.5} />
+            <span className="text-[10px] font-bold tabular-nums">{orderedTabs.length}</span>
+          </button>
+        )}
 
         {isMultiPane && (
           <div className="no-drag flex h-full shrink-0 items-center gap-0.5 pr-1.5">
@@ -946,6 +1192,87 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           />
         )}
 
+        {tabListMenu && createPortal(
+          <>
+            <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setTabListMenu(null)} />
+            <div
+              style={{ top: tabListMenu.y, left: tabListMenu.x, zIndex: 9999 }}
+              className="fixed max-h-[min(520px,calc(100vh-24px))] w-72 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-xl shadow-black/35"
+            >
+              <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
+                <span className="text-[var(--ui-font-xs)] font-semibold text-[var(--color-text-primary)]">当前 pane 标签</span>
+                <span className="text-[10px] font-bold tabular-nums text-[var(--color-text-tertiary)]">{orderedTabs.length}</span>
+              </div>
+              <button
+                type="button"
+                className={PANE_ACTION_MENU_ITEM}
+                onClick={organizePaneTabsByType}
+              >
+                按类型整理当前 pane
+              </button>
+              <button
+                type="button"
+                className={PANE_ACTION_MENU_ITEM}
+                onClick={smartSplitByType}
+              >
+                智能按类型分屏
+              </button>
+              <div className="max-h-[440px] overflow-y-auto py-1">
+                {groupedTabs.map(({ group, tabs }) => (
+                  <div key={group} className="py-1">
+                    <div className="flex items-center justify-between px-3 pb-1 pt-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+                        {PANE_TAB_GROUP_LABEL[group]} · {tabs.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={tabs.length >= paneSessions.length}
+                        className={cn(
+                          'text-[10px] font-medium transition-colors',
+                          tabs.length < paneSessions.length
+                            ? 'text-[var(--color-accent)] hover:text-[var(--color-text-primary)]'
+                            : 'cursor-not-allowed text-[var(--color-text-tertiary)] opacity-40',
+                        )}
+                        onClick={() => splitSameTypeToNewPane(tabs[0].id)}
+                      >
+                        移到新 pane
+                      </button>
+                    </div>
+                    {tabs.map((tab) => {
+                      const isCurrent = tab.id === paneActiveSessionId
+                      const title = tab.kind === 'session' ? tab.session.name : tab.tab.fileName
+                      const subtitle = tab.kind === 'session' ? tab.session.type : tab.tab.language
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
+                            isCurrent
+                              ? 'bg-[var(--color-accent)]/12 text-[var(--color-text-primary)]'
+                              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+                          )}
+                          onClick={() => selectTabFromMenu(tab)}
+                        >
+                          <span className={cn(
+                            'h-1.5 w-1.5 shrink-0 rounded-full',
+                            isCurrent ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-text-tertiary)]/45',
+                          )} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[var(--ui-font-xs)] font-medium">{title}</span>
+                            <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">{subtitle}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+
         {paneActionMenu && createPortal(
           <>
             <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setPaneActionMenu(null)} />
@@ -953,11 +1280,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               style={{ top: paneActionMenu.y, left: paneActionMenu.x, zIndex: 9999 }}
               className="fixed w-52 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-1 shadow-lg shadow-black/30"
             >
-              <div className="border-b border-[var(--color-border)] px-3 py-1.5">
-                <p className="truncate text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-                  {activeTabIdForMenu ? '当前 pane' : '空白 pane'}
-                </p>
-              </div>
               <button
                 className={PANE_ACTION_MENU_ITEM}
                 onClick={() => {
@@ -967,38 +1289,32 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               >
                 {isFullscreenPane ? '恢复分屏布局' : '放大当前 pane'}
               </button>
-              <div className="my-0.5 border-t border-[var(--color-border)]" />
               <button
-                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
-                disabled={!canSplitActiveTab}
-                onClick={() => splitActiveTab('right')}
+                className={isMultiPane ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!isMultiPane}
+                onClick={() => {
+                  usePanesStore.getState().balanceSplits()
+                  setPaneActionMenu(null)
+                }}
               >
-                当前 tab 向右分屏
+                等分全部 pane
               </button>
-              <button
-                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
-                disabled={!canSplitActiveTab}
-                onClick={() => splitActiveTab('down')}
-              >
-                当前 tab 向下分屏
-              </button>
-              <button
-                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
-                disabled={!canSplitActiveTab}
-                onClick={() => splitActiveTab('left')}
-              >
-                当前 tab 向左分屏
-              </button>
-              <button
-                className={canSplitActiveTab ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
-                disabled={!canSplitActiveTab}
-                onClick={() => splitActiveTab('up')}
-              >
-                当前 tab 向上分屏
-              </button>
-              <div className="my-0.5 border-t border-[var(--color-border)]" />
               <button
                 className={PANE_ACTION_MENU_ITEM}
+                onClick={organizePaneTabsByType}
+              >
+                按类型整理当前 pane
+              </button>
+              <button
+                className={PANE_ACTION_MENU_ITEM}
+                onClick={smartSplitByType}
+              >
+                智能按类型分屏
+              </button>
+              <div className="my-0.5 border-t border-[var(--color-border)]" />
+              <button
+                className={isMultiPane ? PANE_ACTION_MENU_ITEM : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!isMultiPane}
                 onClick={() => {
                   usePanesStore.getState().mergeAllPanes()
                   setPaneActionMenu(null)
@@ -1007,7 +1323,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
                 合并全部 pane
               </button>
               <button
-                className={`${PANE_ACTION_MENU_ITEM} text-[var(--color-error)] hover:text-[var(--color-error)]`}
+                className={isMultiPane
+                  ? `${PANE_ACTION_MENU_ITEM} text-[var(--color-error)] hover:text-[var(--color-error)]`
+                  : PANE_ACTION_MENU_ITEM_DISABLED}
+                disabled={!isMultiPane}
                 onClick={() => {
                   usePanesStore.getState().mergePane(paneId)
                   setPaneActionMenu(null)
@@ -1024,27 +1343,30 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       {/* Terminal area */}
       <div
         ref={termAreaRef}
-        className="relative flex-1 overflow-hidden bg-[var(--color-bg-primary)]"
+        className={cn(
+          'relative flex-1 overflow-hidden bg-[var(--color-bg-primary)]',
+          edgeDrop && 'ring-1 ring-inset ring-[var(--color-accent)]/25',
+        )}
         onDragOver={(e) => {
           if (!isTabDrag(e)) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
 
-          // Detect edge zone (25% from each edge)
           const rect = termAreaRef.current?.getBoundingClientRect()
           if (!rect) return
-          const x = (e.clientX - rect.left) / rect.width
-          const y = (e.clientY - rect.top) / rect.height
-          const edge = 0.25
-          if (x < edge) setEdgeDrop('left')
-          else if (x > 1 - edge) setEdgeDrop('right')
-          else if (y < edge) setEdgeDrop('up')
-          else if (y > 1 - edge) setEdgeDrop('down')
-          else setEdgeDrop('center')
+          const zone = getDropZoneFromPointer(e.clientX, e.clientY, rect)
+          setEdgeDrop((current) => current === zone ? current : zone)
         }}
-        onDragLeave={() => setEdgeDrop(null)}
+        onDragLeave={(e) => {
+          const nextTarget = e.relatedTarget
+          if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) return
+          setEdgeDrop(null)
+        }}
         onDrop={(e) => {
-          const zone = edgeDrop
+          e.preventDefault()
+          e.stopPropagation()
+          const rect = termAreaRef.current?.getBoundingClientRect()
+          const zone = rect ? getDropZoneFromPointer(e.clientX, e.clientY, rect) : edgeDrop
           setEdgeDrop(null)
           const sessionId = e.dataTransfer.getData('session-tab-id')
           const sourcePaneId = e.dataTransfer.getData('source-pane-id')
@@ -1128,24 +1450,41 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           </div>
         )}
 
-        {/* Edge drop preview overlay */}
-        {edgeDrop && edgeDrop !== 'center' && (
-          <div
-            className="absolute bg-[var(--color-accent)]/15 border-2 border-[var(--color-accent)]/40 pointer-events-none"
-            style={{
-              zIndex: 50,
-              ...(edgeDrop === 'left' ? { left: 0, top: 0, width: '50%', height: '100%' } :
-                edgeDrop === 'right' ? { right: 0, top: 0, width: '50%', height: '100%' } :
-                edgeDrop === 'up' ? { left: 0, top: 0, width: '100%', height: '50%' } :
-                { left: 0, bottom: 0, width: '100%', height: '50%' }),
-            }}
-          />
-        )}
-        {edgeDrop === 'center' && (
-          <div
-            className="absolute inset-2 rounded-[var(--radius-md)] bg-[var(--color-accent)]/10 border-2 border-dashed border-[var(--color-accent)]/30 pointer-events-none"
-            style={{ zIndex: 50 }}
-          />
+        {/* Tab drop preview overlay */}
+        {edgeDrop && (
+          <div className="pointer-events-none absolute inset-0 z-50">
+            <div className="absolute inset-0 bg-black/20" />
+            <div
+              className={cn(
+                'absolute flex items-center justify-center rounded-[var(--radius-md)]',
+                'bg-[var(--color-accent)]/15 shadow-xl shadow-black/30',
+                edgeDrop === 'center'
+                  ? 'border-2 border-dashed border-[var(--color-accent)]/45'
+                  : 'border-2 border-solid border-[var(--color-accent)]/65',
+              )}
+              style={getDropPreviewStyle(edgeDrop)}
+            >
+              {edgeDrop !== 'center' && (
+                <div
+                  className={cn(
+                    'absolute bg-[var(--color-accent)]/75',
+                    edgeDrop === 'left' && 'right-0 top-0 h-full w-px',
+                    edgeDrop === 'right' && 'left-0 top-0 h-full w-px',
+                    edgeDrop === 'up' && 'bottom-0 left-0 h-px w-full',
+                    edgeDrop === 'down' && 'left-0 top-0 h-px w-full',
+                  )}
+                />
+              )}
+              <div className="max-w-[220px] rounded-[var(--radius-md)] border border-[var(--color-accent)]/35 bg-[var(--color-bg-tertiary)]/90 px-3 py-2 text-center shadow-xl shadow-black/35 backdrop-blur">
+                <div className="text-[12px] font-bold text-[var(--color-text-primary)]">
+                  {DROP_ZONE_COPY[edgeDrop].label}
+                </div>
+                <div className="mt-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+                  {DROP_ZONE_COPY[edgeDrop].hint}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

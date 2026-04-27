@@ -1,14 +1,16 @@
 import { useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { usePanesStore } from '@/stores/panes'
+import type { PaneUiMode } from '@/stores/ui'
 
 interface ResizeHandleProps {
   splitId: string
   direction: 'horizontal' | 'vertical'
   currentRatio: number
+  mode?: PaneUiMode
 }
 
-export function ResizeHandle({ splitId, direction, currentRatio }: ResizeHandleProps): JSX.Element {
+export function ResizeHandle({ splitId, direction, currentRatio, mode = 'separated' }: ResizeHandleProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const savedRatioRef = useRef<number | null>(null)
   const resizeSplit = usePanesStore((s) => s.resizeSplit)
@@ -60,6 +62,7 @@ export function ResizeHandle({ splitId, direction, currentRatio }: ResizeHandleP
   }, [splitId, currentRatio, resizeSplit])
 
   const isHorizontal = direction === 'horizontal'
+  const classic = mode === 'classic'
 
   return (
     <div
@@ -67,8 +70,11 @@ export function ResizeHandle({ splitId, direction, currentRatio }: ResizeHandleP
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        'group shrink-0 bg-[var(--color-titlebar-bg)] relative',
-        isHorizontal ? 'w-[var(--layout-gap)] cursor-col-resize' : 'h-[var(--layout-gap)] cursor-row-resize',
+        'group relative shrink-0',
+        classic ? 'bg-[var(--color-border)]' : 'bg-[var(--color-titlebar-bg)]',
+        isHorizontal
+          ? cn(classic ? 'w-px' : 'w-[var(--layout-gap)]', 'cursor-col-resize')
+          : cn(classic ? 'h-px' : 'h-[var(--layout-gap)]', 'cursor-row-resize'),
       )}
     >
       {/* Widened hit area with subtle hover highlight */}
@@ -81,19 +87,21 @@ export function ResizeHandle({ splitId, direction, currentRatio }: ResizeHandleP
         )}
       />
       {/* Center drag affordance — 3 dots that appear on hover */}
-      <div
-        className={cn(
-          'pointer-events-none absolute z-20 flex items-center justify-center',
-          'opacity-0 group-hover:opacity-100 transition-opacity duration-150',
-          isHorizontal
-            ? 'inset-y-0 left-1/2 -translate-x-1/2 flex-col gap-[2px]'
-            : 'inset-x-0 top-1/2 -translate-y-1/2 flex-row gap-[2px]',
-        )}
-      >
-        <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
-        <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
-        <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
-      </div>
+      {!classic && (
+        <div
+          className={cn(
+            'pointer-events-none absolute z-20 flex items-center justify-center',
+            'opacity-0 transition-opacity duration-150 group-hover:opacity-100',
+            isHorizontal
+              ? 'inset-y-0 left-1/2 -translate-x-1/2 flex-col gap-[2px]'
+              : 'inset-x-0 top-1/2 -translate-y-1/2 flex-row gap-[2px]',
+          )}
+        >
+          <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
+          <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
+          <span className="h-[3px] w-[3px] rounded-full bg-[var(--color-accent)]/70" />
+        </div>
+      )}
     </div>
   )
 }

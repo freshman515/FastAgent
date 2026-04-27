@@ -21,6 +21,8 @@ export type PaneNode = PaneLeaf | PaneSplit
 
 export type SplitPosition = 'left' | 'right' | 'up' | 'down'
 
+export type PaneResizeDirection = 'left' | 'right' | 'up' | 'down'
+
 export type WorkspaceMode = 'project' | 'sessions'
 
 export const SESSIONS_LAYOUT_KEY = '__sessions__'
@@ -64,6 +66,8 @@ interface PanesState {
   initPane: (sessionIds: string[], activeSessionId: string | null) => void
   loadFromConfig: (raw: Record<string, unknown>) => void
   splitPane: (paneId: string, position: SplitPosition, sessionId: string) => void
+  splitPaneWithSessions: (paneId: string, position: SplitPosition, sessionIds: string[]) => void
+  applyPaneGroups: (groups: string[][], activeSessionId?: string | null) => void
   closePane: (paneId: string) => void
   setActivePaneId: (paneId: string) => void
   setPaneActiveSession: (paneId: string, sessionId: string | null) => void
@@ -71,9 +75,12 @@ interface PanesState {
   removeSessionFromPane: (paneId: string, sessionId: string) => void
   moveSession: (fromPaneId: string, toPaneId: string, sessionId: string) => void
   resizeSplit: (splitId: string, ratio: number) => void
+  resizeActivePane: (direction: PaneResizeDirection) => void
+  balanceSplits: () => void
   beginSplitResize: () => void
   endSplitResize: () => void
   reorderPaneSessions: (paneId: string, fromId: string, toId: string) => void
+  setPaneSessionOrder: (paneId: string, sessionIds: string[]) => void
   findPaneForSession: (sessionId: string) => string | null
   getPaneIdForActiveSession: () => string
   navigatePane: (direction: 'left' | 'right' | 'up' | 'down') => void
@@ -138,6 +145,65 @@ function getLastLeafId(node: PaneNode): string {
 function hasLeaf(node: PaneNode, paneId: string): boolean {
   if (node.type === 'leaf') return node.id === paneId
   return hasLeaf(node.first, paneId) || hasLeaf(node.second, paneId)
+}
+
+function countLeafNodes(node: PaneNode): number {
+  if (node.type === 'leaf') return 1
+  return countLeafNodes(node.first) + countLeafNodes(node.second)
+}
+
+function findLeafPath(
+  node: PaneNode,
+  paneId: string,
+  path: Array<{ split: PaneSplit; which: 'first' | 'second' }> = [],
+): Array<{ split: PaneSplit; which: 'first' | 'second' }> | null {
+  if (node.type === 'leaf') return node.id === paneId ? path : null
+  return findLeafPath(node.first, paneId, [...path, { split: node, which: 'first' }])
+    ?? findLeafPath(node.second, paneId, [...path, { split: node, which: 'second' }])
+}
+
+function getPaneResizeTarget(
+  root: PaneNode,
+  paneId: string,
+  direction: PaneResizeDirection,
+): { splitId: string; ratio: number } | null {
+  const path = findLeafPath(root, paneId)
+  if (!path) return null
+  const targetAxis = direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical'
+  const target = [...path].reverse().find((item) => item.split.direction === targetAxis)
+  if (!target) return null
+
+  const step = 0.05
+  const delta = direction === 'left' || direction === 'up' ? -step : step
+  const ratio = Math.max(0.15, Math.min(0.85, target.split.ratio + delta))
+  if (ratio === target.split.ratio) return null
+  return { splitId: target.split.id, ratio }
+}
+
+function buildEqualSplit(nodes: PaneNode[], direction: 'horizontal' | 'vertical'): PaneNode {
+  if (nodes.length === 1) return nodes[0]
+  const [first, ...rest] = nodes
+  const second = buildEqualSplit(rest, direction)
+  return {
+    type: 'split',
+    id: `split-${generateId()}`,
+    direction,
+    ratio: 1 / nodes.length,
+    first,
+    second,
+  }
+}
+
+function buildGridSplit(leaves: PaneLeaf[]): PaneNode {
+  if (leaves.length <= 3) return buildEqualSplit(leaves, 'horizontal')
+
+  const columnCount = Math.ceil(Math.sqrt(leaves.length))
+  const rows: PaneNode[] = []
+  for (let i = 0; i < leaves.length; i += columnCount) {
+    rows.push(buildEqualSplit(leaves.slice(i, i + columnCount), 'horizontal'))
+  }
+
+  return buildEqualSplit(rows, 'vertical')
 }
 
 function sanitizeFullscreenPaneId(
@@ -207,6 +273,38 @@ export function registerPaneElement(paneId: string, el: HTMLElement | null): voi
   else paneElements.delete(paneId)
 }
 
+export interface PaneElementRect {
+  paneId: string
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export function getPaneElementRects(paneIds?: string[]): PaneElementRect[] {
+  const entries: Array<[string, HTMLElement]> = paneIds
+    ? paneIds.flatMap((paneId): Array<[string, HTMLElement]> => {
+        const el = paneElements.get(paneId)
+        return el ? [[paneId, el]] : []
+      })
+    : Array.from(paneElements.entries())
+
+  return entries.map(([paneId, el]) => {
+    const rect = el.getBoundingClientRect()
+    return {
+      paneId,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    }
+  })
+}
+
+function getIntervalOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart))
+}
+
 // Find closest pane in the given direction based on screen rectangles
 function findClosestPaneByRect(currentId: string, direction: 'left' | 'right' | 'up' | 'down'): string | null {
   const currentEl = paneElements.get(currentId)
@@ -214,9 +312,10 @@ function findClosestPaneByRect(currentId: string, direction: 'left' | 'right' | 
   const cur = currentEl.getBoundingClientRect()
   const curCx = cur.left + cur.width / 2
   const curCy = cur.top + cur.height / 2
+  const edgeTolerance = 8
 
   let bestId: string | null = null
-  let bestDist = Infinity
+  let bestScore: [number, number, number, number] | null = null
 
   for (const [id, el] of paneElements) {
     if (id === currentId) continue
@@ -224,24 +323,50 @@ function findClosestPaneByRect(currentId: string, direction: 'left' | 'right' | 
     const cx = r.left + r.width / 2
     const cy = r.top + r.height / 2
 
-    // Check if candidate is in the correct direction
-    let valid = false
-    if (direction === 'left' && cx < curCx) valid = true
-    if (direction === 'right' && cx > curCx) valid = true
-    if (direction === 'up' && cy < curCy) valid = true
-    if (direction === 'down' && cy > curCy) valid = true
-    if (!valid) continue
-
-    // Distance: primary axis + small cross-axis penalty
-    let dist: number
-    if (direction === 'left' || direction === 'right') {
-      dist = Math.abs(cx - curCx) + Math.abs(cy - curCy) * 0.3
+    let primaryDistance: number
+    let crossDistance: number
+    let overlap: number
+    let centerInDirection = false
+    if (direction === 'left') {
+      primaryDistance = cur.left - r.right
+      crossDistance = Math.abs(cy - curCy)
+      overlap = getIntervalOverlap(cur.top, cur.bottom, r.top, r.bottom)
+      centerInDirection = cx < curCx
+    } else if (direction === 'right') {
+      primaryDistance = r.left - cur.right
+      crossDistance = Math.abs(cy - curCy)
+      overlap = getIntervalOverlap(cur.top, cur.bottom, r.top, r.bottom)
+      centerInDirection = cx > curCx
+    } else if (direction === 'up') {
+      primaryDistance = cur.top - r.bottom
+      crossDistance = Math.abs(cx - curCx)
+      overlap = getIntervalOverlap(cur.left, cur.right, r.left, r.right)
+      centerInDirection = cy < curCy
     } else {
-      dist = Math.abs(cy - curCy) + Math.abs(cx - curCx) * 0.3
+      primaryDistance = r.top - cur.bottom
+      crossDistance = Math.abs(cx - curCx)
+      overlap = getIntervalOverlap(cur.left, cur.right, r.left, r.right)
+      centerInDirection = cy > curCy
     }
 
-    if (dist < bestDist) {
-      bestDist = dist
+    const edgeAligned = primaryDistance >= -edgeTolerance
+    if (!edgeAligned && !centerInDirection) continue
+
+    const score: [number, number, number, number] = [
+      edgeAligned && overlap > 1 ? 0 : 1,
+      edgeAligned ? Math.max(0, primaryDistance) : Number.MAX_SAFE_INTEGER,
+      overlap > 1 ? -overlap : crossDistance,
+      crossDistance,
+    ]
+
+    if (
+      bestScore === null
+      || score[0] < bestScore[0]
+      || (score[0] === bestScore[0] && score[1] < bestScore[1])
+      || (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] < bestScore[2])
+      || (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] === bestScore[2] && score[3] < bestScore[3])
+    ) {
+      bestScore = score
       bestId = id
     }
   }
@@ -588,6 +713,125 @@ export const usePanesStore = create<PanesState>((set, get) => ({
     })
   },
 
+  splitPaneWithSessions: (paneId, position, sessionIds) => {
+    const state = get()
+    const node = findNode(state.root, paneId)
+    if (!node || node.type !== 'leaf') return
+
+    const currentSessions = state.paneSessions[paneId] ?? []
+    const requested = new Set(sessionIds)
+    const movedSessions = currentSessions.filter((id) => requested.has(id))
+    if (movedSessions.length === 0 || movedSessions.length >= currentSessions.length) return
+
+    const movedSet = new Set(movedSessions)
+    const oldSessions = currentSessions.filter((id) => !movedSet.has(id))
+    const newPaneId = `pane-${generateId()}`
+    const direction: 'horizontal' | 'vertical' =
+      position === 'left' || position === 'right' ? 'horizontal' : 'vertical'
+    const isFirst = position === 'left' || position === 'up'
+
+    const oldLeaf: PaneLeaf = { type: 'leaf', id: paneId }
+    const newLeaf: PaneLeaf = { type: 'leaf', id: newPaneId }
+    const splitNode: PaneSplit = {
+      type: 'split',
+      id: `split-${generateId()}`,
+      direction,
+      ratio: 0.5,
+      first: isFirst ? newLeaf : oldLeaf,
+      second: isFirst ? oldLeaf : newLeaf,
+    }
+
+    const oldActive = state.paneActiveSession[paneId]
+    const newOldActive = oldActive && oldSessions.includes(oldActive)
+      ? oldActive
+      : (oldSessions[0] ?? null)
+    const newPaneActive = oldActive && movedSet.has(oldActive)
+      ? oldActive
+      : (movedSessions[0] ?? null)
+
+    set({
+      root: replaceNode(state.root, paneId, splitNode),
+      activePaneId: newPaneId,
+      fullscreenPaneId: state.fullscreenPaneId === paneId ? newPaneId : state.fullscreenPaneId,
+      paneSessions: {
+        ...state.paneSessions,
+        [paneId]: oldSessions,
+        [newPaneId]: movedSessions,
+      },
+      paneActiveSession: {
+        ...state.paneActiveSession,
+        [paneId]: newOldActive,
+        [newPaneId]: newPaneActive,
+      },
+      paneRecentSessions: {
+        ...state.paneRecentSessions,
+        [paneId]: buildPaneRecentSessions(
+          oldSessions,
+          newOldActive,
+          state.paneRecentSessions[paneId] ?? [],
+        ),
+        [newPaneId]: buildPaneRecentSessions(
+          movedSessions,
+          newPaneActive,
+          state.paneRecentSessions[paneId] ?? [],
+        ),
+      },
+    })
+  },
+
+  applyPaneGroups: (groups, activeSessionId) => {
+    const state = get()
+    const seen = new Set<string>()
+    const cleanGroups = groups
+      .map((group) => group.filter((id) => {
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      }))
+      .filter((group) => group.length > 0)
+
+    if (cleanGroups.length === 0) return
+
+    const leaves: PaneLeaf[] = cleanGroups.map((_, index) => ({
+      type: 'leaf',
+      id: index === 0 ? DEFAULT_PANE_ID : `pane-${generateId()}`,
+    }))
+    const root = buildGridSplit(leaves)
+    const paneSessions = Object.fromEntries(
+      leaves.map((leaf, index) => [leaf.id, cleanGroups[index]]),
+    )
+    const activeId = activeSessionId && seen.has(activeSessionId)
+      ? activeSessionId
+      : (cleanGroups[0][0] ?? null)
+    const activePaneId = leaves.find((leaf, index) => cleanGroups[index].includes(activeId ?? ''))?.id
+      ?? leaves[0].id
+    const previousRecent = getAllLeafIds(state.root).flatMap((leafId) => state.paneRecentSessions[leafId] ?? [])
+    const paneActiveSession = Object.fromEntries(
+      leaves.map((leaf, index) => {
+        const group = cleanGroups[index]
+        return [leaf.id, group.includes(activeId ?? '') ? activeId : (group[0] ?? null)]
+      }),
+    )
+
+    set({
+      root,
+      activePaneId,
+      fullscreenPaneId: null,
+      paneSessions,
+      paneActiveSession,
+      paneRecentSessions: Object.fromEntries(
+        leaves.map((leaf, index) => [
+          leaf.id,
+          buildPaneRecentSessions(
+            cleanGroups[index],
+            paneActiveSession[leaf.id] ?? null,
+            previousRecent,
+          ),
+        ]),
+      ),
+    })
+  },
+
   closePane: (paneId) => {
     const state = get()
     const result = findParent(state.root, paneId)
@@ -763,6 +1007,32 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       return { root: update(state.root) }
     }),
 
+  resizeActivePane: (direction) => {
+    const state = get()
+    const target = getPaneResizeTarget(state.root, state.activePaneId, direction)
+    if (!target) return
+    get().resizeSplit(target.splitId, target.ratio)
+  },
+
+  balanceSplits: () =>
+    set((state) => {
+      if (state.root.type !== 'split') return state
+      const balance = (node: PaneNode): PaneNode => {
+        if (node.type !== 'split') return node
+        const first = balance(node.first)
+        const second = balance(node.second)
+        const firstLeafCount = countLeafNodes(first)
+        const totalLeafCount = firstLeafCount + countLeafNodes(second)
+        return {
+          ...node,
+          ratio: totalLeafCount > 0 ? firstLeafCount / totalLeafCount : 0.5,
+          first,
+          second,
+        }
+      }
+      return { root: balance(state.root) }
+    }),
+
   beginSplitResize: () => set({ splitResizeActive: true }),
 
   endSplitResize: () => set({ splitResizeActive: false }),
@@ -776,6 +1046,39 @@ export const usePanesStore = create<PanesState>((set, get) => ({
       const [moved] = sessions.splice(fromIdx, 1)
       sessions.splice(toIdx, 0, moved)
       return { paneSessions: { ...state.paneSessions, [paneId]: sessions } }
+    }),
+
+  setPaneSessionOrder: (paneId, sessionIds) =>
+    set((state) => {
+      const current = state.paneSessions[paneId] ?? []
+      const currentSet = new Set(current)
+      const seen = new Set<string>()
+      const nextSessions = sessionIds.filter((id) => {
+        if (!currentSet.has(id) || seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+
+      for (const id of current) {
+        if (!seen.has(id)) nextSessions.push(id)
+      }
+
+      if (nextSessions.length === current.length && nextSessions.every((id, index) => id === current[index])) {
+        return state
+      }
+
+      const active = state.paneActiveSession[paneId] ?? nextSessions[0] ?? null
+      return {
+        paneSessions: { ...state.paneSessions, [paneId]: nextSessions },
+        paneRecentSessions: {
+          ...state.paneRecentSessions,
+          [paneId]: buildPaneRecentSessions(
+            nextSessions,
+            active && nextSessions.includes(active) ? active : (nextSessions[0] ?? null),
+            state.paneRecentSessions[paneId] ?? [],
+          ),
+        },
+      }
     }),
 
   findPaneForSession: (sessionId) => {

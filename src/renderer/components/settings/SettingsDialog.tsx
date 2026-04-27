@@ -317,6 +317,13 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
   const groups = useGroupsStore((s) => s.groups)
   const [confirmClearSessionsOpen, setConfirmClearSessionsOpen] = useState(false)
 
+  const applyClassicCompactPreset = useCallback(() => {
+    onUpdate('workspaceLayout', 'panes')
+    onUpdate('paneUiMode', 'classic')
+    onUpdate('tabUiMode', 'square')
+    onUpdate('paneDensityMode', 'compact')
+  }, [onUpdate])
+
   const clearAllSessions = useCallback(() => {
     const sessions = useSessionsStore.getState().sessions
     for (const s of sessions) {
@@ -413,6 +420,45 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           ]}
           onChange={(v) => onUpdate('workspaceLayout', v)}
         />
+        <SegmentedChoice
+          value={settings.paneUiMode}
+          options={[
+            { id: 'separated', label: '分离式', desc: '每个 pane 保持独立圆角外观' },
+            { id: 'classic', label: '经典分隔线', desc: 'pane 之间只保留一条分隔线' },
+          ]}
+          onChange={(v) => onUpdate('paneUiMode', v)}
+        />
+        <SegmentedChoice
+          value={settings.tabUiMode}
+          options={[
+            { id: 'rounded', label: '圆角标签页', desc: '保留当前 Chrome 风格圆角选中态' },
+            { id: 'square', label: '直角标签页', desc: '选中标签页使用直角边缘' },
+          ]}
+          onChange={(v) => onUpdate('tabUiMode', v)}
+        />
+        <SegmentedChoice
+          value={settings.paneDensityMode}
+          options={[
+            { id: 'comfortable', label: '标准密度', desc: '保留当前标签高度和间距' },
+            { id: 'compact', label: '紧凑密度', desc: '降低标签栏高度和横向留白' },
+          ]}
+          onChange={(v) => onUpdate('paneDensityMode', v)}
+        />
+        <button
+          type="button"
+          onClick={applyClassicCompactPreset}
+          className={cn(
+            'flex w-full items-center justify-between rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-all duration-200',
+            'border-[var(--color-border)] bg-[var(--color-bg-secondary)]/40 text-[var(--color-text-secondary)]',
+            'hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-text-primary)]',
+          )}
+        >
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[12px] font-bold text-[var(--color-text-primary)]">应用经典紧凑预设</span>
+            <span className="text-[10px] text-[var(--color-text-tertiary)]">切到分屏模式、经典分隔线、直角标签页和紧凑密度。</span>
+          </span>
+          <span className="text-[10px] font-bold text-[var(--color-accent)]">APPLY</span>
+        </button>
         {settings.workspaceLayout === 'canvas' && (
           <>
             <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">

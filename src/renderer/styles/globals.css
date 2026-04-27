@@ -222,6 +222,53 @@ body,
   box-shadow: -4px 0 0 0 var(--color-terminal-bg);
 }
 
+.tab-style-square .tab-active,
+.tab-style-square .tab-inactive {
+  border-radius: 0;
+}
+
+.tab-style-square .tab-active::before,
+.tab-style-square .tab-active::after {
+  display: none;
+}
+
+.pane-density-compact .tab-active,
+.pane-density-compact .tab-inactive {
+  height: 29px;
+  min-width: 96px;
+  max-width: 176px;
+  gap: 6px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.pane-density-compact .tab-active {
+  border-radius: 8px 8px 0 0;
+}
+
+.pane-density-compact.tab-style-square .tab-active,
+.pane-density-compact.tab-style-square .tab-inactive,
+.pane-density-compact .tab-style-square .tab-active,
+.pane-density-compact .tab-style-square .tab-inactive {
+  border-radius: 0;
+}
+
+.pane-density-compact .tab-active::before,
+.pane-density-compact .tab-active::after {
+  width: 8px;
+  height: 8px;
+}
+
+.pane-density-compact .tab-active::before {
+  left: -8px;
+  border-bottom-right-radius: 8px;
+}
+
+.pane-density-compact .tab-active::after {
+  right: -8px;
+  border-bottom-left-radius: 8px;
+}
+
 /* ─── Inactive tab divider line (Chrome-like thin separator) ─── */
 .tab-inactive {
   position: relative;
@@ -417,6 +464,20 @@ body,
 
 .pane-surface {
   isolation: isolate;
+}
+
+.pane-layout-classic .pane-surface,
+.pane-surface-classic {
+  border-radius: 0;
+}
+
+.pane-layout-classic .tab-bar {
+  border-radius: 0;
+}
+
+.pane-command-mode .pane-surface .tab-bar > div:first-child {
+  padding-left: 2.75rem !important;
+  transition: padding-left 120ms ease;
 }
 
 .theme-light {

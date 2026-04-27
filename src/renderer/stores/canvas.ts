@@ -2062,6 +2062,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...state.layouts,
           [state.activeLayoutKey]: { ...layout, cards },
         },
+        focusReturn: state.focusReturn && movingIds.has(state.focusReturn.cardId) ? null : state.focusReturn,
         undoStack: pushUndo(state),
       }
     })

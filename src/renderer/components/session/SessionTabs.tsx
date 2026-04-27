@@ -30,6 +30,8 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
   const reorderSessions = useSessionsStore((s) => s.reorderSessions)
   const sidebarCollapsed = useUIStore((s) => s.dockPanelCollapsed.left)
   const toggleSidebar = useUIStore((s) => s.toggleDockPanel)
+  const tabUiMode = useUIStore((s) => s.settings.tabUiMode)
+  const paneDensityMode = useUIStore((s) => s.settings.paneDensityMode)
   const activePaneId = usePanesStore((s) => s.activePaneId)
 
   const handleDragStart = useCallback((id: string, e: React.DragEvent) => {
@@ -120,8 +122,12 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
 
   return (
     <div
-      className="tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]"
-      style={{ height: 39 }}
+      className={cn(
+        'tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]',
+        tabUiMode === 'square' ? 'tab-style-square' : 'tab-style-rounded',
+        paneDensityMode === 'compact' && 'pane-density-compact',
+      )}
+      style={{ height: paneDensityMode === 'compact' ? 33 : 39 }}
       onWheel={(e) => {
         if (sessions.length === 0) return
         const store = useSessionsStore.getState()

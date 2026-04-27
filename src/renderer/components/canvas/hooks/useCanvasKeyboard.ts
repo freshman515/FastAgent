@@ -1,6 +1,21 @@
 import { useEffect } from 'react'
-import { cancelViewportAnimation, useCanvasStore } from '@/stores/canvas'
+import type { CanvasCard } from '@shared/types'
+import { cancelViewportAnimation, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
+
+type CanvasNavigationDirection = 'left' | 'right' | 'up' | 'down'
+
+interface CanvasNavigationRect {
+  card: CanvasCard
+  left: number
+  right: number
+  top: number
+  bottom: number
+  width: number
+  height: number
+  centerX: number
+  centerY: number
+}
 
 function getAltBookmarkIndex(event: KeyboardEvent): number | null {
   if (
@@ -31,6 +46,144 @@ function isAltFitAllShortcut(event: KeyboardEvent): boolean {
     && !event.shiftKey
     && (event.key.toLowerCase() === 'a' || event.code === 'KeyA')
   )
+}
+
+function getAltArrowDirection(event: KeyboardEvent): CanvasNavigationDirection | null {
+  if (
+    !event.altKey
+    || event.ctrlKey
+    || event.metaKey
+    || event.shiftKey
+  ) {
+    return null
+  }
+
+  if (event.key === 'ArrowLeft') return 'left'
+  if (event.key === 'ArrowRight') return 'right'
+  if (event.key === 'ArrowUp') return 'up'
+  if (event.key === 'ArrowDown') return 'down'
+
+  const key = event.key.toLowerCase()
+  if (key === 'h' || event.code === 'KeyH') return 'left'
+  if (key === 'j' || event.code === 'KeyJ') return 'down'
+  if (key === 'k' || event.code === 'KeyK') return 'up'
+  if (key === 'l' || event.code === 'KeyL') return 'right'
+  return null
+}
+
+function getCanvasNavigationRect(card: CanvasCard): CanvasNavigationRect {
+  const width = Math.max(1, card.width)
+  const height = Math.max(1, card.height)
+  const left = card.x
+  const top = card.y
+  const right = left + width
+  const bottom = top + height
+  return {
+    card,
+    left,
+    right,
+    top,
+    bottom,
+    width,
+    height,
+    centerX: left + width / 2,
+    centerY: top + height / 2,
+  }
+}
+
+function getIntervalOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart))
+}
+
+function compareCanvasNavigationCandidate(
+  a: { beamRank: number; primaryDistance: number; overlapRatio: number; crossGap: number; centerDistance: number },
+  b: { beamRank: number; primaryDistance: number; overlapRatio: number; crossGap: number; centerDistance: number },
+): number {
+  if (a.beamRank !== b.beamRank) return a.beamRank - b.beamRank
+  if (a.primaryDistance !== b.primaryDistance) return a.primaryDistance - b.primaryDistance
+  if (a.overlapRatio !== b.overlapRatio) return b.overlapRatio - a.overlapRatio
+  if (a.crossGap !== b.crossGap) return a.crossGap - b.crossGap
+  return a.centerDistance - b.centerDistance
+}
+
+function findCanvasNavigationTarget(
+  sourceCard: CanvasCard,
+  cards: CanvasCard[],
+  direction: CanvasNavigationDirection,
+): CanvasCard | null {
+  const source = getCanvasNavigationRect(sourceCard)
+  let best: {
+    card: CanvasCard
+    beamRank: number
+    primaryDistance: number
+    overlapRatio: number
+    crossGap: number
+    centerDistance: number
+  } | null = null
+
+  for (const card of cards) {
+    if (card.id === sourceCard.id || isCanvasCardHidden(card)) continue
+    const candidate = getCanvasNavigationRect(card)
+    let primaryDistance = 0
+    let overlap = 0
+    let overlapBasis = 1
+    let crossGap = 0
+    let centerDistance = 0
+
+    if (direction === 'left' || direction === 'right') {
+      if (direction === 'left' && candidate.centerX >= source.centerX) continue
+      if (direction === 'right' && candidate.centerX <= source.centerX) continue
+      primaryDistance = direction === 'left'
+        ? Math.max(0, source.left - candidate.right)
+        : Math.max(0, candidate.left - source.right)
+      overlap = getIntervalOverlap(source.top, source.bottom, candidate.top, candidate.bottom)
+      overlapBasis = source.height
+      crossGap = overlap > 0
+        ? 0
+        : Math.min(Math.abs(candidate.bottom - source.top), Math.abs(candidate.top - source.bottom))
+      centerDistance = Math.abs(candidate.centerX - source.centerX)
+    } else {
+      if (direction === 'up' && candidate.centerY >= source.centerY) continue
+      if (direction === 'down' && candidate.centerY <= source.centerY) continue
+      primaryDistance = direction === 'up'
+        ? Math.max(0, source.top - candidate.bottom)
+        : Math.max(0, candidate.top - source.bottom)
+      overlap = getIntervalOverlap(source.left, source.right, candidate.left, candidate.right)
+      overlapBasis = source.width
+      crossGap = overlap > 0
+        ? 0
+        : Math.min(Math.abs(candidate.right - source.left), Math.abs(candidate.left - source.right))
+      centerDistance = Math.abs(candidate.centerY - source.centerY)
+    }
+
+    const next = {
+      card,
+      beamRank: overlap > 0 ? 0 : 1,
+      primaryDistance,
+      overlapRatio: Math.min(1, overlap / Math.max(1, overlapBasis)),
+      crossGap,
+      centerDistance,
+    }
+    if (!best || compareCanvasNavigationCandidate(next, best) < 0) best = next
+  }
+
+  return best?.card ?? null
+}
+
+function focusCanvasCardInDirection(direction: CanvasNavigationDirection): boolean {
+  const store = useCanvasStore.getState()
+  const selection = store.selectedCardIds
+  if (selection.length !== 1) return false
+
+  const sourceCard = store.getCard(selection[0])
+  if (!sourceCard || isCanvasCardHidden(sourceCard)) return false
+
+  const targetCard = findCanvasNavigationTarget(sourceCard, store.getCards(), direction)
+  if (!targetCard) return false
+
+  store.clearFocusReturn()
+  store.focusOnCard(targetCard.id)
+  return true
 }
 
 /**
@@ -90,6 +243,16 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
         event.stopPropagation()
         event.stopImmediatePropagation()
         fitAllToViewport()
+        return
+      }
+
+      const altArrowDirection = getAltArrowDirection(event)
+      if (altArrowDirection) {
+        if (isEditableFocused()) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        focusCanvasCardInDirection(altArrowDirection)
         return
       }
 

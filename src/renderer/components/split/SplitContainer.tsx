@@ -8,6 +8,7 @@ import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { FILE_ICONS, useEditorsStore } from '@/stores/editors'
 import { getPaneLeafIds, usePanesStore, type PaneNode } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUIStore, type PaneUiMode } from '@/stores/ui'
 import { PaneView } from './PaneView'
 import { ResizeHandle } from './ResizeHandle'
 
@@ -15,12 +16,15 @@ interface SplitContainerProps {
   node: PaneNode
   projectId: string
   framed?: boolean
+  paneUiMode?: PaneUiMode
 }
 
-function SplitNodeRenderer({ node, projectId, framed = false }: SplitContainerProps): JSX.Element {
+function SplitNodeRenderer({ node, projectId, framed = false, paneUiMode = 'separated' }: SplitContainerProps): JSX.Element {
+  const classic = paneUiMode === 'classic'
+
   if (node.type === 'leaf') {
     const pane = <PaneView paneId={node.id} projectId={projectId} />
-    if (framed) return pane
+    if (classic || framed) return pane
     return (
       <div className="h-full w-full overflow-hidden rounded-[var(--radius-panel)]">
         {pane}
@@ -33,15 +37,21 @@ function SplitNodeRenderer({ node, projectId, framed = false }: SplitContainerPr
 
   return (
     <div
-      className="flex h-full w-full bg-[var(--color-titlebar-bg)]"
+      className={cn('flex h-full w-full', classic ? 'bg-[var(--color-border)]' : 'bg-[var(--color-titlebar-bg)]')}
       style={{ flexDirection: isHorizontal ? 'row' : 'column' }}
     >
-      <div className="rounded-[var(--radius-panel)] overflow-hidden" style={{ flex: `0 0 ${ratio * 100}%`, minWidth: 0, minHeight: 0 }}>
-        <SplitNodeRenderer node={first} projectId={projectId} framed />
+      <div
+        className={cn('overflow-hidden', !classic && 'rounded-[var(--radius-panel)]')}
+        style={{ flex: `0 0 ${ratio * 100}%`, minWidth: 0, minHeight: 0 }}
+      >
+        <SplitNodeRenderer node={first} projectId={projectId} framed paneUiMode={paneUiMode} />
       </div>
-      <ResizeHandle splitId={node.id} direction={direction} currentRatio={ratio} />
-      <div className="rounded-[var(--radius-panel)] overflow-hidden" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-        <SplitNodeRenderer node={second} projectId={projectId} framed />
+      <ResizeHandle splitId={node.id} direction={direction} currentRatio={ratio} mode={paneUiMode} />
+      <div
+        className={cn('overflow-hidden', !classic && 'rounded-[var(--radius-panel)]')}
+        style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+      >
+        <SplitNodeRenderer node={second} projectId={projectId} framed paneUiMode={paneUiMode} />
       </div>
     </div>
   )
@@ -283,6 +293,7 @@ export function SplitContainer({ projectId }: Props): JSX.Element {
   const setActiveSession = useSessionsStore((s) => s.setActive)
   const editorTabs = useEditorsStore((s) => s.tabs)
   const isDarkTheme = useIsDarkTheme()
+  const paneUiMode = useUIStore((s) => s.settings.paneUiMode)
   const [focusMenu, setFocusMenu] = useState<{ item: FocusStripItem; position: { x: number; y: number } } | null>(null)
   const leafIds = useMemo(() => getPaneLeafIds(root), [root])
   const focusStripItems = useMemo<FocusStripItem[]>(() => {
@@ -395,5 +406,9 @@ export function SplitContainer({ projectId }: Props): JSX.Element {
     }
   }
 
-  return <SplitNodeRenderer node={root} projectId={projectId} />
+  return (
+    <div className={cn('h-full w-full overflow-hidden', paneUiMode === 'classic' ? 'pane-layout-classic' : 'pane-layout-separated')}>
+      <SplitNodeRenderer node={root} projectId={projectId} paneUiMode={paneUiMode} />
+    </div>
+  )
 }

@@ -12,7 +12,7 @@ import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
-import { getPaneLeafIds, usePanesStore } from '@/stores/panes'
+import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
 import { useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
 import { useGroupsStore } from '@/stores/groups'
@@ -38,6 +38,156 @@ interface EditorPathContext {
   projectId: string
   worktreeId?: string
   path: string
+}
+
+type PaneCommandTabGroup = 'terminal' | 'claude' | 'codex' | 'gemini' | 'opencode' | 'browser' | 'file' | 'other'
+
+const PANE_COMMAND_GROUP_ORDER: PaneCommandTabGroup[] = ['terminal', 'claude', 'codex', 'gemini', 'opencode', 'browser', 'file', 'other']
+
+const PANE_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
+  { key: 'h/j/k/l', label: '切换 pane' },
+  { key: 'Alt+h/l/←/→', label: '切换标签' },
+  { key: 'Ctrl+hjkl/方向', label: '调整大小' },
+  { key: '1-9', label: '跳到 pane' },
+  { key: 'z', label: '放大/恢复' },
+  { key: 'e', label: '等分' },
+  { key: 't', label: '按类型分屏' },
+  { key: 'v/s', label: '右/下分屏' },
+  { key: 'x', label: '关闭 pane' },
+  { key: 'm', label: '合并全部' },
+]
+
+function getPaneCommandGroupForSession(type: string): PaneCommandTabGroup {
+  if (type === 'terminal') return 'terminal'
+  if (type === 'browser') return 'browser'
+  if (type.startsWith('claude')) return 'claude'
+  if (type.startsWith('codex')) return 'codex'
+  if (type.startsWith('gemini')) return 'gemini'
+  if (type.startsWith('opencode')) return 'opencode'
+  return 'other'
+}
+
+function getPaneCommandSplitKey(tabId: string): string | null {
+  if (tabId.startsWith('editor-')) return 'file'
+  const session = useSessionsStore.getState().sessions.find((item) => item.id === tabId)
+  if (!session) return null
+  const group = getPaneCommandGroupForSession(session.type)
+  return group === 'other' ? `session:${session.type}` : group
+}
+
+function smartSplitPanesByType(activeTabId: string | null): void {
+  const paneStore = usePanesStore.getState()
+  const orderedIds = getPaneLeafIds(paneStore.root).flatMap((paneId) => paneStore.paneSessions[paneId] ?? [])
+  const groupRank = new Map(PANE_COMMAND_GROUP_ORDER.map((group, index) => [group, index]))
+  const buckets = new Map<string, { group: PaneCommandTabGroup; firstIndex: number; ids: string[] }>()
+
+  orderedIds.forEach((id, index) => {
+    const key = getPaneCommandSplitKey(id)
+    if (!key) return
+    const group = id.startsWith('editor-')
+      ? 'file'
+      : getPaneCommandGroupForSession(useSessionsStore.getState().sessions.find((item) => item.id === id)?.type ?? '')
+    const existing = buckets.get(key)
+    if (existing) {
+      existing.ids.push(id)
+      return
+    }
+    buckets.set(key, { group, firstIndex: index, ids: [id] })
+  })
+
+  const groups = [...buckets.values()]
+    .sort((a, b) => {
+      const rankDiff = (groupRank.get(a.group) ?? PANE_COMMAND_GROUP_ORDER.length)
+        - (groupRank.get(b.group) ?? PANE_COMMAND_GROUP_ORDER.length)
+      return rankDiff || a.firstIndex - b.firstIndex
+    })
+    .map((bucket) => bucket.ids)
+
+  if (groups.length > 0) paneStore.applyPaneGroups(groups, activeTabId)
+}
+
+function activatePaneAndSession(paneId: string): void {
+  const paneStore = usePanesStore.getState()
+  paneStore.setActivePaneId(paneId)
+  const paneSessions = paneStore.paneSessions[paneId] ?? []
+  const activeTabId = paneStore.paneActiveSession[paneId] && paneSessions.includes(paneStore.paneActiveSession[paneId]!)
+    ? paneStore.paneActiveSession[paneId]
+    : (paneSessions[0] ?? null)
+  if (activeTabId && !activeTabId.startsWith('editor-')) {
+    useSessionsStore.getState().setActive(activeTabId)
+  }
+}
+
+function switchActivePaneTab(offset: -1 | 1): boolean {
+  const paneStore = usePanesStore.getState()
+  const paneId = paneStore.activePaneId
+  const tabIds = paneStore.paneSessions[paneId] ?? []
+  if (tabIds.length < 2) return false
+
+  const activeTabId = paneStore.paneActiveSession[paneId]
+  const activeIndex = activeTabId ? tabIds.indexOf(activeTabId) : -1
+  const currentIndex = activeIndex >= 0 ? activeIndex : 0
+  const nextIndex = (currentIndex + offset + tabIds.length) % tabIds.length
+  paneStore.setPaneActiveSession(paneId, tabIds[nextIndex])
+  return true
+}
+
+function isPlainTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.closest('.xterm')) return false
+  const tagName = target.tagName
+  return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable
+}
+
+function PaneCommandOverlay({ rects, activePaneId }: { rects: PaneElementRect[]; activePaneId: string }): JSX.Element {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[9400]">
+      <div className="absolute left-1/2 top-1 z-20 h-8 w-[min(780px,calc(100vw-48px))] -translate-x-1/2 rounded-[var(--radius-lg)] border border-[var(--color-accent)]/30 bg-[var(--color-bg-tertiary)]/70 px-3 shadow-2xl shadow-black/35 backdrop-blur-md">
+        <div className="flex h-full items-center gap-x-3 overflow-hidden whitespace-nowrap">
+          <span className="rounded-[var(--radius-sm)] bg-[var(--color-accent)]/16 px-2 py-1 text-[11px] font-bold text-[var(--color-accent)]">
+            Pane Mode
+          </span>
+          <span className="text-[11px] text-[var(--color-text-secondary)]">Esc/q 退出</span>
+          {PANE_COMMAND_SHORTCUTS.map((item) => (
+            <span key={item.key} className="text-[11px] text-[var(--color-text-secondary)]">
+              <span className="font-mono font-bold text-[var(--color-text-primary)]">{item.key}</span>
+              <span className="ml-1">{item.label}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {rects.map((rect, index) => {
+        const active = rect.paneId === activePaneId
+        return (
+          <div
+            key={rect.paneId}
+            className={cn(
+              'fixed z-10 rounded-[var(--radius-md)] border-2',
+              active
+                ? 'border-transparent bg-[var(--color-accent)]/6 shadow-2xl shadow-black/45'
+                : 'border-transparent bg-transparent shadow-none',
+            )}
+            style={{
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+            }}
+          >
+            <div className={cn(
+              'absolute left-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-sm)] px-2 text-[12px] font-bold shadow-lg',
+              active
+                ? 'bg-[var(--color-accent)]/80 text-white'
+                : 'border border-[var(--color-accent)]/35 bg-[var(--color-bg-tertiary)]/90 text-[var(--color-accent)]',
+            )}>
+              {index + 1}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 function normalizePath(path: string): string {
@@ -292,6 +442,14 @@ export function App(): JSX.Element {
 
 function MainApp(): JSX.Element {
   const [ready, setReady] = useState(false)
+  const [paneCommandMode, setPaneCommandMode] = useState(false)
+  const [paneCommandRects, setPaneCommandRects] = useState<PaneElementRect[]>([])
+  const paneCommandActivePaneId = usePanesStore((s) => s.activePaneId)
+  const paneCommandRoot = usePanesStore((s) => s.root)
+  const refreshPaneCommandRects = useCallback(() => {
+    const paneStore = usePanesStore.getState()
+    setPaneCommandRects(getPaneElementRects(getPaneLeafIds(paneStore.root)))
+  }, [])
 
   // Load config from file on startup
   useEffect(() => {
@@ -802,6 +960,213 @@ function MainApp(): JSX.Element {
     return () => window.removeEventListener('keydown', handlePaneNumberShortcut, true)
   }, [])
 
+  useEffect(() => {
+    if (!paneCommandMode) {
+      setPaneCommandRects([])
+      return
+    }
+
+    refreshPaneCommandRects()
+    window.addEventListener('resize', refreshPaneCommandRects)
+    return () => window.removeEventListener('resize', refreshPaneCommandRects)
+  }, [paneCommandMode, refreshPaneCommandRects])
+
+  useEffect(() => {
+    if (!paneCommandMode) return
+    const frame = window.requestAnimationFrame(refreshPaneCommandRects)
+    return () => window.cancelAnimationFrame(frame)
+  }, [paneCommandMode, paneCommandRoot, refreshPaneCommandRects])
+
+  // Alt+F enters a tmux-style pane command mode. While active, single keys
+  // operate on panes before terminal/editor content can consume them.
+  useEffect(() => {
+    let pendingFrame: number | null = null
+
+    const refreshAfterLayout = (): void => {
+      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame)
+      pendingFrame = window.requestAnimationFrame(() => {
+        pendingFrame = null
+        refreshPaneCommandRects()
+      })
+    }
+
+    const getActiveTab = (): { paneId: string; tabId: string | null; tabIds: string[] } => {
+      const paneStore = usePanesStore.getState()
+      const paneId = paneStore.activePaneId
+      const tabIds = paneStore.paneSessions[paneId] ?? []
+      const tabId = paneStore.paneActiveSession[paneId] && tabIds.includes(paneStore.paneActiveSession[paneId]!)
+        ? paneStore.paneActiveSession[paneId]
+        : (tabIds[0] ?? null)
+      return { paneId, tabId, tabIds }
+    }
+
+    const runPaneCommand = (key: string): boolean => {
+      const paneStore = usePanesStore.getState()
+      const normalized = key.length === 1 ? key.toLowerCase() : key
+
+      if (normalized === 'Escape' || normalized === 'q') {
+        setPaneCommandMode(false)
+        return true
+      }
+
+      if (normalized >= '1' && normalized <= '9') {
+        const targetPaneId = getPaneLeafIds(paneStore.root)[Number(normalized) - 1]
+        if (targetPaneId) {
+          activatePaneAndSession(targetPaneId)
+          refreshAfterLayout()
+        }
+        return true
+      }
+
+      const direction = normalized === 'h' || normalized === 'ArrowLeft'
+        ? 'left'
+        : normalized === 'l' || normalized === 'ArrowRight'
+          ? 'right'
+          : normalized === 'k' || normalized === 'ArrowUp'
+            ? 'up'
+            : normalized === 'j' || normalized === 'ArrowDown'
+              ? 'down'
+              : null
+      if (direction) {
+        paneStore.navigatePane(direction)
+        activatePaneAndSession(usePanesStore.getState().activePaneId)
+        refreshAfterLayout()
+        return true
+      }
+
+      if (normalized === 'z') {
+        paneStore.togglePaneFullscreen()
+        refreshAfterLayout()
+        return true
+      }
+
+      if (normalized === 'e') {
+        paneStore.balanceSplits()
+        refreshAfterLayout()
+        return true
+      }
+
+      if (normalized === 't') {
+        const { tabId } = getActiveTab()
+        smartSplitPanesByType(tabId)
+        refreshAfterLayout()
+        return true
+      }
+
+      if (normalized === 'm') {
+        paneStore.mergeAllPanes()
+        activatePaneAndSession(usePanesStore.getState().activePaneId)
+        refreshAfterLayout()
+        return true
+      }
+
+      if (normalized === 'x') {
+        const leafIds = getPaneLeafIds(paneStore.root)
+        if (leafIds.length > 1) {
+          paneStore.mergePane(paneStore.activePaneId)
+          activatePaneAndSession(usePanesStore.getState().activePaneId)
+          refreshAfterLayout()
+        }
+        return true
+      }
+
+      if (normalized === 'v' || normalized === 's') {
+        const { paneId, tabId, tabIds } = getActiveTab()
+        if (tabId && tabIds.length > 1) {
+          paneStore.splitPane(paneId, normalized === 'v' ? 'right' : 'down', tabId)
+          activatePaneAndSession(usePanesStore.getState().activePaneId)
+          refreshAfterLayout()
+        }
+        return true
+      }
+
+      return false
+    }
+
+    const handlePaneCommandMode = (e: KeyboardEvent): void => {
+      const isPrefix = e.altKey
+        && !e.ctrlKey
+        && !e.metaKey
+        && !e.shiftKey
+        && (e.key.toLowerCase() === 'f' || e.code === 'KeyF')
+      const ui = useUIStore.getState()
+
+      if (isPrefix) {
+        if (ui.settings.workspaceLayout === 'canvas' || ui.settingsOpen) return
+        e.preventDefault()
+        e.stopPropagation()
+        setPaneCommandMode((active) => !active)
+        refreshAfterLayout()
+        return
+      }
+
+      if (!paneCommandMode) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+        const direction = key === 'ArrowLeft' || key === 'h'
+          ? 'left'
+          : key === 'ArrowRight' || key === 'l'
+            ? 'right'
+            : key === 'ArrowUp' || key === 'k'
+              ? 'up'
+              : key === 'ArrowDown' || key === 'j'
+                ? 'down'
+                : null
+        if (direction) {
+          usePanesStore.getState().resizeActivePane(direction)
+          refreshAfterLayout()
+          return
+        }
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+        const offset = key === 'ArrowLeft' || key === 'h'
+          ? -1
+          : key === 'ArrowRight' || key === 'l'
+            ? 1
+            : null
+        if (offset !== null) {
+          switchActivePaneTab(offset)
+          return
+        }
+      }
+      runPaneCommand(e.key)
+    }
+
+    window.addEventListener('keydown', handlePaneCommandMode, true)
+    return () => {
+      window.removeEventListener('keydown', handlePaneCommandMode, true)
+      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame)
+    }
+  }, [paneCommandMode, refreshPaneCommandRects])
+
+  useEffect(() => {
+    const handlePaneTabSwitch = (e: KeyboardEvent): void => {
+      if (paneCommandMode) return
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (useUIStore.getState().settings.workspaceLayout === 'canvas' || useUIStore.getState().settingsOpen) return
+      if (isPlainTextEditingTarget(e.target)) return
+
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      const offset = key === 'ArrowLeft' || key === 'h'
+        ? -1
+        : key === 'ArrowRight' || key === 'l'
+          ? 1
+          : null
+      if (offset === null) return
+      if (!switchActivePaneTab(offset)) return
+
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
+    window.addEventListener('keydown', handlePaneTabSwitch, true)
+    return () => window.removeEventListener('keydown', handlePaneTabSwitch, true)
+  }, [paneCommandMode])
+
   // Global keyboard shortcuts — operate on the active pane
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -899,9 +1264,13 @@ function MainApp(): JSX.Element {
   // Window fullscreen hides chrome. Pane fullscreen is handled inside
   // SplitContainer so it only expands within the central workspace.
   const hideChrome = windowFullscreen
+  const showPaneCommandPaneNumbers = paneCommandMode && getPaneLeafIds(paneCommandRoot).length > 1
 
   return (
-    <div className="flex h-full flex-col bg-[var(--color-titlebar-bg)]">
+    <div className={cn(
+      'flex h-full flex-col bg-[var(--color-titlebar-bg)]',
+      showPaneCommandPaneNumbers && 'pane-command-mode',
+    )}>
       {!hideChrome && <TitleBar />}
       <div className={cn(
         'flex flex-1 overflow-hidden',
@@ -926,6 +1295,13 @@ function MainApp(): JSX.Element {
         <div className="px-[var(--layout-gap)] pb-[var(--layout-gap)]">
           <StatusBar />
         </div>
+      )}
+
+      {paneCommandMode && (
+        <PaneCommandOverlay
+          rects={showPaneCommandPaneNumbers ? paneCommandRects : []}
+          activePaneId={paneCommandActivePaneId}
+        />
       )}
 
       {/* Settings dialog */}
