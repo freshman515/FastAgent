@@ -7,9 +7,10 @@
   "scripts": {
     "dev": "electron-vite dev",
     "test": "tsc src/shared/claudeSession.ts --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck --outDir .tmp-cache/claude-session-test && node --test scripts/claudeSession.test.mjs",
+    "test:packaging": "node --test scripts/packaging-node-pty.test.mjs",
     "build": "electron-vite build",
     "build:mac-icon": "node scripts/make-mac-icon.mjs",
-    "dist:win": "pnpm build && electron-builder --win --x64",
+    "dist:win": "pnpm build && electron-builder --win --x64 && pnpm test:packaging",
     "dist:mac": "pnpm run build:mac-icon && pnpm build && electron-builder --mac dmg zip --x64 --arm64",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps"
@@ -56,5 +57,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty-win32-x64": "1.2.0-beta.12"
   }
 }
