@@ -110,6 +110,12 @@ export interface CanvasCard {
   collapsedPreview?: string[]
   /** Hidden from the canvas surface but still available in the canvas session list. */
   hidden?: boolean
+  /** Hidden because a parent frame/group is folded. */
+  hiddenByFrameId?: string
+  /** Marked important in canvas surfaces and lists. */
+  favorite?: boolean
+  /** Per-card geometry/content snapshots. */
+  cardSnapshots?: CanvasCardSnapshot[]
   /** Optional per-canvas label shown after the session name. */
   sessionRemark?: string
   /** Note-card body (plain text). */
@@ -118,6 +124,8 @@ export interface CanvasCard {
   noteColor?: string
   /** Frame-card title. */
   frameTitle?: string
+  /** Stable group membership for frame cards. */
+  frameMemberIds?: string[]
   createdAt: number
   updatedAt: number
 }
@@ -144,11 +152,30 @@ export interface CanvasRelation {
   updatedAt: number
 }
 
+export interface CanvasCardSnapshot {
+  id: string
+  name: string
+  card: CanvasCard
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CanvasLayoutSnapshot {
+  id: string
+  name: string
+  cards: CanvasCard[]
+  viewport: CanvasViewport
+  relations: CanvasRelation[]
+  createdAt: number
+  updatedAt: number
+}
+
 export interface CanvasLayout {
   cards: CanvasCard[]
   viewport: CanvasViewport
   bookmarks: CanvasBookmark[]
   relations: CanvasRelation[]
+  snapshots: CanvasLayoutSnapshot[]
 }
 
 export interface CanvasPersistedState {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { Maximize2, Minimize2, Star } from 'lucide-react'
 import { useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
@@ -10,9 +10,9 @@ import { TerminalView } from '@/components/session/TerminalView'
 import { BrowserSessionView } from '@/components/session/BrowserSessionView'
 import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { getTerminalPreviewText } from '@/hooks/useXterm'
 import { formatSessionCardTitle, normalizeSessionRemark } from '@/lib/canvasSessionLabel'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from '../CanvasMenu'
 import { CardFrame, type CardCoordinateMode } from './CardFrame'
 
 interface SessionCardProps {
@@ -27,8 +27,11 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const selected = useCanvasStore((state) => state.selectedCardIds.includes(card.id))
   const isMaximized = useCanvasStore((state) => state.maximizedCardId === card.id)
   const removeCard = useCanvasStore((state) => state.removeCard)
-  const setCardCollapsed = useCanvasStore((state) => state.setCardCollapsed)
   const updateCard = useCanvasStore((state) => state.updateCard)
+  const toggleCardFavorite = useCanvasStore((state) => state.toggleCardFavorite)
+  const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
+  const addCardSnapshot = useCanvasStore((state) => state.addCardSnapshot)
+  const restoreCardSnapshot = useCanvasStore((state) => state.restoreCardSnapshot)
   const removeSession = useSessionsStore((state) => state.removeSession)
   const updateSession = useSessionsStore((state) => state.updateSession)
   const theme = useUIStore((state) => state.settings.theme)
@@ -121,7 +124,10 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
           className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-accent)] bg-[var(--color-bg-primary)] px-1.5 py-0.5 text-[var(--ui-font-sm)] font-medium text-[var(--color-text-primary)] outline-none"
         />
       ) : (
-        <span className="truncate font-medium text-[var(--color-text-primary)]">{displayTitle}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          {card.favorite && <Star size={12} className="shrink-0 fill-[var(--color-accent)] text-[var(--color-accent)]" />}
+          <span className="truncate font-medium text-[var(--color-text-primary)]">{displayTitle}</span>
+        </span>
       )}
     </span>
   )
@@ -147,16 +153,24 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
     useCanvasStore.getState().toggleMaximizedCard(card.id)
   }
 
+  const toggleFavorite = (): void => {
+    setTitleMenu(null)
+    toggleCardFavorite(card.id)
+  }
+
+  const saveCardSnapshot = (): void => {
+    setTitleMenu(null)
+    addCardSnapshot(card.id)
+  }
+
+  const restoreSnapshot = (snapshotId: string): void => {
+    setTitleMenu(null)
+    restoreCardSnapshot(card.id, snapshotId)
+  }
+
   const detachCardFromCanvas = (): void => {
     setTitleMenu(null)
     removeCard(card.id)
-  }
-
-  const toggleCollapsed = (): void => {
-    const previewLines = card.refId
-      ? getTerminalPreviewText(card.refId, 8).map((line) => line.trimEnd()).filter((line) => line.trim().length > 0)
-      : []
-    setCardCollapsed(card.id, !card.collapsed, previewLines)
   }
 
   const handleCloseSession = (): void => {
@@ -185,12 +199,12 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
             type="button"
             onClick={(event) => {
               event.stopPropagation()
-              toggleCollapsed()
+              toggleMaximizedCard(card.id)
             }}
             className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
-            title={card.collapsed ? '展开预览' : '折叠为预览'}
+            title={isMaximized ? '还原' : '最大化'}
           >
-            {card.collapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+            {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         }
         onHeaderContextMenu={(event) => setTitleMenu({ x: event.clientX, y: event.clientY })}
@@ -228,57 +242,30 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
       {titleMenu && createPortal(
         <>
           <div className="fixed inset-0 z-[420]" onPointerDown={() => setTitleMenu(null)} />
-          <div
-            className="fixed z-[421] min-w-[148px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl"
-            style={{
-              left: Math.max(8, Math.min(titleMenu.x, window.innerWidth - 156)),
-              top: Math.max(8, Math.min(titleMenu.y, window.innerHeight - (isMaximized ? 216 : 180))),
-            }}
-          >
-            <button
-              type="button"
-              onClick={isMaximized ? restoreCard : maximizeCard}
-              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              {isMaximized ? '还原' : '最大化'}
-            </button>
-            <button
-              type="button"
-              onClick={startRename}
-              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              重命名
-            </button>
-            <button
-              type="button"
-              onClick={openRemarkDialog}
-              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              添加备注
-            </button>
-            <button
-              type="button"
-              onClick={bringCardToFront}
-              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              置顶
-            </button>
-            <div className="my-1 h-px bg-[var(--color-border)]" />
-            <button
-              type="button"
-              onClick={detachCardFromCanvas}
-              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]"
-            >
-              从画布移除
-            </button>
-            <button
-              type="button"
-              onClick={requestCloseSession}
-              className="flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-[var(--color-error)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-error)_18%,transparent)] hover:text-[var(--color-error)]"
-            >
-              关闭会话
-            </button>
-          </div>
+          <CanvasMenuPanel x={titleMenu.x} y={titleMenu.y} width={188} height={320}>
+            <CanvasMenuItem label={isMaximized ? '还原' : '最大化'} onClick={isMaximized ? restoreCard : maximizeCard} />
+            <CanvasMenuItem label={card.favorite ? '取消收藏' : '收藏卡片'} onClick={toggleFavorite} />
+            <CanvasMenuItem label="保存卡片快照" onClick={saveCardSnapshot} />
+            {(card.cardSnapshots?.length ?? 0) > 0 && (
+              <>
+                <CanvasMenuSeparator />
+                {card.cardSnapshots?.slice(-4).reverse().map((snapshot) => (
+                  <CanvasMenuItem
+                    key={snapshot.id}
+                    label={`恢复：${snapshot.name}`}
+                    onClick={() => restoreSnapshot(snapshot.id)}
+                  />
+                ))}
+              </>
+            )}
+            <CanvasMenuSeparator />
+            <CanvasMenuItem label="重命名" onClick={startRename} />
+            <CanvasMenuItem label="添加备注" onClick={openRemarkDialog} />
+            <CanvasMenuItem label="置顶" onClick={bringCardToFront} />
+            <CanvasMenuSeparator />
+            <CanvasMenuItem label="从画布移除" onClick={detachCardFromCanvas} />
+            <CanvasMenuItem label="关闭会话" danger onClick={requestCloseSession} />
+          </CanvasMenuPanel>
         </>,
         document.body,
       )}

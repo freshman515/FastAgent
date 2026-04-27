@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useCanvasStore } from '@/stores/canvas'
+import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useSelectionBoundsDrag, type SelectionResizeHandle } from './hooks/useSelectionBoundsDrag'
 
 const RESIZE_HANDLES: SelectionResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
@@ -48,7 +48,7 @@ export function CanvasSelectionBounds(): JSX.Element | null {
 
   if (selectedCardIds.length <= 1) return null
 
-  const selected = cards.filter((card) => selectedCardIds.includes(card.id) && !card.hidden)
+  const selected = cards.filter((card) => selectedCardIds.includes(card.id) && !isCanvasCardHidden(card))
   if (selected.length <= 1) return null
 
   const minX = Math.min(...selected.map((card) => card.x))

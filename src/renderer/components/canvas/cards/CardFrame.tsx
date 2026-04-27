@@ -14,6 +14,7 @@ interface CardFrameProps {
   children: React.ReactNode
   onDelete?: () => void
   deleteTitle?: string
+  onHeaderClick?: () => void
   onHeaderContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void
   headerActions?: React.ReactNode
   minWidth?: number
@@ -27,6 +28,8 @@ interface CardFrameProps {
   focusOnClick?: boolean
   showSelectionRing?: boolean
   passThroughBody?: boolean
+  stopBodyContextMenu?: boolean
+  bodyUsesWheelContent?: boolean
 }
 
 const RESIZE_HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
@@ -72,6 +75,7 @@ export function CardFrame({
   children,
   onDelete,
   deleteTitle = '删除',
+  onHeaderClick,
   onHeaderContextMenu,
   headerActions,
   minWidth,
@@ -85,6 +89,8 @@ export function CardFrame({
   focusOnClick = false,
   showSelectionRing = true,
   passThroughBody = false,
+  stopBodyContextMenu = true,
+  bodyUsesWheelContent = true,
 }: CardFrameProps): JSX.Element {
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null)
   const outerRef = useRef<HTMLDivElement | null>(null)
@@ -98,6 +104,7 @@ export function CardFrame({
     cardId: card.id,
     element: hostEl,
     enableDoubleClickFocus: !focusOnClick,
+    onHandleClick: onHeaderClick,
     onHandleDoubleClick: handleHeaderDoubleClick,
   })
   useCardResize({ cardId: card.id, element: hostEl, minWidth, minHeight, coordinateMode })
@@ -174,7 +181,7 @@ export function CardFrame({
     }
     if (canvas.focusReturn?.cardId === card.id) {
       canvas.setSelection([card.id])
-      canvas.bringToFront(card.id)
+      if (card.kind !== 'frame') canvas.bringToFront(card.id)
       return
     }
     canvas.focusOnCard(card.id)
@@ -242,8 +249,10 @@ export function CardFrame({
 
       {/* Body */}
       <div
-        data-card-wheel-content
-        onContextMenu={(event) => event.stopPropagation()}
+        {...(bodyUsesWheelContent ? { 'data-card-wheel-content': true } : {})}
+        onContextMenu={(event) => {
+          if (stopBodyContextMenu) event.stopPropagation()
+        }}
         className={cn('min-h-0 flex-1 overflow-hidden rounded-b-[var(--radius-lg)]', passThroughBody && 'pointer-events-none', bodyClassName)}
       >
         {children}

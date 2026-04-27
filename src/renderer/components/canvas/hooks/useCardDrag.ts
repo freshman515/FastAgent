@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useCanvasStore } from '@/stores/canvas'
+import { computeFrameAutoLayoutPreview, useCanvasStore, type CanvasFrameGeometry } from '@/stores/canvas'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useUIStore } from '@/stores/ui'
 import type { CanvasCard } from '@shared/types'
@@ -31,6 +31,7 @@ interface UseCardDragOptions {
   /** DOM selector that, when matched by the pointerdown target, starts the drag. */
   handleSelector?: string
   enableDoubleClickFocus?: boolean
+  onHandleClick?: () => void
   onHandleDoubleClick?: () => void
 }
 
@@ -44,6 +45,7 @@ export function useCardDrag({
   element,
   handleSelector = '[data-card-drag]',
   enableDoubleClickFocus = true,
+  onHandleClick,
   onHandleDoubleClick,
 }: UseCardDragOptions): void {
   const startRef = useRef<{ x: number; y: number } | null>(null)
@@ -52,6 +54,7 @@ export function useCardDrag({
   const draggedIdsRef = useRef<string[]>([])
   const liveDeltaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
   const avoidanceRef = useRef<AvoidanceState>({ positions: new Map(), affectedIds: new Set() })
+  const liveFrameIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!element) return
@@ -98,13 +101,14 @@ export function useCardDrag({
       } else if (additive) {
         store.toggleSelection(cardId, true)
       }
-      store.bringToFront(cardId)
+      if (store.getCard(cardId)?.kind !== 'frame') store.bringToFront(cardId)
 
       startRef.current = { x: event.clientX, y: event.clientY }
       clickCandidateRef.current = { x: event.clientX, y: event.clientY, time: now }
       draggedIdsRef.current = useCanvasStore.getState().selectedCardIds
       liveDeltaRef.current = { dx: 0, dy: 0 }
       avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
+      liveFrameIdsRef.current = new Set()
       element.setPointerCapture(event.pointerId)
     }
 
@@ -138,6 +142,7 @@ export function useCardDrag({
       }
 
       applyLiveCardMovement(ids, cards, dx, dy, scale)
+      liveFrameIdsRef.current = applyLiveFrameAutoLayoutForMovement(ids, cards, dx, dy, liveFrameIdsRef.current)
     }
 
     const onPointerUp = (event: PointerEvent): void => {
@@ -147,6 +152,7 @@ export function useCardDrag({
       const { dx, dy } = liveDeltaRef.current
       const ids = draggedIdsRef.current
       const avoidance = avoidanceRef.current
+      const liveFrameIds = liveFrameIdsRef.current
       const clickCandidate = clickCandidateRef.current
       const movedScreen = Math.hypot(event.clientX - start.x, event.clientY - start.y) > DOUBLE_CLICK_SLOP_PX
       startRef.current = null
@@ -154,6 +160,7 @@ export function useCardDrag({
       draggedIdsRef.current = []
       liveDeltaRef.current = { dx: 0, dy: 0 }
       avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
+      liveFrameIdsRef.current = new Set()
 
       resetLiveCardMovement(ids)
       useCanvasUiStore.getState().clearGuides()
@@ -167,7 +174,9 @@ export function useCardDrag({
       if (avoidance.positions.size > 0) {
         useCanvasStore.getState().updateCardPositions(avoidance.positions)
       }
+      resetLiveFrameAutoLayout(liveFrameIds)
       cleanupAvoidanceTransitions(avoidance.affectedIds)
+      if (!movedScreen && event.type === 'pointerup') onHandleClick?.()
       lastClickRef.current = !movedScreen && event.type === 'pointerup' ? clickCandidate : null
     }
 
@@ -182,7 +191,7 @@ export function useCardDrag({
       element.removeEventListener('pointerup', onPointerUp)
       element.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [element, cardId, handleSelector, enableDoubleClickFocus, onHandleDoubleClick])
+  }, [element, cardId, handleSelector, enableDoubleClickFocus, onHandleClick, onHandleDoubleClick])
 }
 
 export function applyLiveCardMovement(
@@ -224,6 +233,83 @@ export function resetLiveCardMovement(ids: string[]): void {
       el.style.removeProperty('--card-live-dy')
     }
   }
+}
+
+export function applyLiveFrameAutoLayoutForMovement(
+  ids: string[],
+  cards: CanvasCard[],
+  dx: number,
+  dy: number,
+  previousFrameIds: Set<string>,
+): Set<string> {
+  const movingIds = new Set(ids)
+  if (cards.some((card) => movingIds.has(card.id) && card.kind === 'frame')) {
+    resetLiveFrameAutoLayout(previousFrameIds, cards)
+    return new Set()
+  }
+
+  const geometry = new Map<string, CanvasFrameGeometry>()
+  for (const card of cards) {
+    if (!movingIds.has(card.id) || card.kind === 'frame') continue
+    geometry.set(card.id, {
+      x: card.x + dx,
+      y: card.y + dy,
+      width: card.width,
+      height: card.height,
+    })
+  }
+
+  const frameGeometry = computeFrameAutoLayoutPreview(cards, geometry)
+  const affectedFrameIds = new Set([...previousFrameIds, ...frameGeometry.keys()])
+  for (const frameId of affectedFrameIds) {
+    const frame = cards.find((card) => card.id === frameId && card.kind === 'frame')
+    const rect = frameGeometry.get(frameId) ?? (frame
+      ? { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
+      : null)
+    if (rect) applyLiveFrameGeometry(frameId, rect)
+  }
+
+  return new Set(frameGeometry.keys())
+}
+
+export function resetLiveFrameAutoLayout(frameIds: Set<string>, cards = useCanvasStore.getState().getLayout().cards): void {
+  for (const frameId of frameIds) {
+    const frame = cards.find((card) => card.id === frameId && card.kind === 'frame')
+    if (!frame) continue
+    applyLiveFrameGeometry(frameId, {
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+    })
+  }
+}
+
+function applyLiveFrameGeometry(frameId: string, rect: CanvasFrameGeometry): void {
+  const el = document.querySelector<HTMLElement>(`[data-card-id="${frameId}"]`)
+  if (!el) return
+
+  const viewport = useCanvasStore.getState().getLayout().viewport
+  const mode = el.dataset.cardCoordinateMode
+  if (mode === 'screen-transform') {
+    el.style.left = `${Math.round(rect.x * viewport.scale + viewport.offsetX)}px`
+    el.style.top = `${Math.round(rect.y * viewport.scale + viewport.offsetY)}px`
+    el.style.width = `${rect.width}px`
+    el.style.height = `${rect.height}px`
+    return
+  }
+  if (mode === 'screen') {
+    el.style.left = `${Math.round(rect.x * viewport.scale + viewport.offsetX)}px`
+    el.style.top = `${Math.round(rect.y * viewport.scale + viewport.offsetY)}px`
+    el.style.width = `${Math.max(1, Math.round(rect.width * viewport.scale))}px`
+    el.style.height = `${Math.max(1, Math.round(rect.height * viewport.scale))}px`
+    return
+  }
+
+  el.style.left = `${rect.x}px`
+  el.style.top = `${rect.y}px`
+  el.style.width = `${rect.width}px`
+  el.style.height = `${rect.height}px`
 }
 
 export function resolveAvoidOverlap(

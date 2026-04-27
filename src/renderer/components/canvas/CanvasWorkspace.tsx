@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CanvasCard } from '@shared/types'
-import { useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
+import { isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -15,6 +16,7 @@ import { CanvasRelations } from './CanvasRelations'
 import { CanvasSearch } from './CanvasSearch'
 import { CanvasSessionList } from './CanvasSessionList'
 import { CanvasSelectionBounds } from './CanvasSelectionBounds'
+import { CanvasMaximizedSwitcher } from './CanvasMaximizedSwitcher'
 import { FrameCard } from './cards/FrameCard'
 import { NoteCard } from './cards/NoteCard'
 import { SessionCard } from './cards/SessionCard'
@@ -217,6 +219,7 @@ export function CanvasWorkspace(): JSX.Element {
 
   // ── Context menu state ───────────────────────────────────────────
   const [menu, setMenu] = useState<CanvasContextMenuState | null>(null)
+  const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
 
   const onViewportPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -284,12 +287,126 @@ export function CanvasWorkspace(): JSX.Element {
       <CanvasSessionList />
       <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => setSearchOpen(true)} />
       <CanvasSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <CanvasMaximizedSwitcher />
       {showMinimap && !maximizedCardId && <CanvasMinimap viewportRef={viewportRef} />}
 
       {cards.length === 0 && <CanvasEmptyState viewportRef={viewportRef} />}
 
-      {menu && <CanvasContextMenu state={menu} onClose={closeMenu} />}
+      {menu && (
+        <CanvasContextMenu
+          state={menu}
+          onClose={closeMenu}
+          onRenameFrame={(cardId) => setRenamingFrameId(cardId)}
+        />
+      )}
+      {renamingFrameId && (
+        <CanvasFrameRenameDialog
+          frameId={renamingFrameId}
+          onClose={() => setRenamingFrameId(null)}
+        />
+      )}
     </div>
+  )
+}
+
+function CanvasFrameRenameDialog({ frameId, onClose }: { frameId: string; onClose: () => void }): JSX.Element | null {
+  const frame = useCanvasStore((state) => state.getCard(frameId))
+  const inputRef = useRef<HTMLInputElement>(null)
+  const currentName = frame?.kind === 'frame' ? frame.frameTitle?.trim() || '分组' : '分组'
+  const [value, setValue] = useState(currentName)
+
+  useEffect(() => {
+    setValue(currentName)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+  }, [currentName, frameId])
+
+  if (!frame || frame.kind !== 'frame') return null
+
+  const commit = (): void => {
+    const nextName = value.trim()
+    if (nextName && nextName !== currentName) {
+      useCanvasStore.getState().updateCard(frameId, { frameTitle: nextName })
+    }
+    onClose()
+  }
+
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[9500] bg-black/45 backdrop-blur-[2px]"
+        onPointerDown={onClose}
+        onContextMenu={(event) => event.preventDefault()}
+      />
+      <form
+        className={cn(
+          'fixed left-1/2 top-1/2 z-[9501] w-[360px] -translate-x-1/2 -translate-y-1/2',
+          'overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)]',
+          'bg-[var(--color-bg-secondary)] p-5 shadow-2xl shadow-black/45',
+          'animate-[fade-in_0.12s_ease-out]',
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="canvas-frame-rename-title"
+        onSubmit={(event) => {
+          event.preventDefault()
+          commit()
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+          }
+        }}
+      >
+        <h3 id="canvas-frame-rename-title" className="text-[var(--ui-font-md)] font-semibold text-[var(--color-text-primary)]">
+          重命名分组
+        </h3>
+        <label className="mt-4 block">
+          <span className="mb-1.5 block text-[var(--ui-font-2xs)] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
+            分组名称
+          </span>
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            spellCheck={false}
+            className={cn(
+              'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
+              'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'outline-none transition-colors focus:border-[var(--color-accent)]/70',
+            )}
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(
+              'rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-1.5',
+              'text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors',
+              'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+            )}
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            className={cn(
+              'rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 py-1.5',
+              'text-[var(--ui-font-sm)] font-medium text-white transition-colors',
+              'hover:bg-[var(--color-accent-hover)]',
+            )}
+          >
+            保存
+          </button>
+        </div>
+      </form>
+    </>,
+    document.body,
   )
 }
 
@@ -303,8 +420,8 @@ function CanvasProjectedCardLayer({ cards, viewportEl }: { cards: CanvasCard[]; 
 }
 
 function CanvasCardRenderer({ card, viewportEl }: { card: CanvasCard; viewportEl: HTMLDivElement | null }): JSX.Element | null {
-  if (card.hidden && useCanvasStore.getState().maximizedCardId !== card.id) return null
-  if (card.kind === 'frame') return <FrameCard card={card} coordinateMode="screen" />
+  if (isCanvasCardHidden(card) && useCanvasStore.getState().maximizedCardId !== card.id) return null
+  if (card.kind === 'frame') return <FrameCard card={card} coordinateMode="screen-transform" />
   if (card.kind === 'note') return <NoteCard card={card} coordinateMode="screen" />
   if (card.kind === 'session' || card.kind === 'terminal') {
     return <CulledSessionCard card={card} viewportEl={viewportEl} />

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useCanvasStore } from '@/stores/canvas'
+import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 
 export function CanvasRelations(): JSX.Element | null {
   const cards = useCanvasStore((state) => state.getLayout().cards)
@@ -8,7 +8,7 @@ export function CanvasRelations(): JSX.Element | null {
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
 
   const paths = useMemo(() => {
-    const byId = new Map(cards.filter((card) => !card.hidden).map((card) => [card.id, card]))
+    const byId = new Map(cards.filter((card) => !isCanvasCardHidden(card)).map((card) => [card.id, card]))
     const selected = new Set(selectedCardIds)
     return relations.flatMap((relation) => {
       const from = byId.get(relation.fromCardId)

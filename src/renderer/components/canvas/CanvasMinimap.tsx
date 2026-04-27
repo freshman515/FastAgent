@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react'
-import { useCanvasStore } from '@/stores/canvas'
+import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 
 interface CanvasMinimapProps {
   viewportRef: React.RefObject<HTMLDivElement | null>
@@ -13,7 +13,7 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const viewport = useCanvasStore((state) => state.getLayout().viewport)
   const mapRef = useRef<HTMLDivElement>(null)
-  const visibleCards = useMemo(() => cards.filter((card) => !card.hidden), [cards])
+  const visibleCards = useMemo(() => cards.filter((card) => !isCanvasCardHidden(card)), [cards])
 
   const bounds = useMemo(() => {
     if (visibleCards.length === 0) {

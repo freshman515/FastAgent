@@ -5,8 +5,10 @@ import { useUIStore } from '@/stores/ui'
 import type { CanvasCard } from '@shared/types'
 import {
   applyAvoidanceStyles,
+  applyLiveFrameAutoLayoutForMovement,
   applyLiveCardMovement,
   cleanupAvoidanceTransitions,
+  resetLiveFrameAutoLayout,
   resetLiveCardMovement,
   resolveAvoidOverlap,
   type AvoidanceState,
@@ -41,6 +43,7 @@ type InteractionState =
     liveDx: number
     liveDy: number
     avoidance: AvoidanceState
+    liveFrameIds: Set<string>
   }
   | {
     kind: 'resize'
@@ -103,6 +106,7 @@ export function useSelectionBoundsDrag(element: HTMLDivElement | null): void {
           liveDx: 0,
           liveDy: 0,
           avoidance: { positions: new Map(), affectedIds: new Set() },
+          liveFrameIds: new Set(),
         }
         element.dataset.dragging = 'true'
       }
@@ -141,6 +145,7 @@ export function useSelectionBoundsDrag(element: HTMLDivElement | null): void {
         if (state.avoidance.positions.size > 0) {
           useCanvasStore.getState().updateCardPositions(state.avoidance.positions)
         }
+        resetLiveFrameAutoLayout(state.liveFrameIds)
         cleanupAvoidanceTransitions(state.avoidance.affectedIds)
         return
       }
@@ -198,6 +203,7 @@ function handleDragMove(
   }
 
   applyLiveCardMovement(state.ids, cards, dx, dy, scale)
+  state.liveFrameIds = applyLiveFrameAutoLayoutForMovement(state.ids, cards, dx, dy, state.liveFrameIds)
 }
 
 function handleResizeMove(

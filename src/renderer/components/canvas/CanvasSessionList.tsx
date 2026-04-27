@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type WheelEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { SESSION_TYPE_CONFIG, type Session } from '@shared/types'
+import { ChevronDown, ChevronRight, Star } from 'lucide-react'
+import { SESSION_TYPE_CONFIG, type CanvasCard, type Session } from '@shared/types'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
-import { useCanvasStore } from '@/stores/canvas'
+import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
+import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from './CanvasMenu'
 
 export function CanvasSessionList(): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(true)
@@ -29,6 +30,7 @@ export function CanvasSessionList(): JSX.Element | null {
       return session ? { card, session } : null
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((a, b) => Number(Boolean(b.card.favorite)) - Number(Boolean(a.card.favorite)))
 
   useEffect(() => {
     if (!menu) return
@@ -49,7 +51,7 @@ export function CanvasSessionList(): JSX.Element | null {
   const revealCard = (cardId: string): void => {
     const canvas = useCanvasStore.getState()
     const card = canvas.getCard(cardId)
-    if (card?.hidden) canvas.updateCard(cardId, { hidden: false })
+    if (card && isCanvasCardHidden(card)) canvas.updateCard(cardId, { hidden: false, hiddenByFrameId: undefined })
   }
 
   const focusCard = (cardId: string): void => {
@@ -72,7 +74,8 @@ export function CanvasSessionList(): JSX.Element | null {
     const canvas = useCanvasStore.getState()
     const card = canvas.getCard(cardId)
     if (!card) return
-    canvas.updateCard(cardId, { hidden: !card.hidden })
+    const hidden = isCanvasCardHidden(card)
+    canvas.updateCard(cardId, hidden ? { hidden: false, hiddenByFrameId: undefined } : { hidden: true })
   }
 
   const closeSession = (session: Session): void => {
@@ -135,7 +138,7 @@ export function CanvasSessionList(): JSX.Element | null {
       >
         {items.map(({ card, session }) => {
           const selected = selectedCardIds.includes(card.id)
-          const hidden = Boolean(card.hidden)
+          const hidden = isCanvasCardHidden(card)
           const config = SESSION_TYPE_CONFIG[session.type]
           const icon = getSessionIcon(session.type, isDarkTheme)
           const displayName = formatSessionCardTitle(session.name, card.sessionRemark)
@@ -176,6 +179,9 @@ export function CanvasSessionList(): JSX.Element | null {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[var(--ui-font-sm)] font-medium transition-colors group-hover:text-[var(--color-text-primary)]">{displayName}</span>
+                {card.favorite && (
+                  <Star size={11} className="absolute right-2 top-2.5 fill-[var(--color-accent)] text-[var(--color-accent)]" />
+                )}
                 <span className="block truncate text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
                   {config.label} · {hidden ? '已隐藏' : getStatusLabel(session.status)}
                 </span>
@@ -225,7 +231,7 @@ function CanvasSessionListMenu({
 }: {
   x: number
   y: number
-  item: { card: { id: string; hidden?: boolean }; session: Session } | null
+  item: { card: CanvasCard; session: Session } | null
   maximizedCardId: string | null
   onFocus: (cardId: string) => void
   onMaximize: (cardId: string) => void
@@ -234,56 +240,21 @@ function CanvasSessionListMenu({
 }): JSX.Element | null {
   if (!item) return null
   const left = Math.max(8, Math.min(x, window.innerWidth - 164))
-  const top = Math.max(8, Math.min(y, window.innerHeight - 156))
   const isMaximized = maximizedCardId === item.card.id
-  const isHidden = Boolean(item.card.hidden)
+  const isHidden = isCanvasCardHidden(item.card)
   return (
-    <div
-      className="fixed z-[9500] w-[156px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-2xl"
-      style={{ left, top }}
-      onPointerDown={(event) => event.stopPropagation()}
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      <SessionMenuItem label="聚焦" onClick={() => onFocus(item.card.id)} />
-      <SessionMenuItem label={isMaximized ? '取消最大化' : '最大化'} onClick={() => onMaximize(item.card.id)} />
-      <SessionMenuItem
+    <CanvasMenuPanel x={left} y={y} width={156} height={156}>
+      <CanvasMenuItem label="聚焦" onClick={() => onFocus(item.card.id)} />
+      <CanvasMenuItem label={isMaximized ? '取消最大化' : '最大化'} onClick={() => onMaximize(item.card.id)} />
+      <CanvasMenuItem
         label="关闭会话"
         danger
         disabled={item.session.pinned}
         onClick={() => onCloseSession(item.session)}
       />
-      <div className="my-1 h-px bg-[var(--color-border)]" />
-      <SessionMenuItem label={isHidden ? '显示' : '隐藏'} onClick={() => onToggleHidden(item.card.id)} />
-    </div>
-  )
-}
-
-function SessionMenuItem({
-  label,
-  onClick,
-  danger = false,
-  disabled = false,
-}: {
-  label: string
-  onClick: () => void
-  danger?: boolean
-  disabled?: boolean
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        'flex w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--ui-font-sm)] transition-colors',
-        danger
-          ? 'text-[var(--color-error)] hover:bg-[color-mix(in_srgb,var(--color-error)_18%,transparent)]'
-          : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-text-primary)]',
-        disabled && 'cursor-not-allowed opacity-45 hover:bg-transparent',
-      )}
-    >
-      {label}
-    </button>
+      <CanvasMenuSeparator />
+      <CanvasMenuItem label={isHidden ? '显示' : '隐藏'} onClick={() => onToggleHidden(item.card.id)} />
+    </CanvasMenuPanel>
   )
 }
 

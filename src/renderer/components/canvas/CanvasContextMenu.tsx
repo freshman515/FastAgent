@@ -32,16 +32,17 @@ export type CanvasContextMenuState =
 interface CanvasContextMenuProps {
   state: CanvasContextMenuState
   onClose: () => void
+  onRenameFrame?: (cardId: string) => void
 }
 
-export function CanvasContextMenu({ state, onClose }: CanvasContextMenuProps): JSX.Element {
+export function CanvasContextMenu({ state, onClose, onRenameFrame }: CanvasContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
   const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null)
   const [submenuAnchorRect, setSubmenuAnchorRect] = useState<DOMRect | null>(null)
   const [menuPosition, setMenuPosition] = useState({ left: state.screenX, top: state.screenY })
   const [submenuDirection, setSubmenuDirection] = useState<'right' | 'left'>('right')
-  const items = useMemo(() => buildMenuItems(state, onClose), [state, onClose])
+  const items = useMemo(() => buildMenuItems(state, onClose, onRenameFrame), [state, onClose, onRenameFrame])
 
   useEffect(() => {
     const onDown = (event: MouseEvent): void => {
@@ -226,11 +227,15 @@ function getSubmenuStyle(
   }
 }
 
-function buildMenuItems(state: CanvasContextMenuState, onClose: () => void): MenuItem[] {
+function buildMenuItems(
+  state: CanvasContextMenuState,
+  onClose: () => void,
+  onRenameFrame?: (cardId: string) => void,
+): MenuItem[] {
   if (state.target === 'canvas') {
     return buildCanvasItems(state, onClose)
   }
-  return buildCardItems(state, onClose)
+  return buildCardItems(state, onClose, onRenameFrame)
 }
 
 function buildCanvasItems(
@@ -241,6 +246,9 @@ function buildCanvasItems(
   const addFrameAroundCards = useCanvasStore.getState().addFrameAroundCards
   const fitAll = useCanvasStore.getState().fitAll
   const arrange = useCanvasStore.getState().arrange
+  const addLayoutSnapshot = useCanvasStore.getState().addLayoutSnapshot
+  const restoreLayoutSnapshot = useCanvasStore.getState().restoreLayoutSnapshot
+  const snapshots = useCanvasStore.getState().getLayout().snapshots
   const ui = useUIStore.getState()
   const updateSettings = ui.updateSettings
   const projectId = useProjectsStore.getState().selectedProjectId
@@ -284,6 +292,17 @@ function buildCanvasItems(
     { kind: 'item', label: '纵向排列', onClick: () => setArrangeMode('colFlow') },
     { kind: 'item', label: '紧凑打包', onClick: () => { updateSettings({ canvasArrangeMode: 'free' }); arrange('pack') } },
     { kind: 'separator' },
+    { kind: 'item', label: '保存布局快照', onClick: () => addLayoutSnapshot() },
+    ...(snapshots.length > 0 ? [{
+      kind: 'submenu' as const,
+      label: '恢复布局快照',
+      items: snapshots.slice(-8).reverse().map((snapshot) => ({
+        kind: 'item' as const,
+        label: snapshot.name,
+        onClick: () => restoreLayoutSnapshot(snapshot.id),
+      })),
+    }] : []),
+    { kind: 'separator' },
     {
       kind: 'item',
       label: '适配所有内容',
@@ -319,6 +338,7 @@ function createCanvasSession(projectId: string, type: SessionType, worldX: numbe
 function buildCardItems(
   state: Extract<CanvasContextMenuState, { target: 'card' }>,
   _onClose: () => void,
+  onRenameFrame?: (cardId: string) => void,
 ): MenuItem[] {
   const store = useCanvasStore.getState()
   const card = store.getCard(state.cardId)
@@ -333,6 +353,27 @@ function buildCardItems(
     .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
 
   const items: MenuItem[] = []
+  items.push({
+    kind: 'item',
+    label: card.favorite ? '取消收藏' : '收藏卡片',
+    onClick: () => store.toggleCardFavorite(state.cardId),
+  })
+  items.push({
+    kind: 'item',
+    label: '保存卡片快照',
+    onClick: () => store.addCardSnapshot(state.cardId),
+  })
+  if ((card.cardSnapshots?.length ?? 0) > 0) {
+    items.push({
+      kind: 'submenu',
+      label: '恢复卡片快照',
+      items: card.cardSnapshots!.slice(-8).reverse().map((snapshot) => ({
+        kind: 'item' as const,
+        label: snapshot.name,
+        onClick: () => store.restoreCardSnapshot(state.cardId, snapshot.id),
+      })),
+    })
+  }
   items.push({ kind: 'item', label: '置顶', onClick: () => store.bringToFront(state.cardId) })
 
   const relationsForTargets = store.getLayout().relations.filter((relation) =>
@@ -356,12 +397,34 @@ function buildCardItems(
     })
   }
 
+  if (card.kind === 'frame') {
+    items.push({
+      kind: 'item',
+      label: '重命名分组',
+      onClick: () => onRenameFrame?.(card.id),
+    })
+    items.push({
+      kind: 'item',
+      label: card.collapsed ? '展开分组' : '折叠分组',
+      disabled: (card.frameMemberIds?.length ?? 0) === 0,
+      onClick: () => store.toggleFrameCollapsed(card.id),
+    })
+  }
+
   if (multiSelected) {
     items.push({ kind: 'separator' })
     if (targetIds.length === 2) {
       items.push({ kind: 'item', label: '连接选中卡片', onClick: () => store.addRelation(targetIds[0], targetIds[1]) })
     }
-    items.push({ kind: 'item', label: '用分组框包住选中', onClick: () => store.addFrameAroundCards(targetIds) })
+    items.push({ kind: 'item', label: '快速分组', onClick: () => store.addFrameAroundCards(targetIds) })
+    items.push({
+      kind: 'item',
+      label: '快速分组并折叠',
+      onClick: () => {
+        const frameId = store.addFrameAroundCards(targetIds)
+        if (frameId) useCanvasStore.getState().toggleFrameCollapsed(frameId)
+      },
+    })
     if (relationsForTargets.length > 0) {
       items.push({ kind: 'item', label: '移除相关连线', onClick: () => store.removeRelationsForCards(targetIds) })
     }

@@ -72,7 +72,7 @@ export function useCardResize({
       }
       element.setPointerCapture(event.pointerId)
       useCanvasStore.getState().setSelection([cardId])
-      useCanvasStore.getState().bringToFront(cardId)
+      if (card.kind !== 'frame') useCanvasStore.getState().bringToFront(cardId)
     }
 
     const onPointerMove = (event: PointerEvent): void => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import type { CanvasCard } from '@shared/types'
-import { useCanvasStore } from '@/stores/canvas'
+import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
 import { getTerminalBufferText } from '@/hooks/useXterm'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
@@ -217,7 +217,7 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
     const result = results[index]
     if (!result) return
     const canvas = useCanvasStore.getState()
-    if (result.card.hidden) canvas.updateCard(result.card.id, { hidden: false })
+    if (isCanvasCardHidden(result.card)) canvas.updateCard(result.card.id, { hidden: false, hiddenByFrameId: undefined })
     canvas.clearMaximizedCard()
     canvas.clearFocusReturn()
     requestAnimationFrame(() => focusOnCard(result.card.id))

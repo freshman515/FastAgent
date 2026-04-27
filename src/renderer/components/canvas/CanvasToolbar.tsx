@@ -43,6 +43,7 @@ const CARD_NORMALIZATION_NAVIGATION_DELAY_MS = 300
 export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps): JSX.Element {
   const scale = useCanvasStore((state) => state.getLayout().viewport.scale)
   const bookmarks = useCanvasStore((state) => state.getLayout().bookmarks)
+  const layoutSnapshots = useCanvasStore((state) => state.getLayout().snapshots)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const addCard = useCanvasStore((state) => state.addCard)
   const addFrameAroundCards = useCanvasStore((state) => state.addFrameAroundCards)
@@ -51,6 +52,9 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
   const updateBookmarkViewport = useCanvasStore((state) => state.updateBookmarkViewport)
   const renameBookmark = useCanvasStore((state) => state.renameBookmark)
   const removeBookmark = useCanvasStore((state) => state.removeBookmark)
+  const addLayoutSnapshot = useCanvasStore((state) => state.addLayoutSnapshot)
+  const restoreLayoutSnapshot = useCanvasStore((state) => state.restoreLayoutSnapshot)
+  const removeLayoutSnapshot = useCanvasStore((state) => state.removeLayoutSnapshot)
   const addRelation = useCanvasStore((state) => state.addRelation)
   const alignCards = useCanvasStore((state) => state.alignCards)
   const distributeCards = useCanvasStore((state) => state.distributeCards)
@@ -310,7 +314,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
             setArrangeOpen(false)
             setSizeMenuOpen(false)
           }}
-          className={btn(bookmarksOpen || bookmarks.length > 0)}
+          className={btn(bookmarksOpen || bookmarks.length > 0 || layoutSnapshots.length > 0)}
           title="视图书签"
         >
           <Bookmark size={16} />
@@ -318,6 +322,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
         {bookmarksOpen && (
           <div className="absolute bottom-full left-0 mb-1 w-56 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-xl">
             <BookmarkItem label="保存当前视图" onClick={() => addBookmark()} />
+            <BookmarkItem label="保存布局快照" onClick={() => addLayoutSnapshot()} />
             {bookmarks.length > 0 && <div className="my-1 h-px bg-[var(--color-border)]" />}
             {bookmarks.map((bookmark, index) => (
               <div
@@ -401,6 +406,38 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
                 )}
               </div>
             ))}
+            {layoutSnapshots.length > 0 && (
+              <>
+                <div className="my-1 h-px bg-[var(--color-border)]" />
+                {layoutSnapshots.slice(-8).reverse().map((snapshot) => (
+                  <div
+                    key={snapshot.id}
+                    className="canvas-arrange-menu-item group relative flex items-center gap-1 rounded-[var(--radius-sm)] text-[var(--color-text-secondary)]"
+                  >
+                    <span className="canvas-arrange-menu-item-indicator absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        restoreLayoutSnapshot(snapshot.id)
+                        setBookmarksOpen(false)
+                      }}
+                      className="min-w-0 flex-1 px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-inherit"
+                    >
+                      <span className="block truncate">{snapshot.name}</span>
+                      <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">布局快照</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeLayoutSnapshot(snapshot.id)}
+                      className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] opacity-0 transition-all hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-error)] group-hover:opacity-100"
+                      title="删除布局快照"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
