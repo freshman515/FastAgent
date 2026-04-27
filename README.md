@@ -1,101 +1,106 @@
 # FastAgents
 
-FastAgents 是一个基于 Electron 的多智能体会话管理器，用来在同一个项目工作区里并行运行 Claude Code、Codex、Gemini、OpenCode 和普通终端。它支持经典分屏和无限画布两种工作模式，适合同时观察、编排、切换多个 AI 编码会话。
+FastAgents 是一个面向 AI Coding 的多 Agent 会话管理工具。
+
+它把 Claude Code、Codex、Gemini、OpenCode、浏览器和普通终端放进同一个项目工作区里，让你可以用经典分屏或无限画布同时管理多个会话、多个任务和多个开发上下文。
+
+> 当前版本主要支持 Windows。
 
 ![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss)
+![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows)
 
-## 功能概览
+## 为什么做 FastAgents
 
-### 多智能体会话
+使用 AI Coding 时，真正麻烦的地方通常不是启动一个 Agent，而是同时管理很多 Agent。
 
-- 支持 Claude Code、Codex、Codex YOLO、Gemini、Gemini YOLO、OpenCode 和 Terminal。
-- Codex、Gemini 会话支持启动时恢复历史对话。
-- 支持通过项目、Git worktree 和独立窗口组织会话。
-- 支持会话重命名、置顶、关闭、导出和历史恢复。
-- 会话标题栏和画布会话列表会显示对应智能体图标。
+当你有多个想法、多个分支、多个任务并行推进时，经常会遇到这些问题：
+
+- 不同 Agent 分散在多个窗口里，切换成本高。
+- 多个任务上下文混在一起，很难知道每个会话在做什么。
+- 终端、浏览器、文件、Git 信息和 AI 回复分散在不同 App 里。
+- 同时跑多个功能开发时，需要更清晰的分屏、分组和工作区隔离。
+
+FastAgents 的目标是把这些东西放回同一个工作台里，让你更容易并行调度多个 Agent。
+
+## 核心功能
+
+### 多 Agent 会话管理
+
+- 支持 Claude Code、Codex、Gemini、OpenCode、Browser 和 Terminal。
+- 支持 Codex / Claude / Gemini 等历史会话恢复。
+- 支持按项目、worktree 和会话类型组织工作区。
+- 支持会话重命名、置顶、关闭、导出和重新打开。
+- 支持把会话拖出为独立窗口，关闭独立窗口后会话仍可回到主窗口。
 
 ### 经典分屏模式
 
-- 支持横向、纵向无限嵌套分屏。
-- 支持标签页拖拽排序、跨 pane 移动、拖出独立窗口。
-- 独立窗口关闭后会自动回到主窗口并保持运行中的 PTY。
-- 支持 `Ctrl+Tab`、`Ctrl+W`、`Ctrl+1-9` 等常用标签页快捷键。
+经典模式适合习惯终端、tmux、IDE 分屏的人。
+
+- 支持横向、纵向嵌套分屏。
+- 支持标签页拖拽排序、跨 pane 移动和拖拽分屏。
+- 支持紧凑预设、经典 pane 样式和现代 pane 样式。
+- 支持圆角标签页和直角标签页两套样式。
+- 支持按会话类型整理标签页，例如终端、Claude、Codex、Browser 等。
+- 支持智能分屏：把同类会话自动放到同一个 pane。
+- 支持 `Alt+F` 进入 pane 控制模式，用方向键或 `h/j/k/l` 快速切换和调整 pane。
 
 ### 无限画布模式
 
-- 会话以卡片形式显示在无限画布中，支持拖拽、缩放、排列和框选。
-- 支持左侧画布会话列表，点击后聚焦对应卡片。
-- 支持搜索会话，`Ctrl+F` / `Ctrl+Shift+F` 可打开搜索面板。
-- 支持多选卡片后的批量移动、对齐、等距分布、删除和统一调整大小。
-- 支持关系线、分组框、便签和迷你地图。
-- 支持操作撤销，移动、缩放、新增、删除等画布操作可用 `Ctrl+Z` 回退。
-- 支持视图书签：保存当前视图、重命名、重新录制、删除，并可用 `Alt+1-9` 快速跳转。
-- 支持 `Alt+A` 平滑缩放到刚好显示所有会话卡片。
+画布模式适合同时观察大量 Agent，把任务按区域拆开管理。
 
-### 项目与工作区
+- 每个会话都可以变成一张卡片，放在无限画布中自由排列。
+- 支持卡片拖拽、缩放、聚焦、最大化和方向导航。
+- 支持分组/工作区，把相关卡片放在同一个任务空间里。
+- 分组支持颜色、重命名、折叠、组内整理、组内搜索和快照。
+- 拖动卡片进入分组时，分组会动态扩展并包裹卡片。
+- 移动分组时，会自动带动组内卡片。
+- 支持画布搜索、最近访问、书签视图和快速聚焦。
+- 支持卡片拖拽或缩放到视图边缘时自动平移画布。
 
-- 支持项目分组、颜色标记和拖拽排序。
-- 侧边栏显示 Git 分支、脏状态和 worktree 信息。
-- 支持从菜单创建、切换和移除 Git worktree。
-- 支持会话模板和任务模板，一键启动预设工作流。
-- 支持匿名工作区，用于临时会话。
+### 项目与 Git 工作区
 
-### Git 集成
-
-- 自动识别 Git 仓库和当前分支。
-- 支持初始化非 Git 项目。
-- 支持分支创建、切换、worktree 创建和移除。
-- 支持查看文件状态、diff、stage、unstage、discard 和 commit。
-
-### 音乐模块
-
-- 支持读取系统媒体信息。
-- 支持播放、暂停、上一首、下一首控制。
-- 支持网易云音乐等系统媒体源。
-- 支持实时频谱和旋律可视化。
+- 支持项目列表、项目分组和颜色标记。
+- 自动识别 Git 仓库、当前分支和工作区状态。
+- 支持创建、切换和移除 Git worktree。
+- 支持文件状态、diff、stage、unstage、discard 和 commit。
+- 适合把不同功能开发放到不同 worktree 中并行推进。
 
 ### Meta-Agent MCP
 
-FastAgents 会为 Claude Code 会话自动注入本地 MCP 工具，使一个会话可以查看、读取、等待或创建同工作区下的其他会话。
+FastAgents 会给 Claude Code 会话自动注入本地 MCP 工具，让一个 Agent 可以查看和操作同工作区下的其他会话。
 
-常用工具：
+常用能力包括：
 
-| 工具 | 用途 |
-| --- | --- |
-| `fa_list_sessions` | 列出同工作区下的会话 |
-| `fa_read_session` | 读取目标会话最近输出 |
-| `fa_write_session` | 向目标会话发送输入 |
-| `fa_create_session` | 创建新的 Claude Code、Codex、Gemini、OpenCode 或 Terminal 会话 |
-| `fa_wait_for_idle` | 等待目标会话输出静止 |
-| `fa_get_open_file` | 获取当前编辑器打开文件 |
-| `fa_get_selection` | 获取当前编辑器选区 |
-| `fa_get_editor_context` | 获取完整编辑器上下文 |
+- 列出当前工作区的所有 session。
+- 读取其他 session 的最近输出。
+- 向其他 session 发送输入。
+- 创建新的 Claude Code、Codex、Gemini、OpenCode 或 Terminal 会话。
+- 等待某个 session 输出静止。
+- 读取当前编辑器打开文件、选区和上下文。
 
-这些配置在应用启动和会话创建时自动完成，不需要手动修改 Claude 配置。
+这让 FastAgents 不只是一个终端管理器，而是一个可以让 Agent 之间互相协作的本地工作台。
 
-## 技术栈
+## 适合谁
 
-| 层级 | 技术 |
-| --- | --- |
-| 桌面框架 | Electron 39 |
-| 前端 | React 19、TypeScript 5.9 |
-| 样式 | Tailwind CSS 4 |
-| 状态管理 | Zustand 5 |
-| 终端 | xterm.js 6 |
-| PTY | node-pty |
-| 构建 | electron-vite、electron-builder |
-| 动画 | Framer Motion |
+FastAgents 更适合这些场景：
 
-## 本地开发
+- 同时使用多个 AI Coding CLI。
+- 经常让多个 Agent 并行处理不同任务。
+- 需要在多个 Git 分支或 worktree 之间切换。
+- 希望把终端、浏览器、任务笔记和 Agent 回复放在同一个地方。
+- 喜欢 tmux / IDE 分屏，但又需要更强的可视化画布。
+
+## 快速开始
 
 ### 环境要求
 
+- Windows
 - Node.js 20 或更高版本
 - pnpm
 - Git
+- 已安装并登录需要使用的 AI CLI，例如 Claude Code、Codex、Gemini 或 OpenCode
 
 ### 安装依赖
 
@@ -123,41 +128,57 @@ pnpm build
 pnpm test
 ```
 
-## 快捷键
+## 常用快捷键
 
-### 全局与经典分屏
+### 全局
 
 | 快捷键 | 功能 |
 | --- | --- |
-| `Alt+Space` | 显示或隐藏主窗口 |
+| `Ctrl+Shift+M` | 在经典模式和画布模式之间切换 |
+| `Ctrl+F` / `Ctrl+Shift+F` | 搜索会话、卡片、分组和备注 |
+| `F2` | 重命名当前会话 |
+
+### 经典分屏
+
+| 快捷键 | 功能 |
+| --- | --- |
 | `Ctrl+Tab` | 切换到下一个标签页 |
 | `Ctrl+Shift+Tab` | 切换到上一个标签页 |
 | `Ctrl+W` | 关闭当前标签页 |
 | `Ctrl+Shift+T` | 恢复最近关闭的标签页 |
 | `Ctrl+1-9` | 跳转到当前 pane 的第 N 个标签 |
-| `Ctrl+Alt+方向键` | 在 pane 之间移动焦点 |
-| `Ctrl+Shift+M` | 在经典分屏和画布模式之间切换 |
-| `F2` | 重命名当前会话 |
-| 鼠标中键 | 关闭标签页 |
+| `Ctrl+H` / `Ctrl+L` | 切换当前 pane 内左侧或右侧标签 |
+| `Alt+F` | 进入 pane 控制模式 |
+| `Alt+方向键` / `Alt+h/j/k/l` | 在 pane 之间按物理方向切换 |
+| `Ctrl+方向键` / `Ctrl+h/j/k/l` | 调整当前 pane 大小 |
 
 ### 无限画布
 
 | 快捷键 | 功能 |
 | --- | --- |
-| `Ctrl+F` | 打开会话搜索 |
-| `Ctrl+Shift+F` | 打开会话搜索 |
-| `Alt+1-9` | 跳转到第 N 个画布视图 |
-| `Alt+A` | 适配显示所有会话卡片 |
+| `Alt+方向键` / `Alt+h/j/k/l` | 按空间方向切换卡片焦点 |
+| `Alt+1-9` | 跳转到画布书签视图 |
+| `Alt+A` | 适配显示所有卡片 |
 | `Ctrl+Z` | 撤销画布操作 |
-| `Delete` / `Backspace` | 从画布移除选中卡片 |
+| `Delete` / `Backspace` | 移除选中卡片 |
 | `Ctrl+A` | 选中所有画布卡片 |
 | `Esc` | 清空选择 |
-| `Ctrl+D` | 复制选中的便签 |
-| `方向键` | 微调选中卡片位置 |
-| `Shift+方向键` | 大步微调选中卡片位置 |
 | `Ctrl+0` | 重置画布视图 |
 | `Ctrl++` / `Ctrl+=` | 放大画布 |
 | `Ctrl+-` | 缩小画布 |
+
+## 技术栈
+
+| 层级 | 技术 |
+| --- | --- |
+| 桌面框架 | Electron 39 |
+| 前端 | React 19、TypeScript 5.9 |
+| 样式 | Tailwind CSS 4 |
+| 状态管理 | Zustand 5 |
+| 终端 | xterm.js 6 |
+| PTY | node-pty |
+| 构建 | electron-vite、electron-builder |
+| 动画 | Framer Motion |
 
 ## 项目结构
 
@@ -169,8 +190,8 @@ src/
 ├── preload/               Context Bridge API
 ├── renderer/              React 渲染进程
 │   ├── components/        UI 组件
-│   │   ├── canvas/        无限画布、卡片、搜索、迷你地图、关系线
-│   │   ├── layout/        标题栏、侧边栏、主面板、音乐模块
+│   │   ├── canvas/        无限画布、卡片、分组、搜索、迷你地图
+│   │   ├── layout/        标题栏、侧边栏、主面板
 │   │   ├── session/       会话标签、终端、创建菜单
 │   │   ├── settings/      设置页
 │   │   ├── sidebar/       项目、分组、历史会话
@@ -182,12 +203,12 @@ src/
 └── shared/                共享类型和常量
 ```
 
-## 常见说明
+## 说明
 
+- 外部 AI CLI 需要先在系统中安装并完成登录。
 - Gemini 普通会话启动命令为 `gemini`，Gemini YOLO 启动命令为 `gemini --yolo`。
-- Gemini 恢复命令形如 `gemini --resume '<session-id>'`。
-- Codex、Gemini 等外部 CLI 需要先在系统中安装并配置好认证。
-- Windows 下建议使用 PowerShell 7 或现代终端运行相关 CLI。
+- Codex、Claude Code、Gemini、OpenCode 的具体能力取决于本机安装版本。
+- 当前版本主要面向 Windows，其他平台暂未作为正式支持目标。
 
 ## 许可证
 
