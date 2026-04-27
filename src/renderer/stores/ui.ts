@@ -155,6 +155,10 @@ export interface AppSettings {
   /** When set, default creation uses a custom launcher instead of defaultSessionType. */
   defaultCustomSessionId: string | null
   customSessionDefinitions: CustomSessionDefinition[]
+  /** New session menu option ids hidden by the user. Built-ins use SessionType, custom launchers use custom:<id>. */
+  hiddenNewSessionOptionIds: string[]
+  /** New session menu option order. Built-ins use SessionType, custom launchers use custom:<id>. */
+  newSessionOptionOrder: string[]
   /** Pop up a naming dialog when creating a new session */
   promptSessionNameOnCreate: boolean
   wslDistroName: string
@@ -259,6 +263,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultSessionType: 'claude-code',
   defaultCustomSessionId: null,
   customSessionDefinitions: [],
+  hiddenNewSessionOptionIds: [],
+  newSessionOptionOrder: [],
   promptSessionNameOnCreate: false,
   wslDistroName: '',
   wslShell: 'bash',
@@ -457,6 +463,21 @@ function normalizeCustomSessionDefinitions(raw: unknown): { definitions: CustomS
   }
 
   return { definitions, seeded }
+}
+
+function normalizeHiddenNewSessionOptionIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+
+  const seen = new Set<string>()
+  const ids: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const id = item.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
 }
 
 function normalizeQuickCommands(
@@ -1206,6 +1227,12 @@ export const useUIStore = create<UIState>((set, get) => ({
         s.customSessionDefinitions = normalizedCustomSessions.definitions
         shouldPersistSettings ||= normalizedCustomSessions.seeded
       }
+      if (raw.hiddenNewSessionOptionIds !== undefined) {
+        s.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(raw.hiddenNewSessionOptionIds)
+      }
+      if (raw.newSessionOptionOrder !== undefined) {
+        s.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(raw.newSessionOptionOrder)
+      }
       if (raw.defaultCustomSessionId === null || typeof raw.defaultCustomSessionId === 'string') {
         s.defaultCustomSessionId = raw.defaultCustomSessionId
       }
@@ -1375,6 +1402,8 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   updateSettings: (updates) => {
     const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
+    settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
+    settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)
     if (
       settings.defaultCustomSessionId
       && !settings.customSessionDefinitions.some((definition) => definition.id === settings.defaultCustomSessionId)

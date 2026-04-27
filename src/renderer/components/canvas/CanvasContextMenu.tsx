@@ -258,12 +258,17 @@ function buildCanvasItems(
   const snapshots = useCanvasStore.getState().getLayout().snapshots
   const hiddenCount = useCanvasStore.getState().getLayout().cards.filter((card) => card.hidden).length
   const ui = useUIStore.getState()
+  const settings = ui.settings
   const updateSettings = ui.updateSettings
   const projectId = useProjectsStore.getState().selectedProjectId
+  const newSessionOptions = projectId
+    ? buildNewSessionOptions(settings.customSessionDefinitions, settings.hiddenNewSessionOptionIds, settings.newSessionOptionOrder)
+    : []
   const setArrangeMode = (mode: CanvasArrangeMode): void => {
     updateSettings({ canvasArrangeMode: mode })
     if (mode !== 'free') arrange(mode)
   }
+  const noteSize = getDefaultCanvasCardSize('note')
 
   return [
     {
@@ -271,8 +276,8 @@ function buildCanvasItems(
       label: '在此处新建便签',
       onClick: () => addCard({
         kind: 'note',
-        x: state.worldX - 120,
-        y: state.worldY - 80,
+        x: state.worldX - noteSize.width / 2,
+        y: state.worldY - noteSize.height / 2,
         noteBody: '',
         noteColor: 'yellow',
       }),
@@ -284,15 +289,20 @@ function buildCanvasItems(
     },
     {
       kind: 'submenu',
-      label: projectId ? '新建会话' : '新建会话（未选择项目）',
-      disabled: !projectId,
-      items: projectId ? buildNewSessionOptions(useUIStore.getState().settings.customSessionDefinitions).map((option) => ({
+      label: !projectId
+        ? '新建会话（未选择项目）'
+        : newSessionOptions.length > 0 ? '新建会话' : '新建会话（无可显示项）',
+      disabled: !projectId || newSessionOptions.length === 0,
+      items: newSessionOptions.map((option) => ({
         kind: 'item',
         label: option.label,
         icon: option.icon,
         customIcon: Boolean(option.customSessionDefinitionId),
-        onClick: () => createCanvasSession(projectId, option.type, state.worldX, state.worldY, option.customSessionDefinitionId),
-      })) : [],
+        onClick: () => {
+          if (!projectId) return
+          createCanvasSession(projectId, option.type, state.worldX, state.worldY, option.customSessionDefinitionId)
+        },
+      })),
     },
     { kind: 'separator' },
     { kind: 'item', label: '自由排列', onClick: () => setArrangeMode('free') },

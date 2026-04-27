@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn, generateId } from '@/lib/utils'
 import {
@@ -24,6 +24,7 @@ import { parseThemeAuto } from '@/lib/themeImport'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { parseCustomSessionArgs } from '@/lib/createSession'
 import { SessionIconView } from '@/components/session/SessionIconView'
+import { SESSION_OPTIONS, getCustomSessionOptionId, orderNewSessionOptions } from '@/components/session/NewSessionMenu'
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 
 type SettingsPage = 'general' | 'sessions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
@@ -491,12 +492,62 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
   const deleteDefinition = useCallback((id: string) => {
     const definitions = settings.customSessionDefinitions.filter((definition) => definition.id !== id)
     onUpdate('customSessionDefinitions', definitions)
+    const customOptionId = getCustomSessionOptionId(id)
+    if (settings.hiddenNewSessionOptionIds.includes(customOptionId)) {
+      onUpdate('hiddenNewSessionOptionIds', settings.hiddenNewSessionOptionIds.filter((optionId) => optionId !== customOptionId))
+    }
+    if (settings.newSessionOptionOrder.includes(customOptionId)) {
+      onUpdate('newSessionOptionOrder', settings.newSessionOptionOrder.filter((optionId) => optionId !== customOptionId))
+    }
     if (settings.defaultCustomSessionId === id) onUpdate('defaultCustomSessionId', null)
     if (editingId === id) cancelEdit()
-  }, [cancelEdit, editingId, onUpdate, settings.customSessionDefinitions, settings.defaultCustomSessionId])
+  }, [cancelEdit, editingId, onUpdate, settings.customSessionDefinitions, settings.defaultCustomSessionId, settings.hiddenNewSessionOptionIds, settings.newSessionOptionOrder])
 
   const parsedArgs = useMemo(() => parseCustomSessionArgs(draft.args), [draft.args])
   const visibleSessionTypeOptions = useMemo(() => filterSessionTypesForCurrentPlatform(SESSION_TYPE_OPTIONS), [])
+  const visibleNewSessionBuiltInOptions = useMemo(() => filterSessionTypesForCurrentPlatform(SESSION_OPTIONS), [])
+  const hiddenNewSessionOptionIds = useMemo(() => new Set(settings.hiddenNewSessionOptionIds), [settings.hiddenNewSessionOptionIds])
+  const unorderedNewSessionMenuOptions = useMemo(() => [
+    ...visibleNewSessionBuiltInOptions.map((option) => ({
+      id: option.type,
+      label: option.label,
+      icon: option.icon,
+      custom: false,
+    })),
+    ...settings.customSessionDefinitions.map((definition) => ({
+      id: getCustomSessionOptionId(definition.id),
+      label: definition.name,
+      icon: definition.icon,
+      custom: true,
+    })),
+  ], [settings.customSessionDefinitions, visibleNewSessionBuiltInOptions])
+  const newSessionMenuOptions = useMemo(
+    () => orderNewSessionOptions(unorderedNewSessionMenuOptions, settings.newSessionOptionOrder),
+    [settings.newSessionOptionOrder, unorderedNewSessionMenuOptions],
+  )
+  const visibleNewSessionOptionCount = newSessionMenuOptions.filter((option) => !hiddenNewSessionOptionIds.has(option.id)).length
+  const setNewSessionOptionVisible = useCallback((id: string, visible: boolean) => {
+    const hidden = new Set(settings.hiddenNewSessionOptionIds)
+    if (visible) hidden.delete(id)
+    else hidden.add(id)
+    onUpdate('hiddenNewSessionOptionIds', Array.from(hidden))
+  }, [onUpdate, settings.hiddenNewSessionOptionIds])
+  const showAllNewSessionOptions = useCallback(() => {
+    onUpdate('hiddenNewSessionOptionIds', [])
+  }, [onUpdate])
+  const resetNewSessionOptionOrder = useCallback(() => {
+    onUpdate('newSessionOptionOrder', [])
+  }, [onUpdate])
+  const moveNewSessionOption = useCallback((id: string, direction: -1 | 1) => {
+    const currentIndex = newSessionMenuOptions.findIndex((option) => option.id === id)
+    const targetIndex = currentIndex + direction
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= newSessionMenuOptions.length) return
+
+    const next = [...newSessionMenuOptions]
+    const [option] = next.splice(currentIndex, 1)
+    next.splice(targetIndex, 0, option)
+    onUpdate('newSessionOptionOrder', next.map((item) => item.id))
+  }, [newSessionMenuOptions, onUpdate])
 
   return (
     <div className={PAGE_STACK}>
@@ -555,6 +606,91 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
           checked={settings.promptSessionNameOnCreate}
           onChange={(v) => onUpdate('promptSessionNameOnCreate', v)}
         />
+      </SettingsSection>
+
+      <SettingsSection icon={Eye} title="新建菜单显示" description="控制 + 按钮、项目右键和画布右键的新建会话菜单里出现哪些入口。">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+            当前显示 {visibleNewSessionOptionCount} / {newSessionMenuOptions.length} 项
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={resetNewSessionOptionOrder}
+              disabled={settings.newSessionOptionOrder.length === 0}
+              className={cn(
+                'flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1',
+                'text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] transition-colors',
+                'hover:border-[var(--color-border-hover)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40',
+              )}
+            >
+              <RotateCcw size={12} />
+              默认排序
+            </button>
+            <button
+              onClick={showAllNewSessionOptions}
+              disabled={visibleNewSessionOptionCount === newSessionMenuOptions.length}
+              className={cn(
+                'flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1',
+                'text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] transition-colors',
+                'hover:border-[var(--color-border-hover)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40',
+              )}
+            >
+              <Eye size={12} />
+              全部显示
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          {newSessionMenuOptions.map((option, index) => {
+            const visible = !hiddenNewSessionOptionIds.has(option.id)
+            return (
+              <div
+                key={option.id}
+                className={cn(
+                  'flex min-w-0 items-center gap-2 rounded-[var(--radius-md)] border px-2 py-2 transition-colors',
+                  visible
+                    ? 'border-[var(--color-accent)]/45 bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-secondary)]',
+                )}
+              >
+                <button
+                  onClick={() => setNewSessionOptionVisible(option.id, !visible)}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-1 py-0.5 text-left"
+                >
+                  <SessionIconView
+                    icon={option.custom ? option.icon : undefined}
+                    fallbackSrc={option.custom ? undefined : option.icon}
+                    className={cn('h-4 w-4 shrink-0', !visible && 'opacity-45')}
+                    imageClassName="h-4 w-4"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)]">{option.label}</span>
+                  {visible ? <Eye size={13} className="shrink-0 text-[var(--color-accent)]" /> : <EyeOff size={13} className="shrink-0" />}
+                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => moveNewSessionOption(option.id, -1)}
+                    disabled={index === 0}
+                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    title="上移"
+                  >
+                    <ArrowUp size={13} />
+                  </button>
+                  <button
+                    onClick={() => moveNewSessionOption(option.id, 1)}
+                    disabled={index === newSessionMenuOptions.length - 1}
+                    className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    title="下移"
+                  >
+                    <ArrowDown size={13} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+          隐藏入口只影响弹出的新建菜单，不会改变默认新建会话设置。
+        </span>
       </SettingsSection>
 
       <SettingsSection icon={Plus} title="自定义会话" description="用于添加任意 CLI，例如自定义 Agent、脚本或项目命令。">

@@ -300,7 +300,9 @@ function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onSt
   const width = submenu.type === 'sessions' ? 196 : 220
   const style = getSubmenuStyle(submenu.anchorRect, width)
   const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
-  const sessionOptions = buildNewSessionOptions(customSessionDefinitions)
+  const hiddenNewSessionOptionIds = useUIStore((s) => s.settings.hiddenNewSessionOptionIds)
+  const newSessionOptionOrder = useUIStore((s) => s.settings.newSessionOptionOrder)
+  const sessionOptions = buildNewSessionOptions(customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder)
 
   if (submenu.type === 'sessions') {
     return (
@@ -310,7 +312,11 @@ function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onSt
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {sessionOptions.map((opt) => (
+        {sessionOptions.length === 0 ? (
+          <div className="px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+            没有可显示的会话类型
+          </div>
+        ) : sessionOptions.map((opt) => (
           <button key={opt.id} className={MENU_ITEM} onClick={() => onCreateSession(opt)}>
             <SessionIconView
               icon={opt.customSessionDefinitionId ? opt.icon : undefined}
@@ -369,7 +375,9 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
   const [wtContextMenu, setWtContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
-  const sessionOptions = buildNewSessionOptions(customSessionDefinitions)
+  const hiddenNewSessionOptionIds = useUIStore((s) => s.settings.hiddenNewSessionOptionIds)
+  const newSessionOptionOrder = useUIStore((s) => s.settings.newSessionOptionOrder)
+  const sessionOptions = buildNewSessionOptions(customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder)
   const branchInfo = useGitStore((s) => s.branchInfo[wt.id])
 
   useEffect(() => {
@@ -447,7 +455,11 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
             <div className="px-3 py-1 border-b border-[var(--color-border)]">
               <p className={SECTION_HEADER}>新建会话</p>
             </div>
-            {sessionOptions.map((opt) => (
+            {sessionOptions.length === 0 ? (
+              <div className="px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                没有可显示的会话类型
+              </div>
+            ) : sessionOptions.map((opt) => (
               <button key={opt.id} className={MENU_ITEM} onClick={() => {
                 handleClick()
                 setWtContextMenu(null)

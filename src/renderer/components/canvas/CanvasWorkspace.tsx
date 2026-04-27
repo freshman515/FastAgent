@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CanvasCard } from '@shared/types'
-import { isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
+import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
+import { useCanvasUiStore } from '@/stores/canvasUi'
 import { cn } from '@/lib/utils'
+import { focusCanvasSessionTarget } from '@/lib/focusSessionTarget'
 import { CanvasGrid } from './CanvasGrid'
 import { CanvasToolbar } from './CanvasToolbar'
 import { CanvasContextMenu, type CanvasContextMenuState } from './CanvasContextMenu'
@@ -81,6 +83,7 @@ export function CanvasWorkspace(): JSX.Element {
   const activeTabId = usePanesStore((state) => state.paneActiveSession[state.activePaneId] ?? null)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const cards = useCanvasStore((state) => state.getLayout().cards)
+  const pendingSessionFocusId = useCanvasUiStore((state) => state.pendingSessionFocusId)
   const sessionsLoaded = useSessionsStore((state) => state._loaded)
   const sessionIdsKey = useSessionsStore((state) => state.sessions.map((session) => session.id).join('\x1f'))
 
@@ -89,6 +92,21 @@ export function CanvasWorkspace(): JSX.Element {
     const key = resolveCanvasLayoutKey(workspaceMode, currentProjectKey)
     useCanvasStore.getState().setActiveLayout(key)
   }, [workspaceMode, currentProjectKey])
+
+  useEffect(() => {
+    if (!pendingSessionFocusId) return
+
+    const run = (): void => {
+      if (focusCanvasSessionTarget(pendingSessionFocusId)) {
+        useCanvasUiStore.getState().clearPendingSessionFocus(pendingSessionFocusId)
+      }
+    }
+
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(run)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [cards, currentProjectKey, pendingSessionFocusId, workspaceMode])
 
   useEffect(() => {
     if (!sessionsLoaded) return
@@ -488,8 +506,9 @@ function CanvasEmptyState({ viewportRef }: { viewportRef: React.RefObject<HTMLDi
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return
     const { scale, offsetX, offsetY } = useCanvasStore.getState().getLayout().viewport
-    const cx = (rect.width / 2 - offsetX) / scale - 120
-    const cy = (rect.height / 2 - offsetY) / scale - 80
+    const noteSize = getDefaultCanvasCardSize('note')
+    const cx = (rect.width / 2 - offsetX) / scale - noteSize.width / 2
+    const cy = (rect.height / 2 - offsetY) / scale - noteSize.height / 2
     addCard({ kind: 'note', x: cx, y: cy, noteBody: '双击编辑内容，标题栏拖动', noteColor: 'yellow' })
   }
 

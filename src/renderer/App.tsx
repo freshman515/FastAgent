@@ -11,6 +11,7 @@ import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { ensureAnonymousProject } from '@/lib/anonymous-project'
+import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { switchProjectContext } from '@/lib/project-context'
 import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
 import { useCanvasStore } from '@/stores/canvas'
@@ -756,23 +757,7 @@ function MainApp(): JSX.Element {
 
   // Focus a specific session (navigate project + pane + tab)
   const focusSession = useCallback((sessionId: string) => {
-    const session = useSessionsStore.getState().sessions.find((s) => s.id === sessionId)
-    if (!session) return
-
-    const projectsStore = useProjectsStore.getState()
-    const paneStore = usePanesStore.getState()
-
-    // Switch project (restores pane layout) if needed
-    if (projectsStore.selectedProjectId !== session.projectId) {
-      switchProjectContext(session.projectId, sessionId, session.worktreeId ?? null)
-    }
-
-    // Now find and activate the session in the restored pane layout
-    const paneId = paneStore.findPaneForSession(sessionId)
-    if (paneId) {
-      paneStore.setActivePaneId(paneId)
-      paneStore.setPaneActiveSession(paneId, sessionId)
-    }
+    focusSessionTarget(sessionId)
   }, [])
 
   // Listen for session focus requests (from notification click)
@@ -802,6 +787,8 @@ function MainApp(): JSX.Element {
     const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
     const unsubscribe = window.api.session.onActivityStatus((event) => {
       const { setActivity, clearActivity } = useSessionsStore.getState()
+      const sessionExists = useSessionsStore.getState().sessions.some((session) => session.id === event.sessionId)
+      if (!sessionExists) return
       setActivity(event.sessionId, {
         status: event.activity,
         source: event.source,
@@ -840,10 +827,11 @@ function MainApp(): JSX.Element {
   // Listen for agent Stop hooks — show completion toast
   useEffect(() => {
     const unsubscribe = window.api.session.onIdleToast((event) => {
-      // sessionId is already matched by HookServer via CWD + last user input
+      // HookServer only forwards Stop events for sessions launched by this app.
       const session = event.sessionId
         ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
         : undefined
+      if (!session) return
       const name = session?.name ?? 'Agent'
       const project = session
         ? useProjectsStore.getState().projects.find((p) => p.id === session.projectId)

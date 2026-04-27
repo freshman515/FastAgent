@@ -729,6 +729,15 @@ export class PtyManager {
     return null
   }
 
+  findClaudeSessionByClaudeSessionId(claudeSessionId: string): string | null {
+    for (const [, managed] of this.ptys) {
+      if (!managed.sessionId) continue
+      if (!isClaudeCodeType(managed.type)) continue
+      if (managed.resumeId === claudeSessionId) return managed.sessionId
+    }
+    return null
+  }
+
   canAccessSession(sourceSessionId: string | null | undefined, targetSessionId: string): boolean {
     if (!sourceSessionId) return false
     const source = this.getManagedSession(sourceSessionId)

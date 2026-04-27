@@ -3,11 +3,9 @@ import { ArrowRight, CheckCircle, AlertTriangle, Info, XCircle, X } from 'lucide
 import { useCallback } from 'react'
 import type { ToastNotification } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { switchProjectContext } from '@/lib/project-context'
+import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { useUIStore } from '@/stores/ui'
-import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
-import { usePanesStore } from '@/stores/panes'
 
 const TYPE_ICONS = {
   info: Info,
@@ -26,35 +24,18 @@ const TYPE_COLORS = {
 export function ToastContainer(): JSX.Element {
   const toasts = useUIStore((s) => s.toasts)
   const removeToast = useUIStore((s) => s.removeToast)
-  const setActive = useSessionsStore((s) => s.setActive)
   const selectProject = useProjectsStore((s) => s.selectProject)
 
   const handleJump = useCallback(
     (toast: ToastNotification) => {
       if (toast.sessionId) {
-        const session = useSessionsStore.getState().sessions.find((s) => s.id === toast.sessionId)
-        if (session) {
-          const projectsStore = useProjectsStore.getState()
-          const paneStore = usePanesStore.getState()
-
-          // Switch project (restores pane layout) if needed
-          if (projectsStore.selectedProjectId !== session.projectId) {
-            switchProjectContext(session.projectId, toast.sessionId, session.worktreeId ?? null)
-          }
-
-          setActive(toast.sessionId)
-          const paneId = paneStore.findPaneForSession(toast.sessionId)
-          if (paneId) {
-            paneStore.setActivePaneId(paneId)
-            paneStore.setPaneActiveSession(paneId, toast.sessionId)
-          }
-        }
+        focusSessionTarget(toast.sessionId)
       } else if (toast.projectId) {
         selectProject(toast.projectId)
       }
       removeToast(toast.id)
     },
-    [selectProject, setActive, removeToast],
+    [selectProject, removeToast],
   )
 
   return (

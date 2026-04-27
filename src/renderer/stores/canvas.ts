@@ -587,7 +587,7 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
 const DEFAULT_CARD_SIZE: Record<CanvasCardKind, { width: number; height: number }> = {
   session: { width: 1040, height: 660 },
   terminal: { width: 1040, height: 660 },
-  note: { width: 240, height: 180 },
+  note: { width: 320, height: 240 },
   frame: { width: 760, height: 460 },
 }
 

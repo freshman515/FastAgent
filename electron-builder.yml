@@ -18,6 +18,10 @@ files:
   - "!node_modules/**/*.ts"
   - "!node_modules/**/*.map"
 
+extraResources:
+  - from: resources/skills
+    to: skills
+
 asar: true
 asarUnpack:
   - "node_modules/@lydell/node-pty/**"

@@ -46,8 +46,34 @@ export const SESSION_OPTIONS: SessionOption[] = [
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
 ]
 
-export function buildNewSessionOptions(customDefinitions: CustomSessionDefinition[]): NewSessionOption[] {
-  return [
+export function getCustomSessionOptionId(definitionId: string): string {
+  return `custom:${definitionId}`
+}
+
+export function orderNewSessionOptions<T extends { id: string }>(
+  options: T[],
+  optionOrder: readonly string[] = [],
+): T[] {
+  if (optionOrder.length === 0) return options
+
+  const orderById = new Map(optionOrder.map((id, index) => [id, index]))
+  return options
+    .map((option, index) => ({
+      option,
+      index,
+      order: orderById.get(option.id) ?? Number.POSITIVE_INFINITY,
+    }))
+    .sort((a, b) => a.order - b.order || a.index - b.index)
+    .map((item) => item.option)
+}
+
+export function buildNewSessionOptions(
+  customDefinitions: CustomSessionDefinition[],
+  hiddenOptionIds: readonly string[] = [],
+  optionOrder: readonly string[] = [],
+): NewSessionOption[] {
+  const hidden = new Set(hiddenOptionIds)
+  const options = [
     ...filterSessionTypesForCurrentPlatform(SESSION_OPTIONS).map((option) => ({
       id: option.type,
       label: option.label,
@@ -55,12 +81,13 @@ export function buildNewSessionOptions(customDefinitions: CustomSessionDefinitio
       type: option.type,
     })),
     ...customDefinitions.map((definition) => ({
-      id: `custom:${definition.id}`,
+      id: getCustomSessionOptionId(definition.id),
       label: definition.name,
       icon: definition.icon,
       customSessionDefinitionId: definition.id,
     })),
   ]
+  return orderNewSessionOptions(options, optionOrder).filter((option) => !hidden.has(option.id))
 }
 
 interface NewSessionMenuProps {
@@ -82,7 +109,9 @@ export function NewSessionMenu({
 }: NewSessionMenuProps): JSX.Element {
   const addSessionToPane = usePanesStore((s) => s.addSessionToPane)
   const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
-  const options = buildNewSessionOptions(customSessionDefinitions)
+  const hiddenNewSessionOptionIds = useUIStore((s) => s.settings.hiddenNewSessionOptionIds)
+  const newSessionOptionOrder = useUIStore((s) => s.settings.newSessionOptionOrder)
+  const options = buildNewSessionOptions(customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder)
 
   const handleSelect = useCallback(
     (option: NewSessionOption) => {
@@ -114,7 +143,11 @@ export function NewSessionMenu({
       )}
     >
       <div className="flex flex-col gap-0.5">
-        {options.map((opt) => (
+        {options.length === 0 ? (
+          <div className="px-3 py-2 text-[12px] text-[var(--color-text-tertiary)]">
+            没有可显示的会话类型
+          </div>
+        ) : options.map((opt) => (
           <button
             key={opt.id}
             onClick={() => handleSelect(opt)}

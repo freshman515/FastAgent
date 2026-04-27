@@ -14,6 +14,7 @@ import { opencodeService } from './services/OpencodeService'
 import { claudeGuiService } from './services/ClaudeGuiService'
 import { updaterService } from './services/UpdaterService'
 import { orchestratorService } from './services/OrchestratorService'
+import { installBundledSkills } from './services/SkillInstaller'
 import { isCodexType, type SessionType } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
@@ -157,6 +158,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  installBundledSkills()
   registerAllHandlers()
 
   // Boot the FastAgents MCP bridge HTTP server BEFORE spawning any PTYs, so

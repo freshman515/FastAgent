@@ -25,17 +25,26 @@ export interface SnapGuide {
 interface CanvasUiState {
   marquee: MarqueeRect | null
   guides: SnapGuide[]
+  pendingSessionFocusId: string | null
 
   setMarquee: (rect: MarqueeRect | null) => void
   setGuides: (guides: SnapGuide[]) => void
   clearGuides: () => void
+  requestSessionFocus: (sessionId: string) => void
+  clearPendingSessionFocus: (sessionId?: string) => void
 }
 
 export const useCanvasUiStore = create<CanvasUiState>((set) => ({
   marquee: null,
   guides: [],
+  pendingSessionFocusId: null,
 
   setMarquee: (rect) => set({ marquee: rect }),
   setGuides: (guides) => set({ guides }),
   clearGuides: () => set({ guides: [] }),
+  requestSessionFocus: (sessionId) => set({ pendingSessionFocusId: sessionId }),
+  clearPendingSessionFocus: (sessionId) => set((state) => {
+    if (sessionId && state.pendingSessionFocusId !== sessionId) return state
+    return { pendingSessionFocusId: null }
+  }),
 }))

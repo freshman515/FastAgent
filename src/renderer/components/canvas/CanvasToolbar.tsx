@@ -31,7 +31,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CanvasBookmark, CanvasCard, Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
-import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
+import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -121,8 +121,9 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
     const { scale: s, offsetX, offsetY } = useCanvasStore.getState().getLayout().viewport
     const centerX = rect.width / 2
     const centerY = rect.height / 2
-    const x = (centerX - offsetX) / s - 120
-    const y = (centerY - offsetY) / s - 80
+    const noteSize = getDefaultCanvasCardSize('note')
+    const x = (centerX - offsetX) / s - noteSize.width / 2
+    const y = (centerY - offsetY) / s - noteSize.height / 2
     addCard({ kind: 'note', x, y, noteBody: '', noteColor: 'yellow' })
   }
 
@@ -520,7 +521,6 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
         </button>
         {arrangeOpen && (
           <div className="absolute bottom-full left-0 mb-1 min-w-[168px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-xl">
-            <ArrangeItem label="自由排列" onClick={() => handleArrangeMode('free')} />
             <ArrangeItem label="网格排列" onClick={() => handleArrangeMode('grid')} />
             <ArrangeItem label="横向排列" onClick={() => handleArrangeMode('rowFlow')} />
             <ArrangeItem label="纵向排列" onClick={() => handleArrangeMode('colFlow')} />
@@ -698,7 +698,7 @@ function getArrangeModeLabel(mode: CanvasArrangeMode): string {
     case 'grid': return '网格排列'
     case 'rowFlow': return '横向排列'
     case 'colFlow': return '纵向排列'
-    case 'free': return '自由排列'
+    case 'free': return '排列'
   }
 }
 

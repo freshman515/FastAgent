@@ -163,17 +163,17 @@ export class HookServer {
         const faSessionId = typeof data.fa_session_id === 'string' && data.fa_session_id
           ? data.fa_session_id
           : null
-        const cwd = typeof data.cwd === 'string' ? data.cwd : ''
-        const sessionType = typeof data.fastagents_session_type === 'string'
+        const managedSession = faSessionId ? ptyManager.getManagedSession(faSessionId) : null
+        const sessionType = typeof data.fastagents_session_type === 'string' && data.fastagents_session_type
           ? data.fastagents_session_type
-          : ''
+          : managedSession?.type ?? ''
         const hookSource = typeof data.fastagents_hook_source === 'string'
           ? data.fastagents_hook_source
           : ''
         const isCodex = sessionType === 'codex' || sessionType === 'codex-yolo' || sessionType === 'codex-wsl' || sessionType === 'codex-yolo-wsl' || hookSource === 'codex'
-        const resolvedSessionId = faSessionId
-          ?? (cwd && isCodex ? ptyManager.findCodexSessionByCwd(cwd) : null)
-          ?? (cwd && !isCodex ? ptyManager.findClaudeSessionByCwd(cwd) : null)
+        const resolvedSessionId = faSessionId && managedSession
+          ? faSessionId
+          : null
 
         if (!resolvedSessionId) return
 
@@ -240,10 +240,19 @@ export class HookServer {
         const toolName = typeof data.tool_name === 'string' ? data.tool_name : 'Unknown'
         const toolInput = (data.tool_input && typeof data.tool_input === 'object') ? data.tool_input : {}
         const suggestions: PermissionSuggestion[] = Array.isArray(data.permission_suggestions) ? data.permission_suggestions : []
-        // HTTP hooks don't pass env vars, so resolve session by CWD
+        // HTTP hooks don't pass our FASTAGENTS_* env vars. Resolve Claude
+        // hooks by Claude's own session id instead of cwd so external shells
+        // in the same project directory don't get attached to this app.
         const cwd = typeof data.cwd === 'string' ? data.cwd : ''
-        const faSessionId = cwd ? ptyManager.findClaudeSessionByCwd(cwd) : null
+        const claudeSessionId = typeof data.session_id === 'string' ? data.session_id : ''
+        const faSessionId = claudeSessionId ? ptyManager.findClaudeSessionByClaudeSessionId(claudeSessionId) : null
         const conversationId = !faSessionId && cwd ? claudeGuiService.findConversationIdByCwd(cwd) : null
+
+        if (!faSessionId && !conversationId) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+          return
+        }
 
         // Claude GUI handles can_use_tool permission prompts through the
         // stream-json control_request/control_response channel. Return an
@@ -325,8 +334,8 @@ export class HookServer {
       try {
         const data = JSON.parse(body)
         const sessionId = data.session_id as string | undefined
-        const cwd = typeof data.cwd === 'string' ? data.cwd : (typeof data.workspace?.current_dir === 'string' ? data.workspace.current_dir : undefined)
-        const faSessionId = cwd ? ptyManager.findClaudeSessionByCwd(cwd) : (sessionId ?? null)
+        const faSessionId = sessionId ? ptyManager.findClaudeSessionByClaudeSessionId(sessionId) : null
+        if (!faSessionId) return
 
         // Broadcast to all windows
         for (const win of BrowserWindow.getAllWindows()) {
