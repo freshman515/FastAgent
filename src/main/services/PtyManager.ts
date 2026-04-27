@@ -286,14 +286,20 @@ export class PtyManager {
       }
     }
 
-    const agentCmd = buildAgentCommand(options.type, {
-      sessionId: options.sessionId,
-      resume: options.resume,
-      resumeUUID: effectiveResumeUUID ?? undefined,
-      claudeLaunchMode,
-      codexResumeId: options.codexResumeId,
-      geminiResumeId: options.geminiResumeId,
-    })
+    const customCommand = options.command?.trim()
+    const customArgs = Array.isArray(options.args)
+      ? options.args.filter((arg): arg is string => typeof arg === 'string')
+      : []
+    const agentCmd = customCommand
+      ? { command: customCommand, args: customArgs }
+      : buildAgentCommand(options.type, {
+          sessionId: options.sessionId,
+          resume: options.resume,
+          resumeUUID: effectiveResumeUUID ?? undefined,
+          claudeLaunchMode,
+          codexResumeId: options.codexResumeId,
+          geminiResumeId: options.geminiResumeId,
+        })
     if (agentCmd && isClaudeCodeType(options.type) && options.sessionId && this.mcpEnv) {
       const mcpConfigPath = createFastAgentsMcpConfig({
         port: this.mcpEnv.port,

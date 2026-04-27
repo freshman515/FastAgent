@@ -1,6 +1,6 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { cn, generateId } from '@/lib/utils'
 import {
   CANVAS_FOCUS_FONT_PX_MAX,
   CANVAS_FOCUS_FONT_PX_MIN,
@@ -10,6 +10,7 @@ import {
   CANVAS_SESSION_CARD_WIDTH_MIN,
   useUIStore,
   type AppSettings,
+  type CustomSessionDefinition,
 } from '@/stores/ui'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui'
@@ -21,11 +22,18 @@ import { getThemeNames, getXtermTheme, getAllCustomThemeNames, getTheme, type Gh
 import { CustomThemeEditor } from './CustomThemeEditor'
 import { parseThemeAuto } from '@/lib/themeImport'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { parseCustomSessionArgs } from '@/lib/createSession'
+import { SessionIconView } from '@/components/session/SessionIconView'
 
-type SettingsPage = 'general' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
+type SettingsPage = 'general' | 'sessions' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
-  { id: 'general', label: '通用', description: '工作区、搜索与窗口行为', icon: Settings },
+  { id: 'general', label: '通用', description: '基础偏好与数据清理', icon: Settings },
+  { id: 'sessions', label: '会话', description: '默认会话与自定义启动器', icon: Terminal },
+  { id: 'workspace', label: '工作区', description: '经典分屏与画布模式', icon: SplitSquareHorizontal },
+  { id: 'notifications', label: '通知', description: '完成提醒与声音', icon: Bell },
+  { id: 'titlebar', label: '标题栏', description: '顶部搜索与音乐显示', icon: Search },
+  { id: 'git', label: 'Git', description: '改动视图与修复入口', icon: GitBranch },
   { id: 'appearance', label: '外观', description: '主题、字体与界面观感', icon: Type },
   { id: 'terminal', label: '终端', description: '终端字号与字体预览', icon: Terminal },
   { id: 'editor', label: '编辑器', description: '代码编辑体验与排版', icon: FileCode2 },
@@ -317,13 +325,6 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
   const groups = useGroupsStore((s) => s.groups)
   const [confirmClearSessionsOpen, setConfirmClearSessionsOpen] = useState(false)
 
-  const applyClassicCompactPreset = useCallback(() => {
-    onUpdate('workspaceLayout', 'panes')
-    onUpdate('paneUiMode', 'classic')
-    onUpdate('tabUiMode', 'square')
-    onUpdate('paneDensityMode', 'compact')
-  }, [onUpdate])
-
   const clearAllSessions = useCallback(() => {
     const sessions = useSessionsStore.getState().sessions
     for (const s of sessions) {
@@ -340,11 +341,10 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
     <div className={PAGE_STACK}>
       <PageIntro
         title="通用设置"
-        description="调整默认工作流、通知提醒、窗口行为与数据清理策略。"
+        description="只保留最基础的工作区偏好和数据清理，其余设置已按功能拆到独立页面。"
       />
 
-      {/* ───── 工作区 ───── */}
-      <SettingsSection icon={Briefcase} title="工作区" description="侧边栏分组与默认会话类型。">
+      <SettingsSection icon={Briefcase} title="基础工作区" description="设置默认展示范围和启动窗口状态。">
         <div className="flex flex-col gap-1.5">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">默认显示的分组</span>
           <div className="flex flex-wrap gap-1">
@@ -378,15 +378,135 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">双击标签栏创建的默认会话</span>
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">启动时窗口状态</span>
+          <SegmentedChoice
+            value={settings.startupWindowState}
+            options={[
+              { id: 'maximized', label: '最大化', desc: '启动后直接铺满屏幕' },
+              { id: 'normal', label: '正常窗口', desc: '使用默认窗口尺寸启动' },
+            ]}
+            onChange={(v) => onUpdate('startupWindowState', v)}
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection icon={Trash2} title="数据清理" description="清空全部会话标签与分栏布局。项目、分组、主题会保留。">
+        <button
+          onClick={() => setConfirmClearSessionsOpen(true)}
+          className={cn(
+            'flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-error)]/30 px-4 py-2',
+            'text-[var(--ui-font-sm)] text-[var(--color-error)]',
+            'hover:bg-[var(--color-error)]/10 transition-colors',
+          )}
+        >
+          <Trash2 size={13} />
+          清空全部会话
+        </button>
+      </SettingsSection>
+
+      {confirmClearSessionsOpen && (
+        <ConfirmDialog
+          title="清空全部会话"
+          message="确认清空所有会话标签和分栏布局吗？正在运行的会话会被停止。项目、分组、主题会保留。"
+          confirmLabel="清空"
+          cancelLabel="取消"
+          danger
+          onConfirm={clearAllSessions}
+          onCancel={() => setConfirmClearSessionsOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<CustomSessionDefinition>({
+    id: '',
+    name: '',
+    icon: '⚙',
+    command: '',
+    args: '',
+  })
+  const [error, setError] = useState('')
+  const editing = editingId !== null
+
+  const startCreate = useCallback(() => {
+    setEditingId('')
+    setDraft({ id: '', name: '', icon: '⚙', command: '', args: '' })
+    setError('')
+  }, [])
+
+  const startEdit = useCallback((definition: CustomSessionDefinition) => {
+    setEditingId(definition.id)
+    setDraft({ ...definition })
+    setError('')
+  }, [])
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null)
+    setError('')
+  }, [])
+
+  const saveDefinition = useCallback(() => {
+    const name = draft.name.trim()
+    const command = draft.command.trim()
+    if (!name) {
+      setError('请输入会话名称')
+      return
+    }
+    if (!command) {
+      setError('请输入启动命令')
+      return
+    }
+
+    const id = editingId || generateId()
+    const nextDefinition: CustomSessionDefinition = {
+      id,
+      name,
+      icon: draft.icon.trim() || '⚙',
+      command,
+      args: draft.args.trim(),
+    }
+    const exists = settings.customSessionDefinitions.some((definition) => definition.id === id)
+    const definitions = exists
+      ? settings.customSessionDefinitions.map((definition) => definition.id === id ? nextDefinition : definition)
+      : [...settings.customSessionDefinitions, nextDefinition]
+    onUpdate('customSessionDefinitions', definitions)
+    if (!settings.defaultCustomSessionId && settings.customSessionDefinitions.length === 0) {
+      onUpdate('defaultCustomSessionId', id)
+    }
+    setEditingId(null)
+    setError('')
+  }, [draft, editingId, onUpdate, settings.customSessionDefinitions, settings.defaultCustomSessionId])
+
+  const deleteDefinition = useCallback((id: string) => {
+    const definitions = settings.customSessionDefinitions.filter((definition) => definition.id !== id)
+    onUpdate('customSessionDefinitions', definitions)
+    if (settings.defaultCustomSessionId === id) onUpdate('defaultCustomSessionId', null)
+    if (editingId === id) cancelEdit()
+  }, [cancelEdit, editingId, onUpdate, settings.customSessionDefinitions, settings.defaultCustomSessionId])
+
+  const parsedArgs = useMemo(() => parseCustomSessionArgs(draft.args), [draft.args])
+
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="会话设置" description="管理默认新建会话，以及可自定义名称、图标、启动命令和启动参数的会话类型。" />
+
+      <SettingsSection icon={Terminal} title="默认新建会话" description="标题栏新建、双击标签栏空白处都会使用这里的默认项。">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">内置会话</span>
           <div className="flex flex-wrap gap-1">
             {SESSION_TYPE_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
-                onClick={() => onUpdate('defaultSessionType', opt.id)}
+                onClick={() => {
+                  onUpdate('defaultSessionType', opt.id)
+                  onUpdate('defaultCustomSessionId', null)
+                }}
                 className={cn(
                   'rounded-[var(--radius-md)] border px-3 py-1 text-[var(--ui-font-sm)] transition-colors',
-                  settings.defaultSessionType === opt.id
+                  settings.defaultCustomSessionId === null && settings.defaultSessionType === opt.id
                     ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
                     : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
                 )}
@@ -396,6 +516,28 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
             ))}
           </div>
         </div>
+        {settings.customSessionDefinitions.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">自定义会话</span>
+            <div className="flex flex-wrap gap-1">
+              {settings.customSessionDefinitions.map((definition) => (
+                <button
+                  key={definition.id}
+                  onClick={() => onUpdate('defaultCustomSessionId', definition.id)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-[var(--radius-md)] border px-3 py-1 text-[var(--ui-font-sm)] transition-colors',
+                    settings.defaultCustomSessionId === definition.id
+                      ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]'
+                      : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)]',
+                  )}
+                >
+                  <SessionIconView icon={definition.icon} className="h-4 w-4" imageClassName="h-4 w-4" />
+                  {definition.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <ToggleRow
           label="新建会话时询问名称"
           description={settings.promptSessionNameOnCreate
@@ -406,12 +548,130 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
         />
       </SettingsSection>
 
-      {/* ───── 工作区模式 ───── */}
-      <SettingsSection
-        icon={SplitSquareHorizontal}
-        title="工作区模式"
-        description="选择会话和终端的排布方式，快捷键 Ctrl+Shift+M 可随时切换。"
-      >
+      <SettingsSection icon={Plus} title="自定义会话" description="用于添加任意 CLI，例如自定义 Agent、脚本或项目命令。">
+        <div className="flex flex-col gap-2">
+          {settings.customSessionDefinitions.length === 0 && (
+            <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] px-3 py-4 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              还没有自定义会话。添加后会出现在新建会话菜单里。
+            </div>
+          )}
+          {settings.customSessionDefinitions.map((definition) => (
+            <div key={definition.id} className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 px-3 py-2">
+              <SessionIconView icon={definition.icon} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">{definition.name}</div>
+                <div className="truncate font-mono text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                  {definition.command}{definition.args ? ` ${definition.args}` : ''}
+                </div>
+              </div>
+              <button
+                onClick={() => startEdit(definition)}
+                className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-white"
+                title="编辑"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                onClick={() => deleteDefinition(definition.id)}
+                className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-error)] hover:bg-[var(--color-error)]/10"
+                title="删除"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {editing ? (
+          <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+            <div className="mb-3 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+              {editingId ? '编辑自定义会话' : '新增自定义会话'}
+            </div>
+            <div className="grid grid-cols-[80px_1fr] gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">图标</span>
+                <input
+                  value={draft.icon}
+                  onChange={(event) => setDraft((current) => ({ ...current, icon: event.target.value }))}
+                  placeholder="⚙"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 text-center text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">名称</span>
+                <input
+                  value={draft.name}
+                  onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="My Agent"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                />
+              </label>
+            </div>
+            <div className="mt-3 grid gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">启动命令</span>
+                <input
+                  value={draft.command}
+                  onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))}
+                  placeholder="my-agent"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">启动参数</span>
+                <input
+                  value={draft.args}
+                  onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))}
+                  placeholder="--model xxx --yolo"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                />
+                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                  参数会按空格拆分，支持单引号和双引号。当前解析：{parsedArgs.length > 0 ? parsedArgs.map((arg) => `"${arg}"`).join(' ') : '无'}
+                </span>
+              </label>
+            </div>
+            {error && <div className="mt-2 text-[var(--ui-font-xs)] text-[var(--color-error)]">{error}</div>}
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={saveDefinition}
+                className="rounded-[var(--radius-md)] border border-[var(--color-accent)] bg-[var(--color-accent-muted)] px-4 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/15"
+              >
+                保存
+              </button>
+              <button
+                onClick={cancelEdit}
+                className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:text-white"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={startCreate}
+            className="flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-accent)]/35 px-4 py-2 text-[var(--ui-font-sm)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10"
+          >
+            <Plus size={13} />
+            添加自定义会话
+          </button>
+        )}
+      </SettingsSection>
+    </div>
+  )
+}
+
+function WorkspacePage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const applyClassicCompactPreset = useCallback(() => {
+    onUpdate('workspaceLayout', 'panes')
+    onUpdate('paneUiMode', 'classic')
+    onUpdate('tabUiMode', 'square')
+    onUpdate('paneDensityMode', 'compact')
+  }, [onUpdate])
+
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="工作区设置" description="集中管理经典分屏、标签页样式、画布行为和弹出窗口。 " />
+      <SettingsSection icon={SplitSquareHorizontal} title="布局模式" description="选择会话和终端的排布方式，快捷键 Ctrl+Shift+M 可随时切换。">
         <SegmentedChoice
           value={settings.workspaceLayout}
           options={[
@@ -459,110 +719,84 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           </span>
           <span className="text-[10px] font-bold text-[var(--color-accent)]">APPLY</span>
         </button>
-        {settings.workspaceLayout === 'canvas' && (
-          <>
-            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
-              <div className="mb-2 flex flex-col gap-0.5">
-                <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建会话卡片默认尺寸</span>
-                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-                  只影响之后新建的终端、Claude Code、Codex 等会话卡片，已有卡片不自动改尺寸。
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <PixelNumberField
-                  label="宽度"
-                  value={settings.canvasSessionCardWidth}
-                  min={CANVAS_SESSION_CARD_WIDTH_MIN}
-                  max={CANVAS_SESSION_CARD_WIDTH_MAX}
-                  onChange={(v) => onUpdate('canvasSessionCardWidth', v)}
-                />
-                <PixelNumberField
-                  label="高度"
-                  value={settings.canvasSessionCardHeight}
-                  min={CANVAS_SESSION_CARD_HEIGHT_MIN}
-                  max={CANVAS_SESSION_CARD_HEIGHT_MAX}
-                  onChange={(v) => onUpdate('canvasSessionCardHeight', v)}
-                />
-              </div>
-            </div>
-            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
-              <div className="mb-2 flex flex-col gap-0.5">
-                <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">点击聚焦缩放字体</span>
-                <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-                  字体显示大小在范围内时只居中；小于或大于范围时缩放到目标字体大小。
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <PixelNumberField
-                  label="最小"
-                  value={settings.canvasFocusReadableFontMinPx}
-                  min={CANVAS_FOCUS_FONT_PX_MIN}
-                  max={CANVAS_FOCUS_FONT_PX_MAX}
-                  step={1}
-                  onChange={(v) => onUpdate('canvasFocusReadableFontMinPx', v)}
-                />
-                <PixelNumberField
-                  label="最大"
-                  value={settings.canvasFocusReadableFontMaxPx}
-                  min={CANVAS_FOCUS_FONT_PX_MIN}
-                  max={CANVAS_FOCUS_FONT_PX_MAX}
-                  step={1}
-                  onChange={(v) => onUpdate('canvasFocusReadableFontMaxPx', v)}
-                />
-                <PixelNumberField
-                  label="目标"
-                  value={settings.canvasFocusTargetFontPx}
-                  min={CANVAS_FOCUS_FONT_PX_MIN}
-                  max={CANVAS_FOCUS_FONT_PX_MAX}
-                  step={1}
-                  onChange={(v) => onUpdate('canvasFocusTargetFontPx', v)}
-                />
-              </div>
-            </div>
-            <ToggleRow
-              label="显示网格"
-              description="在画布上渲染点状背景网格，辅助对齐"
-              checked={settings.canvasGridEnabled}
-              onChange={(v) => onUpdate('canvasGridEnabled', v)}
-            />
-            <ToggleRow
-              label="吸附到网格"
-              description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘"
-              checked={settings.canvasSnapEnabled}
-              onChange={(v) => onUpdate('canvasSnapEnabled', v)}
-            />
-            <SegmentedChoice
-              value={settings.canvasOverlapMode}
-              options={[
-                { id: 'free', label: '允许重叠', desc: '卡片可自由覆盖，保持当前行为' },
-                { id: 'avoid', label: '避免重叠', desc: '拖动时自动推开相邻卡片' },
-              ]}
-              onChange={(v) => onUpdate('canvasOverlapMode', v)}
-            />
-            <ToggleRow
-              label="显示缩略图"
-              description="右下角小地图显示画布全貌和当前视口"
-              checked={settings.canvasShowMinimap}
-              onChange={(v) => onUpdate('canvasShowMinimap', v)}
-            />
-          </>
-        )}
+        <ToggleRow
+          label="活动分屏高亮"
+          description={settings.showActivePaneBorder ? '当前分屏显示高亮边框' : '不显示高亮边框'}
+          checked={settings.showActivePaneBorder}
+          onChange={(v) => onUpdate('showActivePaneBorder', v)}
+        />
       </SettingsSection>
 
-      {/* ───── 通知提醒 ───── */}
-      <SettingsSection icon={Bell} title="通知提醒" description="会话任务完成时的桌面通知与音效。">
-        <ToggleRow
-          label="弹出通知"
-          description="在右下角弹出 toast 和系统桌面通知（仅当未在查看该会话时）"
-          checked={settings.notificationToastEnabled}
-          onChange={(v) => onUpdate('notificationToastEnabled', v)}
+      <SettingsSection icon={SplitSquareHorizontal} title="画布" description="无限画布的默认尺寸、聚焦缩放和网格行为。">
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+          <div className="mb-2 flex flex-col gap-0.5">
+            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建会话卡片默认尺寸</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              只影响之后新建的终端、Claude Code、Codex 等会话卡片，已有卡片不自动改尺寸。
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <PixelNumberField label="宽度" value={settings.canvasSessionCardWidth} min={CANVAS_SESSION_CARD_WIDTH_MIN} max={CANVAS_SESSION_CARD_WIDTH_MAX} onChange={(v) => onUpdate('canvasSessionCardWidth', v)} />
+            <PixelNumberField label="高度" value={settings.canvasSessionCardHeight} min={CANVAS_SESSION_CARD_HEIGHT_MIN} max={CANVAS_SESSION_CARD_HEIGHT_MAX} onChange={(v) => onUpdate('canvasSessionCardHeight', v)} />
+          </div>
+        </div>
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+          <div className="mb-2 flex flex-col gap-0.5">
+            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">点击聚焦缩放字体</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              字体显示大小在范围内时只居中；小于或大于范围时缩放到目标字体大小。
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <PixelNumberField label="最小" value={settings.canvasFocusReadableFontMinPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusReadableFontMinPx', v)} />
+            <PixelNumberField label="最大" value={settings.canvasFocusReadableFontMaxPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusReadableFontMaxPx', v)} />
+            <PixelNumberField label="目标" value={settings.canvasFocusTargetFontPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusTargetFontPx', v)} />
+          </div>
+        </div>
+        <ToggleRow label="显示网格" description="在画布上渲染点状背景网格，辅助对齐" checked={settings.canvasGridEnabled} onChange={(v) => onUpdate('canvasGridEnabled', v)} />
+        <ToggleRow label="吸附到网格" description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘" checked={settings.canvasSnapEnabled} onChange={(v) => onUpdate('canvasSnapEnabled', v)} />
+        <SegmentedChoice
+          value={settings.canvasOverlapMode}
+          options={[
+            { id: 'free', label: '允许重叠', desc: '卡片可自由覆盖，保持当前行为' },
+            { id: 'avoid', label: '避免重叠', desc: '拖动时自动推开相邻卡片' },
+          ]}
+          onChange={(v) => onUpdate('canvasOverlapMode', v)}
         />
-        <ToggleRow
-          label="完成音效"
-          description="播放像素风提示音（正在查看时也会响）"
-          checked={settings.notificationSoundEnabled}
-          onChange={(v) => onUpdate('notificationSoundEnabled', v)}
-        />
+        <ToggleRow label="显示缩略图" description="右下角小地图显示画布全貌和当前视口" checked={settings.canvasShowMinimap} onChange={(v) => onUpdate('canvasShowMinimap', v)} />
+      </SettingsSection>
+
+      <SettingsSection icon={ExternalLink} title="弹出窗口" description="标签页拖出为独立窗口时使用的默认尺寸和位置。">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出窗口默认尺寸</span>
+          <div className="flex gap-3">
+            <FontSizeSlider label="宽度" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
+            <FontSizeSlider label="高度" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出位置</span>
+          <SegmentedChoice
+            value={settings.popoutPosition}
+            options={[
+              { id: 'cursor', label: '跟随鼠标', desc: '在鼠标位置附近打开' },
+              { id: 'center', label: '屏幕居中', desc: '总是在屏幕中央打开' },
+            ]}
+            onChange={(v) => onUpdate('popoutPosition', v)}
+          />
+        </div>
+      </SettingsSection>
+    </div>
+  )
+}
+
+function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="通知设置" description="控制 Agent 完成任务时是否弹出提醒和播放声音。" />
+      <SettingsSection icon={Bell} title="完成提醒" description="会话任务完成时的桌面通知与音效。">
+        <ToggleRow label="弹出通知" description="在右下角弹出 toast 和系统桌面通知（仅当未在查看该会话时）" checked={settings.notificationToastEnabled} onChange={(v) => onUpdate('notificationToastEnabled', v)} />
+        <ToggleRow label="完成音效" description="播放像素风提示音（正在查看时也会响）" checked={settings.notificationSoundEnabled} onChange={(v) => onUpdate('notificationSoundEnabled', v)} />
         {settings.notificationSoundEnabled && (
           <PercentSlider
             label="音量"
@@ -585,15 +819,16 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           />
         )}
       </SettingsSection>
+    </div>
+  )
+}
 
-      {/* ───── 标题栏 ───── */}
+function TitleBarPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="标题栏设置" description="控制顶部区域的搜索、菜单显示方式和音乐播放器。" />
       <SettingsSection icon={Search} title="标题栏" description="顶部区域的搜索与菜单显示策略。">
-        <ToggleRow
-          label="标题栏搜索"
-          description={settings.showTitleBarSearch ? '可直接从顶部搜索文件与会话' : '中间显示音乐播放器或当前项目名'}
-          checked={settings.showTitleBarSearch}
-          onChange={(v) => onUpdate('showTitleBarSearch', v)}
-        />
+        <ToggleRow label="标题栏搜索" description={settings.showTitleBarSearch ? '可直接从顶部搜索文件与会话' : '中间显示音乐播放器或当前项目名'} checked={settings.showTitleBarSearch} onChange={(v) => onUpdate('showTitleBarSearch', v)} />
         {settings.showTitleBarSearch && (
           <SegmentedChoice
             value={settings.titleBarSearchScope}
@@ -616,47 +851,40 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           />
         </div>
       </SettingsSection>
-
-      {/* ───── 窗口与分屏 ───── */}
-      <SettingsSection icon={SplitSquareHorizontal} title="窗口与分屏" description="弹出窗口默认行为、分屏视觉反馈。">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">启动时窗口状态</span>
-          <SegmentedChoice
-            value={settings.startupWindowState}
-            options={[
-              { id: 'maximized', label: '最大化', desc: '启动后直接铺满屏幕' },
-              { id: 'normal', label: '正常窗口', desc: '使用默认窗口尺寸启动' },
-            ]}
-            onChange={(v) => onUpdate('startupWindowState', v)}
-          />
-        </div>
+      <SettingsSection icon={AudioLines} title="音乐播放器" description="标题栏内嵌播放器与可视化。">
         <ToggleRow
-          label="活动分屏高亮"
-          description={settings.showActivePaneBorder ? '当前分屏显示高亮边框' : '不显示高亮边框'}
-          checked={settings.showActivePaneBorder}
-          onChange={(v) => onUpdate('showActivePaneBorder', v)}
+          label="在标题栏显示"
+          description={settings.showTitleBarSearch ? '标题栏搜索启用时会自动隐藏' : settings.showMusicPlayer ? '显示播放器与可视化效果' : '显示当前项目名称'}
+          checked={settings.showMusicPlayer}
+          onChange={(v) => onUpdate('showMusicPlayer', v)}
         />
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出窗口默认尺寸</span>
-          <div className="flex gap-3">
-            <FontSizeSlider label="宽度" value={settings.popoutWidth} min={400} max={1920} onChange={(v) => onUpdate('popoutWidth', v)} />
-            <FontSizeSlider label="高度" value={settings.popoutHeight} min={300} max={1080} onChange={(v) => onUpdate('popoutHeight', v)} />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出位置</span>
-          <SegmentedChoice
-            value={settings.popoutPosition}
-            options={[
-              { id: 'cursor', label: '跟随鼠标', desc: '在鼠标位置附近打开' },
-              { id: 'center', label: '屏幕居中', desc: '总是在屏幕中央打开' },
-            ]}
-            onChange={(v) => onUpdate('popoutPosition', v)}
-          />
-        </div>
+        {settings.showMusicPlayer && (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">可视化风格</span>
+              <SegmentedChoice
+                value={settings.visualizerMode}
+                options={[
+                  { id: 'melody', label: '旋律流线', desc: '柔和曲线与粒子', icon: AudioLines },
+                  { id: 'bars', label: '频谱柱状', desc: '经典频谱柱状图', icon: BarChart3 },
+                ]}
+                onChange={(v) => onUpdate('visualizerMode', v)}
+              />
+            </div>
+            <FontSizeSlider label="可视化宽度" value={settings.visualizerWidth} min={80} max={Math.max(400, window.innerWidth)} onChange={(v) => onUpdate('visualizerWidth', v)} />
+            <ToggleRow label="播放控制按钮" description="上一首 / 播放暂停 / 下一首" checked={settings.showPlayerControls} onChange={(v) => onUpdate('showPlayerControls', v)} />
+            <ToggleRow label="歌曲信息" description="显示歌曲名、歌手与封面" checked={settings.showTrackInfo} onChange={(v) => onUpdate('showTrackInfo', v)} />
+          </>
+        )}
       </SettingsSection>
+    </div>
+  )
+}
 
-      {/* ───── Git 面板 ───── */}
+function GitPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="Git 设置" description="调整 Git 侧栏的显示方式和 AI 修复入口。" />
       <SettingsSection icon={GitBranch} title="Git 面板" description="Git 侧栏的改动文件视图与 AI 修复流程。">
         <div className="flex flex-col gap-1.5">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">改动文件展示方式</span>
@@ -681,83 +909,6 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           />
         </div>
       </SettingsSection>
-
-      {/* ───── 音乐播放器 ───── */}
-      <SettingsSection icon={AudioLines} title="音乐播放器" description="标题栏内嵌播放器与可视化。">
-        <ToggleRow
-          label="在标题栏显示"
-          description={
-            settings.showTitleBarSearch
-              ? '标题栏搜索启用时会自动隐藏'
-              : settings.showMusicPlayer
-                ? '显示播放器与可视化效果'
-                : '显示当前项目名称'
-          }
-          checked={settings.showMusicPlayer}
-          onChange={(v) => onUpdate('showMusicPlayer', v)}
-        />
-        {settings.showMusicPlayer && (
-          <>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">可视化风格</span>
-              <SegmentedChoice
-                value={settings.visualizerMode}
-                options={[
-                  { id: 'melody', label: '旋律流线', desc: '柔和曲线与粒子', icon: AudioLines },
-                  { id: 'bars', label: '频谱柱状', desc: '经典频谱柱状图', icon: BarChart3 },
-                ]}
-                onChange={(v) => onUpdate('visualizerMode', v)}
-              />
-            </div>
-            <FontSizeSlider
-              label="可视化宽度"
-              value={settings.visualizerWidth}
-              min={80}
-              max={Math.max(400, window.innerWidth)}
-              onChange={(v) => onUpdate('visualizerWidth', v)}
-            />
-            <ToggleRow
-              label="播放控制按钮"
-              description="上一首 / 播放暂停 / 下一首"
-              checked={settings.showPlayerControls}
-              onChange={(v) => onUpdate('showPlayerControls', v)}
-            />
-            <ToggleRow
-              label="歌曲信息"
-              description="显示歌曲名、歌手与封面"
-              checked={settings.showTrackInfo}
-              onChange={(v) => onUpdate('showTrackInfo', v)}
-            />
-          </>
-        )}
-      </SettingsSection>
-
-      {/* ───── 数据清理 ───── */}
-      <SettingsSection icon={Trash2} title="数据清理" description="清空全部会话标签与分栏布局。项目、分组、主题会保留。">
-        <button
-          onClick={() => setConfirmClearSessionsOpen(true)}
-          className={cn(
-            'flex items-center gap-2 self-start rounded-[var(--radius-md)] border border-[var(--color-error)]/30 px-4 py-2',
-            'text-[var(--ui-font-sm)] text-[var(--color-error)]',
-            'hover:bg-[var(--color-error)]/10 transition-colors',
-          )}
-        >
-          <Trash2 size={13} />
-          清空全部会话
-        </button>
-      </SettingsSection>
-
-      {confirmClearSessionsOpen && (
-        <ConfirmDialog
-          title="清空全部会话"
-          message="确认清空所有会话标签和分栏布局吗？正在运行的会话会被停止。项目、分组、主题会保留。"
-          confirmLabel="清空"
-          cancelLabel="取消"
-          danger
-          onConfirm={clearAllSessions}
-          onCancel={() => setConfirmClearSessionsOpen(false)}
-        />
-      )}
     </div>
   )
 }
@@ -1638,13 +1789,18 @@ export function SettingsDialog(): JSX.Element | null {
         {/* Right content */}
         <div className="relative flex flex-1 flex-col bg-[linear-gradient(180deg,rgba(0,0,0,0.1),transparent)]">
           <div className="flex-1 overflow-y-auto scrollbar-none px-10 py-10 pb-20">
+            {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'sessions' && <SessionsPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'workspace' && <WorkspacePage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'notifications' && <NotificationsPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'titlebar' && <TitleBarPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'git' && <GitPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'appearance' && <AppearancePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'terminal' && <TerminalPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'editor' && <EditorPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'templates' && <TemplatesPage />}
             {page === 'ai' && <AiSettingsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'claudeGui' && <ClaudeGuiSettingsPage />}
-            {!['appearance', 'terminal', 'editor', 'templates', 'ai', 'claudeGui'].includes(page) && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
           </div>
           
           {/* Subtle footer gradient to show scrollability */}

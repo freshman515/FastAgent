@@ -79,6 +79,12 @@ export interface Session {
   geminiResumeId?: string
   /** Last URL loaded by the built-in browser tab. */
   browserUrl?: string
+  /** Custom launcher definition copied from settings at creation time. */
+  customSessionDefinitionId?: string
+  customSessionLabel?: string
+  customSessionIcon?: string
+  customSessionCommand?: string
+  customSessionArgs?: string[]
 }
 
 // ─── Canvas Mode ───

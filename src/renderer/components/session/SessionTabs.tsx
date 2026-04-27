@@ -139,10 +139,18 @@ export function SessionTabs({ sessions, activeSessionId, projectId }: SessionTab
       onDoubleClick={(e) => {
         // Double-click on empty area → create default session type
         if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.tab-bar') === e.currentTarget) {
-          const defaultType = useUIStore.getState().settings.defaultSessionType
+          const settings = useUIStore.getState().settings
+          const defaultCustomSession = settings.defaultCustomSessionId
+            ? settings.customSessionDefinitions.find((definition) => definition.id === settings.defaultCustomSessionId)
+            : null
           const setActiveSession = useSessionsStore.getState().setActive
           const worktreeId = getDefaultWorktreeIdForProject(projectId)
-          createSessionWithPrompt({ projectId, type: defaultType, worktreeId }, (id) => {
+          createSessionWithPrompt({
+            projectId,
+            type: defaultCustomSession ? undefined : settings.defaultSessionType,
+            customSessionDefinitionId: defaultCustomSession?.id,
+            worktreeId,
+          }, (id) => {
             setActiveSession(id)
           })
         }

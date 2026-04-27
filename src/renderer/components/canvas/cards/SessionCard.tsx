@@ -12,6 +12,7 @@ import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatSessionCardTitle, normalizeSessionRemark } from '@/lib/canvasSessionLabel'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from '../CanvasMenu'
 import { CardFrame, type CardCoordinateMode } from './CardFrame'
 
@@ -104,10 +105,10 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   }
 
   const title = (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)]/65">
-        <img src={sessionIcon} alt="" className="h-[18px] w-[18px] object-contain" />
-      </span>
+    <div className="flex min-w-0 items-center gap-2">
+      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)]/65">
+        <SessionIconView icon={session.customSessionIcon} fallbackSrc={sessionIcon} className="h-[22px] w-[22px]" imageClassName="h-[18px] w-[18px] object-contain" />
+      </div>
       {renaming ? (
         <input
           ref={renameInputRef}
@@ -129,7 +130,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
           <span className="truncate font-medium text-[var(--color-text-primary)]">{displayTitle}</span>
         </span>
       )}
-    </span>
+    </div>
   )
 
   const requestCloseSession = (): void => {

@@ -491,6 +491,8 @@ export function useXterm(
           resumeUUID,
           codexResumeId,
           geminiResumeId,
+          command: currentSession.customSessionCommand,
+          args: currentSession.customSessionArgs,
           cols: terminal.cols || 80,
           rows: terminal.rows || 24,
         })

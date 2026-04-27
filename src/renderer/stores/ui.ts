@@ -115,6 +115,14 @@ export interface PromptItem {
   favorite: boolean
 }
 
+export interface CustomSessionDefinition {
+  id: string
+  name: string
+  icon: string
+  command: string
+  args: string
+}
+
 const DEFAULT_QUICK_COMMANDS = [
   { id: 'qc-default-ls', name: 'ls', command: 'ls' },
   { id: 'qc-default-pwd', name: 'pwd', command: 'pwd' },
@@ -144,6 +152,9 @@ export interface AppSettings {
   visibleGroupId: string | null // null = show all groups
   visibleProjectId: string | null // null = show all projects
   defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'terminal' | 'codex' | 'codex-yolo' | 'gemini' | 'gemini-yolo' | 'opencode'
+  /** When set, default creation uses a custom launcher instead of defaultSessionType. */
+  defaultCustomSessionId: string | null
+  customSessionDefinitions: CustomSessionDefinition[]
   /** Pop up a naming dialog when creating a new session */
   promptSessionNameOnCreate: boolean
   recentPaths: string[]
@@ -240,6 +251,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   visibleGroupId: null,
   visibleProjectId: null,
   defaultSessionType: 'claude-code',
+  defaultCustomSessionId: null,
+  customSessionDefinitions: [],
   promptSessionNameOnCreate: false,
   recentPaths: [],
   visualizerMode: 'melody',
@@ -397,6 +410,41 @@ function normalizeQuickCommandGroups(raw: unknown): { groups: QuickCommandGroup[
   }
 
   return { groups, seeded }
+}
+
+function normalizeCustomSessionDefinitions(raw: unknown): { definitions: CustomSessionDefinition[]; seeded: boolean } {
+  if (!Array.isArray(raw)) return { definitions: [], seeded: false }
+
+  let seeded = false
+  const seenIds = new Set<string>()
+  const definitions: CustomSessionDefinition[] = []
+
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') {
+      seeded = true
+      continue
+    }
+
+    const obj = item as Record<string, unknown>
+    const rawId = typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : generateId()
+    const name = typeof obj.name === 'string' ? obj.name.trim() : ''
+    const command = typeof obj.command === 'string' ? obj.command.trim() : ''
+    if (!name || !command || seenIds.has(rawId)) {
+      seeded = true
+      continue
+    }
+
+    const icon = typeof obj.icon === 'string' && obj.icon.trim() ? obj.icon.trim() : '⚙'
+    const args = typeof obj.args === 'string' ? obj.args.trim() : ''
+    if (rawId !== obj.id || name !== obj.name || command !== obj.command || icon !== obj.icon || args !== obj.args) {
+      seeded = true
+    }
+
+    seenIds.add(rawId)
+    definitions.push({ id: rawId, name, icon, command, args })
+  }
+
+  return { definitions, seeded }
 }
 
 function normalizeQuickCommands(
@@ -1136,6 +1184,18 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
       if (raw.visibleProjectId === null || typeof raw.visibleProjectId === 'string') s.visibleProjectId = raw.visibleProjectId as string | null
       if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'terminal', 'codex', 'codex-yolo', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
+      if (raw.customSessionDefinitions !== undefined) {
+        const normalizedCustomSessions = normalizeCustomSessionDefinitions(raw.customSessionDefinitions)
+        s.customSessionDefinitions = normalizedCustomSessions.definitions
+        shouldPersistSettings ||= normalizedCustomSessions.seeded
+      }
+      if (raw.defaultCustomSessionId === null || typeof raw.defaultCustomSessionId === 'string') {
+        s.defaultCustomSessionId = raw.defaultCustomSessionId
+      }
+      if (s.defaultCustomSessionId && !s.customSessionDefinitions.some((definition) => definition.id === s.defaultCustomSessionId)) {
+        s.defaultCustomSessionId = null
+        shouldPersistSettings = true
+      }
       if (typeof raw.promptSessionNameOnCreate === 'boolean') s.promptSessionNameOnCreate = raw.promptSessionNameOnCreate
       if (Array.isArray(raw.recentPaths)) s.recentPaths = raw.recentPaths.filter((p) => typeof p === 'string').slice(0, 10) as string[]
       if (raw.visualizerMode === 'melody' || raw.visualizerMode === 'bars') s.visualizerMode = raw.visualizerMode
@@ -1292,6 +1352,12 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   updateSettings: (updates) => {
     const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
+    if (
+      settings.defaultCustomSessionId
+      && !settings.customSessionDefinitions.some((definition) => definition.id === settings.defaultCustomSessionId)
+    ) {
+      settings.defaultCustomSessionId = null
+    }
     set({ settings })
     persistUI({
       settings,

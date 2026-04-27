@@ -114,6 +114,8 @@ export function TitleBar(): JSX.Element | null {
   const showTitleBarSearch = useUIStore((s) => s.settings.showTitleBarSearch)
   const titleBarMenuVisibility = useUIStore((s) => s.settings.titleBarMenuVisibility)
   const defaultSessionType = useUIStore((s) => s.settings.defaultSessionType)
+  const defaultCustomSessionId = useUIStore((s) => s.settings.defaultCustomSessionId)
+  const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
   const workspaceLayout = useUIStore((s) => s.settings.workspaceLayout)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const openSettings = useUIStore((s) => s.openSettings)
@@ -143,6 +145,9 @@ export function TitleBar(): JSX.Element | null {
   const titleProject = activeSession
     ? projects.find((project) => project.id === activeSession.projectId) ?? selectedProject
     : selectedProject
+  const defaultCustomSession = defaultCustomSessionId
+    ? customSessionDefinitions.find((definition) => definition.id === defaultCustomSessionId)
+    : null
 
   const handleOpenInIde = useCallback(async (ide: ExternalIdeOption) => {
     if (!activeProjectPath || !selectedProject) {
@@ -187,7 +192,12 @@ export function TitleBar(): JSX.Element | null {
 
     const worktreeId = selectedWorktreeId ?? getDefaultWorktreeIdForProject(selectedProjectId)
     createSessionWithPrompt(
-      { projectId: selectedProjectId, type: defaultSessionType, worktreeId },
+      {
+        projectId: selectedProjectId,
+        type: defaultCustomSession ? undefined : defaultSessionType,
+        customSessionDefinitionId: defaultCustomSession?.id,
+        worktreeId,
+      },
       (sessionId) => {
         const paneStore = usePanesStore.getState()
         paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
@@ -195,7 +205,7 @@ export function TitleBar(): JSX.Element | null {
         useSessionsStore.getState().setActive(sessionId)
       },
     )
-  }, [addToast, defaultSessionType, selectedProjectId, selectedWorktreeId])
+  }, [addToast, defaultCustomSession, defaultSessionType, selectedProjectId, selectedWorktreeId])
 
   const handleToggleWorkspaceLayout = useCallback(() => {
     const next = workspaceLayout === 'canvas' ? 'panes' : 'canvas'
@@ -253,7 +263,7 @@ export function TitleBar(): JSX.Element | null {
         items: [
           {
             icon: Plus,
-            label: `新建${defaultSessionType === 'terminal' ? '终端' : '默认会话'}`,
+            label: `新建${defaultCustomSession?.name ?? (defaultSessionType === 'terminal' ? '终端' : '默认会话')}`,
             onSelect: handleCreateDefaultSession,
             disabled: !selectedProjectId,
           },
@@ -374,6 +384,7 @@ export function TitleBar(): JSX.Element | null {
     activeProjectPath,
     activeTabId,
     availableIdes,
+    defaultCustomSession,
     defaultSessionType,
     fullscreenPaneId,
     windowFullscreen,

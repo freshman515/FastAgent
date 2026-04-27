@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/ui'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { cn } from '@/lib/utils'
+import { SessionIconView } from '@/components/session/SessionIconView'
 
 export function CanvasMaximizedSwitcher(): JSX.Element | null {
   const cards = useCanvasStore((state) => state.getLayout().cards)
@@ -48,7 +49,7 @@ export function CanvasMaximizedSwitcher(): JSX.Element | null {
               )}
               title={`${title} · ${config.label}`}
             >
-              <img src={icon} alt="" className="h-4 w-4 shrink-0 object-contain" />
+              <SessionIconView icon={session.customSessionIcon} fallbackSrc={icon} className="h-4 w-4" imageClassName="h-4 w-4 object-contain" />
               {card.favorite && <Star size={10} className="shrink-0 fill-[var(--color-accent)] text-[var(--color-accent)]" />}
               <span className="min-w-0 truncate font-medium">{title}</span>
             </button>

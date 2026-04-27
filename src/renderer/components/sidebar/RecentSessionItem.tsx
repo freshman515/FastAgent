@@ -1,6 +1,7 @@
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -97,14 +98,14 @@ export function RecentSessionItem({
 
         {/* Type icon */}
         <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-          <img
-            src={iconSrc}
-            alt=""
-            className={cn(
+          <SessionIconView
+            icon={session.customSessionIcon}
+            fallbackSrc={iconSrc}
+            className="h-6 w-6"
+            imageClassName={cn(
               'h-5 w-5 shrink-0 transition-all duration-200',
               isActive ? 'scale-110' : 'group-hover:scale-110',
             )}
-            draggable={false}
           />
           {running && (
             <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[var(--color-bg-secondary)] bg-[var(--color-success)] shadow-[0_0_4px_var(--color-success)]" />

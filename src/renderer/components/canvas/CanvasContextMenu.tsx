@@ -9,7 +9,8 @@ import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
-import { SESSION_OPTIONS } from '@/components/session/NewSessionMenu'
+import { buildNewSessionOptions } from '@/components/session/NewSessionMenu'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { FRAME_COLORS } from './cards/FrameCard'
 
 const SUBMENU_WIDTH = 220
@@ -139,9 +140,11 @@ export function CanvasContextMenu({ state, onClose, onRenameFrame, onSearchFrame
                     <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/subitem:scale-y-100 group-hover/subitem:opacity-100 group-hover/subitem:shadow-[0_0_8px_var(--color-accent)]" />
 
                     {child.icon && (
-                      <div className="flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 group-hover/subitem:scale-110">
-                        <img src={child.icon} alt="" className="h-4.5 w-4.5 shrink-0" />
-                      </div>
+                      <SessionIconView
+                        icon={child.customIcon ? child.icon : undefined}
+                        fallbackSrc={child.customIcon ? undefined : child.icon}
+                        className="transition-transform duration-200 group-hover/subitem:scale-110"
+                      />
                     )}
                     <span className="flex-1 font-medium">{child.label}</span>
                     {child.shortcut && (
@@ -205,6 +208,7 @@ type ActionMenuItem = {
   danger?: boolean
   shortcut?: string
   icon?: string
+  customIcon?: boolean
 }
 
 function getSubmenuStyle(
@@ -282,11 +286,12 @@ function buildCanvasItems(
       kind: 'submenu',
       label: projectId ? '新建会话' : '新建会话（未选择项目）',
       disabled: !projectId,
-      items: projectId ? SESSION_OPTIONS.map((option) => ({
+      items: projectId ? buildNewSessionOptions(useUIStore.getState().settings.customSessionDefinitions).map((option) => ({
         kind: 'item',
         label: option.label,
         icon: option.icon,
-        onClick: () => createCanvasSession(projectId, option.type, state.worldX, state.worldY),
+        customIcon: Boolean(option.customSessionDefinitionId),
+        onClick: () => createCanvasSession(projectId, option.type, state.worldX, state.worldY, option.customSessionDefinitionId),
       })) : [],
     },
     { kind: 'separator' },
@@ -321,12 +326,12 @@ function buildCanvasItems(
   ]
 }
 
-function createCanvasSession(projectId: string, type: SessionType, worldX: number, worldY: number): void {
+function createCanvasSession(projectId: string, type: SessionType | undefined, worldX: number, worldY: number, customSessionDefinitionId?: string): void {
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = type === 'terminal' ? 'terminal' : 'session'
+  const cardKind = type === 'terminal' || customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
-  createSessionWithPrompt({ projectId, type, worktreeId }, (sessionId) => {
+  createSessionWithPrompt({ projectId, type, customSessionDefinitionId, worktreeId }, (sessionId) => {
     const paneStore = usePanesStore.getState()
     paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
 

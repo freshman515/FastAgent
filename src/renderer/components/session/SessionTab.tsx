@@ -11,6 +11,7 @@ import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { SessionIconView } from './SessionIconView'
 
 interface SessionTabProps {
   session: Session
@@ -240,17 +241,15 @@ export function SessionTab({
             style={{ backgroundColor: session.color, color: session.color }}
           />
         )}
-        <div className="relative flex h-5 w-5 shrink-0 items-center justify-center">
-          <img
-            src={iconSrc}
-            alt=""
-            className={cn(
-              'h-[18px] w-[18px] shrink-0 transition-all duration-200',
-              isActive ? 'scale-110 opacity-100' : 'opacity-70 group-hover:opacity-100 group-hover:scale-110',
-            )}
-            draggable={false}
-          />
-        </div>
+        <SessionIconView
+          icon={session.customSessionIcon}
+          fallbackSrc={iconSrc}
+          className="relative"
+          imageClassName={cn(
+            'h-[18px] w-[18px] shrink-0 transition-all duration-200',
+            isActive ? 'scale-110 opacity-100' : 'opacity-70 group-hover:opacity-100 group-hover:scale-110',
+          )}
+        />
 
         {isRenaming ? (
           <input

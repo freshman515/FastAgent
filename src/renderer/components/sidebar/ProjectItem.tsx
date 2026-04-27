@@ -17,26 +17,8 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { useLaunchesStore } from '@/stores/launches'
 import { useUIStore } from '@/stores/ui'
 import { LaunchMenu } from './LaunchMenu'
-import claudeIcon from '@/assets/icons/Claude.png'
-import codexIcon from '@/assets/icons/codex_white.svg'
-import opencodeIcon from '@/assets/icons/icon-opencode.png'
-import terminalIcon from '@/assets/icons/terminal_white.png'
-import { geminiIcon } from '@/lib/geminiIcon'
-import { browserIcon } from '@/lib/browserIcon'
-
-const SESSION_OPTS: Array<{ type: SessionType; label: string; icon: string }> = [
-  { type: 'terminal', label: 'Terminal', icon: terminalIcon },
-  { type: 'browser', label: 'Browser', icon: browserIcon },
-  { type: 'claude-code', label: 'Claude Code', icon: claudeIcon },
-  { type: 'claude-code-yolo', label: 'Claude Code YOLO', icon: claudeIcon },
-  { type: 'claude-gui', label: 'Claude GUI', icon: claudeIcon },
-  { type: 'codex', label: 'Codex', icon: codexIcon },
-  { type: 'codex-yolo', label: 'Codex YOLO', icon: codexIcon },
-  { type: 'gemini', label: 'Gemini', icon: geminiIcon },
-  { type: 'gemini-yolo', label: 'Gemini YOLO', icon: geminiIcon },
-  { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
-]
-
+import { buildNewSessionOptions, type NewSessionOption } from '@/components/session/NewSessionMenu'
+import { SessionIconView } from '@/components/session/SessionIconView'
 const MENU_ITEM = 'group/menuitem relative flex w-full h-8.5 items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white transition-all duration-200'
 const SECTION_HEADER = 'text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60'
 const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none focus:border-[var(--color-accent)] focus:bg-black/40 transition-all duration-200'
@@ -309,7 +291,7 @@ function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onSt
   submenu: ProjectContextSubmenuState
   bundles: TaskBundle[]
   groups: Group[]
-  onCreateSession: (type: SessionType) => void
+  onCreateSession: (option: NewSessionOption) => void
   onStartTask: (bundle: TaskBundle) => void
   onMoveToGroup: (groupId: string) => void
   onMouseEnter: () => void
@@ -317,6 +299,8 @@ function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onSt
 }): JSX.Element | null {
   const width = submenu.type === 'sessions' ? 196 : 220
   const style = getSubmenuStyle(submenu.anchorRect, width)
+  const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
+  const sessionOptions = buildNewSessionOptions(customSessionDefinitions)
 
   if (submenu.type === 'sessions') {
     return (
@@ -326,9 +310,15 @@ function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onSt
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {SESSION_OPTS.map((opt) => (
-          <button key={opt.type} className={MENU_ITEM} onClick={() => onCreateSession(opt.type)}>
-            <img src={opt.icon} alt="" className="h-3.5 w-3.5" />{opt.label}
+        {sessionOptions.map((opt) => (
+          <button key={opt.id} className={MENU_ITEM} onClick={() => onCreateSession(opt)}>
+            <SessionIconView
+              icon={opt.customSessionDefinitionId ? opt.icon : undefined}
+              fallbackSrc={opt.customSessionDefinitionId ? undefined : opt.icon}
+              className="h-3.5 w-3.5"
+              imageClassName="h-3.5 w-3.5"
+            />
+            {opt.label}
           </button>
         ))}
       </div>
@@ -378,6 +368,8 @@ function ProjectContextSubmenu({ submenu, bundles, groups, onCreateSession, onSt
 function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project; isActive: boolean }): JSX.Element {
   const [wtContextMenu, setWtContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
+  const sessionOptions = buildNewSessionOptions(customSessionDefinitions)
   const branchInfo = useGitStore((s) => s.branchInfo[wt.id])
 
   useEffect(() => {
@@ -455,16 +447,27 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
             <div className="px-3 py-1 border-b border-[var(--color-border)]">
               <p className={SECTION_HEADER}>新建会话</p>
             </div>
-            {SESSION_OPTS.map((opt) => (
-              <button key={opt.type} className={MENU_ITEM} onClick={() => {
+            {sessionOptions.map((opt) => (
+              <button key={opt.id} className={MENU_ITEM} onClick={() => {
                 handleClick()
                 setWtContextMenu(null)
-                createSessionWithPrompt({ projectId: project.id, type: opt.type, worktreeId: wt.id }, (sid) => {
+                createSessionWithPrompt({
+                  projectId: project.id,
+                  type: opt.type,
+                  customSessionDefinitionId: opt.customSessionDefinitionId,
+                  worktreeId: wt.id,
+                }, (sid) => {
                   usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, sid)
                   useSessionsStore.getState().setActive(sid)
                 })
               }}>
-                <img src={opt.icon} alt="" className="h-3.5 w-3.5" />{opt.label}
+                <SessionIconView
+                  icon={opt.customSessionDefinitionId ? opt.icon : undefined}
+                  fallbackSrc={opt.customSessionDefinitionId ? undefined : opt.icon}
+                  className="h-3.5 w-3.5"
+                  imageClassName="h-3.5 w-3.5"
+                />
+                {opt.label}
               </button>
             ))}
             <div className="border-t border-[var(--color-border)] mt-0.5" />
@@ -648,12 +651,17 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
     setShowMenu(null)
   }, [isAnonymous, project.groupId, project.id, removeProject, removeProjectFromGroup])
 
-  const handleCreateSession = useCallback((type: SessionType) => {
+  const handleCreateSession = useCallback((option: NewSessionOption) => {
     selectProject(project.id)
     setContextMenu(null)
     setProjectSubmenu(null)
     createSessionWithPrompt(
-      { projectId: project.id, type, worktreeId: getDefaultWorktreeIdForProject(project.id) },
+      {
+        projectId: project.id,
+        type: option.type,
+        customSessionDefinitionId: option.customSessionDefinitionId,
+        worktreeId: getDefaultWorktreeIdForProject(project.id),
+      },
       (id) => {
         usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
         setActive(id)

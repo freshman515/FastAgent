@@ -5,6 +5,7 @@ import { SESSION_TYPE_CONFIG, type CanvasCard, type Session } from '@shared/type
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
@@ -174,9 +175,9 @@ export function CanvasSessionList(): JSX.Element | null {
                     : 'scale-y-50 opacity-0 group-hover:scale-y-100 group-hover:opacity-100 group-hover:shadow-[0_0_10px_var(--color-accent)]',
                 )}
               />
-              <span className="mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)]/65 transition-transform duration-150 group-hover:scale-110">
-                <img src={icon} alt="" className="h-3.5 w-3.5 object-contain" />
-              </span>
+              <div className="mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)]/65 transition-transform duration-150 group-hover:scale-110">
+                <SessionIconView icon={session.customSessionIcon} fallbackSrc={icon} className="h-4.5 w-4.5" imageClassName="h-3.5 w-3.5 object-contain" />
+              </div>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[var(--ui-font-sm)] font-medium transition-colors group-hover:text-[var(--color-text-primary)]">{displayName}</span>
                 {card.favorite && (

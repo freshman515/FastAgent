@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { usePanesStore } from '@/stores/panes'
+import { useUIStore, type CustomSessionDefinition } from '@/stores/ui'
+import { SessionIconView } from './SessionIconView'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexIcon from '@/assets/icons/codex_white.svg'
 import opencodeIcon from '@/assets/icons/icon-opencode.png'
@@ -15,6 +17,14 @@ export interface SessionOption {
   type: SessionType
   label: string
   icon: string
+}
+
+export interface NewSessionOption {
+  id: string
+  label: string
+  icon: string
+  type?: SessionType
+  customSessionDefinitionId?: string
 }
 
 export const SESSION_OPTIONS: SessionOption[] = [
@@ -29,6 +39,23 @@ export const SESSION_OPTIONS: SessionOption[] = [
   { type: 'gemini-yolo', label: 'Gemini YOLO', icon: geminiIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
 ]
+
+export function buildNewSessionOptions(customDefinitions: CustomSessionDefinition[]): NewSessionOption[] {
+  return [
+    ...SESSION_OPTIONS.map((option) => ({
+      id: option.type,
+      label: option.label,
+      icon: option.icon,
+      type: option.type,
+    })),
+    ...customDefinitions.map((definition) => ({
+      id: `custom:${definition.id}`,
+      label: definition.name,
+      icon: definition.icon,
+      customSessionDefinitionId: definition.id,
+    })),
+  ]
+}
 
 interface NewSessionMenuProps {
   projectId: string
@@ -48,12 +75,19 @@ export function NewSessionMenu({
   onMouseLeave,
 }: NewSessionMenuProps): JSX.Element {
   const addSessionToPane = usePanesStore((s) => s.addSessionToPane)
+  const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
+  const options = buildNewSessionOptions(customSessionDefinitions)
 
   const handleSelect = useCallback(
-    (type: SessionType) => {
+    (option: NewSessionOption) => {
       const worktreeId = getDefaultWorktreeIdForProject(projectId)
       const targetPane = paneId ?? usePanesStore.getState().activePaneId
-      createSessionWithPrompt({ projectId, type, worktreeId }, (id) => {
+      createSessionWithPrompt({
+        projectId,
+        type: option.type,
+        customSessionDefinitionId: option.customSessionDefinitionId,
+        worktreeId,
+      }, (id) => {
         addSessionToPane(targetPane, id)
       })
       onClose()
@@ -74,10 +108,10 @@ export function NewSessionMenu({
       )}
     >
       <div className="flex flex-col gap-0.5">
-        {SESSION_OPTIONS.map((opt) => (
+        {options.map((opt) => (
           <button
-            key={opt.type}
-            onClick={() => handleSelect(opt.type)}
+            key={opt.id}
+            onClick={() => handleSelect(opt)}
             className={cn(
               'group/item relative flex h-9 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left transition-all duration-200',
               'text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white',
@@ -86,9 +120,7 @@ export function NewSessionMenu({
             {/* Left accent bar on hover */}
             <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/item:scale-y-100 group-hover/item:opacity-100 group-hover/item:shadow-[0_0_8px_var(--color-accent)]" />
 
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-200 group-hover/item:scale-110">
-              <img src={opt.icon} alt="" className="h-4.5 w-4.5 shrink-0" />
-            </div>
+            <SessionIconView icon={opt.customSessionDefinitionId ? opt.icon : undefined} fallbackSrc={opt.customSessionDefinitionId ? undefined : opt.icon} className="transition-transform duration-200 group-hover/item:scale-110" />
             <span className="flex-1 text-[13px] font-medium">{opt.label}</span>
           </button>
         ))}

@@ -16,6 +16,14 @@ const RUNTIME_ONLY_SESSION_FIELDS = new Set<keyof Omit<Session, 'id'>>([
   'updatedAt',
 ])
 
+export interface AddSessionOptions {
+  customSessionDefinitionId?: string
+  customSessionLabel?: string
+  customSessionIcon?: string
+  customSessionCommand?: string
+  customSessionArgs?: string[]
+}
+
 function createClaudeSessionUuid(): string {
   const randomUUID = globalThis.crypto?.randomUUID
   if (typeof randomUUID === 'function') return randomUUID.call(globalThis.crypto)
@@ -76,6 +84,13 @@ function sanitizeSession(s: unknown): Session | null {
     browserUrl: type === 'browser'
       ? (typeof obj.browserUrl === 'string' && obj.browserUrl.trim() ? obj.browserUrl : DEFAULT_BROWSER_URL)
       : undefined,
+    customSessionDefinitionId: typeof obj.customSessionDefinitionId === 'string' ? obj.customSessionDefinitionId : undefined,
+    customSessionLabel: typeof obj.customSessionLabel === 'string' ? obj.customSessionLabel : undefined,
+    customSessionIcon: typeof obj.customSessionIcon === 'string' ? obj.customSessionIcon : undefined,
+    customSessionCommand: typeof obj.customSessionCommand === 'string' ? obj.customSessionCommand : undefined,
+    customSessionArgs: Array.isArray(obj.customSessionArgs)
+      ? obj.customSessionArgs.filter((arg): arg is string => typeof arg === 'string')
+      : undefined,
   }
 }
 
@@ -98,8 +113,8 @@ interface SessionsState {
   _loadFromConfig: (raw: unknown[]) => void
   upsertSessions: (sessions: Session[]) => void
 
-  addSession: (projectId: string, type: SessionType, worktreeId?: string, nameOverride?: string) => string
-  generateDefaultSessionName: (projectId: string, type: SessionType) => string
+  addSession: (projectId: string, type: SessionType, worktreeId?: string, nameOverride?: string, options?: AddSessionOptions) => string
+  generateDefaultSessionName: (projectId: string, type: SessionType, baseLabel?: string) => string
   addSessionFromTemplate: (projectId: string, item: { type: SessionType; name: string; prompt?: string }, worktreeId?: string) => string
   removeSession: (id: string) => void
   restoreLastClosed: () => void
@@ -152,23 +167,25 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       }
     }),
 
-  generateDefaultSessionName: (projectId, type) => {
+  generateDefaultSessionName: (projectId, type, baseLabel) => {
     const config = SESSION_TYPE_CONFIG[type]
-    const existing = get().sessions.filter((s) => s.projectId === projectId && s.type === type)
+    const label = baseLabel?.trim() || config.label
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const existing = get().sessions.filter((s) => s.projectId === projectId && (baseLabel ? s.customSessionLabel === label : s.type === type))
     let maxNum = 0
     for (const s of existing) {
-      const match = s.name.match(new RegExp(`^${config.label}\\s+(\\d+)$`))
+      const match = s.name.match(new RegExp(`^${escapedLabel}\\s+(\\d+)$`))
       if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10))
     }
-    return `${config.label} ${maxNum + 1}`
+    return `${label} ${maxNum + 1}`
   },
 
-  addSession: (projectId, type, worktreeId, nameOverride) => {
+  addSession: (projectId, type, worktreeId, nameOverride, options) => {
     const id = generateId()
     const trimmedOverride = nameOverride?.trim()
     const name = trimmedOverride && trimmedOverride.length > 0
       ? trimmedOverride
-      : get().generateDefaultSessionName(projectId, type)
+      : get().generateDefaultSessionName(projectId, type, options?.customSessionLabel)
 
     const session: Session = {
       id,
@@ -184,6 +201,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       updatedAt: Date.now(),
       worktreeId,
       browserUrl: type === 'browser' ? DEFAULT_BROWSER_URL : undefined,
+      customSessionDefinitionId: options?.customSessionDefinitionId,
+      customSessionLabel: options?.customSessionLabel,
+      customSessionIcon: options?.customSessionIcon,
+      customSessionCommand: options?.customSessionCommand,
+      customSessionArgs: options?.customSessionArgs,
     }
 
     set((state) => {
