@@ -99,14 +99,16 @@ function getStartupWindowState(): StartupWindowState {
 
 function createWindow(): void {
   const startupWindowState = getStartupWindowState()
+  const isMac = process.platform === 'darwin'
 
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 700,
     minHeight: 500,
-    frame: false,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    frame: isMac,
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    ...(isMac ? { trafficLightPosition: { x: 12, y: 12 } } : {}),
     backgroundColor: '#1a1a1e',
     icon: join(__dirname, '../../assets/icons/fastagents-256.png'),
     show: false,
@@ -120,15 +122,19 @@ function createWindow(): void {
   })
   installCanvasBookmarkShortcutBridge(mainWindow)
 
-  // Auto-approve system audio capture for music visualizer (no picker dialog)
-  mainWindow.webContents.session.setDisplayMediaRequestHandler(
-    async (_request, callback) => {
-      const sources = await desktopCapturer.getSources({ types: ['screen'] })
-      if (sources.length > 0) {
-        callback({ video: sources[0], audio: 'loopback' })
-      }
-    },
-  )
+  // Auto-approve system audio capture for the music visualizer on Windows.
+  // macOS does not support the same loopback capture path and should fall
+  // back to Electron's native permission flow if a page asks for display media.
+  if (process.platform === 'win32') {
+    mainWindow.webContents.session.setDisplayMediaRequestHandler(
+      async (_request, callback) => {
+        const sources = await desktopCapturer.getSources({ types: ['screen'] })
+        if (sources.length > 0) {
+          callback({ video: sources[0], audio: 'loopback' })
+        }
+      },
+    )
+  }
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) return

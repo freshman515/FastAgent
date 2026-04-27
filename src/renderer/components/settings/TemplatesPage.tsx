@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { useTemplatesStore } from '@/stores/templates'
 import type { SessionType, SessionTemplateItem } from '@shared/types'
 import { BUILT_IN_WORKER_TEMPLATES } from '@shared/workerTemplates'
+import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 
 const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'browser', label: 'Browser' },
@@ -40,7 +41,7 @@ function TemplateItemRow({
           onChange={(e) => onUpdate({ type: e.target.value as SessionType })}
           className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-[var(--radius-sm)] px-2 py-1 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none"
         >
-          {SESSION_TYPES.map((t) => (
+          {filterSessionTypesForCurrentPlatform(SESSION_TYPES).map((t) => (
             <option key={t.value} value={t.value}>{t.label}</option>
           ))}
         </select>

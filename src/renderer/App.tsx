@@ -1264,11 +1264,13 @@ function MainApp(): JSX.Element {
   // Window fullscreen hides chrome. Pane fullscreen is handled inside
   // SplitContainer so it only expands within the central workspace.
   const hideChrome = windowFullscreen
+  const isMac = window.api.platform === 'darwin'
   const showPaneCommandPaneNumbers = paneCommandMode && getPaneLeafIds(paneCommandRoot).length > 1
 
   return (
     <div className={cn(
       'flex h-full flex-col bg-[var(--color-titlebar-bg)]',
+      isMac && !hideChrome && 'pt-7',
       showPaneCommandPaneNumbers && 'pane-command-mode',
     )}>
       {!hideChrome && <TitleBar />}

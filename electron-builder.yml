@@ -37,9 +37,12 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 mac:
+  artifactName: "${productName}-${version}-${arch}.${ext}"
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
   category: public.app-category.developer-tools
   icon: build/icon.icns
 

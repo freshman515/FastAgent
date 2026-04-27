@@ -1,0 +1,67 @@
+name: Build macOS release assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag / release tag to upload assets to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-14
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate macOS icon
+        run: pnpm run build:mac-icon
+
+      - name: Build renderer and main process
+        run: pnpm build
+
+      - name: Package macOS app
+        run: pnpm exec electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+
+      - name: Upload macOS assets to release
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            dist/FastAgents-*-${{ matrix.arch }}.dmg \
+            dist/FastAgents-*-${{ matrix.arch }}.zip \
+            --clobber

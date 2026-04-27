@@ -1,6 +1,7 @@
 import type { SessionType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CustomSessionDefinition } from '@/stores/ui'
+import { normalizeSessionTypeForCurrentPlatform } from '@/lib/platformSessionTypes'
 
 export interface CreateSessionOptions {
   projectId: string
@@ -67,7 +68,7 @@ export function createSessionWithPrompt(
   const sessions = useSessionsStore.getState()
   const ui = useUIStore.getState()
   const customDefinition = getCustomSessionDefinition(options.customSessionDefinitionId, ui.settings.customSessionDefinitions)
-  const type = options.type ?? 'terminal'
+  const type = normalizeSessionTypeForCurrentPlatform(options.type ?? 'terminal')
 
   const doCreate = (name?: string): void => {
     const id = sessions.addSession(projectId, customDefinition ? 'terminal' : type, worktreeId, name, customDefinition ? {

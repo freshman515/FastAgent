@@ -537,6 +537,7 @@ class MediaMonitor {
   }
 
   start(): void {
+    if (process.platform !== 'win32') return
     if (this.timer) return
     this.poll()
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL)
@@ -603,6 +604,7 @@ class MediaMonitor {
   }
 
   sendCommand(command: 'play-pause' | 'next' | 'prev'): void {
+    if (process.platform !== 'win32') return
     const vk = command === 'play-pause' ? VK_MEDIA_PLAY_PAUSE
       : command === 'next' ? VK_MEDIA_NEXT_TRACK
       : VK_MEDIA_PREV_TRACK

@@ -24,6 +24,7 @@ import { parseThemeAuto } from '@/lib/themeImport'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { parseCustomSessionArgs } from '@/lib/createSession'
 import { SessionIconView } from '@/components/session/SessionIconView'
+import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 
 type SettingsPage = 'general' | 'sessions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
@@ -42,6 +43,7 @@ const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; i
   { id: 'ai', label: 'AI 摘要', description: '终端摘要模型与提示词', icon: Bot },
   { id: 'claudeGui', label: 'Claude GUI', description: '内置 Claude 面板偏好', icon: Bot },
 ]
+const isWindowsPlatform = (): boolean => window.api.platform === 'win32'
 
 const PAGE_STACK = 'mx-auto flex w-full max-w-[980px] flex-col gap-5 pb-8'
 
@@ -494,6 +496,7 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
   }, [cancelEdit, editingId, onUpdate, settings.customSessionDefinitions, settings.defaultCustomSessionId])
 
   const parsedArgs = useMemo(() => parseCustomSessionArgs(draft.args), [draft.args])
+  const visibleSessionTypeOptions = useMemo(() => filterSessionTypesForCurrentPlatform(SESSION_TYPE_OPTIONS), [])
 
   return (
     <div className={PAGE_STACK}>
@@ -503,7 +506,7 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
         <div className="flex flex-col gap-1.5">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">内置会话</span>
           <div className="flex flex-wrap gap-1">
-            {SESSION_TYPE_OPTIONS.map((opt) => (
+            {visibleSessionTypeOptions.map((opt) => (
               <button
                 key={opt.id}
                 onClick={() => {
@@ -1787,7 +1790,20 @@ export function SettingsDialog(): JSX.Element | null {
   const setSettingsPage = useUIStore((s) => s.setSettingsPage)
   const settings = useUIStore((s) => s.settings)
   const updateSettings = useUIStore((s) => s.updateSettings)
-  const page = (settingsPage || 'general') as SettingsPage
+  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((item) => item.id !== 'wsl' || isWindowsPlatform()), [])
+  const requestedPage = (settingsPage || 'general') as SettingsPage
+  const page = visibleNavItems.some((item) => item.id === requestedPage) ? requestedPage : 'general'
+
+  useEffect(() => {
+    if (page !== requestedPage) setSettingsPage(page)
+  }, [page, requestedPage, setSettingsPage])
+
+  useEffect(() => {
+    if (isWindowsPlatform()) return
+    if (settings.defaultSessionType.includes('wsl')) {
+      updateSettings({ defaultSessionType: 'terminal' })
+    }
+  }, [settings.defaultSessionType, updateSettings])
 
   const handleUpdate = useCallback(
     (key: keyof AppSettings, value: unknown) => {
@@ -1833,7 +1849,7 @@ export function SettingsDialog(): JSX.Element | null {
           </div>
           
           <div className="flex flex-col gap-1 overflow-y-auto scrollbar-none pb-4">
-            {NAV_ITEMS.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = page === item.id;
               return (
                 <button

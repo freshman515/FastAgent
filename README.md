@@ -4,12 +4,13 @@ FastAgents 是一个面向 AI Coding 的多 Agent 会话管理工具。
 
 它把 Claude Code、Codex、Gemini、OpenCode、浏览器和普通终端放进同一个项目工作区里，让你可以用经典分屏或无限画布同时管理多个会话、多个任务和多个开发上下文。
 
-> 当前版本主要支持 Windows。
+> 当前版本支持 Windows，并开始提供 macOS 安装包。WSL 会话、系统媒体控制和语音输入是 Windows 专属能力。
 
 ![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)
 ![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows)
+![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple)
 
 ## 为什么做 FastAgents
 
@@ -94,9 +95,19 @@ FastAgents 更适合这些场景：
 
 ## 快速开始
 
-### 环境要求
+### 下载安装
 
-- Windows
+前往 GitHub Releases 下载对应系统的安装包：
+
+- Windows：`FastAgents-Setup-x.y.z.exe`
+- macOS Intel：`FastAgents-x.y.z-x64.dmg`
+- macOS Apple Silicon：`FastAgents-x.y.z-arm64.dmg`
+
+macOS 版本目前未做 Apple Developer ID 签名和公证，首次打开时可能需要在 Finder 中右键选择“打开”，或在系统设置的“隐私与安全性”中允许打开。
+
+### 开发环境要求
+
+- Windows 或 macOS
 - Node.js 20 或更高版本
 - pnpm
 - Git
@@ -120,6 +131,16 @@ pnpm dev
 
 ```bash
 pnpm build
+```
+
+### 打包
+
+```bash
+# Windows
+pnpm run dist:win
+
+# macOS，需要在 macOS 环境执行
+pnpm run dist:mac
 ```
 
 ### 运行测试
@@ -208,7 +229,8 @@ src/
 - 外部 AI CLI 需要先在系统中安装并完成登录。
 - Gemini 普通会话启动命令为 `gemini`，Gemini YOLO 启动命令为 `gemini --yolo`。
 - Codex、Claude Code、Gemini、OpenCode 的具体能力取决于本机安装版本。
-- 当前版本主要面向 Windows，其他平台暂未作为正式支持目标。
+- macOS 版本支持普通 Terminal、Claude Code、Codex、Gemini、OpenCode、Browser 和 Claude GUI。`Terminal(WSL)`、`Codex(WSL)`、`Claude Code(WSL)` 仅在 Windows 显示和可用。
+- macOS 安装包由 GitHub Actions 的 macOS runner 构建；本地 Windows 环境无法直接生成可发布的 `.dmg`。
 
 ## 许可证
 

@@ -12,6 +12,7 @@ import opencodeIcon from '@/assets/icons/icon-opencode.png'
 import terminalIcon from '@/assets/icons/terminal_white.png'
 import { geminiIcon } from '@/lib/geminiIcon'
 import { browserIcon } from '@/lib/browserIcon'
+import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 
 export interface SessionOption {
   type: SessionType
@@ -47,7 +48,7 @@ export const SESSION_OPTIONS: SessionOption[] = [
 
 export function buildNewSessionOptions(customDefinitions: CustomSessionDefinition[]): NewSessionOption[] {
   return [
-    ...SESSION_OPTIONS.map((option) => ({
+    ...filterSessionTypesForCurrentPlatform(SESSION_OPTIONS).map((option) => ({
       id: option.type,
       label: option.label,
       icon: option.icon,

@@ -25,6 +25,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 
 type BoardSessionType = AgentBoardItem['sessionType']
 type BoardScope = 'current' | 'all'
@@ -67,6 +68,7 @@ const SESSION_TYPE_OPTIONS: Array<{ id: BoardSessionType; label: string }> = [
   { id: 'terminal', label: SESSION_TYPE_CONFIG.terminal.label },
   { id: 'terminal-wsl', label: SESSION_TYPE_CONFIG['terminal-wsl'].label },
 ]
+const VISIBLE_SESSION_TYPE_OPTIONS = filterSessionTypesForCurrentPlatform(SESSION_TYPE_OPTIONS)
 
 const PRIORITY_BADGE: Record<AgentBoardPriority, string> = {
   high: 'bg-[var(--color-error)]/15 text-[var(--color-error)]',
@@ -380,7 +382,7 @@ export function AgentBoard(): JSX.Element {
               disabled={!selectedProject}
               className={cn(INPUT, 'h-9 py-0')}
             >
-              {SESSION_TYPE_OPTIONS.map((option) => (
+              {VISIBLE_SESSION_TYPE_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
             </select>
@@ -536,7 +538,7 @@ export function AgentBoard(): JSX.Element {
                                   onChange={(event) => setEditSessionType(event.target.value as BoardSessionType)}
                                   className={cn(INPUT, 'h-8 py-0')}
                                 >
-                                  {SESSION_TYPE_OPTIONS.map((option) => (
+                                  {VISIBLE_SESSION_TYPE_OPTIONS.map((option) => (
                                     <option key={option.id} value={option.id}>{option.label}</option>
                                   ))}
                                 </select>
