@@ -10,6 +10,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { SESSION_OPTIONS } from '@/components/session/NewSessionMenu'
+import { FRAME_COLORS } from './cards/FrameCard'
 
 const SUBMENU_WIDTH = 220
 const MENU_MARGIN = 8
@@ -33,16 +34,17 @@ interface CanvasContextMenuProps {
   state: CanvasContextMenuState
   onClose: () => void
   onRenameFrame?: (cardId: string) => void
+  onSearchFrame?: (cardId: string) => void
 }
 
-export function CanvasContextMenu({ state, onClose, onRenameFrame }: CanvasContextMenuProps): JSX.Element {
+export function CanvasContextMenu({ state, onClose, onRenameFrame, onSearchFrame }: CanvasContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
   const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null)
   const [submenuAnchorRect, setSubmenuAnchorRect] = useState<DOMRect | null>(null)
   const [menuPosition, setMenuPosition] = useState({ left: state.screenX, top: state.screenY })
   const [submenuDirection, setSubmenuDirection] = useState<'right' | 'left'>('right')
-  const items = useMemo(() => buildMenuItems(state, onClose, onRenameFrame), [state, onClose, onRenameFrame])
+  const items = useMemo(() => buildMenuItems(state, onClose, onRenameFrame, onSearchFrame), [state, onClose, onRenameFrame, onSearchFrame])
 
   useEffect(() => {
     const onDown = (event: MouseEvent): void => {
@@ -231,11 +233,12 @@ function buildMenuItems(
   state: CanvasContextMenuState,
   onClose: () => void,
   onRenameFrame?: (cardId: string) => void,
+  onSearchFrame?: (cardId: string) => void,
 ): MenuItem[] {
   if (state.target === 'canvas') {
     return buildCanvasItems(state, onClose)
   }
-  return buildCardItems(state, onClose, onRenameFrame)
+  return buildCardItems(state, onClose, onRenameFrame, onSearchFrame)
 }
 
 function buildCanvasItems(
@@ -249,6 +252,7 @@ function buildCanvasItems(
   const addLayoutSnapshot = useCanvasStore.getState().addLayoutSnapshot
   const restoreLayoutSnapshot = useCanvasStore.getState().restoreLayoutSnapshot
   const snapshots = useCanvasStore.getState().getLayout().snapshots
+  const hiddenCount = useCanvasStore.getState().getLayout().cards.filter((card) => card.hidden).length
   const ui = useUIStore.getState()
   const updateSettings = ui.updateSettings
   const projectId = useProjectsStore.getState().selectedProjectId
@@ -313,6 +317,7 @@ function buildCanvasItems(
       },
     },
     { kind: 'item', label: '重置视图', onClick: () => useCanvasStore.getState().resetViewport() },
+    ...(hiddenCount > 0 ? [{ kind: 'item' as const, label: `显示全部内容 (${hiddenCount})`, onClick: () => useCanvasStore.getState().showAllCards() }] : []),
   ]
 }
 
@@ -339,6 +344,7 @@ function buildCardItems(
   state: Extract<CanvasContextMenuState, { target: 'card' }>,
   _onClose: () => void,
   onRenameFrame?: (cardId: string) => void,
+  onSearchFrame?: (cardId: string) => void,
 ): MenuItem[] {
   const store = useCanvasStore.getState()
   const card = store.getCard(state.cardId)
@@ -398,6 +404,77 @@ function buildCardItems(
   }
 
   if (card.kind === 'frame') {
+    const memberIds = card.frameMemberIds ?? []
+    const memberCards = memberIds
+      .map((id) => store.getCard(id))
+      .filter((candidate): candidate is CanvasCard => Boolean(candidate))
+    const visibleMemberCount = memberCards.filter((member) => !member.hidden).length
+    const frameTitle = card.frameTitle?.trim() || '分组'
+    const frameSnapshots = card.frameSnapshots ?? []
+    items.push({
+      kind: 'item',
+      label: '聚焦分组',
+      onClick: () => store.focusFrameWorkspace(card.id),
+    })
+    items.push({
+      kind: 'item',
+      label: '搜索组内',
+      disabled: memberIds.length === 0,
+      onClick: () => onSearchFrame?.(card.id),
+    })
+    items.push({
+      kind: 'submenu',
+      label: '整理组内卡片',
+      disabled: memberIds.length === 0,
+      items: [
+        { kind: 'item' as const, label: '网格排列', onClick: () => store.arrange('grid', memberIds) },
+        { kind: 'item' as const, label: '横向排列', onClick: () => store.arrange('rowFlow', memberIds) },
+        { kind: 'item' as const, label: '纵向排列', onClick: () => store.arrange('colFlow', memberIds) },
+        { kind: 'item' as const, label: '紧凑打包', onClick: () => store.arrange('pack', memberIds) },
+      ],
+    })
+    items.push({
+      kind: 'item',
+      label: '隐藏其他分组',
+      onClick: () => store.hideAllExceptFrame(card.id),
+    })
+    items.push({
+      kind: 'item',
+      label: visibleMemberCount > 0 ? '隐藏组内卡片' : '显示组内卡片',
+      disabled: memberIds.length === 0,
+      onClick: () => store.setFrameMembersHidden(card.id, visibleMemberCount > 0),
+    })
+    items.push({
+      kind: 'item',
+      label: '保存分组书签',
+      onClick: () => store.addBookmarkForCard(card.id, frameTitle),
+    })
+    items.push({
+      kind: 'item',
+      label: '保存分组快照',
+      onClick: () => store.addFrameSnapshot(card.id, `${frameTitle} 快照`),
+    })
+    if (frameSnapshots.length > 0) {
+      items.push({
+        kind: 'submenu',
+        label: '恢复分组快照',
+        items: frameSnapshots.slice(-8).reverse().map((snapshot) => ({
+          kind: 'item' as const,
+          label: snapshot.name,
+          onClick: () => store.restoreFrameSnapshot(card.id, snapshot.id),
+        })),
+      })
+    }
+    items.push({
+      kind: 'submenu',
+      label: '分组颜色',
+      items: Object.entries(FRAME_COLORS).map(([key, value]) => ({
+        kind: 'item' as const,
+        label: value.label,
+        shortcut: (card.frameColor ?? 'violet') === key ? '当前' : undefined,
+        onClick: () => store.updateCard(card.id, { frameColor: key }),
+      })),
+    })
     items.push({
       kind: 'item',
       label: '重命名分组',

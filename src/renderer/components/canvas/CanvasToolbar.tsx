@@ -27,9 +27,12 @@ import {
   Unlock,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CanvasBookmark, CanvasCard, Session } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { useCanvasStore } from '@/stores/canvas'
+import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
+import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
+import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -42,12 +45,15 @@ const CARD_NORMALIZATION_NAVIGATION_DELAY_MS = 300
 
 export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps): JSX.Element {
   const scale = useCanvasStore((state) => state.getLayout().viewport.scale)
+  const cards = useCanvasStore((state) => state.getLayout().cards)
   const bookmarks = useCanvasStore((state) => state.getLayout().bookmarks)
+  const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds ?? [])
   const layoutSnapshots = useCanvasStore((state) => state.getLayout().snapshots)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const addCard = useCanvasStore((state) => state.addCard)
   const addFrameAroundCards = useCanvasStore((state) => state.addFrameAroundCards)
   const addBookmark = useCanvasStore((state) => state.addBookmark)
+  const addBookmarkForCard = useCanvasStore((state) => state.addBookmarkForCard)
   const goToBookmark = useCanvasStore((state) => state.goToBookmark)
   const updateBookmarkViewport = useCanvasStore((state) => state.updateBookmarkViewport)
   const renameBookmark = useCanvasStore((state) => state.renameBookmark)
@@ -64,6 +70,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
   const normalizeCardsToFocusArea = useCanvasStore((state) => state.normalizeCardsToFocusArea)
   const normalizeCardsToDefaultSessionSize = useCanvasStore((state) => state.normalizeCardsToDefaultSessionSize)
   const arrange = useCanvasStore((state) => state.arrange)
+  const sessions = useSessionsStore((state) => state.sessions)
 
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const snapEnabled = useUIStore((state) => state.settings.canvasSnapEnabled)
@@ -81,6 +88,13 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
   const arrangeRef = useRef<HTMLDivElement>(null)
   const bookmarksRef = useRef<HTMLDivElement>(null)
   const sizeMenuRef = useRef<HTMLDivElement>(null)
+
+  const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards])
+  const selectedBookmarkCard = selectedCardIds[0] ? cardsById.get(selectedCardIds[0]) ?? null : null
+  const recentCards = useMemo(() => recentCardIds
+    .map((id) => cardsById.get(id))
+    .filter((card): card is CanvasCard => Boolean(card))
+    .slice(0, 8), [cardsById, recentCardIds])
 
   useEffect(() => {
     if (!arrangeOpen && !bookmarksOpen && !sizeMenuOpen) return
@@ -218,6 +232,27 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
     setPendingRecordBookmark(null)
   }
 
+  const saveSelectedCardBookmark = (): void => {
+    if (!selectedBookmarkCard) return
+    addBookmarkForCard(selectedBookmarkCard.id, getCanvasToolbarCardTitle(selectedBookmarkCard, sessions))
+    setBookmarksOpen(false)
+  }
+
+  const navigateToCard = (cardId: string): void => {
+    const canvas = useCanvasStore.getState()
+    const card = canvas.getCard(cardId)
+    if (!card) return
+    if (isCanvasCardHidden(card)) canvas.updateCard(cardId, { hidden: false, hiddenByFrameId: undefined })
+    canvas.clearMaximizedCard()
+    canvas.clearFocusReturn()
+    requestAnimationFrame(() => {
+      const latest = useCanvasStore.getState().getCard(cardId)
+      if (latest?.kind === 'frame') useCanvasStore.getState().focusFrameWorkspace(cardId)
+      else useCanvasStore.getState().focusOnCard(cardId)
+    })
+    setBookmarksOpen(false)
+  }
+
   return (
     <>
     <div data-canvas-toolbar className="absolute bottom-4 left-4 z-10 flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/95 p-1 shadow-lg backdrop-blur">
@@ -320,11 +355,34 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
           <Bookmark size={16} />
         </button>
         {bookmarksOpen && (
-          <div className="absolute bottom-full left-0 mb-1 w-56 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-xl">
+          <div className="absolute bottom-full left-0 mb-1 max-h-[520px] w-72 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-xl">
             <BookmarkItem label="保存当前视图" onClick={() => addBookmark()} />
+            {selectedBookmarkCard && (
+              <BookmarkItem
+                label={`保存选中：${getCanvasToolbarCardTitle(selectedBookmarkCard, sessions)}`}
+                onClick={saveSelectedCardBookmark}
+              />
+            )}
             <BookmarkItem label="保存布局快照" onClick={() => addLayoutSnapshot()} />
+            {recentCards.length > 0 && (
+              <>
+                <div className="my-1 h-px bg-[var(--color-border)]" />
+                <BookmarkSectionLabel label="最近访问" />
+                {recentCards.map((card) => (
+                  <RecentCardItem
+                    key={card.id}
+                    card={card}
+                    sessions={sessions}
+                    onClick={() => navigateToCard(card.id)}
+                  />
+                ))}
+              </>
+            )}
             {bookmarks.length > 0 && <div className="my-1 h-px bg-[var(--color-border)]" />}
-            {bookmarks.map((bookmark, index) => (
+            {bookmarks.length > 0 && <BookmarkSectionLabel label="书签" />}
+            {bookmarks.map((bookmark, index) => {
+              const meta = getBookmarkMeta(bookmark, cardsById, sessions)
+              return (
               <div
                 key={bookmark.id}
                 className="canvas-arrange-menu-item group relative flex items-center gap-1 rounded-[var(--radius-sm)] text-[var(--color-text-secondary)]"
@@ -372,6 +430,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
                       className="min-w-0 flex-1 px-3 py-1.5 text-left text-[var(--ui-font-sm)] text-inherit"
                     >
                       <span className="block truncate">{bookmark.name}</span>
+                      <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">{meta}</span>
                     </button>
                     {index < 9 && (
                       <span className="shrink-0 px-1 text-[10px] font-semibold text-[var(--color-text-tertiary)] opacity-55 transition-all group-hover:text-[var(--color-accent)] group-hover:opacity-100">
@@ -405,7 +464,8 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
                   </>
                 )}
               </div>
-            ))}
+              )
+            })}
             {layoutSnapshots.length > 0 && (
               <>
                 <div className="my-1 h-px bg-[var(--color-border)]" />
@@ -583,6 +643,40 @@ function BookmarkItem({ label, onClick }: { label: string; onClick: () => void }
   )
 }
 
+function BookmarkSectionLabel({ label }: { label: string }): JSX.Element {
+  return (
+    <div className="px-3 py-1 text-[10px] font-semibold uppercase text-[var(--color-text-tertiary)]">
+      {label}
+    </div>
+  )
+}
+
+function RecentCardItem({
+  card,
+  sessions,
+  onClick,
+}: {
+  card: CanvasCard
+  sessions: Session[]
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="canvas-arrange-menu-item group relative flex w-full items-center rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[var(--color-text-secondary)]"
+    >
+      <span className="canvas-arrange-menu-item-indicator absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)]" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[var(--ui-font-sm)]">{getCanvasToolbarCardTitle(card, sessions)}</span>
+        <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">
+          {getCanvasToolbarCardMeta(card, sessions)}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 function SizeItem({ icon, label, onClick }: { icon: JSX.Element; label: string; onClick: () => void }): JSX.Element {
   return (
     <button
@@ -606,4 +700,36 @@ function getArrangeModeLabel(mode: CanvasArrangeMode): string {
     case 'colFlow': return '纵向排列'
     case 'free': return '自由排列'
   }
+}
+
+function getBookmarkMeta(bookmark: CanvasBookmark, cardsById: Map<string, CanvasCard>, sessions: Session[]): string {
+  if (!bookmark.cardId) return '视图书签'
+  const card = cardsById.get(bookmark.cardId)
+  if (!card) return '目标已移除'
+  return getCanvasToolbarCardMeta(card, sessions)
+}
+
+function getCanvasToolbarCardTitle(card: CanvasCard, sessions: Session[]): string {
+  if (card.kind === 'frame') return card.frameTitle?.trim() || '分组'
+  if (card.kind === 'note') {
+    return card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签'
+  }
+
+  const session = card.refId ? sessions.find((candidate) => candidate.id === card.refId) : undefined
+  if (session) return formatSessionCardTitle(session.name, card.sessionRemark)
+  return card.sessionRemark?.trim() || (card.kind === 'terminal' ? 'Terminal' : '会话')
+}
+
+function getCanvasToolbarCardMeta(card: CanvasCard, sessions: Session[]): string {
+  const hiddenState = isCanvasCardHidden(card) ? '隐藏' : ''
+  let meta: string
+  if (card.kind === 'frame') {
+    meta = `分组工作区 · ${card.frameMemberIds?.length ?? 0} 张卡片`
+  } else if (card.kind === 'note') {
+    meta = '便签'
+  } else {
+    const session = card.refId ? sessions.find((candidate) => candidate.id === card.refId) : undefined
+    meta = session ? `${session.type} · ${session.status}` : card.kind
+  }
+  return [meta, hiddenState].filter(Boolean).join(' · ')
 }

@@ -57,10 +57,21 @@ function cleanupOrphanedCanvasCards(): void {
 export function CanvasWorkspace(): JSX.Element {
   const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchScopeFrameId, setSearchScopeFrameId] = useState<string | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const attachViewportRef = useCallback((el: HTMLDivElement | null) => {
     viewportRef.current = el
     setViewportEl(el)
+  }, [])
+
+  const openSearch = useCallback((frameId?: string | null) => {
+    setSearchScopeFrameId(frameId ?? null)
+    setSearchOpen(true)
+  }, [])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    setSearchScopeFrameId(null)
   }, [])
 
   const workspaceMode = usePanesStore((state) => state.workspaceMode)
@@ -189,7 +200,7 @@ export function CanvasWorkspace(): JSX.Element {
         event.preventDefault()
         event.stopPropagation()
         event.stopImmediatePropagation()
-        setSearchOpen(true)
+        openSearch(null)
         return
       }
       const active = document.activeElement
@@ -205,11 +216,11 @@ export function CanvasWorkspace(): JSX.Element {
         return
       }
       event.preventDefault()
-      setSearchOpen(true)
+      openSearch(null)
     }
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [viewportEl])
+  }, [openSearch, viewportEl])
 
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const showMinimap = useUIStore((state) => state.settings.canvasShowMinimap)
@@ -285,8 +296,8 @@ export function CanvasWorkspace(): JSX.Element {
       </div>
 
       <CanvasSessionList />
-      <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => setSearchOpen(true)} />
-      <CanvasSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => openSearch(null)} />
+      <CanvasSearch open={searchOpen} scopeFrameId={searchScopeFrameId} onClose={closeSearch} />
       <CanvasMaximizedSwitcher />
       {showMinimap && !maximizedCardId && <CanvasMinimap viewportRef={viewportRef} />}
 
@@ -297,6 +308,7 @@ export function CanvasWorkspace(): JSX.Element {
           state={menu}
           onClose={closeMenu}
           onRenameFrame={(cardId) => setRenamingFrameId(cardId)}
+          onSearchFrame={(cardId) => openSearch(cardId)}
         />
       )}
       {renamingFrameId && (

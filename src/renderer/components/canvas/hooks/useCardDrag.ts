@@ -105,7 +105,7 @@ export function useCardDrag({
 
       startRef.current = { x: event.clientX, y: event.clientY }
       clickCandidateRef.current = { x: event.clientX, y: event.clientY, time: now }
-      draggedIdsRef.current = useCanvasStore.getState().selectedCardIds
+      draggedIdsRef.current = expandFrameDragIds(useCanvasStore.getState().selectedCardIds, useCanvasStore.getState().getLayout().cards)
       liveDeltaRef.current = { dx: 0, dy: 0 }
       avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
       liveFrameIdsRef.current = new Set()
@@ -220,6 +220,22 @@ export function applyLiveCardMovement(
       el.style.transform = `translate(${liveDx}px, ${liveDy}px)`
     }
   }
+}
+
+export function expandFrameDragIds(ids: string[], cards: CanvasCard[]): string[] {
+  if (ids.length === 0) return ids
+
+  const cardsById = new Map(cards.map((card) => [card.id, card]))
+  const expanded = new Set<string>()
+  for (const id of ids) {
+    expanded.add(id)
+    const card = cardsById.get(id)
+    if (card?.kind !== 'frame') continue
+    for (const memberId of card.frameMemberIds ?? []) {
+      if (cardsById.has(memberId)) expanded.add(memberId)
+    }
+  }
+  return Array.from(expanded)
 }
 
 export function resetLiveCardMovement(ids: string[]): void {

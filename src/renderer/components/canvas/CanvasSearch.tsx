@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 
 interface CanvasSearchProps {
   open: boolean
+  scopeFrameId?: string | null
   onClose: () => void
 }
 
@@ -120,10 +121,9 @@ function scoreSearch(row: SearchResult, query: string, compactQuery: string): nu
   return titleScore * 1000 + metaScore * 100 + haystackScore
 }
 
-export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element | null {
+export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearchProps): JSX.Element | null {
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const sessions = useSessionsStore((state) => state.sessions)
-  const focusOnCard = useCanvasStore((state) => state.focusOnCard)
   const previewCardInViewport = useCanvasStore((state) => state.previewCardInViewport)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -131,35 +131,61 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
   const inputRef = useRef<HTMLInputElement>(null)
   const previewedCardRef = useRef<string | null>(null)
 
+  const activeScopeTitle = useMemo(() => {
+    if (!scopeFrameId) return null
+    const frame = cards.find((card) => card.id === scopeFrameId && card.kind === 'frame')
+    return frame ? frame.frameTitle?.trim() || '分组' : null
+  }, [cards, scopeFrameId])
+
   const results = useMemo(() => {
     const sessionById = new Map(sessions.map((session) => [session.id, session]))
+    const frameByMemberId = new Map<string, CanvasCard>()
+    for (const frame of cards) {
+      if (frame.kind !== 'frame') continue
+      for (const memberId of frame.frameMemberIds ?? []) {
+        if (!frameByMemberId.has(memberId)) frameByMemberId.set(memberId, frame)
+      }
+    }
+    const scopeFrame = scopeFrameId
+      ? cards.find((card) => card.id === scopeFrameId && card.kind === 'frame')
+      : undefined
+    const scopedMemberIds = scopeFrame?.kind === 'frame'
+      ? new Set(scopeFrame.frameMemberIds ?? [])
+      : null
+    const sourceCards = scopedMemberIds
+      ? cards.filter((card) => scopedMemberIds.has(card.id))
+      : cards
     const normalizedQuery = normalizeSearchText(query)
     const compactQuery = compactSearchText(query)
-    const rows: SearchResult[] = cards.map((card) => {
+    const rows: SearchResult[] = sourceCards.map((card) => {
+      const frame = frameByMemberId.get(card.id)
+      const frameTitle = frame?.frameTitle?.trim()
+      const frameMeta = frameTitle ? `分组：${frameTitle}` : ''
       if (card.kind === 'note') {
         return {
           card,
           title: card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签',
-          meta: '便签',
-          haystack: card.noteBody ?? '',
+          meta: ['便签', frameMeta].filter(Boolean).join(' · '),
+          haystack: `${card.noteBody ?? ''}\n${frameTitle ?? ''}`,
         }
       }
       if (card.kind === 'frame') {
         return {
           card,
           title: card.frameTitle?.trim() || '分组',
-          meta: '分组',
+          meta: '分组工作区',
           haystack: card.frameTitle ?? '',
         }
       }
       const session = card.refId ? sessionById.get(card.refId) : undefined
       const terminalText = card.refId ? getTerminalBufferText(card.refId, 120) : ''
       const title = session ? formatSessionCardTitle(session.name, card.sessionRemark) : '会话'
+      const sessionMeta = session ? `${session.type} · ${session.status}` : card.kind
       return {
         card,
         title,
-        meta: session ? `${session.type} · ${session.status}` : card.kind,
-        haystack: `${title}\n${card.sessionRemark ?? ''}\n${session?.name ?? ''}\n${session?.type ?? ''}\n${session?.status ?? ''}\n${terminalText}`,
+        meta: [sessionMeta, frameMeta].filter(Boolean).join(' · '),
+        haystack: `${title}\n${card.sessionRemark ?? ''}\n${session?.name ?? ''}\n${session?.type ?? ''}\n${session?.status ?? ''}\n${frameTitle ?? ''}\n${terminalText}`,
       }
     })
     const filtered = normalizedQuery
@@ -170,13 +196,13 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
         .map((item) => item.row)
       : rows
     return filtered.slice(0, 24)
-  }, [cards, query, sessions])
+  }, [cards, query, scopeFrameId, sessions])
 
   useEffect(() => {
     if (!open) return
     setActiveIndex(0)
     requestAnimationFrame(() => inputRef.current?.focus())
-  }, [open])
+  }, [open, scopeFrameId])
 
   useEffect(() => {
     if (!open) return
@@ -220,7 +246,11 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
     if (isCanvasCardHidden(result.card)) canvas.updateCard(result.card.id, { hidden: false, hiddenByFrameId: undefined })
     canvas.clearMaximizedCard()
     canvas.clearFocusReturn()
-    requestAnimationFrame(() => focusOnCard(result.card.id))
+    requestAnimationFrame(() => {
+      const latest = useCanvasStore.getState().getCard(result.card.id)
+      if (latest?.kind === 'frame') useCanvasStore.getState().focusFrameWorkspace(result.card.id)
+      else useCanvasStore.getState().focusOnCard(result.card.id)
+    })
     onClose()
   }
 
@@ -247,7 +277,7 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
               setActiveIndex((index) => Math.max(0, index - 1))
             }
           }}
-          placeholder="搜索画布"
+          placeholder={activeScopeTitle ? '搜索组内卡片' : '搜索画布'}
           className="canvas-search-input min-w-0 flex-1 bg-transparent text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
         />
         <button
@@ -259,6 +289,11 @@ export function CanvasSearch({ open, onClose }: CanvasSearchProps): JSX.Element 
           <X size={15} />
         </button>
       </div>
+      {activeScopeTitle && (
+        <div className="border-b border-[var(--color-border)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+          组内搜索：<span className="text-[var(--color-text-secondary)]">{activeScopeTitle}</span>
+        </div>
+      )}
       <div className="max-h-[360px] overflow-y-auto p-1.5">
         {results.map((result, index) => (
           <button

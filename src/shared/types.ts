@@ -116,6 +116,8 @@ export interface CanvasCard {
   favorite?: boolean
   /** Per-card geometry/content snapshots. */
   cardSnapshots?: CanvasCardSnapshot[]
+  /** Per-frame workspace snapshots. */
+  frameSnapshots?: CanvasFrameSnapshot[]
   /** Optional per-canvas label shown after the session name. */
   sessionRemark?: string
   /** Note-card body (plain text). */
@@ -124,6 +126,8 @@ export interface CanvasCard {
   noteColor?: string
   /** Frame-card title. */
   frameTitle?: string
+  /** Frame-card accent color token. */
+  frameColor?: string
   /** Stable group membership for frame cards. */
   frameMemberIds?: string[]
   createdAt: number
@@ -140,6 +144,8 @@ export interface CanvasBookmark {
   id: string
   name: string
   viewport: CanvasViewport
+  /** Optional target card/frame. When present, bookmark navigation focuses this card. */
+  cardId?: string
   createdAt: number
   updatedAt: number
 }
@@ -148,6 +154,16 @@ export interface CanvasRelation {
   id: string
   fromCardId: string
   toCardId: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CanvasFrameSnapshot {
+  id: string
+  name: string
+  frame: CanvasCard
+  cards: CanvasCard[]
+  relations: CanvasRelation[]
   createdAt: number
   updatedAt: number
 }
@@ -174,6 +190,7 @@ export interface CanvasLayout {
   cards: CanvasCard[]
   viewport: CanvasViewport
   bookmarks: CanvasBookmark[]
+  recentCardIds: string[]
   relations: CanvasRelation[]
   snapshots: CanvasLayoutSnapshot[]
 }

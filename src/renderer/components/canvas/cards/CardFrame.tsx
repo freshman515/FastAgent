@@ -15,6 +15,7 @@ interface CardFrameProps {
   onDelete?: () => void
   deleteTitle?: string
   onHeaderClick?: () => void
+  onHeaderDoubleClick?: () => void
   onHeaderContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void
   headerActions?: React.ReactNode
   minWidth?: number
@@ -76,6 +77,7 @@ export function CardFrame({
   onDelete,
   deleteTitle = '删除',
   onHeaderClick,
+  onHeaderDoubleClick,
   onHeaderContextMenu,
   headerActions,
   minWidth,
@@ -98,8 +100,12 @@ export function CardFrame({
   const isMaximized = useCanvasStore((state) => state.maximizedCardId === card.id)
   const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
   const handleHeaderDoubleClick = useCallback(() => {
+    if (onHeaderDoubleClick) {
+      onHeaderDoubleClick()
+      return
+    }
     toggleMaximizedCard(card.id)
-  }, [card.id, toggleMaximizedCard])
+  }, [card.id, onHeaderDoubleClick, toggleMaximizedCard])
   useCardDrag({
     cardId: card.id,
     element: hostEl,
@@ -193,6 +199,7 @@ export function CardFrame({
       data-card-id={card.id}
       data-card-coordinate-mode={coordinateMode}
       data-card-maximized={isMaximized ? 'true' : undefined}
+      data-card-selected={selected ? 'true' : undefined}
       onPointerDownCapture={handlePointerDownCapture}
       onClickCapture={handleClickCapture}
       className={cn(

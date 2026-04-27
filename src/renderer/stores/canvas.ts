@@ -7,6 +7,7 @@ import {
   type CanvasCard,
   type CanvasCardKind,
   type CanvasCardSnapshot,
+  type CanvasFrameSnapshot,
   type CanvasLayout,
   type CanvasLayoutSnapshot,
   type CanvasRelation,
@@ -30,7 +31,7 @@ function defaultViewport(): CanvasViewport {
 }
 
 function defaultLayout(): CanvasLayout {
-  return { cards: [], viewport: defaultViewport(), bookmarks: [], relations: [], snapshots: [] }
+  return { cards: [], viewport: defaultViewport(), bookmarks: [], recentCardIds: [], relations: [], snapshots: [] }
 }
 
 interface CanvasHistoryEntry {
@@ -49,6 +50,7 @@ function cloneCanvasCard(card: CanvasCard): CanvasCard {
       ...snapshot,
       card: cloneSnapshotCard(snapshot.card),
     })),
+    frameSnapshots: card.frameSnapshots?.map(cloneFrameSnapshot),
   }
 }
 
@@ -58,6 +60,16 @@ function cloneSnapshotCard(card: CanvasCard): CanvasCard {
     collapsedPreview: card.collapsedPreview ? [...card.collapsedPreview] : undefined,
     frameMemberIds: card.frameMemberIds ? [...card.frameMemberIds] : undefined,
     cardSnapshots: undefined,
+    frameSnapshots: undefined,
+  }
+}
+
+function cloneFrameSnapshot(snapshot: CanvasFrameSnapshot): CanvasFrameSnapshot {
+  return {
+    ...snapshot,
+    frame: cloneSnapshotCard(snapshot.frame),
+    cards: snapshot.cards.map(cloneSnapshotCard),
+    relations: snapshot.relations.map((relation) => ({ ...relation })),
   }
 }
 
@@ -69,6 +81,7 @@ function cloneLayout(layout: CanvasLayout): CanvasLayout {
       ...bookmark,
       viewport: { ...bookmark.viewport },
     })),
+    recentCardIds: [...(layout.recentCardIds ?? [])],
     relations: layout.relations.map((relation) => ({ ...relation })),
     snapshots: (layout.snapshots ?? []).map((snapshot) => ({
       ...snapshot,
@@ -277,6 +290,23 @@ function getCardFocusViewport(card: CanvasCard, currentViewport: CanvasViewport)
   }
 }
 
+function getFrameWorkspaceViewport(frame: CanvasCard): CanvasViewport | null {
+  const focusArea = getCanvasFocusScreenArea()
+  if (!focusArea) return null
+
+  const paddedWidth = frame.width + FRAME_AUTO_PADDING * 2
+  const paddedHeight = frame.height + FRAME_AUTO_PADDING * 2
+  const targetScale = clampScale(Math.min(focusArea.width / paddedWidth, focusArea.height / paddedHeight))
+  const centerX = frame.x + frame.width / 2
+  const centerY = frame.y + frame.height / 2
+
+  return {
+    scale: targetScale,
+    offsetX: focusArea.centerX - centerX * targetScale,
+    offsetY: focusArea.centerY - centerY * targetScale,
+  }
+}
+
 function resizeSessionCardsToGrid(
   layout: CanvasLayout,
   targetWidth: number,
@@ -378,6 +408,7 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
     hiddenByFrameId: typeof card.hiddenByFrameId === 'string' ? card.hiddenByFrameId : undefined,
     favorite: Boolean(card.favorite),
     cardSnapshots: undefined,
+    frameSnapshots: undefined,
     sessionRemark: typeof card.sessionRemark === 'string' ? card.sessionRemark : undefined,
     frameMemberIds: Array.isArray(card.frameMemberIds)
       ? card.frameMemberIds.filter((id): id is string => typeof id === 'string')
@@ -385,6 +416,25 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
     createdAt: typeof card.createdAt === 'number' ? card.createdAt : Date.now(),
     updatedAt: typeof card.updatedAt === 'number' ? card.updatedAt : Date.now(),
   }
+}
+
+function getCanvasCardLabel(card: CanvasCard): string {
+  if (card.kind === 'frame') return card.frameTitle?.trim() || '分组'
+  if (card.kind === 'note') return card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签'
+  return card.sessionRemark?.trim() || '会话'
+}
+
+function withRecentCard(layout: CanvasLayout, cardId: string): CanvasLayout {
+  if (!layout.cards.some((card) => card.id === cardId)) return layout
+  const validIds = new Set(layout.cards.map((card) => card.id))
+  const recentCardIds = [
+    cardId,
+    ...(layout.recentCardIds ?? []).filter((id) => id !== cardId && validIds.has(id)),
+  ].slice(0, 12)
+
+  const previous = layout.recentCardIds ?? []
+  if (previous.length === recentCardIds.length && previous.every((id, index) => id === recentCardIds[index])) return layout
+  return { ...layout, recentCardIds }
 }
 
 function isValidCardSnapshot(value: unknown): value is CanvasCardSnapshot {
@@ -395,6 +445,36 @@ function isValidCardSnapshot(value: unknown): value is CanvasCardSnapshot {
     && typeof snapshot.name === 'string'
     && isValidCard(snapshot.card)
   )
+}
+
+function isValidFrameSnapshot(value: unknown): value is CanvasFrameSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const snapshot = value as Record<string, unknown>
+  return (
+    typeof snapshot.id === 'string'
+    && typeof snapshot.name === 'string'
+    && isValidCard(snapshot.frame)
+    && Array.isArray(snapshot.cards)
+    && Array.isArray(snapshot.relations)
+  )
+}
+
+function sanitizeFrameSnapshot(snapshot: CanvasFrameSnapshot): CanvasFrameSnapshot {
+  const frame = sanitizeSnapshotCard(snapshot.frame)
+  const cards = snapshot.cards.filter(isValidCard).map(sanitizeSnapshotCard)
+  const ids = new Set([frame.id, ...cards.map((card) => card.id)])
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    frame,
+    cards,
+    relations: snapshot.relations
+      .filter(isValidRelation)
+      .filter((relation) => ids.has(relation.fromCardId) && ids.has(relation.toCardId))
+      .map((relation) => ({ ...relation })),
+    createdAt: typeof snapshot.createdAt === 'number' ? snapshot.createdAt : Date.now(),
+    updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
+  }
 }
 
 function isValidLayoutSnapshot(value: unknown): value is CanvasLayoutSnapshot {
@@ -428,6 +508,9 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
             updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
           }))
         : undefined,
+      frameSnapshots: Array.isArray(card.frameSnapshots)
+        ? card.frameSnapshots.filter(isValidFrameSnapshot).map(sanitizeFrameSnapshot).slice(-12)
+        : undefined,
     }
   })
   const cardIds = new Set(cards.map((card) => card.id))
@@ -449,9 +532,13 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
       offsetX: bookmark.viewport.offsetX,
       offsetY: bookmark.viewport.offsetY,
     },
+    cardId: typeof bookmark.cardId === 'string' && cardIds.has(bookmark.cardId) ? bookmark.cardId : undefined,
     createdAt: typeof bookmark.createdAt === 'number' ? bookmark.createdAt : Date.now(),
     updatedAt: typeof bookmark.updatedAt === 'number' ? bookmark.updatedAt : Date.now(),
   }))
+  const recentCardIds = Array.isArray(data.recentCardIds)
+    ? data.recentCardIds.filter((id): id is string => typeof id === 'string' && cardIds.has(id)).slice(0, 12)
+    : []
 
   const seenRelations = new Set<string>()
   const rawRelations = Array.isArray(data.relations) ? data.relations : []
@@ -492,7 +579,7 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
     updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
   }))
 
-  return { cards, viewport, bookmarks, relations, snapshots }
+  return { cards, viewport, bookmarks, recentCardIds, relations, snapshots }
 }
 
 // ─── Card defaults ───
@@ -582,6 +669,27 @@ function removeFrameMember(memberIdsByFrame: Map<string, string[]>, cardId: stri
     const index = memberIds.indexOf(cardId)
     if (index !== -1) memberIds.splice(index, 1)
   }
+}
+
+function expandFrameMoveIds(cards: CanvasCard[], ids: Iterable<string>): {
+  movingIds: Set<string>
+  membersMovedWithFrame: Set<string>
+} {
+  const cardsById = new Map(cards.map((card) => [card.id, card]))
+  const movingIds = new Set(ids)
+  const membersMovedWithFrame = new Set<string>()
+
+  for (const id of [...movingIds]) {
+    const card = cardsById.get(id)
+    if (card?.kind !== 'frame') continue
+    for (const memberId of card.frameMemberIds ?? []) {
+      if (!cardsById.has(memberId)) continue
+      movingIds.add(memberId)
+      membersMovedWithFrame.add(memberId)
+    }
+  }
+
+  return { movingIds, membersMovedWithFrame }
 }
 
 function findBestTouchedFrame(card: CanvasCard, frames: CanvasCard[]): CanvasCard | null {
@@ -1105,13 +1213,20 @@ interface CanvasState {
    * the card's transformed text is outside the readable font-size range.
    */
   focusOnCard: (cardId: string) => void
+  /** Fit a frame/group as a workspace in the readable focus area. */
+  focusFrameWorkspace: (frameId: string) => void
   /** Preview a card from search by moving the viewport without activating the session. */
   previewCardInViewport: (cardId: string) => void
+  /** Track card/frame navigation for the canvas recent list. */
+  recordCardVisit: (cardId: string) => void
 
   // cards
   addCard: (partial: Partial<CanvasCard> & { kind: CanvasCardKind }) => string
   addFrameAroundCards: (ids: string[], fallback?: { x: number; y: number }) => string | null
   toggleFrameCollapsed: (frameId: string) => void
+  hideAllExceptFrame: (frameId: string) => void
+  setFrameMembersHidden: (frameId: string, hidden: boolean) => void
+  showAllCards: () => void
   normalizeCardsToFocusArea: () => void
   normalizeCardsToDefaultSessionSize: () => void
   updateCard: (id: string, updates: Partial<CanvasCard>) => void
@@ -1158,6 +1273,7 @@ interface CanvasState {
 
   // bookmarks
   addBookmark: (name?: string) => string
+  addBookmarkForCard: (cardId: string, name?: string) => string | null
   goToBookmark: (id: string) => void
   updateBookmarkViewport: (id: string) => void
   renameBookmark: (id: string, name: string) => void
@@ -1165,6 +1281,9 @@ interface CanvasState {
 
   // full layout snapshots
   addLayoutSnapshot: (name?: string) => string
+  addFrameSnapshot: (frameId: string, name?: string) => string | null
+  restoreFrameSnapshot: (frameId: string, snapshotId: string) => void
+  removeFrameSnapshot: (frameId: string, snapshotId: string) => void
   restoreLayoutSnapshot: (id: string) => void
   renameLayoutSnapshot: (id: string, name: string) => void
   removeLayoutSnapshot: (id: string) => void
@@ -1323,6 +1442,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const card = get().getCard(cardId)
       get().setSelection([cardId])
       if (card?.kind !== 'frame') get().bringToFront(cardId)
+      get().recordCardVisit(cardId)
       set({ focusReturn: null })
       animateViewport(focusReturn.viewport)
       return
@@ -1336,7 +1456,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     get().setSelection([cardId])
     if (card.kind !== 'frame') get().bringToFront(cardId)
+    get().recordCardVisit(cardId)
     set({ focusReturn: { cardId, viewport: returnViewport } })
+    animateViewport(targetViewport)
+  },
+
+  focusFrameWorkspace: (frameId) => {
+    cancelViewportAnimation()
+    const frame = get().getCard(frameId)
+    if (!frame || frame.kind !== 'frame') return
+    const targetViewport = getFrameWorkspaceViewport(frame)
+    if (!targetViewport) return
+    const returnViewport = get().getViewport()
+    get().setSelection([frameId])
+    get().recordCardVisit(frameId)
+    set({ focusReturn: { cardId: frameId, viewport: returnViewport } })
     animateViewport(targetViewport)
   },
 
@@ -1348,6 +1482,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (!targetViewport) return
     set({ focusReturn: null })
     animateViewport(targetViewport)
+  },
+
+  recordCardVisit: (cardId) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const nextLayout = withRecentCard(layout, cardId)
+      if (nextLayout === layout) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: nextLayout,
+        },
+      }
+    })
   },
 
   fitAll: (containerWidth, containerHeight) => {
@@ -1403,6 +1551,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         noteBody: partial.noteBody,
         noteColor: partial.noteColor,
         frameTitle: partial.frameTitle,
+        frameColor: partial.frameColor,
         frameMemberIds: partial.frameMemberIds,
         createdAt: partial.createdAt ?? now,
         updatedAt: now,
@@ -1457,6 +1606,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         zIndex: Number.isFinite(minTargetZ) ? minTargetZ - 1 : maxZ + 1,
         collapsed: false,
         frameTitle: '分组',
+        frameColor: 'violet',
         frameMemberIds: targets.map((target) => target.id),
         createdAt: now,
         updatedAt: now,
@@ -1527,6 +1677,83 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           : state.selectedCardIds,
         focusReturn: state.focusReturn && memberIds.has(state.focusReturn.cardId) ? null : state.focusReturn,
         maximizedCardId: state.maximizedCardId && memberIds.has(state.maximizedCardId) ? null : state.maximizedCardId,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  hideAllExceptFrame: (frameId) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const frame = layout.cards.find((card) => card.id === frameId && card.kind === 'frame')
+      if (!frame) return state
+      const visibleIds = new Set([frameId, ...(frame.frameMemberIds ?? [])])
+      const now = Date.now()
+      let touched = false
+      const cards = layout.cards.map((card) => {
+        const hidden = !visibleIds.has(card.id)
+        if (card.hidden === hidden) return card
+        touched = true
+        return { ...card, hidden, updatedAt: now }
+      })
+      if (!touched) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        selectedCardIds: state.selectedCardIds.filter((id) => visibleIds.has(id)),
+        focusReturn: state.focusReturn && !visibleIds.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        maximizedCardId: state.maximizedCardId && !visibleIds.has(state.maximizedCardId) ? null : state.maximizedCardId,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  setFrameMembersHidden: (frameId, hidden) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const frame = layout.cards.find((card) => card.id === frameId && card.kind === 'frame')
+      if (!frame) return state
+      const memberIds = new Set(frame.frameMemberIds ?? [])
+      if (memberIds.size === 0) return state
+      const now = Date.now()
+      let touched = false
+      const cards = layout.cards.map((card) => {
+        if (!memberIds.has(card.id) || card.hidden === hidden) return card
+        touched = true
+        return { ...card, hidden, updatedAt: now }
+      })
+      if (!touched) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        selectedCardIds: hidden ? state.selectedCardIds.filter((id) => !memberIds.has(id)) : state.selectedCardIds,
+        focusReturn: hidden && state.focusReturn && memberIds.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        maximizedCardId: hidden && state.maximizedCardId && memberIds.has(state.maximizedCardId) ? null : state.maximizedCardId,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  showAllCards: () => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const now = Date.now()
+      let touched = false
+      const cards = layout.cards.map((card) => {
+        if (!card.hidden) return card
+        touched = true
+        return { ...card, hidden: false, updatedAt: now }
+      })
+      if (!touched) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
         undoStack: pushUndo(state),
       }
     })
@@ -1816,15 +2043,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (dx === 0 && dy === 0) return
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
-      const idSet = new Set(ids)
+      const { movingIds, membersMovedWithFrame } = expandFrameMoveIds(layout.cards, ids)
+      if (movingIds.size === 0) return state
       const now = Date.now()
       let touched = false
       let cards = layout.cards.map((card) => {
-        if (!idSet.has(card.id)) return card
+        if (!movingIds.has(card.id)) return card
         touched = true
         return { ...card, x: card.x + dx, y: card.y + dy, updatedAt: now }
       })
-      const frameLayout = applyFrameAutoLayout(cards, idSet, now)
+      const autoLayoutIds = [...movingIds].filter((id) => !membersMovedWithFrame.has(id))
+      const frameLayout = applyFrameAutoLayout(cards, autoLayoutIds, now)
       cards = frameLayout.cards
       touched = touched || frameLayout.touched
       if (!touched) return state
@@ -2169,9 +2398,48 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return id
   },
 
+  addBookmarkForCard: (cardId, name) => {
+    const card = get().getCard(cardId)
+    if (!card) return null
+    const id = `bookmark-${generateId()}`
+    const now = Date.now()
+    const bookmarkName = name?.trim() || getCanvasCardLabel(card)
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const bookmark: CanvasBookmark = {
+        id,
+        name: bookmarkName,
+        cardId,
+        viewport: { ...layout.viewport },
+        createdAt: now,
+        updatedAt: now,
+      }
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, bookmarks: [...layout.bookmarks, bookmark] },
+        },
+      }
+    })
+    return id
+  },
+
   goToBookmark: (id) => {
     const bookmark = get().getLayout().bookmarks.find((item) => item.id === id)
     if (!bookmark) return
+    if (bookmark.cardId && get().getCard(bookmark.cardId)) {
+      const card = get().getCard(bookmark.cardId)
+      if (card && isCanvasCardHidden(card)) get().updateCard(bookmark.cardId, { hidden: false, hiddenByFrameId: undefined })
+      get().clearMaximizedCard()
+      get().clearFocusReturn()
+      requestAnimationFrame(() => {
+        if (!bookmark.cardId) return
+        const target = get().getCard(bookmark.cardId)
+        if (target?.kind === 'frame') get().focusFrameWorkspace(bookmark.cardId)
+        else get().focusOnCard(bookmark.cardId)
+      })
+      return
+    }
     set({ focusReturn: null })
     animateViewport(bookmark.viewport)
   },
@@ -2253,6 +2521,111 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     })
     return id
+  },
+
+  addFrameSnapshot: (frameId, name) => {
+    const frame = get().getCard(frameId)
+    if (!frame || frame.kind !== 'frame') return null
+    const id = `frame-snapshot-${generateId()}`
+    const now = Date.now()
+    const frameName = frame.frameTitle?.trim() || '分组'
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const currentFrame = layout.cards.find((card) => card.id === frameId && card.kind === 'frame')
+      if (!currentFrame) return state
+      const memberIds = new Set(currentFrame.frameMemberIds ?? [])
+      const snapshotIds = new Set([frameId, ...memberIds])
+      const snapshot: CanvasFrameSnapshot = {
+        id,
+        name: name?.trim() || `${frameName} 快照`,
+        frame: cloneSnapshotCard(currentFrame),
+        cards: layout.cards.filter((card) => memberIds.has(card.id)).map(cloneSnapshotCard),
+        relations: layout.relations
+          .filter((relation) => snapshotIds.has(relation.fromCardId) && snapshotIds.has(relation.toCardId))
+          .map((relation) => ({ ...relation })),
+        createdAt: now,
+        updatedAt: now,
+      }
+      const cards = layout.cards.map((card) => {
+        if (card.id !== frameId) return card
+        return {
+          ...card,
+          frameSnapshots: [...(card.frameSnapshots ?? []), snapshot].slice(-12),
+          updatedAt: now,
+        }
+      })
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+      }
+    })
+    return id
+  },
+
+  restoreFrameSnapshot: (frameId, snapshotId) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const frame = layout.cards.find((card) => card.id === frameId && card.kind === 'frame')
+      const snapshot = frame?.frameSnapshots?.find((item) => item.id === snapshotId)
+      if (!frame || !snapshot) return state
+
+      const oldMemberIds = new Set(frame.frameMemberIds ?? [])
+      const restoredFrame: CanvasCard = {
+        ...cloneSnapshotCard(snapshot.frame),
+        frameSnapshots: frame.frameSnapshots?.map(cloneFrameSnapshot),
+      }
+      const restoredCards = snapshot.cards.map(cloneSnapshotCard)
+      const restoredIds = new Set([restoredFrame.id, ...restoredCards.map((card) => card.id)])
+      const ownedIds = new Set([frameId, ...oldMemberIds, ...restoredIds])
+      const cards = layout.cards
+        .filter((card) => !ownedIds.has(card.id))
+        .concat([restoredFrame, ...restoredCards])
+      const nextCardIds = new Set(cards.map((card) => card.id))
+      const relations = [
+        ...layout.relations.filter((relation) => (
+          nextCardIds.has(relation.fromCardId)
+          && nextCardIds.has(relation.toCardId)
+          && !(restoredIds.has(relation.fromCardId) && restoredIds.has(relation.toCardId))
+        )),
+        ...snapshot.relations
+          .filter((relation) => restoredIds.has(relation.fromCardId) && restoredIds.has(relation.toCardId))
+          .map((relation) => ({ ...relation })),
+      ]
+
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards, relations },
+        },
+        selectedCardIds: state.selectedCardIds.filter((id) => nextCardIds.has(id)),
+        focusReturn: state.focusReturn && !nextCardIds.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        maximizedCardId: state.maximizedCardId && !nextCardIds.has(state.maximizedCardId) ? null : state.maximizedCardId,
+        undoStack: pushUndo(state),
+      }
+    })
+  },
+
+  removeFrameSnapshot: (frameId, snapshotId) => {
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      let touched = false
+      const cards = layout.cards.map((card) => {
+        if (card.id !== frameId || card.kind !== 'frame') return card
+        const frameSnapshots = (card.frameSnapshots ?? []).filter((snapshot) => snapshot.id !== snapshotId)
+        if (frameSnapshots.length === (card.frameSnapshots ?? []).length) return card
+        touched = true
+        return { ...card, frameSnapshots, updatedAt: Date.now() }
+      })
+      if (!touched) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+      }
+    })
   },
 
   restoreLayoutSnapshot: (id) => {
