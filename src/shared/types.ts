@@ -807,6 +807,27 @@ export interface StructuredWorkerReport {
   updatedAt: number
 }
 
+export type VoiceInputMode = 'system' | 'api'
+export type VoiceApiBodyMode = 'multipart' | 'raw'
+
+export interface VoiceTranscribeRequest {
+  endpoint: string
+  audio: ArrayBuffer
+  mimeType: string
+  bodyMode: VoiceApiBodyMode
+  fileFieldName: string
+  responseTextPath: string
+  timeoutMs: number
+  authorization?: string
+}
+
+export interface VoiceTranscribeResult {
+  ok: boolean
+  text?: string
+  error?: string
+  raw?: unknown
+}
+
 // ─── IPC Channels ───
 
 export const IPC = {
@@ -848,6 +869,7 @@ export const IPC = {
   WINDOW_SET_FULLSCREEN: 'window:set-fullscreen',
   WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
   WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
+  VOICE_TRANSCRIBE: 'voice:transcribe',
 
   DIALOG_SELECT_FOLDER: 'dialog:select-folder',
   SHELL_OPEN_PATH: 'shell:open-path',

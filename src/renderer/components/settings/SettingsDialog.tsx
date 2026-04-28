@@ -1,6 +1,6 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AppInfo, TerminalShellMode, UpdaterEvent } from '@shared/types'
+import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
 import {
   CANVAS_FOCUS_FONT_PX_MAX,
@@ -79,6 +79,16 @@ const TERMINAL_SHELL_OPTIONS: Array<{ id: TerminalShellMode; label: string; desc
   { id: 'cmd', label: 'CMD', desc: '使用 cmd.exe 启动' },
   { id: 'gitbash', label: 'Git Bash', desc: '使用 Git for Windows 的 bash.exe 启动' },
   { id: 'custom', label: '自定义', desc: '指定自己的 shell 路径和参数' },
+]
+
+const VOICE_INPUT_OPTIONS: Array<{ id: VoiceInputMode; label: string; desc: string }> = [
+  { id: 'system', label: '系统语音输入', desc: '保留当前 Windows Win+H 输入方式' },
+  { id: 'api', label: '本地 ASR API', desc: '录音后发送到本地部署的语音模型' },
+]
+
+const VOICE_API_BODY_OPTIONS: Array<{ id: VoiceApiBodyMode; label: string; desc: string }> = [
+  { id: 'multipart', label: 'Multipart', desc: '以文件字段上传音频，适合多数 ASR 服务' },
+  { id: 'raw', label: 'Raw Body', desc: '直接把音频作为请求体发送' },
 ]
 
 // ─── Shared components ───
@@ -1702,6 +1712,74 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
             当前平台会使用系统 SHELL 环境变量启动终端和 Agent。
           </div>
         )}
+      </SettingsSection>
+      <SettingsSection icon={AudioLines} title="语音输入" description="右键终端时可使用系统语音输入，也可以录音后发送到本地 ASR API。">
+        <SegmentedChoice
+          value={settings.voiceInputMode}
+          options={VOICE_INPUT_OPTIONS}
+          onChange={(value) => onUpdate('voiceInputMode', value)}
+        />
+        <div className="grid grid-cols-[1.4fr_0.8fr] gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">本地 ASR API 地址</span>
+            <input
+              value={settings.voiceApiUrl}
+              onChange={(event) => onUpdate('voiceApiUrl', event.target.value)}
+              placeholder="http://127.0.0.1:10095/asr"
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">超时</span>
+            <input
+              type="number"
+              min={1000}
+              max={120000}
+              step={1000}
+              value={settings.voiceApiTimeoutMs}
+              onChange={(event) => onUpdate('voiceApiTimeoutMs', Number(event.target.value))}
+              className={inputClass}
+            />
+          </label>
+        </div>
+        <SegmentedChoice
+          value={settings.voiceApiBodyMode}
+          options={VOICE_API_BODY_OPTIONS}
+          onChange={(value) => onUpdate('voiceApiBodyMode', value)}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">音频文件字段</span>
+            <input
+              value={settings.voiceApiFileFieldName}
+              onChange={(event) => onUpdate('voiceApiFileFieldName', event.target.value)}
+              placeholder="file"
+              className={inputClass}
+              disabled={settings.voiceApiBodyMode === 'raw'}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">识别文本路径</span>
+            <input
+              value={settings.voiceApiResponseTextPath}
+              onChange={(event) => onUpdate('voiceApiResponseTextPath', event.target.value)}
+              placeholder="text"
+              className={inputClass}
+            />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Authorization 头（可选）</span>
+          <input
+            value={settings.voiceApiAuthorization}
+            onChange={(event) => onUpdate('voiceApiAuthorization', event.target.value)}
+            placeholder="Bearer ..."
+            className={inputClass}
+          />
+        </label>
+        <span className="text-[var(--ui-font-2xs)] leading-relaxed text-[var(--color-text-tertiary)]">
+          API 模式会在终端右键菜单中录音，停止后把音频发送到这里配置的接口，并把返回文本插入当前终端输入区。Windows 系统语音输入入口会保留。
+        </span>
       </SettingsSection>
       <div className="flex items-center gap-2 mb-1">
         <Terminal size={14} className="text-[var(--color-success)]" />

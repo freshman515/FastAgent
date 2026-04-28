@@ -8,6 +8,7 @@ import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUIStore } from '@/stores/ui'
 import { SessionIconView } from './SessionIconView'
 
 interface TerminalViewProps {
@@ -18,6 +19,7 @@ interface TerminalViewProps {
 const CONTEXT_MENU_ITEM =
   'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-secondary)]'
 type SendPickerMode = 'send' | 'insert'
+type VoiceCaptureState = 'recording' | 'transcribing'
 
 function buildBracketedPastePayload(text: string): string {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -28,11 +30,17 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef } = useXterm(session, isActive)
   const isDarkTheme = useIsDarkTheme()
   const allSessions = useSessionsStore((s) => s.sessions)
+  const settings = useUIStore((s) => s.settings)
+  const addToast = useUIStore((s) => s.addToast)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
   const [sendPicker, setSendPicker] = useState<{ x: number; y: number; text: string; mode: SendPickerMode } | null>(null)
+  const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
   const targetSessions = useMemo(
     () => allSessions.filter((item) =>
       item.id !== session.id
@@ -131,7 +139,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     await pasteFromClipboardRef.current?.()
   }, [pasteFromClipboardRef])
 
-  const doVoiceInput = useCallback(() => {
+  const doSystemVoiceInput = useCallback(() => {
     setContextMenu(null)
     terminalRef.current?.focus()
 
@@ -146,6 +154,108 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
       })
     }, 80)
   }, [terminalRef])
+
+  const stopApiVoiceInput = useCallback(() => {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') return
+    recorder.stop()
+  }, [])
+
+  const startApiVoiceInput = useCallback(async () => {
+    setContextMenu(null)
+    terminalRef.current?.focus()
+
+    if (!settings.voiceApiUrl.trim()) {
+      addToast({ type: 'error', title: '语音 API 未配置', body: '请先在设置 > 终端 > 语音输入中配置本地 ASR API 地址。' })
+      return
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      addToast({ type: 'error', title: '无法录音', body: '当前环境不支持浏览器录音 API。' })
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      audioChunksRef.current = []
+
+      recorder.ondataavailable = (event): void => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+
+      recorder.onerror = (): void => {
+        addToast({ type: 'error', title: '录音失败', body: '录音过程中出现错误。' })
+        setVoiceCaptureState(null)
+        stream.getTracks().forEach((track) => track.stop())
+      }
+
+      recorder.onstop = (): void => {
+        const chunks = audioChunksRef.current
+        const mimeType = recorder.mimeType || 'audio/webm'
+        stream.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+        mediaRecorderRef.current = null
+
+        if (chunks.length === 0) {
+          setVoiceCaptureState(null)
+          addToast({ type: 'error', title: '没有录到音频', body: '请重新开始语音输入。' })
+          return
+        }
+
+        setVoiceCaptureState('transcribing')
+        const blob = new Blob(chunks, { type: mimeType })
+        void blob.arrayBuffer()
+          .then((audio) => window.api.window.transcribeVoiceInput({
+            endpoint: settings.voiceApiUrl,
+            audio,
+            mimeType,
+            bodyMode: settings.voiceApiBodyMode,
+            fileFieldName: settings.voiceApiFileFieldName,
+            responseTextPath: settings.voiceApiResponseTextPath,
+            timeoutMs: settings.voiceApiTimeoutMs,
+            authorization: settings.voiceApiAuthorization,
+          }))
+          .then((result) => {
+            if (!result.ok || !result.text) {
+              addToast({ type: 'error', title: '语音识别失败', body: result.error ?? '本地 ASR API 没有返回文本。' })
+              return
+            }
+            terminalRef.current?.focus()
+            terminalRef.current?.paste(result.text)
+          })
+          .catch((error) => {
+            addToast({ type: 'error', title: '语音识别失败', body: error instanceof Error ? error.message : String(error) })
+          })
+          .finally(() => setVoiceCaptureState(null))
+      }
+
+      recorder.start()
+      setVoiceCaptureState('recording')
+    } catch (error) {
+      addToast({ type: 'error', title: '无法开始录音', body: error instanceof Error ? error.message : String(error) })
+      setVoiceCaptureState(null)
+    }
+  }, [addToast, settings, terminalRef])
+
+  const doVoiceInput = useCallback(() => {
+    if (settings.voiceInputMode === 'api') {
+      void startApiVoiceInput()
+      return
+    }
+    doSystemVoiceInput()
+  }, [doSystemVoiceInput, settings.voiceInputMode, startApiVoiceInput])
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop()
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
 
   const openSendPicker = useCallback((mode: SendPickerMode) => {
     const term = terminalRef.current
@@ -230,7 +340,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   }, [])
 
   const menuWidth = 200
-  const menuHeight = 360
+  const menuHeight = 410
   const contextMenuStyle = contextMenu
     ? {
         left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - menuWidth - 8)),
@@ -306,6 +416,23 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         >
           <ChevronDown size={18} strokeWidth={2.4} />
         </button>
+        {voiceCaptureState && (
+          <div className="absolute bottom-16 right-4 z-30 flex items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/95 px-3 py-2 shadow-xl shadow-black/35 backdrop-blur-md">
+            <Mic size={14} className={voiceCaptureState === 'recording' ? 'animate-pulse text-[var(--color-error)]' : 'text-[var(--color-accent)]'} />
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
+              {voiceCaptureState === 'recording' ? '正在录音' : '正在识别'}
+            </span>
+            {voiceCaptureState === 'recording' && (
+              <button
+                type="button"
+                onClick={stopApiVoiceInput}
+                className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-2 py-1 text-[10px] text-white transition-opacity hover:opacity-90"
+              >
+                停止
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {contextMenu && contextMenuStyle && createPortal(
         <>
@@ -348,13 +475,29 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
               type="button"
               className={CONTEXT_MENU_ITEM}
               onClick={doVoiceInput}
-              disabled={window.api.platform !== 'win32'}
+              disabled={settings.voiceInputMode === 'api' ? voiceCaptureState !== null : window.api.platform !== 'win32'}
             >
               <span className="flex items-center gap-2">
                 <Mic size={13} />
                 语音输入
               </span>
-              <span className="text-[10px] text-[var(--color-text-tertiary)]">Win+H</span>
+              <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                {settings.voiceInputMode === 'api' ? 'API' : 'Win+H'}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={CONTEXT_MENU_ITEM}
+              onClick={settings.voiceInputMode === 'api' ? doSystemVoiceInput : startApiVoiceInput}
+              disabled={settings.voiceInputMode === 'api' ? window.api.platform !== 'win32' : voiceCaptureState !== null}
+            >
+              <span className="flex items-center gap-2">
+                <Mic size={13} />
+                {settings.voiceInputMode === 'api' ? '系统语音输入' : '本地 API 语音输入'}
+              </span>
+              <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                {settings.voiceInputMode === 'api' ? 'Win+H' : 'API'}
+              </span>
             </button>
             <button
               type="button"

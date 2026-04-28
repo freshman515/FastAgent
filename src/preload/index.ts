@@ -32,6 +32,8 @@ import type {
   SessionReplayPayload,
   TerminalShellAvailability,
   TerminalShellMode,
+  VoiceTranscribeRequest,
+  VoiceTranscribeResult,
 } from '@shared/types'
 
 interface OpencodeRequest {
@@ -62,6 +64,8 @@ const api = {
     isFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_IS_FULLSCREEN) as Promise<boolean>,
     startVoiceInput: () =>
       ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
+    transcribeVoiceInput: (options: VoiceTranscribeRequest) =>
+      ipcRenderer.invoke(IPC.VOICE_TRANSCRIBE, options) as Promise<VoiceTranscribeResult>,
   },
 
   shortcuts: {

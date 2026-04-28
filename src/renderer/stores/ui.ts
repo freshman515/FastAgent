@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SessionType, TerminalShellMode, ToastNotification, WorkspaceLayout } from '@shared/types'
+import type { SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
@@ -63,6 +63,20 @@ function normalizeTerminalShellMode(raw: unknown): TerminalShellMode {
     || raw === 'custom'
     ? raw
     : DEFAULT_SETTINGS.terminalShellMode
+}
+
+function normalizeVoiceInputMode(raw: unknown): VoiceInputMode {
+  return raw === 'system' || raw === 'api' ? raw : DEFAULT_SETTINGS.voiceInputMode
+}
+
+function normalizeVoiceApiBodyMode(raw: unknown): VoiceApiBodyMode {
+  return raw === 'multipart' || raw === 'raw' ? raw : DEFAULT_SETTINGS.voiceApiBodyMode
+}
+
+function normalizeVoiceApiTimeoutMs(raw: unknown): number {
+  return typeof raw === 'number' && Number.isFinite(raw)
+    ? Math.max(1000, Math.min(120000, Math.round(raw)))
+    : DEFAULT_SETTINGS.voiceApiTimeoutMs
 }
 
 export const DOCK_PANEL_IDS: DockPanelId[] = [
@@ -218,6 +232,20 @@ export interface AppSettings {
   terminalShellCommand: string
   /** Custom shell arguments when terminalShellMode is custom. */
   terminalShellArgs: string
+  /** Default voice input mode from terminal context menu. */
+  voiceInputMode: VoiceInputMode
+  /** Local ASR API endpoint used by voiceInputMode=api. */
+  voiceApiUrl: string
+  /** How audio should be sent to the ASR API. */
+  voiceApiBodyMode: VoiceApiBodyMode
+  /** Multipart field name for the audio file. */
+  voiceApiFileFieldName: string
+  /** Dot path used to read recognized text from the JSON response. */
+  voiceApiResponseTextPath: string
+  /** Request timeout for local ASR API. */
+  voiceApiTimeoutMs: number
+  /** Optional Authorization header value for ASR API. */
+  voiceApiAuthorization: string
   wslDistroName: string
   wslShell: string
   wslUseLoginShell: boolean
@@ -330,6 +358,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   terminalShellMode: 'auto',
   terminalShellCommand: '',
   terminalShellArgs: '',
+  voiceInputMode: 'system',
+  voiceApiUrl: 'http://127.0.0.1:10095/asr',
+  voiceApiBodyMode: 'multipart',
+  voiceApiFileFieldName: 'file',
+  voiceApiResponseTextPath: 'text',
+  voiceApiTimeoutMs: 30000,
+  voiceApiAuthorization: '',
   wslDistroName: '',
   wslShell: 'bash',
   wslUseLoginShell: false,
@@ -1378,6 +1413,13 @@ export const useUIStore = create<UIState>((set, get) => ({
       s.terminalShellMode = normalizeTerminalShellMode(raw.terminalShellMode)
       if (typeof raw.terminalShellCommand === 'string') s.terminalShellCommand = raw.terminalShellCommand.trim()
       if (typeof raw.terminalShellArgs === 'string') s.terminalShellArgs = raw.terminalShellArgs
+      s.voiceInputMode = normalizeVoiceInputMode(raw.voiceInputMode)
+      if (typeof raw.voiceApiUrl === 'string') s.voiceApiUrl = raw.voiceApiUrl.trim()
+      s.voiceApiBodyMode = normalizeVoiceApiBodyMode(raw.voiceApiBodyMode)
+      if (typeof raw.voiceApiFileFieldName === 'string') s.voiceApiFileFieldName = raw.voiceApiFileFieldName.trim() || DEFAULT_SETTINGS.voiceApiFileFieldName
+      if (typeof raw.voiceApiResponseTextPath === 'string') s.voiceApiResponseTextPath = raw.voiceApiResponseTextPath.trim() || DEFAULT_SETTINGS.voiceApiResponseTextPath
+      s.voiceApiTimeoutMs = normalizeVoiceApiTimeoutMs(raw.voiceApiTimeoutMs)
+      if (typeof raw.voiceApiAuthorization === 'string') s.voiceApiAuthorization = raw.voiceApiAuthorization.trim()
       if (typeof raw.wslDistroName === 'string') s.wslDistroName = raw.wslDistroName.trim()
       if (typeof raw.wslShell === 'string') s.wslShell = raw.wslShell.trim() || DEFAULT_SETTINGS.wslShell
       if (typeof raw.wslUseLoginShell === 'boolean') s.wslUseLoginShell = raw.wslUseLoginShell
@@ -1549,6 +1591,13 @@ export const useUIStore = create<UIState>((set, get) => ({
     const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
     settings.terminalShellMode = normalizeTerminalShellMode(settings.terminalShellMode)
     settings.terminalShellCommand = settings.terminalShellCommand.trim()
+    settings.voiceInputMode = normalizeVoiceInputMode(settings.voiceInputMode)
+    settings.voiceApiUrl = settings.voiceApiUrl.trim()
+    settings.voiceApiBodyMode = normalizeVoiceApiBodyMode(settings.voiceApiBodyMode)
+    settings.voiceApiFileFieldName = settings.voiceApiFileFieldName.trim() || DEFAULT_SETTINGS.voiceApiFileFieldName
+    settings.voiceApiResponseTextPath = settings.voiceApiResponseTextPath.trim() || DEFAULT_SETTINGS.voiceApiResponseTextPath
+    settings.voiceApiTimeoutMs = normalizeVoiceApiTimeoutMs(settings.voiceApiTimeoutMs)
+    settings.voiceApiAuthorization = settings.voiceApiAuthorization.trim()
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)
     if (
