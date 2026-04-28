@@ -7,7 +7,7 @@ import { useSessionsStore } from '@/stores/sessions'
 import { type EditorCursorInfo, type EditorTab, useEditorsStore } from '@/stores/editors'
 import { usePanesStore } from '@/stores/panes'
 import { getTerminalBufferText } from '@/hooks/useXterm'
-import { marked } from 'marked'
+import { renderMarkdown as renderSafeMarkdown } from '@/lib/markdown'
 import { applyGeneratedCodeToEditor, getOpenEditorContent } from '@/components/session/EditorView'
 
 function stripThinkTags(text: string): string {
@@ -15,7 +15,7 @@ function stripThinkTags(text: string): string {
 }
 
 function renderMarkdown(text: string): string {
-  return marked.parse(stripThinkTags(text), { async: false }) as string
+  return renderSafeMarkdown(stripThinkTags(text))
 }
 
 // Extract the largest code block from AI response

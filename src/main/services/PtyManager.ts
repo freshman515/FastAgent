@@ -535,7 +535,7 @@ export class PtyManager {
     // The shell prompt + command echo arrive before the agent banner.
     // Strategy: after the command is written (500ms), wait for agent-specific text,
     // or fall back to a short timeout.
-    const isAgentSession = !isTerminalSessionType(options.type) && options.type !== 'browser' && options.type !== 'claude-gui'
+    const isAgentSession = !isTerminalSessionType(options.type)
     let agentStarted = !isAgentSession
     let suppressedOutput = ''
 

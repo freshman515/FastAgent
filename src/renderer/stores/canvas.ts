@@ -767,7 +767,7 @@ function applyFrameAutoLayout(
     let nextFrame: CanvasCard = frame
     const memberCards = memberIds
       .map((id) => cardsById.get(id))
-      .filter((card): card is CanvasCard => Boolean(card) && card.kind !== 'frame')
+      .filter((card): card is CanvasCard => card !== undefined && card.kind !== 'frame')
 
     if (!frame.collapsed && memberCards.length > 0 && (hasChangedMember || hadChangedMember || membershipChanged)) {
       const fittedRect = getFittedFrameRect(memberCards)

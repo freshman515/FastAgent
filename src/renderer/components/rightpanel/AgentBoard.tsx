@@ -256,11 +256,11 @@ export function AgentBoard(): JSX.Element {
       activateSession(sessionId)
       const ptyId = await waitForPty(sessionId)
       await window.api.session.submit(ptyId, composePrompt(card), true)
-      addToast({ type: 'success', message: `已启动：${card.title}` })
+      addToast({ type: 'success', title: '已启动', body: card.title })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       patchCard(card.id, { error: message })
-      addToast({ type: 'error', message })
+      addToast({ type: 'error', title: '启动失败', body: message })
     } finally {
       setLaunchingCardId(null)
     }

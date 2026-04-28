@@ -10,9 +10,10 @@ import { ProjectItem } from './ProjectItem'
 interface GroupItemProps {
   group: Group
   searchQuery?: string
+  onOpenProject?: (projectId: string) => void
 }
 
-export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Element {
+export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemProps): JSX.Element {
   const toggleCollapse = useGroupsStore((s) => s.toggleCollapse)
   const removeGroup = useGroupsStore((s) => s.removeGroup)
   const updateGroup = useGroupsStore((s) => s.updateGroup)
@@ -343,7 +344,7 @@ export function GroupItem({ group, searchQuery = '' }: GroupItemProps): JSX.Elem
       {(!group.collapsed || visibleProjectId) && (
         <div className="flex flex-col pb-1">
           {projects.map((project) => (
-            <ProjectItem key={project.id} project={project} />
+            <ProjectItem key={project.id} project={project} onOpenProject={onOpenProject} />
           ))}
         </div>
       )}

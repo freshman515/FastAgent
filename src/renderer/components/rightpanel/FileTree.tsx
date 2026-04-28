@@ -7,6 +7,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { usePanesStore } from '@/stores/panes'
 import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
+import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface TreeEntry {
@@ -500,9 +501,11 @@ export function FileTree(): JSX.Element {
   const selectedProject = useProjectsStore((state) => state.projects.find((project) => project.id === state.selectedProjectId))
   const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
   const selectedWorktree = useWorktreesStore((state) => state.worktrees.find((worktree) => worktree.id === state.selectedWorktreeId))
+  const branchInfo = useGitStore((state) => selectedProjectId ? state.branchInfo[selectedProjectId] : undefined)
   const addToast = useUIStore((state) => state.addToast)
   const projectPath = selectedWorktree?.path ?? selectedProject?.path
   const editorWorktreeId = selectedWorktree && !selectedWorktree.isMain ? selectedWorktree.id : undefined
+  const treeScopeKey = `${projectPath ?? ''}:${editorWorktreeId ?? 'main'}:${selectedWorktree && !selectedWorktree.isMain ? selectedWorktree.branch : branchInfo?.current ?? ''}`
 
   const [entries, setEntries] = useState<TreeEntry[]>([])
   const [selectedEntry, setSelectedEntry] = useState<TreeSelection | null>(null)
@@ -516,7 +519,10 @@ export function FileTree(): JSX.Element {
 
   useEffect(() => {
     setSelectedEntry(null)
-  }, [projectPath])
+    setPendingCreation(null)
+    setPendingDelete(null)
+    setRefreshToken((value) => value + 1)
+  }, [treeScopeKey])
 
   useEffect(() => {
     if (!projectPath) return

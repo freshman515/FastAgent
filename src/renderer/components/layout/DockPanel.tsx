@@ -52,7 +52,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
 
   const isDragging = useRef(false)
   const [dropTarget, setDropTarget] = useState<{ panelId?: DockPanelId; position: 'before' | 'after' | 'append' } | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; panelId?: DockPanelId } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; panelId: DockPanelId } | null>(null)
   // Header action slot — populated on mount, consumed by child panels via
   // <DockActions>. We use state (not ref) so the Context consumer re-renders
   // once the DOM node is attached on first paint.
@@ -153,7 +153,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
     setDropTarget(null)
   }, [])
 
-  const openContextMenu = useCallback((event: React.MouseEvent, panelId?: DockPanelId) => {
+  const openContextMenu = useCallback((event: React.MouseEvent, panelId: DockPanelId) => {
     event.preventDefault()
     event.stopPropagation()
     setContextMenu({ x: event.clientX, y: event.clientY, panelId })
@@ -164,7 +164,6 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       onDragOver={handleStripDragOver}
       onDrop={handleStripDrop}
       onDragLeave={handleDragLeave}
-      onContextMenu={(event) => openContextMenu(event)}
       className={cn(
         'relative flex h-full w-10 shrink-0 flex-col items-center pt-3 pb-2 px-0 gap-1.5 transition-colors',
         isAppendDropTarget && 'bg-[var(--color-accent)]/12',
@@ -242,7 +241,6 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
         isAppendDropTarget && 'bg-[var(--color-accent)]/5',
       )}
       onDragLeave={handleDragLeave}
-      onContextMenu={(event) => openContextMenu(event, activePanelId ?? undefined)}
     >
       <div
         onDragOver={handleStripDragOver}
@@ -329,40 +327,36 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
             }}
             className="fixed min-w-[170px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-1 shadow-lg shadow-black/30"
           >
-            {contextMenu.panelId && (
-              <>
-                <div className="px-3 py-1 text-[var(--ui-font-2xs)] font-medium uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
-                  {DOCK_PANEL_DEFINITIONS[contextMenu.panelId].label}
-                </div>
-                <button
-                  onClick={() => {
-                    movePanel(contextMenu.panelId!, 'left')
-                    setContextMenu(null)
-                  }}
-                  disabled={side === 'left'}
-                  className={cn(
-                    MENU_ITEM,
-                    side === 'left' && 'cursor-not-allowed opacity-45',
-                  )}
-                >
-                  <PanelLeftOpen size={13} /> 移到左侧
-                </button>
-                <button
-                  onClick={() => {
-                    movePanel(contextMenu.panelId!, 'right')
-                    setContextMenu(null)
-                  }}
-                  disabled={side === 'right'}
-                  className={cn(
-                    MENU_ITEM,
-                    side === 'right' && 'cursor-not-allowed opacity-45',
-                  )}
-                >
-                  <PanelRightOpen size={13} /> 移到右侧
-                </button>
-                <div className="my-0.5 h-px bg-[var(--color-border)]" />
-              </>
-            )}
+            <div className="px-3 py-1 text-[var(--ui-font-2xs)] font-medium uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
+              {DOCK_PANEL_DEFINITIONS[contextMenu.panelId].label}
+            </div>
+            <button
+              onClick={() => {
+                movePanel(contextMenu.panelId, 'left')
+                setContextMenu(null)
+              }}
+              disabled={side === 'left'}
+              className={cn(
+                MENU_ITEM,
+                side === 'left' && 'cursor-not-allowed opacity-45',
+              )}
+            >
+              <PanelLeftOpen size={13} /> 移到左侧
+            </button>
+            <button
+              onClick={() => {
+                movePanel(contextMenu.panelId, 'right')
+                setContextMenu(null)
+              }}
+              disabled={side === 'right'}
+              className={cn(
+                MENU_ITEM,
+                side === 'right' && 'cursor-not-allowed opacity-45',
+              )}
+            >
+              <PanelRightOpen size={13} /> 移到右侧
+            </button>
+            <div className="my-0.5 h-px bg-[var(--color-border)]" />
             <button
               onClick={() => {
                 resetDockPanels()

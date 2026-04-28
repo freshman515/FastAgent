@@ -1,4 +1,5 @@
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 interface HighlightRule {
   className: string
@@ -230,7 +231,7 @@ function highlightCodeBlocks(html: string): string {
 
 export function renderMarkdown(text: string): string {
   const html = marked.parse(text, { async: false }) as string
-  return highlightCodeBlocks(html)
+  return DOMPurify.sanitize(highlightCodeBlocks(html))
 }
 
 export function renderCodeFence(code: string, language?: string): string {

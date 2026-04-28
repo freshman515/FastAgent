@@ -12,6 +12,7 @@ export type TodoPriority = 'low' | 'medium' | 'high'
 export type AgentBoardStatus = 'todo' | 'in_progress' | 'review' | 'done'
 export type AgentBoardPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
+export type GitReviewMode = 'claude-gui' | SessionType | `custom:${string}`
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export type CanvasArrangeMode = 'free' | 'grid' | 'rowFlow' | 'colFlow'
 export type PaneUiMode = 'separated' | 'classic'
@@ -27,6 +28,30 @@ export const CANVAS_FOCUS_FONT_PX_MAX = 48
 export const CANVAS_FOCUS_FONT_TARGET_DEFAULT = 17
 export const CANVAS_FOCUS_FONT_RANGE_MIN_DEFAULT = 14
 export const CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT = 20
+
+const GIT_REVIEW_SESSION_TYPES = new Set<SessionType>([
+  'claude-code',
+  'claude-code-yolo',
+  'claude-code-wsl',
+  'claude-code-yolo-wsl',
+  'codex',
+  'codex-yolo',
+  'codex-wsl',
+  'codex-yolo-wsl',
+  'gemini',
+  'gemini-yolo',
+  'opencode',
+])
+
+function normalizeGitReviewMode(raw: unknown): GitReviewMode | null {
+  if (raw === 'claude-code-cli') return 'claude-code'
+  if (raw === 'claude-gui') return 'claude-gui'
+  if (typeof raw !== 'string') return null
+  if (raw.startsWith('custom:') && raw.slice('custom:'.length).trim()) {
+    return raw as GitReviewMode
+  }
+  return GIT_REVIEW_SESSION_TYPES.has(raw as SessionType) ? raw as GitReviewMode : null
+}
 
 export const DOCK_PANEL_IDS: DockPanelId[] = [
   'projects',
@@ -123,6 +148,19 @@ export interface CustomSessionDefinition {
   args: string
 }
 
+export interface InstalledPlugin {
+  id: string
+  name: string
+  version: string
+  description?: string
+  installedAt: number
+  contributions: {
+    customSessions: number
+    quickCommands: number
+    prompts: number
+  }
+}
+
 const DEFAULT_QUICK_COMMANDS = [
   { id: 'qc-default-ls', name: 'ls', command: 'ls' },
   { id: 'qc-default-pwd', name: 'pwd', command: 'pwd' },
@@ -155,6 +193,7 @@ export interface AppSettings {
   /** When set, default creation uses a custom launcher instead of defaultSessionType. */
   defaultCustomSessionId: string | null
   customSessionDefinitions: CustomSessionDefinition[]
+  installedPlugins: InstalledPlugin[]
   /** New session menu option ids hidden by the user. Built-ins use SessionType, custom launchers use custom:<id>. */
   hiddenNewSessionOptionIds: string[]
   /** New session menu option order. Built-ins use SessionType, custom launchers use custom:<id>. */
@@ -176,6 +215,7 @@ export interface AppSettings {
   titleBarSearchScope: 'project' | 'all-projects'
   startupWindowState: 'maximized' | 'normal'
   gitChangesViewMode: GitChangesViewMode
+  gitReviewMode: GitReviewMode
   gitReviewFixMode: GitReviewFixMode
   /** Last visited settings dialog page — persisted so reopening lands on the previous tab */
   lastSettingsPage: string
@@ -263,6 +303,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultSessionType: 'claude-code',
   defaultCustomSessionId: null,
   customSessionDefinitions: [],
+  installedPlugins: [],
   hiddenNewSessionOptionIds: [],
   newSessionOptionOrder: [],
   promptSessionNameOnCreate: false,
@@ -281,6 +322,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   titleBarSearchScope: 'project',
   startupWindowState: 'maximized',
   gitChangesViewMode: 'tree',
+  gitReviewMode: 'codex',
   gitReviewFixMode: 'claude-gui',
   lastSettingsPage: 'general',
   visualizerWidth: 192,
@@ -330,6 +372,8 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
 interface UIState {
   windowFullscreen: boolean
   setWindowFullscreen: (fullscreen: boolean) => void
+  projectDetailOpenProjectId: string | null
+  setProjectDetailOpenProjectId: (projectId: string | null) => void
 
   dockPanelOrder: Record<DockSide, DockPanelId[]>
   dockPanelActiveTab: Record<DockSide, DockPanelId | null>
@@ -790,6 +834,60 @@ function normalizePromptItems(raw: unknown): { items: PromptItem[]; seeded: bool
   return { items, seeded }
 }
 
+function normalizeInstalledPlugins(raw: unknown): { plugins: InstalledPlugin[]; seeded: boolean } {
+  if (!Array.isArray(raw)) return { plugins: [], seeded: false }
+
+  let seeded = false
+  const seenIds = new Set<string>()
+  const plugins: InstalledPlugin[] = []
+
+  for (const item of raw) {
+    if (
+      !item
+      || typeof item !== 'object'
+      || typeof (item as { id?: unknown }).id !== 'string'
+      || typeof (item as { name?: unknown }).name !== 'string'
+    ) {
+      seeded = true
+      continue
+    }
+
+    const id = (item as { id: string }).id.trim()
+    const name = (item as { name: string }).name.trim()
+    if (!id || !name || seenIds.has(id)) {
+      seeded = true
+      continue
+    }
+
+    const contributions = (item as { contributions?: unknown }).contributions
+    const contributionObj = contributions && typeof contributions === 'object'
+      ? contributions as Record<string, unknown>
+      : {}
+
+    seenIds.add(id)
+    plugins.push({
+      id,
+      name,
+      version: typeof (item as { version?: unknown }).version === 'string'
+        ? (item as { version: string }).version.trim() || '0.0.0'
+        : '0.0.0',
+      description: typeof (item as { description?: unknown }).description === 'string'
+        ? (item as { description: string }).description.trim() || undefined
+        : undefined,
+      installedAt: typeof (item as { installedAt?: unknown }).installedAt === 'number'
+        ? (item as { installedAt: number }).installedAt
+        : Date.now(),
+      contributions: {
+        customSessions: typeof contributionObj.customSessions === 'number' ? Math.max(0, contributionObj.customSessions) : 0,
+        quickCommands: typeof contributionObj.quickCommands === 'number' ? Math.max(0, contributionObj.quickCommands) : 0,
+        prompts: typeof contributionObj.prompts === 'number' ? Math.max(0, contributionObj.prompts) : 0,
+      },
+    })
+  }
+
+  return { plugins, seeded }
+}
+
 function isDockPanelId(value: unknown): value is DockPanelId {
   return typeof value === 'string' && DOCK_PANEL_IDS.includes(value as DockPanelId)
 }
@@ -1046,6 +1144,8 @@ function moveDockPanelLayout(
 export const useUIStore = create<UIState>((set, get) => ({
   windowFullscreen: false,
   setWindowFullscreen: (fullscreen) => set({ windowFullscreen: fullscreen }),
+  projectDetailOpenProjectId: null,
+  setProjectDetailOpenProjectId: (projectId) => set({ projectDetailOpenProjectId: projectId }),
 
   ...getDefaultDockPanelsState(),
 
@@ -1227,6 +1327,11 @@ export const useUIStore = create<UIState>((set, get) => ({
         s.customSessionDefinitions = normalizedCustomSessions.definitions
         shouldPersistSettings ||= normalizedCustomSessions.seeded
       }
+      if (raw.installedPlugins !== undefined) {
+        const normalizedInstalledPlugins = normalizeInstalledPlugins(raw.installedPlugins)
+        s.installedPlugins = normalizedInstalledPlugins.plugins
+        shouldPersistSettings ||= normalizedInstalledPlugins.seeded
+      }
       if (raw.hiddenNewSessionOptionIds !== undefined) {
         s.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(raw.hiddenNewSessionOptionIds)
       }
@@ -1263,6 +1368,10 @@ export const useUIStore = create<UIState>((set, get) => ({
       }
       if (raw.gitChangesViewMode === 'flat' || raw.gitChangesViewMode === 'tree') {
         s.gitChangesViewMode = raw.gitChangesViewMode
+      }
+      {
+        const normalizedGitReviewMode = normalizeGitReviewMode(raw.gitReviewMode)
+        if (normalizedGitReviewMode) s.gitReviewMode = normalizedGitReviewMode
       }
       if (raw.gitReviewFixMode === 'claude-gui' || raw.gitReviewFixMode === 'claude-code-cli') {
         s.gitReviewFixMode = raw.gitReviewFixMode

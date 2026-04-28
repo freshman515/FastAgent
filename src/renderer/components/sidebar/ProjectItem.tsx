@@ -1,4 +1,4 @@
-import { ArrowRightLeft, ChevronRight, ExternalLink, Eye, Folder, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ChevronRight, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Group, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
@@ -522,9 +522,12 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
 
 // ── Main Component ──
 
-interface ProjectItemProps { project: Project }
+interface ProjectItemProps {
+  project: Project
+  onOpenProject?: (projectId: string) => void
+}
 
-export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
+export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.Element {
   const isAnonymous = isAnonymousProject(project)
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectProject = useProjectsStore((s) => s.selectProject)
@@ -716,8 +719,8 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
   }, [hasWorktreeChildren])
 
   const handleRowDoubleClick = useCallback(() => {
-    if (hasWorktreeChildren) setExpanded((prev) => !prev)
-  }, [hasWorktreeChildren])
+    onOpenProject?.(project.id)
+  }, [onOpenProject, project.id])
 
   return (
     <div className="relative">
@@ -898,6 +901,16 @@ export function ProjectItem({ project }: ProjectItemProps): JSX.Element {
               <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", projectSubmenu?.type === 'sessions' ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
               <span className="flex items-center gap-3"><PlusIcon size={14} strokeWidth={2.5} /> 新建会话</span>
               <ChevronRight size={14} opacity={0.4} />
+            </button>
+            <button
+              className={MENU_ITEM}
+              onClick={() => {
+                onOpenProject?.(project.id)
+                setContextMenu(null)
+              }}
+            >
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <FolderOpen size={14} /> 打开项目
             </button>
             <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
             

@@ -7,9 +7,10 @@ import { ProjectItem } from './ProjectItem'
 
 interface GroupListProps {
   searchQuery?: string
+  onOpenProject?: (projectId: string) => void
 }
 
-export function GroupList({ searchQuery = '' }: GroupListProps): JSX.Element {
+export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): JSX.Element {
   const groups = useGroupsStore((s) => s.groups)
   const projects = useProjectsStore((s) => s.projects)
   const visibleGroupId = useUIStore((s) => s.settings.visibleGroupId)
@@ -66,7 +67,7 @@ export function GroupList({ searchQuery = '' }: GroupListProps): JSX.Element {
   return (
     <div className="flex flex-col">
       {filteredGroups.map((group) => (
-        <GroupItem key={group.id} group={group} searchQuery={searchQuery} />
+        <GroupItem key={group.id} group={group} searchQuery={searchQuery} onOpenProject={onOpenProject} />
       ))}
       {ungroupedProjects.length > 0 && (
         <div className="mt-4 pt-2 border-t border-[var(--color-border)]/30">
@@ -75,7 +76,7 @@ export function GroupList({ searchQuery = '' }: GroupListProps): JSX.Element {
           </div>
           <div className="flex flex-col gap-0.5">
             {ungroupedProjects.map((project) => (
-              <ProjectItem key={project.id} project={project} />
+              <ProjectItem key={project.id} project={project} onOpenProject={onOpenProject} />
             ))}
           </div>
         </div>

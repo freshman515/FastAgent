@@ -9,7 +9,7 @@ export function normalizeSessionTypeForCurrentPlatform(type: SessionType): Sessi
   return isSessionTypeAvailableOnCurrentPlatform(type) ? type : 'terminal'
 }
 
-export function filterSessionTypesForCurrentPlatform<T extends { type?: SessionType; id?: string; value?: SessionType }>(items: T[]): T[] {
+export function filterSessionTypesForCurrentPlatform<T extends { type?: SessionType; id?: string; value?: SessionType }>(items: readonly T[]): T[] {
   return items.filter((item) => {
     const type = item.type ?? item.value ?? item.id
     return typeof type === 'string'

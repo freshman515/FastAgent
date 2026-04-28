@@ -9,7 +9,7 @@ import { SessionIconView } from '@/components/session/SessionIconView'
 import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
-import { useUIStore } from '@/stores/ui'
+import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from './CanvasMenu'
 
 export function CanvasSessionList(): JSX.Element | null {
@@ -20,8 +20,7 @@ export function CanvasSessionList(): JSX.Element | null {
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
   const sessions = useSessionsStore((state) => state.sessions)
-  const theme = useUIStore((state) => state.settings.theme)
-  const isDarkTheme = theme !== 'light'
+  const isDarkTheme = useIsDarkTheme()
 
   const sessionById = new Map(sessions.map((session) => [session.id, session]))
   const items = cards

@@ -2,17 +2,17 @@ import { Minimize2, Star } from 'lucide-react'
 import { SESSION_TYPE_CONFIG } from '@shared/types'
 import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
-import { useUIStore } from '@/stores/ui'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { cn } from '@/lib/utils'
 import { SessionIconView } from '@/components/session/SessionIconView'
+import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 
 export function CanvasMaximizedSwitcher(): JSX.Element | null {
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
   const sessions = useSessionsStore((state) => state.sessions)
-  const theme = useUIStore((state) => state.settings.theme)
+  const isDarkTheme = useIsDarkTheme()
   if (!maximizedCardId) return null
 
   const sessionById = new Map(sessions.map((session) => [session.id, session]))
@@ -33,7 +33,7 @@ export function CanvasMaximizedSwitcher(): JSX.Element | null {
       <div className="flex min-w-0 gap-1 overflow-x-auto">
         {items.map(({ card, session }) => {
           const active = card.id === maximizedCardId
-          const icon = getSessionIcon(session.type, theme !== 'light')
+          const icon = getSessionIcon(session.type, isDarkTheme)
           const title = formatSessionCardTitle(session.name, card.sessionRemark)
           const config = SESSION_TYPE_CONFIG[session.type]
           return (

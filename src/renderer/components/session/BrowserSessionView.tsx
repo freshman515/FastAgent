@@ -1,14 +1,20 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Home, RotateCw, ShieldAlert, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowLeft, ArrowRight, Camera, Check, Clipboard, ExternalLink, FileText, Home, LoaderCircle, RotateCw, Send, ShieldAlert, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_BROWSER_URL, type Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUIStore } from '@/stores/ui'
 
 const BROWSER_PARTITION = 'persist:fastagents-browser'
+const BROWSER_CONTEXT_TEXT_LIMIT = 12000
+const BROWSER_CONTEXT_HEADING_LIMIT = 24
+const BROWSER_CONTEXT_LINK_LIMIT = 24
 
 type BrowserWebviewElement = HTMLElement & {
   canGoBack: () => boolean
   canGoForward: () => boolean
+  capturePage: () => Promise<{ toDataURL: () => string }>
+  executeJavaScript: <T = unknown>(code: string, userGesture?: boolean) => Promise<T>
   getURL: () => string
   goBack: () => void
   goForward: () => void
@@ -23,6 +29,17 @@ type WebviewUrlEvent = Event & {
   errorCode?: number
   errorDescription?: string
   isMainFrame?: boolean
+}
+
+interface BrowserPageContext {
+  url: string
+  title: string
+  description: string
+  headings: string[]
+  links: Array<{ text: string; href: string }>
+  text: string
+  screenshotPath?: string
+  capturedAt: number
 }
 
 interface BrowserSessionViewProps {
@@ -61,11 +78,126 @@ function isAbortedNavigationError(error: unknown): boolean {
   return detail.errno === -3 || detail.code === 'ERR_ABORTED'
 }
 
+function isBrowserContextTarget(session: Session, sourceSession: Session): boolean {
+  if (session.id === sourceSession.id || session.projectId !== sourceSession.projectId || !session.ptyId) return false
+  if (session.type === 'browser' || session.type === 'claude-gui') return false
+  if (session.type === 'terminal' || session.type === 'terminal-wsl') return Boolean(session.customSessionCommand)
+  return true
+}
+
+function trimContextText(value: unknown, limit: number): string {
+  if (typeof value !== 'string') return ''
+  const normalized = value
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim()
+  return normalized.length > limit
+    ? `${normalized.slice(0, limit)}\n\n[truncated ${normalized.length - limit} chars]`
+    : normalized
+}
+
+function normalizePageContext(raw: unknown, fallbackUrl: string): BrowserPageContext {
+  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const headings = Array.isArray(obj.headings)
+    ? obj.headings
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, BROWSER_CONTEXT_HEADING_LIMIT)
+    : []
+  const links = Array.isArray(obj.links)
+    ? obj.links.flatMap((item) => {
+      if (!item || typeof item !== 'object') return []
+      const link = item as { text?: unknown; href?: unknown }
+      if (typeof link.href !== 'string' || !link.href.trim()) return []
+      return [{
+        text: trimContextText(link.text, 120) || link.href,
+        href: link.href,
+      }]
+    }).slice(0, BROWSER_CONTEXT_LINK_LIMIT)
+    : []
+
+  return {
+    url: typeof obj.url === 'string' && obj.url ? obj.url : fallbackUrl,
+    title: trimContextText(obj.title, 200) || 'Untitled page',
+    description: trimContextText(obj.description, 500),
+    headings,
+    links,
+    text: trimContextText(obj.text, BROWSER_CONTEXT_TEXT_LIMIT),
+    capturedAt: Date.now(),
+  }
+}
+
+function browserContextScript(): string {
+  return `
+(() => {
+  const textOf = (node) => (node?.textContent || '').replace(/\\s+/g, ' ').trim()
+  const description = Array.from(document.querySelectorAll('meta[name="description"], meta[property="og:description"]'))
+    .map((node) => node.getAttribute('content') || '')
+    .find((value) => value.trim()) || ''
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3'))
+    .map((node) => {
+      const text = textOf(node)
+      return text ? node.tagName.toLowerCase() + ': ' + text : ''
+    })
+    .filter(Boolean)
+    .slice(0, ${BROWSER_CONTEXT_HEADING_LIMIT})
+  const links = Array.from(document.querySelectorAll('a[href]'))
+    .map((node) => ({ text: textOf(node), href: node.href }))
+    .filter((item) => item.href)
+    .slice(0, ${BROWSER_CONTEXT_LINK_LIMIT})
+  const text = (document.body?.innerText || '')
+    .replace(/\\r/g, '')
+    .replace(/[ \\t]+\\n/g, '\\n')
+    .replace(/\\n{4,}/g, '\\n\\n\\n')
+    .trim()
+  return {
+    url: location.href,
+    title: document.title || '',
+    description,
+    headings,
+    links,
+    text: text.slice(0, ${BROWSER_CONTEXT_TEXT_LIMIT + 2000}),
+  }
+})()
+`
+}
+
+function formatBrowserContextPrompt(context: BrowserPageContext): string {
+  const headings = context.headings.length > 0
+    ? context.headings.map((heading) => `- ${heading}`).join('\n')
+    : '- [none]'
+  const links = context.links.length > 0
+    ? context.links.map((link) => `- ${link.text}: ${link.href}`).join('\n')
+    : '- [none]'
+
+  return [
+    '请基于下面的浏览器页面上下文继续工作。',
+    '',
+    `URL: ${context.url}`,
+    `Title: ${context.title}`,
+    context.description ? `Description: ${context.description}` : '',
+    context.screenshotPath ? `Screenshot file: ${context.screenshotPath}` : '',
+    '',
+    '## Headings',
+    headings,
+    '',
+    '## Links',
+    links,
+    '',
+    '## Page text',
+    context.text || '[empty]',
+  ].filter((part) => part !== '').join('\n')
+}
+
 export function BrowserSessionView({ session, isActive }: BrowserSessionViewProps): JSX.Element {
   const initialUrl = session.browserUrl ?? DEFAULT_BROWSER_URL
   const webviewRef = useRef<BrowserWebviewElement | null>(null)
+  const sessions = useSessionsStore((state) => state.sessions)
   const updateSession = useSessionsStore((state) => state.updateSession)
   const updateStatus = useSessionsStore((state) => state.updateStatus)
+  const addToast = useUIStore((state) => state.addToast)
   const [webviewSrc, setWebviewSrc] = useState(initialUrl)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [address, setAddress] = useState(initialUrl)
@@ -73,6 +205,23 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [contextPanelOpen, setContextPanelOpen] = useState(false)
+  const [pageContext, setPageContext] = useState<BrowserPageContext | null>(null)
+  const [contextLoading, setContextLoading] = useState(false)
+  const [contextError, setContextError] = useState<string | null>(null)
+  const [targetSessionId, setTargetSessionId] = useState<string>('')
+  const [copied, setCopied] = useState(false)
+
+  const targetSessions = useMemo(
+    () => sessions.filter((item) => isBrowserContextTarget(item, session)),
+    [session, sessions],
+  )
+  const targetSession = targetSessions.find((item) => item.id === targetSessionId) ?? targetSessions[0] ?? null
+
+  useEffect(() => {
+    if (targetSessionId && targetSessions.some((item) => item.id === targetSessionId)) return
+    setTargetSessionId(targetSessions[0]?.id ?? '')
+  }, [targetSessionId, targetSessions])
 
   useEffect(() => {
     const next = session.browserUrl ?? DEFAULT_BROWSER_URL
@@ -209,6 +358,61 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
     void window.api.shell.openExternal(current)
   }
 
+  const collectPageContext = useCallback(async (): Promise<BrowserPageContext | null> => {
+    const webview = webviewRef.current
+    if (!webview) return null
+
+    setContextLoading(true)
+    setContextError(null)
+    setContextPanelOpen(true)
+    try {
+      const fallbackUrl = getCurrentWebviewUrl(webview) ?? currentUrl
+      const rawContext = await webview.executeJavaScript(browserContextScript(), false)
+      const nextContext = normalizePageContext(rawContext, fallbackUrl)
+      try {
+        const image = await webview.capturePage()
+        const dataUrl = image.toDataURL()
+        if (dataUrl.startsWith('data:image/')) {
+          nextContext.screenshotPath = await window.api.fs.writeTempDataUrl(
+            `browser-${nextContext.title || 'page'}`,
+            dataUrl,
+            dataUrl.startsWith('data:image/jpeg') ? 'jpg' : 'png',
+          )
+        }
+      } catch (error) {
+        console.warn('[browser] screenshot capture failed:', error)
+      }
+      setPageContext(nextContext)
+      return nextContext
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setContextError(message)
+      addToast({ type: 'error', title: '页面上下文提取失败', body: message })
+      return null
+    } finally {
+      setContextLoading(false)
+    }
+  }, [addToast, currentUrl])
+
+  const copyPageContext = useCallback(async () => {
+    const context = pageContext ?? await collectPageContext()
+    if (!context) return
+    await navigator.clipboard.writeText(formatBrowserContextPrompt(context))
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1200)
+  }, [collectPageContext, pageContext])
+
+  const sendPageContext = useCallback(async () => {
+    const context = pageContext ?? await collectPageContext()
+    const target = targetSession
+    if (!context || !target?.ptyId) {
+      addToast({ type: 'warning', title: '没有可用 Agent', body: '请先启动同项目下的 Agent 会话。' })
+      return
+    }
+    await window.api.session.submit(target.ptyId, formatBrowserContextPrompt(context), true)
+    addToast({ type: 'success', title: '已发送浏览器上下文', body: target.name, sessionId: target.id, projectId: target.projectId })
+  }, [addToast, collectPageContext, pageContext, targetSession])
+
   return (
     <div className="flex h-full w-full flex-col bg-[var(--color-bg-primary)]">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2">
@@ -264,11 +468,87 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
         >
           <ExternalLink size={15} />
         </button>
+        <div className="mx-1 h-5 w-px bg-[var(--color-border)]" />
+        <button
+          type="button"
+          onClick={() => { void collectPageContext() }}
+          title="提取页面上下文"
+          className={toolbarButtonClass}
+          disabled={contextLoading}
+        >
+          {contextLoading ? <LoaderCircle size={15} className="animate-spin" /> : <FileText size={15} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => { void sendPageContext() }}
+          title="发送页面上下文给 Agent"
+          className={toolbarButtonClass}
+          disabled={contextLoading || targetSessions.length === 0}
+        >
+          <Send size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={() => { void collectPageContext() }}
+          title="截图并提取上下文"
+          className={toolbarButtonClass}
+          disabled={contextLoading}
+        >
+          <Camera size={15} />
+        </button>
       </div>
       {loadError && (
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-error)_14%,var(--color-bg-secondary))] px-3 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-error)]">
           <ShieldAlert size={13} />
           <span className="truncate">{loadError}</span>
+        </div>
+      )}
+      {contextPanelOpen && (
+        <div className="flex max-h-56 shrink-0 flex-col gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2">
+          <div className="flex items-center gap-2">
+            <FileText size={14} className="text-[var(--color-accent)]" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+                {pageContext?.title ?? '浏览器上下文'}
+              </div>
+              <div className="truncate text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                {pageContext?.url ?? currentUrl}
+              </div>
+            </div>
+            <select
+              value={targetSession?.id ?? ''}
+              onChange={(event) => setTargetSessionId(event.target.value)}
+              className="h-7 max-w-52 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none"
+              disabled={targetSessions.length === 0}
+            >
+              {targetSessions.length === 0
+                ? <option value="">无运行中的 Agent</option>
+                : targetSessions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+            <button type="button" onClick={copyPageContext} className={toolbarButtonClass} title="复制上下文">
+              {copied ? <Check size={15} /> : <Clipboard size={15} />}
+            </button>
+            <button type="button" onClick={() => { void sendPageContext() }} className={toolbarButtonClass} title="发送给 Agent" disabled={targetSessions.length === 0}>
+              <Send size={15} />
+            </button>
+            <button type="button" onClick={() => setContextPanelOpen(false)} className={toolbarButtonClass} title="关闭">
+              <X size={15} />
+            </button>
+          </div>
+          {contextError ? (
+            <div className="text-[var(--ui-font-xs)] text-[var(--color-error)]">{contextError}</div>
+          ) : (
+            <div className="min-h-0 overflow-y-auto whitespace-pre-wrap rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-2 text-[11px] leading-5 text-[var(--color-text-secondary)]">
+              {pageContext
+                ? [
+                    pageContext.description,
+                    pageContext.screenshotPath ? `Screenshot: ${pageContext.screenshotPath}` : '',
+                    pageContext.headings.slice(0, 8).join('\n'),
+                    pageContext.text.slice(0, 1800),
+                  ].filter(Boolean).join('\n\n')
+                : contextLoading ? '正在提取页面正文、DOM 摘要和截图...' : '尚未提取。'}
+            </div>
+          )}
         </div>
       )}
       <div className={cn('relative min-h-0 flex-1 bg-white', !isActive && 'pointer-events-none')}>

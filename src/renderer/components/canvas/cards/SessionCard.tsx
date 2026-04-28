@@ -4,7 +4,7 @@ import { Maximize2, Minimize2, Star } from 'lucide-react'
 import { useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
-import { useUIStore } from '@/stores/ui'
+import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import type { CanvasCard } from '@shared/types'
 import { TerminalView } from '@/components/session/TerminalView'
 import { BrowserSessionView } from '@/components/session/BrowserSessionView'
@@ -35,7 +35,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const restoreCardSnapshot = useCanvasStore((state) => state.restoreCardSnapshot)
   const removeSession = useSessionsStore((state) => state.removeSession)
   const updateSession = useSessionsStore((state) => state.updateSession)
-  const theme = useUIStore((state) => state.settings.theme)
+  const isDarkTheme = useIsDarkTheme()
   const [confirmClose, setConfirmClose] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
@@ -76,7 +76,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
     coordinateMode === 'screen' && session.type !== 'claude-gui' && session.type !== 'browser'
       ? 'screen-transform'
       : coordinateMode
-  const sessionIcon = getSessionIcon(session.type, theme !== 'light')
+  const sessionIcon = getSessionIcon(session.type, isDarkTheme)
   const displayTitle = formatSessionCardTitle(session.name, card.sessionRemark)
 
   const startRename = (): void => {

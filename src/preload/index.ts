@@ -331,6 +331,8 @@ const api = {
     delete: (path: string) => ipcRenderer.invoke('fs:delete', path) as Promise<void>,
     writeTempFile: (suggestedName: string, content: string, extension = 'txt') =>
       ipcRenderer.invoke('fs:write-temp-file', suggestedName, content, extension) as Promise<string>,
+    writeTempDataUrl: (suggestedName: string, dataUrl: string, extension = 'png') =>
+      ipcRenderer.invoke('fs:write-temp-data-url', suggestedName, dataUrl, extension) as Promise<string>,
   },
 
   search: {

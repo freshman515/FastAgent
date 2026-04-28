@@ -1,15 +1,20 @@
 import { FolderPlus, Plus, Search, Settings, Terminal, X } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAnonymousTerminal } from '@/lib/anonymous-project'
 import { cn } from '@/lib/utils'
 import { useGroupsStore } from '@/stores/groups'
+import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { DockActions } from '@/components/layout/DockActions'
 import { GroupList } from './GroupList'
+import { ProjectDetailPanel } from './ProjectDetailPanel'
 
 export function ProjectsPanel(): JSX.Element {
   const addGroup = useGroupsStore((s) => s.addGroup)
+  const projects = useProjectsStore((s) => s.projects)
   const openSettings = useUIStore((s) => s.openSettings)
+  const openProjectId = useUIStore((s) => s.projectDetailOpenProjectId)
+  const setOpenProjectId = useUIStore((s) => s.setProjectDetailOpenProjectId)
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -43,6 +48,16 @@ export function ProjectsPanel(): JSX.Element {
     setNewName('')
     setAdding(true)
   }, [])
+
+  useEffect(() => {
+    if (openProjectId && !projects.some((project) => project.id === openProjectId)) {
+      setOpenProjectId(null)
+    }
+  }, [openProjectId, projects])
+
+  if (openProjectId) {
+    return <ProjectDetailPanel projectId={openProjectId} onBack={() => setOpenProjectId(null)} />
+  }
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
@@ -134,7 +149,7 @@ export function ProjectsPanel(): JSX.Element {
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-none pb-4">
-        <GroupList searchQuery={searchQuery} />
+        <GroupList searchQuery={searchQuery} onOpenProject={setOpenProjectId} />
       </div>
 
     </div>

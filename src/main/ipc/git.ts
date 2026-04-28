@@ -231,4 +231,32 @@ export function registerGitHandlers(): void {
     await writeFile(filePath, content, 'utf-8')
     return filePath
   })
+
+  ipcMain.handle('fs:write-temp-data-url', async (_event, suggestedName: string, dataUrl: string, extension?: string) => {
+    const match = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,([\s\S]+)$/i.exec(dataUrl)
+    if (!match) {
+      throw new Error('Invalid data URL')
+    }
+
+    const mimeExtension = match[1].toLowerCase() === 'image/jpeg' ? 'jpg' : 'png'
+    const safeBaseName = (suggestedName || 'fastagents-temp')
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+      .trim()
+      .replace(/\s+/g, '-')
+      || 'fastagents-temp'
+    const safeExtension = (extension || mimeExtension).replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || mimeExtension
+    const buffer = Buffer.from(match[2], 'base64')
+    if (buffer.byteLength > 20 * 1024 * 1024) {
+      throw new Error('Temporary file is too large')
+    }
+
+    const tempDir = join(tmpdir(), 'fastagents')
+    await mkdir(tempDir, { recursive: true })
+    const filePath = join(
+      tempDir,
+      `${safeBaseName}-${Date.now()}-${randomUUID().slice(0, 8)}.${safeExtension}`,
+    )
+    await writeFile(filePath, buffer)
+    return filePath
+  })
 }

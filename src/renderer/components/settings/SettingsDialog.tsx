@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn, generateId } from '@/lib/utils'
 import {
@@ -26,17 +26,19 @@ import { parseCustomSessionArgs } from '@/lib/createSession'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { SESSION_OPTIONS, getCustomSessionOptionId, orderNewSessionOptions } from '@/components/session/NewSessionMenu'
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
+import { isPluginContributionId, parsePluginManifest, preparePluginInstall } from '@/lib/pluginManifest'
 
-type SettingsPage = 'general' | 'sessions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
+type SettingsPage = 'general' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
   { id: 'general', label: '通用', description: '基础偏好与数据清理', icon: Settings },
   { id: 'sessions', label: '会话', description: '默认会话与自定义启动器', icon: Terminal },
+  { id: 'extensions', label: '扩展', description: '导入插件清单与贡献项', icon: Plug },
   { id: 'wsl', label: 'WSL', description: 'WSL 会话环境与 PATH', icon: Terminal },
   { id: 'workspace', label: '工作区', description: '经典分屏与画布模式', icon: SplitSquareHorizontal },
   { id: 'notifications', label: '通知', description: '完成提醒与声音', icon: Bell },
   { id: 'titlebar', label: '标题栏', description: '顶部搜索与音乐显示', icon: Search },
-  { id: 'git', label: 'Git', description: '改动视图与修复入口', icon: GitBranch },
+  { id: 'git', label: 'Git', description: '改动视图与 AI 审查', icon: GitBranch },
   { id: 'appearance', label: '外观', description: '主题、字体与界面观感', icon: Type },
   { id: 'terminal', label: '终端', description: '终端字号与字体预览', icon: Terminal },
   { id: 'editor', label: '编辑器', description: '代码编辑体验与排版', icon: FileCode2 },
@@ -805,6 +807,163 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
   )
 }
 
+function removePluginContributions(settings: AppSettings, pluginId: string): Pick<
+  AppSettings,
+  'customSessionDefinitions'
+  | 'quickCommandGroups'
+  | 'quickCommands'
+  | 'promptItems'
+  | 'installedPlugins'
+  | 'defaultCustomSessionId'
+  | 'hiddenNewSessionOptionIds'
+  | 'newSessionOptionOrder'
+> {
+  const isContribution = (id: string): boolean => isPluginContributionId(id, pluginId)
+  const removedCustomSessionIds = new Set(settings.customSessionDefinitions
+    .filter((definition) => isContribution(definition.id))
+    .map((definition) => getCustomSessionOptionId(definition.id)))
+
+  return {
+    customSessionDefinitions: settings.customSessionDefinitions.filter((definition) => !isContribution(definition.id)),
+    quickCommandGroups: settings.quickCommandGroups.filter((group) => !isContribution(group.id)),
+    quickCommands: settings.quickCommands.filter((command) => !isContribution(command.id)),
+    promptItems: settings.promptItems.filter((prompt) => !isContribution(prompt.id)),
+    installedPlugins: settings.installedPlugins.filter((plugin) => plugin.id !== pluginId),
+    defaultCustomSessionId: settings.defaultCustomSessionId && isContribution(settings.defaultCustomSessionId)
+      ? null
+      : settings.defaultCustomSessionId,
+    hiddenNewSessionOptionIds: settings.hiddenNewSessionOptionIds.filter((id) => !removedCustomSessionIds.has(id)),
+    newSessionOptionOrder: settings.newSessionOptionOrder.filter((id) => !removedCustomSessionIds.has(id)),
+  }
+}
+
+function ExtensionsPage({ settings }: { settings: AppSettings }): JSX.Element {
+  const updateSettings = useUIStore((s) => s.updateSettings)
+  const addToast = useUIStore((s) => s.addToast)
+  const [manifestText, setManifestText] = useState('')
+  const [error, setError] = useState('')
+
+  const installManifest = useCallback((text: string) => {
+    try {
+      const manifest = parsePluginManifest(text)
+      const prepared = preparePluginInstall(manifest)
+      const cleaned = removePluginContributions(settings, prepared.plugin.id)
+      updateSettings({
+        ...cleaned,
+        customSessionDefinitions: [...cleaned.customSessionDefinitions, ...prepared.customSessions],
+        quickCommandGroups: prepared.quickCommandGroup
+          ? [...cleaned.quickCommandGroups, prepared.quickCommandGroup]
+          : cleaned.quickCommandGroups,
+        quickCommands: [...cleaned.quickCommands, ...prepared.quickCommands],
+        promptItems: [...cleaned.promptItems, ...prepared.prompts],
+        installedPlugins: [...cleaned.installedPlugins, prepared.plugin],
+      })
+      setManifestText('')
+      setError('')
+      addToast({ type: 'success', title: '插件已安装', body: `${prepared.plugin.name} ${prepared.plugin.version}` })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      addToast({ type: 'error', title: '插件安装失败', body: message })
+    }
+  }, [addToast, settings, updateSettings])
+
+  const uninstallPlugin = useCallback((pluginId: string) => {
+    const plugin = settings.installedPlugins.find((item) => item.id === pluginId)
+    updateSettings(removePluginContributions(settings, pluginId))
+    addToast({ type: 'success', title: '插件已卸载', body: plugin?.name ?? pluginId })
+  }, [addToast, settings, updateSettings])
+
+  const importFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    installManifest(await file.text())
+  }, [installManifest])
+
+  const exampleManifest = `{
+  "id": "local.agent-kit",
+  "name": "Local Agent Kit",
+  "version": "0.1.0",
+  "description": "Custom local launchers and prompts.",
+  "sessions": [
+    { "id": "qwen", "name": "Qwen Code", "icon": "terminal", "command": "qwen", "args": "" }
+  ],
+  "quickCommands": [
+    { "id": "typecheck", "name": "Typecheck", "command": "pnpm exec tsc -b --noEmit" }
+  ],
+  "prompts": [
+    { "id": "review", "title": "Code Review", "content": "Review the current diff and list concrete bugs first.", "tags": ["review"] }
+  ]
+}`
+
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="扩展设置" description="导入声明式插件清单，为 FastAgents 增加自定义启动器、快捷命令和提示词。" />
+
+      <SettingsSection icon={Upload} title="导入插件" description="插件清单只安装配置项，不执行第三方代码。重复导入同 ID 插件会覆盖旧贡献项。">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)]">
+            <Upload size={14} />
+            选择 JSON
+            <input type="file" accept="application/json,.json" className="hidden" onChange={(event) => { void importFile(event) }} />
+          </label>
+          <button
+            type="button"
+            onClick={() => installManifest(manifestText)}
+            disabled={!manifestText.trim()}
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-3 text-[var(--ui-font-sm)] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Plug size={14} />
+            安装清单
+          </button>
+        </div>
+        <textarea
+          value={manifestText}
+          onChange={(event) => setManifestText(event.target.value)}
+          spellCheck={false}
+          placeholder={exampleManifest}
+          className="min-h-56 resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]/70"
+        />
+        {error && <div className="text-[var(--ui-font-xs)] text-[var(--color-error)]">{error}</div>}
+      </SettingsSection>
+
+      <SettingsSection icon={Plug} title="已安装插件" description="卸载会移除该插件贡献的启动器、快捷命令和提示词。">
+        {settings.installedPlugins.length === 0 ? (
+          <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] px-4 py-5 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+            暂无已安装插件
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {settings.installedPlugins.map((plugin) => (
+              <div key={plugin.id} className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2">
+                <Plug size={15} className="shrink-0 text-[var(--color-accent)]" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">{plugin.name}</span>
+                    <span className="shrink-0 rounded bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">{plugin.version}</span>
+                  </div>
+                  <div className="mt-1 truncate text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+                    {plugin.contributions.customSessions} 启动器 · {plugin.contributions.quickCommands} 命令 · {plugin.contributions.prompts} 提示词
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => uninstallPlugin(plugin.id)}
+                  className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-error)]"
+                  title="卸载插件"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </SettingsSection>
+    </div>
+  )
+}
+
 function WslPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   const inputClass = cn(
     'h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
@@ -1110,8 +1269,8 @@ function TitleBarPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
 function GitPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   return (
     <div className={PAGE_STACK}>
-      <PageIntro title="Git 设置" description="调整 Git 侧栏的显示方式和 AI 修复入口。" />
-      <SettingsSection icon={GitBranch} title="Git 面板" description="Git 侧栏的改动文件视图与 AI 修复流程。">
+      <PageIntro title="Git 设置" description="调整 Git 侧栏的显示方式。" />
+      <SettingsSection icon={GitBranch} title="Git 面板" description="Git 侧栏的改动文件视图；审查和修复使用 Git 面板内选择的 AI。">
         <div className="flex flex-col gap-1.5">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">改动文件展示方式</span>
           <SegmentedChoice
@@ -1121,17 +1280,6 @@ function GitPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: 
               { id: 'tree', label: '目录树', desc: '按文件夹层级组织' },
             ]}
             onChange={(v) => onUpdate('gitChangesViewMode', v)}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">审查报告的 AI 修复方式</span>
-          <SegmentedChoice
-            value={settings.gitReviewFixMode}
-            options={[
-              { id: 'claude-gui', label: 'Claude GUI', desc: '在 Claude GUI 标签页展示完整过程' },
-              { id: 'claude-code-cli', label: 'Claude Code CLI', desc: '打开 CLI 标签并发送任务' },
-            ]}
-            onChange={(v) => onUpdate('gitReviewFixMode', v)}
           />
         </div>
       </SettingsSection>
@@ -2030,6 +2178,7 @@ export function SettingsDialog(): JSX.Element | null {
           <div className="flex-1 overflow-y-auto scrollbar-none px-10 py-10 pb-20">
             {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'sessions' && <SessionsPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'extensions' && <ExtensionsPage settings={settings} />}
             {page === 'wsl' && <WslPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'workspace' && <WorkspacePage settings={settings} onUpdate={handleUpdate} />}
             {page === 'notifications' && <NotificationsPage settings={settings} onUpdate={handleUpdate} />}

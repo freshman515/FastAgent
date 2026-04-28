@@ -1,7 +1,7 @@
 import { Bot, CheckCircle2, Copy, FileCode2, FolderTree, LoaderCircle, PauseCircle, Plus, RefreshCw, Send, Sparkles, Wrench, XCircle } from 'lucide-react'
-import { marked } from 'marked'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { renderMarkdown } from '@/lib/markdown'
 import { useEditorsStore } from '@/stores/editors'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
@@ -162,10 +162,6 @@ function formatRelative(timestamp?: number): string {
   if (minutes < 60) return `${minutes}m 前`
   const hours = Math.floor(minutes / 60)
   return `${hours}h 前`
-}
-
-function renderMarkdown(text: string): string {
-  return marked.parse(text, { async: false }) as string
 }
 
 function summarizeParts(parts: OpencodePart[]): string {
