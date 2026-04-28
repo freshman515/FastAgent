@@ -24,17 +24,16 @@ export interface Project {
 }
 
 export const UNGROUPED_PROJECT_GROUP_ID = '__ungrouped__'
-export const ANONYMOUS_PROJECT_ID = '__anonymous_project__'
-export const ANONYMOUS_PROJECT_NAME = 'Anonymous'
-export const ANONYMOUS_PROJECT_DIR_NAME = 'anonymous-workspace'
-
-export function isAnonymousProjectId(projectId: string): boolean {
-  return projectId === ANONYMOUS_PROJECT_ID
-}
 
 export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'claude-gui' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal' | 'terminal-wsl'
 export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal' | 'terminal-wsl'>
 export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui'>
+export type TerminalShellMode = 'auto' | 'pwsh' | 'powershell' | 'cmd' | 'gitbash' | 'custom'
+export interface TerminalShellAvailability {
+  available: boolean
+  shell: string | null
+  reason?: string
+}
 export const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 
 /** Returns true for any Claude Code variant (normal or yolo mode) */
@@ -237,6 +236,9 @@ export interface SessionCreateOptions {
   command?: string
   args?: string[]
   env?: Record<string, string>
+  terminalShellMode?: TerminalShellMode
+  terminalShellCommand?: string
+  terminalShellArgs?: string[]
   wslDistroName?: string
   wslShell?: string
   wslUseLoginShell?: boolean
@@ -435,6 +437,26 @@ export type UpdaterEvent =
   | { type: 'progress'; percent: number; bytesPerSecond: number; transferred: number; total: number }
   | { type: 'downloaded'; version: string }
   | { type: 'error'; error: string }
+
+export interface AppInfo {
+  name: string
+  productName: string
+  version: string
+  appId: string
+  platform: string
+  arch: string
+  isPackaged: boolean
+  electronVersion: string
+  chromeVersion: string
+  nodeVersion: string
+  repository: {
+    provider: 'github'
+    owner: string
+    repo: string
+    url: string
+  }
+  updateFeed: string
+}
 
 export interface ClaudeCodeContext {
   /** Total tokens present in the current model context (input + cache_create + cache_read). */
@@ -832,6 +854,7 @@ export const IPC = {
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
   SHELL_OPEN_IN_IDE: 'shell:open-in-ide',
   SHELL_LIST_IDES: 'shell:list-ides',
+  SHELL_RESOLVE_TERMINAL_SHELL: 'shell:resolve-terminal-shell',
 
   CLAUDE_GUI_START: 'claude-gui:start',
   CLAUDE_GUI_STOP: 'claude-gui:stop',
@@ -848,6 +871,7 @@ export const IPC = {
   UPDATER_DOWNLOAD: 'updater:download',
   UPDATER_INSTALL: 'updater:install',
   UPDATER_EVENT: 'updater:event',
+  APP_INFO: 'app:info',
   CLAUDE_PROMPT_OPTIMIZE: 'claude-prompt:optimize',
   CLAUDE_DIFF_REVIEW: 'claude-diff:review',
 } as const

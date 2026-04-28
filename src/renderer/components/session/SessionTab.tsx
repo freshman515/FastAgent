@@ -10,7 +10,9 @@ import { useProjectsStore } from '@/stores/projects'
 import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
+import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { beginTabDragGuard, endTabDragGuard } from '@/lib/tabDragGuard'
 import { SessionIconView } from './SessionIconView'
 
 interface SessionTabProps {
@@ -24,7 +26,7 @@ interface SessionTabProps {
   onDragStart: (id: string, e: React.DragEvent) => void
   onDragOver: (id: string, e: React.DragEvent) => void
   onDragLeave: () => void
-  onDrop: (id: string) => void
+  onDrop: (id: string, e: React.DragEvent) => void
   onDragEnd: () => void
   canSplitSameType?: boolean
   onSplitSameType?: (id: string) => void
@@ -37,6 +39,32 @@ const SPLIT_OPTIONS: Array<{ position: SplitPosition; label: string }> = [
   { position: 'left', label: '向左分屏' },
   { position: 'up', label: '向上分屏' },
 ]
+
+function setTabDragImage(event: React.DragEvent): void {
+  const source = event.currentTarget as HTMLElement
+  const rect = source.getBoundingClientRect()
+  const preview = source.cloneNode(true) as HTMLElement
+  preview.classList.add('tab-drag-image')
+  preview.style.position = 'fixed'
+  preview.style.left = '0'
+  preview.style.top = '0'
+  preview.style.width = `${rect.width}px`
+  preview.style.height = `${rect.height}px`
+  preview.style.opacity = '1'
+  preview.style.pointerEvents = 'none'
+  preview.style.transform = 'translate(-200vw, -200vh)'
+  preview.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.35)'
+  document.body.appendChild(preview)
+  event.dataTransfer.setDragImage(
+    preview,
+    Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+    Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+  )
+  const remove = (): void => preview.remove()
+  window.addEventListener('drop', remove, { once: true, capture: true })
+  window.addEventListener('dragend', remove, { once: true, capture: true })
+  window.setTimeout(remove, 30000)
+}
 
 export function SessionTab({
   session, isActive, paneId, isPaneFocused = true, isDragging, showDivider = false, dropSide,
@@ -134,6 +162,14 @@ export function SessionTab({
   const canSplit = paneSessions.length >= 2
   const canCloseAll = paneSessions.length > 1
   const isSplit = usePanesStore((s) => s.root.type === 'split')
+  const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
+
+  const handleScrollToBottom = useCallback(() => {
+    setContextMenu(null)
+    setPaneActiveSession(paneId, session.id)
+    setActivePaneId(paneId)
+    scrollTerminalToLatestSoon(session.id)
+  }, [paneId, session.id, setPaneActiveSession, setActivePaneId])
 
   const doCloseAll = useCallback(() => {
     const sessionsState = useSessionsStore.getState()
@@ -163,6 +199,8 @@ export function SessionTab({
       <div
         draggable={!isRenaming}
         onDragStart={(e) => {
+          setTabDragImage(e)
+          beginTabDragGuard({ tabId: session.id, sourcePaneId: paneId, sourceWindowId: currentWindowId })
           const liveSession = useSessionsStore.getState().sessions.find((s) => s.id === session.id) ?? session
           const dragToken = `tabdrag-${session.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           dragTokenRef.current = dragToken
@@ -178,11 +216,21 @@ export function SessionTab({
           })
           onDragStart(session.id, e)
         }}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(session.id, e) }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          e.dataTransfer.dropEffect = 'move'
+          onDragOver(session.id, e)
+        }}
         onDragLeave={onDragLeave}
-        onDrop={() => onDrop(session.id)}
+        onDrop={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onDrop(session.id, e)
+        }}
         onDragEnd={(e) => {
           onDragEnd()
+          endTabDragGuard()
           const dragToken = dragTokenRef.current
           dragTokenRef.current = null
           const dragResult = dragToken ? window.api.detach.finishTabDrag(dragToken) : null
@@ -230,7 +278,7 @@ export function SessionTab({
           'no-drag group flex h-[34px] cursor-pointer items-center gap-2 px-3',
           'max-w-[200px] min-w-[120px] transition-all duration-200',
           activeTabClass,
-          isDragging && 'opacity-40',
+          isDragging && 'tab-dragging-source',
         )}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
@@ -349,6 +397,15 @@ export function SessionTab({
               <span>重命名</span>
               <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">F2</span>
             </button>
+
+            {canScrollToBottom && (
+              <button
+                onClick={handleScrollToBottom}
+                className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              >
+                滚动到底部
+              </button>
+            )}
 
             {/* Color & Label */}
             <div className="h-px my-0.5 bg-[var(--color-border)]" />

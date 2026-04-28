@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { IPC, type ExternalIdeId } from '@shared/types'
+import { IPC, type ExternalIdeId, type TerminalShellMode } from '@shared/types'
 import { getAvailableIdes, openProjectInIde } from '../services/IdeLauncher'
+import { detectTerminalShellAvailability } from '../services/ShellDetector'
 
 export function registerDialogHandlers(): void {
   ipcMain.handle(IPC.SHELL_OPEN_PATH, (_event, path: string) => {
@@ -18,6 +19,10 @@ export function registerDialogHandlers(): void {
 
   ipcMain.handle(IPC.SHELL_LIST_IDES, () => {
     return getAvailableIdes()
+  })
+
+  ipcMain.handle(IPC.SHELL_RESOLVE_TERMINAL_SHELL, (_event, mode: TerminalShellMode) => {
+    return detectTerminalShellAvailability(mode)
   })
 
   ipcMain.handle(IPC.DIALOG_SELECT_FOLDER, async (event) => {

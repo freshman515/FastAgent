@@ -108,7 +108,7 @@ export function StatusBar(): JSX.Element {
   const ITEM = 'flex items-center gap-1.5 px-2 py-0.5 text-[var(--ui-font-sm)] transition-colors duration-75'
 
   return (
-    <div className="flex h-10 shrink-0 items-center justify-between rounded-[var(--radius-panel)] px-1 select-none">
+    <div className="status-bar-frame flex h-10 shrink-0 items-center justify-between rounded-[var(--radius-panel)] px-1 select-none">
       {/* Left section */}
       <div className="flex items-center gap-0 min-w-0">
         {/* Project name */}

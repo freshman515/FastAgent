@@ -1,5 +1,6 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { AppInfo, TerminalShellMode, UpdaterEvent } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
 import {
   CANVAS_FOCUS_FONT_PX_MAX,
@@ -28,7 +29,7 @@ import { SESSION_OPTIONS, getCustomSessionOptionId, orderNewSessionOptions } fro
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 import { isPluginContributionId, parsePluginManifest, preparePluginInstall } from '@/lib/pluginManifest'
 
-type SettingsPage = 'general' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui'
+type SettingsPage = 'general' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui' | 'about'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
   { id: 'general', label: '通用', description: '基础偏好与数据清理', icon: Settings },
@@ -45,6 +46,7 @@ const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; i
   { id: 'templates', label: '模板', description: '批量启动会话的预设', icon: Layers },
   { id: 'ai', label: 'AI 摘要', description: '终端摘要模型与提示词', icon: Bot },
   { id: 'claudeGui', label: 'Claude GUI', description: '内置 Claude 面板偏好', icon: Bot },
+  { id: 'about', label: '关于', description: '版本、仓库与更新检查', icon: Info },
 ]
 const isWindowsPlatform = (): boolean => window.api.platform === 'win32'
 
@@ -69,6 +71,15 @@ const TERMINAL_FONT_OPTIONS = [
 const TERMINAL_FONT_LABELS = ['JetBrainsMono NF', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro']
 const EDITOR_FONT_OPTIONS = TERMINAL_FONT_OPTIONS
 const EDITOR_FONT_LABELS = TERMINAL_FONT_LABELS
+
+const TERMINAL_SHELL_OPTIONS: Array<{ id: TerminalShellMode; label: string; desc: string }> = [
+  { id: 'auto', label: '自动', desc: '优先 PowerShell 7，找不到时使用系统默认' },
+  { id: 'pwsh', label: 'PowerShell 7', desc: '使用 pwsh.exe 启动' },
+  { id: 'powershell', label: 'Windows PowerShell', desc: '使用 powershell.exe 启动' },
+  { id: 'cmd', label: 'CMD', desc: '使用 cmd.exe 启动' },
+  { id: 'gitbash', label: 'Git Bash', desc: '使用 Git for Windows 的 bash.exe 启动' },
+  { id: 'custom', label: '自定义', desc: '指定自己的 shell 路径和参数' },
+]
 
 // ─── Shared components ───
 
@@ -1461,6 +1472,17 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
   return (
     <div className={PAGE_STACK}>
       <PageIntro title="外观设置" description="主题决定整体视觉气质，字体决定日常阅读手感。这里可以一起调顺。"/>
+      <SettingsSection icon={Briefcase} title="全局外框" description="切换主界面面板、工作区与状态栏之间的连接方式。">
+        <SegmentedChoice
+          value={settings.appChromeStyle}
+          options={[
+            { id: 'floating', label: '圆角分离', desc: '保留当前左侧透明栏、独立圆角面板与工作区' },
+            { id: 'joined', label: '直角连接', desc: '面板和工作区使用直角并通过细边框连接' },
+          ]}
+          onChange={(v) => onUpdate('appChromeStyle', v)}
+        />
+      </SettingsSection>
+
       {/* Theme header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -1605,9 +1627,82 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 }
 
 function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const addToast = useUIStore((s) => s.addToast)
+  const inputClass = cn(
+    'h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
+    'font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
+    'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
+  )
+  const handleShellModeChange = useCallback((value: TerminalShellMode) => {
+    if (!isWindowsPlatform() || value === 'custom') {
+      onUpdate('terminalShellMode', value)
+      return
+    }
+
+    void window.api.shell.resolveTerminalShell(value)
+      .then((result) => {
+        if (!result.available) {
+          addToast({
+            type: 'error',
+            title: 'Shell 不可用',
+            body: result.reason ?? '没有在当前电脑上找到这个 Shell。',
+          })
+          return
+        }
+        onUpdate('terminalShellMode', value)
+      })
+      .catch((error) => {
+        addToast({
+          type: 'error',
+          title: 'Shell 检测失败',
+          body: error instanceof Error ? error.message : String(error),
+        })
+      })
+  }, [addToast, onUpdate])
+
   return (
     <div className={PAGE_STACK}>
       <PageIntro title="终端设置" description="统一终端的字号与字体，确保长时间阅读输出时依然紧凑、清晰。" />
+      <SettingsSection icon={Terminal} title="默认启动 Shell" description="影响之后新建的普通 Terminal、Claude Code、Codex、Gemini 和 OpenCode 会话；WSL 会话仍使用 WSL 设置。">
+        {isWindowsPlatform() ? (
+          <>
+            <SegmentedChoice
+              value={settings.terminalShellMode}
+              options={TERMINAL_SHELL_OPTIONS}
+              onChange={handleShellModeChange}
+            />
+            {settings.terminalShellMode === 'custom' && (
+              <div className="grid grid-cols-[1.2fr_1fr] gap-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Shell 路径或命令</span>
+                  <input
+                    value={settings.terminalShellCommand}
+                    onChange={(event) => onUpdate('terminalShellCommand', event.target.value)}
+                    placeholder="C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+                    className={inputClass}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">启动参数</span>
+                  <input
+                    value={settings.terminalShellArgs}
+                    onChange={(event) => onUpdate('terminalShellArgs', event.target.value)}
+                    placeholder="-NoLogo"
+                    className={inputClass}
+                  />
+                </label>
+              </div>
+            )}
+            <span className="text-[var(--ui-font-2xs)] leading-relaxed text-[var(--color-text-tertiary)]">
+              已有会话不会被重启；只有后续创建的新会话会使用这里的 Shell。选择 CMD 时，Agent 命令会按 cmd 语法发送。
+            </span>
+          </>
+        ) : (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 px-3 py-2 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+            当前平台会使用系统 SHELL 环境变量启动终端和 Agent。
+          </div>
+        )}
+      </SettingsSection>
       <div className="flex items-center gap-2 mb-1">
         <Terminal size={14} className="text-[var(--color-success)]" />
         <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
@@ -2065,6 +2160,213 @@ function ClaudeGuiSettingsPage(): JSX.Element {
   )
 }
 
+type UpdateCheckState =
+  | { kind: 'idle'; message: string }
+  | { kind: 'checking'; message: string }
+  | { kind: 'available'; message: string }
+  | { kind: 'not-available'; message: string }
+  | { kind: 'downloading'; message: string }
+  | { kind: 'downloaded'; message: string }
+  | { kind: 'error'; message: string }
+
+function platformLabel(platform: string): string {
+  if (platform === 'win32') return 'Windows'
+  if (platform === 'darwin') return 'macOS'
+  if (platform === 'linux') return 'Linux'
+  return platform || 'Unknown'
+}
+
+function AboutInfoTile({ icon: Icon, label, value, detail }: {
+  icon: typeof Settings
+  label: string
+  value: string
+  detail?: string
+}): JSX.Element {
+  return (
+    <div className="rounded-[var(--radius-lg)] border border-white/[0.06] bg-white/[0.03] px-4 py-3">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+          <Icon size={15} />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">{label}</div>
+          <div className="mt-1 truncate text-[15px] text-[var(--color-text-primary)]">{value}</div>
+          {detail && <div className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">{detail}</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AboutPage(): JSX.Element {
+  const addToast = useUIStore((s) => s.addToast)
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  const [updateState, setUpdateState] = useState<UpdateCheckState>({
+    kind: 'idle',
+    message: '点击按钮检查 GitHub Releases 上的新版本。',
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.app.getInfo()
+      .then((info) => {
+        if (!cancelled) setAppInfo(info)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        const message = error instanceof Error ? error.message : String(error)
+        setUpdateState({ kind: 'error', message: `读取应用信息失败：${message}` })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.api.updater.onEvent((event: UpdaterEvent) => {
+      switch (event.type) {
+        case 'checking':
+          setUpdateState({ kind: 'checking', message: '正在检查更新...' })
+          break
+        case 'available':
+          setUpdateState({ kind: 'available', message: `发现新版本 v${event.version}，请在弹出的更新窗口中继续。` })
+          break
+        case 'not-available':
+          setUpdateState({
+            kind: 'not-available',
+            message: event.dev
+              ? `当前是开发模式，版本为 v${event.currentVersion}，不会连接远程更新源。`
+              : `当前已是最新版本 v${event.currentVersion}。`,
+          })
+          break
+        case 'progress':
+          setUpdateState({ kind: 'downloading', message: `正在下载更新 ${event.percent}%` })
+          break
+        case 'downloaded':
+          setUpdateState({ kind: 'downloaded', message: `v${event.version} 已下载完成，可以安装并重启。` })
+          break
+        case 'error':
+          setUpdateState({ kind: 'error', message: event.error })
+          break
+      }
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [])
+
+  const handleCheckUpdates = useCallback(async () => {
+    setUpdateState({ kind: 'checking', message: '正在检查更新...' })
+    try {
+      await window.api.updater.check()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setUpdateState({ kind: 'error', message })
+      addToast({ type: 'error', title: '检查更新失败', body: message })
+    }
+  }, [addToast])
+
+  const openExternal = useCallback((url: string) => {
+    void window.api.shell.openExternal(url)
+  }, [])
+
+  const repoUrl = appInfo?.repository.url ?? 'https://github.com/freshman515/FastAgent'
+  const releasesUrl = `${repoUrl}/releases`
+  const statusIcon = updateState.kind === 'error'
+    ? AlertCircle
+    : updateState.kind === 'available' || updateState.kind === 'downloaded' || updateState.kind === 'not-available'
+      ? CheckCircle2
+      : RefreshCw
+  const StatusIcon = statusIcon
+
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="关于 FastAgents" description="查看当前版本、运行环境、仓库地址和更新状态。" />
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <AboutInfoTile
+          icon={Package}
+          label="当前版本"
+          value={appInfo ? `v${appInfo.version}` : '读取中...'}
+          detail={appInfo?.isPackaged ? '已打包版本' : '开发模式'}
+        />
+        <AboutInfoTile
+          icon={Monitor}
+          label="平台"
+          value={appInfo ? `${platformLabel(appInfo.platform)} ${appInfo.arch}` : '读取中...'}
+          detail={appInfo ? `App ID: ${appInfo.appId}` : undefined}
+        />
+        <AboutInfoTile
+          icon={Github}
+          label="仓库"
+          value={appInfo ? `${appInfo.repository.owner}/${appInfo.repository.repo}` : 'freshman515/FastAgent'}
+          detail="GitHub Releases 用于自动更新"
+        />
+        <AboutInfoTile
+          icon={Cpu}
+          label="运行环境"
+          value={appInfo ? `Electron ${appInfo.electronVersion}` : '读取中...'}
+          detail={appInfo ? `Chrome ${appInfo.chromeVersion} · Node ${appInfo.nodeVersion}` : undefined}
+        />
+      </div>
+
+      <SettingsSection icon={Github} title="仓库信息" description="打开源码仓库或发布页面。">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Repository</div>
+          <div className="mt-1 truncate text-[13px] text-[var(--color-text-primary)]">{repoUrl}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => openExternal(repoUrl)}
+            className="flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            <Github size={13} /> 打开仓库
+          </button>
+          <button
+            type="button"
+            onClick={() => openExternal(releasesUrl)}
+            className="flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            <ExternalLink size={13} /> 打开 Releases
+          </button>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection icon={RefreshCw} title="更新检查" description="手动检查是否有可用的新版本。">
+        <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-white/[0.06] bg-white/[0.03] px-4 py-3">
+          <div className="flex items-start gap-3">
+            <StatusIcon
+              size={16}
+              className={cn(
+                'mt-0.5 shrink-0',
+                updateState.kind === 'error' && 'text-[var(--color-error)]',
+                updateState.kind === 'checking' && 'animate-spin text-[var(--color-accent)]',
+                updateState.kind !== 'error' && updateState.kind !== 'checking' && 'text-[var(--color-success)]',
+              )}
+            />
+            <div className="min-w-0 flex-1 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
+              {updateState.message}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleCheckUpdates()}
+            disabled={updateState.kind === 'checking'}
+            className={cn(
+              'flex h-9 w-fit items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 text-[12px] text-white transition-opacity',
+              'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50',
+            )}
+          >
+            <RefreshCw size={13} className={updateState.kind === 'checking' ? 'animate-spin' : undefined} />
+            检查更新
+          </button>
+        </div>
+      </SettingsSection>
+    </div>
+  )
+}
+
 // ─── Main Dialog ───
 
 export function SettingsDialog(): JSX.Element | null {
@@ -2104,6 +2406,7 @@ export function SettingsDialog(): JSX.Element | null {
       <div
         className={cn(
           'fixed left-1/2 top-1/2 z-[9001] flex -translate-x-1/2 -translate-y-1/2',
+          'settings-dialog',
           'w-[calc(100vw-64px)] max-w-[1080px] h-[calc(100vh-64px)] max-h-[840px] overflow-hidden',
           'rounded-[24px] border border-white/[0.1] ring-1 ring-black/50',
           'bg-[var(--color-bg-secondary)]/95 shadow-[0_32px_64px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] backdrop-blur-3xl',
@@ -2190,6 +2493,7 @@ export function SettingsDialog(): JSX.Element | null {
             {page === 'templates' && <TemplatesPage />}
             {page === 'ai' && <AiSettingsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'claudeGui' && <ClaudeGuiSettingsPage />}
+            {page === 'about' && <AboutPage />}
           </div>
           
           {/* Subtle footer gradient to show scrollability */}

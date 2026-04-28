@@ -559,12 +559,6 @@ export function SessionHistoryPanel(): JSX.Element {
       if (result.reused) {
         // Silent focus — no toast when the user just clicked the same entry
         // twice. Showing a success message every time would be noisy.
-      } else if (result.anonymous) {
-        addToast({
-          title: '已在匿名工作区恢复会话',
-          body: `未找到与 ${entry.cwd} 匹配的项目，已在匿名工作区打开。`,
-          type: 'warning',
-        })
       } else {
         addToast({
           title: '会话已恢复',

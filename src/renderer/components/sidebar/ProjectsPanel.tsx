@@ -1,18 +1,21 @@
-import { FolderPlus, Plus, Search, Settings, Terminal, X } from 'lucide-react'
+import { FolderPlus, Plus, Search, Terminal, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createAnonymousTerminal } from '@/lib/anonymous-project'
+import { createSessionWithPrompt } from '@/lib/createSession'
+import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { cn } from '@/lib/utils'
 import { useGroupsStore } from '@/stores/groups'
+import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
+import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
-import { DockActions } from '@/components/layout/DockActions'
 import { GroupList } from './GroupList'
 import { ProjectDetailPanel } from './ProjectDetailPanel'
 
 export function ProjectsPanel(): JSX.Element {
   const addGroup = useGroupsStore((s) => s.addGroup)
   const projects = useProjectsStore((s) => s.projects)
-  const openSettings = useUIStore((s) => s.openSettings)
+  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
+  const addToast = useUIStore((s) => s.addToast)
   const openProjectId = useUIStore((s) => s.projectDetailOpenProjectId)
   const setOpenProjectId = useUIStore((s) => s.setProjectDetailOpenProjectId)
   const [adding, setAdding] = useState(false)
@@ -49,6 +52,45 @@ export function ProjectsPanel(): JSX.Element {
     setAdding(true)
   }, [])
 
+  const handleCreateProjectTerminal = useCallback(() => {
+    if (!selectedProjectId) {
+      addToast({
+        type: 'warning',
+        title: '未选择项目',
+        body: '请先选中一个项目，再创建终端会话。',
+      })
+      return
+    }
+
+    const project = projects.find((item) => item.id === selectedProjectId)
+    if (!project) {
+      addToast({
+        type: 'warning',
+        title: '项目不存在',
+        body: '当前选中的项目已不在项目列表中。',
+      })
+      return
+    }
+
+    const worktreeId = getDefaultWorktreeIdForProject(selectedProjectId)
+    createSessionWithPrompt(
+      {
+        projectId: selectedProjectId,
+        type: 'terminal',
+        worktreeId,
+      },
+      (sessionId) => {
+        switchProjectContext(selectedProjectId, sessionId, worktreeId ?? null)
+        const paneStore = usePanesStore.getState()
+        if (!paneStore.findPaneForSession(sessionId)) {
+          paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
+        }
+        paneStore.setPaneActiveSession(paneStore.activePaneId, sessionId)
+        useSessionsStore.getState().setActive(sessionId)
+      },
+    )
+  }, [addToast, projects, selectedProjectId])
+
   useEffect(() => {
     if (openProjectId && !projects.some((project) => project.id === openProjectId)) {
       setOpenProjectId(null)
@@ -65,13 +107,13 @@ export function ProjectsPanel(): JSX.Element {
         <span className="pl-1 text-[11px] font-bold tracking-wider text-[var(--color-text-tertiary)] uppercase">Projects</span>
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => { void createAnonymousTerminal() }}
+            onClick={handleCreateProjectTerminal}
             className={cn(
               'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
               'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
               'transition-all duration-150',
             )}
-            title="匿名终端"
+            title="为选中项目新建终端会话"
           >
             <Terminal size={14} />
           </button>

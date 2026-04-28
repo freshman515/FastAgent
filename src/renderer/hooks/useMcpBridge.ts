@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import {
-  ANONYMOUS_PROJECT_ID,
   type McpCreateSessionRequest,
   type McpSessionInfo,
 } from '@shared/types'
@@ -72,12 +71,32 @@ function collectSessionInfos(): McpSessionInfo[] {
   })
 }
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function findProjectIdByCwd(cwd?: string): string | null {
+  if (!cwd) return null
+  const target = normalizePath(cwd)
+  const projects = useProjectsStore.getState().projects
+  let best: { id: string; length: number } | null = null
+  for (const project of projects) {
+    const root = normalizePath(project.path)
+    if (!root) continue
+    if (target === root) return project.id
+    if (target.startsWith(`${root}/`) && (!best || root.length > best.length)) {
+      best = { id: project.id, length: root.length }
+    }
+  }
+  return best?.id ?? null
+}
+
 async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> {
   try {
     const sessionStore = useSessionsStore.getState()
     const paneStore = usePanesStore.getState()
 
-    // Resolve projectId: explicit > source session's project > anonymous.
+    // Resolve projectId: explicit > source session's project > cwd match > selected project.
     let projectId = req.projectId ?? null
     let worktreeId = req.worktreeId ?? undefined
     let worktreeFallback = false
@@ -91,23 +110,29 @@ async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> 
       }
     }
 
-    if (!projectId) projectId = ANONYMOUS_PROJECT_ID
+    if (!projectId) projectId = findProjectIdByCwd(req.cwd)
+    if (!projectId) projectId = useProjectsStore.getState().selectedProjectId
+    if (!projectId) {
+      throw new Error('No project is selected. Select a project or pass projectId before creating a session.')
+    }
 
-    if (req.isolateWorktree && projectId !== ANONYMOUS_PROJECT_ID) {
-      const project = useProjectsStore.getState().projects.find((item) => item.id === projectId)
-      if (project) {
-        const created = await createAgentWorktree({
-          projectId,
-          projectPath: project.path,
-          label: req.name ?? req.type,
-          branchName: req.branchName,
-        })
-        if (created.worktreeId) {
-          worktreeId = created.worktreeId
-        }
-        worktreeFallback = created.fallback
-        worktreeError = created.error
+    const project = useProjectsStore.getState().projects.find((item) => item.id === projectId)
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`)
+    }
+
+    if (req.isolateWorktree) {
+      const created = await createAgentWorktree({
+        projectId,
+        projectPath: project.path,
+        label: req.name ?? req.type,
+        branchName: req.branchName,
+      })
+      if (created.worktreeId) {
+        worktreeId = created.worktreeId
       }
+      worktreeFallback = created.fallback
+      worktreeError = created.error
     }
 
     const sessionId = sessionStore.addSession(projectId, req.type, worktreeId)

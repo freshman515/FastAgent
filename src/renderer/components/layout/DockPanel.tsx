@@ -78,15 +78,34 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
     isDragging.current = true
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
+    let latestWidth = width
+    let hasMoved = false
+    let frameId: number | null = null
+
+    const flushWidth = (persist: boolean) => {
+      if (!hasMoved) return
+      setWidth(side, latestWidth, persist)
+    }
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return
-      const newWidth = side === 'left' ? e.clientX : window.innerWidth - e.clientX
-      setWidth(side, newWidth)
+      latestWidth = side === 'left' ? e.clientX : window.innerWidth - e.clientX
+      hasMoved = true
+
+      if (frameId !== null) return
+      frameId = requestAnimationFrame(() => {
+        frameId = null
+        flushWidth(false)
+      })
     }
 
     const handleMouseUp = () => {
       isDragging.current = false
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+        frameId = null
+      }
+      flushWidth(true)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       document.removeEventListener('mousemove', handleMouseMove)
@@ -95,7 +114,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
 
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
-  }, [setWidth, side])
+  }, [setWidth, side, width])
 
   const handleTabDragStart = useCallback((panelId: DockPanelId, event: React.DragEvent) => {
     draggingDockPanelId = panelId
@@ -165,7 +184,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
       onDrop={handleStripDrop}
       onDragLeave={handleDragLeave}
       className={cn(
-        'relative flex h-full w-10 shrink-0 flex-col items-center pt-3 pb-2 px-0 gap-1.5 transition-colors',
+        'relative flex h-full w-12 shrink-0 flex-col items-center px-1 pt-3 pb-2 gap-1.5 transition-colors',
         isAppendDropTarget && 'bg-[var(--color-accent)]/12',
       )}
     >
@@ -231,7 +250,7 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
   )
 
   if (collapsed || !activePanel) {
-    return <div className="shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
+    return <div className={cn('dock-strip-frame shrink-0 rounded-[var(--radius-panel)] overflow-hidden', side === 'left' ? 'dock-panel-left' : 'dock-panel-right')}>{strip}</div>
   }
 
   const content = (
@@ -287,15 +306,15 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
   return (
     <>
       <div
-        className="flex h-full shrink-0 gap-[var(--layout-gap)] transition-colors"
+        className={cn('dock-panel-layout flex h-full shrink-0 gap-[var(--layout-gap)] transition-colors', side === 'left' ? 'dock-panel-left' : 'dock-panel-right')}
         style={{ width }}
         onDragLeave={handleDragLeave}
       >
       {side === 'left' ? (
         <>
-          <div className="shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
+          <div className="dock-strip-frame shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
           <div className={cn(
-            'flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
+            'dock-panel-content-frame flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
             isAppendDropTarget && 'bg-[var(--color-accent)]/6',
           )}>
             {content}
@@ -306,12 +325,12 @@ export function DockPanel({ side }: { side: DockSide }): JSX.Element {
         <>
           {resizeHandle}
           <div className={cn(
-            'dock-panel-frame flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
+            'dock-panel-frame dock-panel-content-frame flex flex-1 min-w-0 rounded-[var(--radius-panel)] overflow-hidden bg-[var(--color-bg-secondary)] transition-colors',
             isAppendDropTarget && 'bg-[var(--color-accent)]/6',
           )}>
             {content}
           </div>
-          <div className="shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
+          <div className="dock-strip-frame shrink-0 rounded-[var(--radius-panel)] overflow-hidden">{strip}</div>
         </>
       )}
       </div>

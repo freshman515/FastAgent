@@ -1,8 +1,8 @@
 import { ChevronDown, ChevronRight, Clock, Eye, FolderPlus, List, MoreHorizontal, Palette, Trash2, Edit3 } from 'lucide-react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Group } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { useGroupsStore } from '@/stores/groups'
+import { GROUP_COLOR_PRESETS, normalizeGroupColor, parseGroupColor, useGroupsStore } from '@/stores/groups'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { ProjectItem } from './ProjectItem'
@@ -52,7 +52,12 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
   const [dragOver, setDragOver] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(group.name)
+  const [customColorDraft, setCustomColorDraft] = useState(normalizeGroupColor(group.color))
   const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setCustomColorDraft(normalizeGroupColor(group.color))
+  }, [group.color])
 
   const handleToggle = useCallback(() => {
     toggleCollapse(group.id)
@@ -71,6 +76,18 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
     removeGroup(group.id)
     setShowMenu(false)
   }, [group.id, removeGroup])
+
+  const commitCustomColor = useCallback((rawColor: string) => {
+    const color = parseGroupColor(rawColor)
+    if (!color) {
+      setCustomColorDraft(normalizeGroupColor(group.color))
+      return
+    }
+    setCustomColorDraft(color)
+    if (color !== normalizeGroupColor(group.color)) {
+      updateGroup(group.id, { color })
+    }
+  }, [group.color, group.id, updateGroup])
 
   return (
     <div className="relative">
@@ -316,11 +333,15 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
                 <Palette size={12} className="text-[var(--color-text-tertiary)] opacity-60" />
                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">标记颜色</span>
               </div>
-              <div className="flex gap-1.5 flex-wrap">
-                {['#7c6aef', '#5fa0f5', '#45c8c8', '#3ecf7b', '#f0a23b', '#ef5757', '#c084fc', '#f472b6', '#8e8e96'].map((c) => (
+              <div className="grid grid-cols-10 gap-1.5">
+                {GROUP_COLOR_PRESETS.map((c) => (
                   <button
                     key={c}
-                    onClick={() => { updateGroup(group.id, { color: c }); setContextMenu(null) }}
+                    onClick={() => {
+                      updateGroup(group.id, { color: c })
+                      setCustomColorDraft(c)
+                      setContextMenu(null)
+                    }}
                     className={cn(
                       'h-4.5 w-4.5 rounded-full ring-2 ring-transparent transition-all hover:scale-110 active:scale-95',
                       group.color === c ? 'ring-white shadow-[0_0_8px_rgba(255,255,255,0.4)]' : 'hover:ring-white/20',
@@ -328,6 +349,33 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
                     style={{ backgroundColor: c }}
                   />
                 ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="color"
+                  value={normalizeGroupColor(group.color)}
+                  onChange={(event) => commitCustomColor(event.target.value)}
+                  className="h-7 w-8 shrink-0 cursor-pointer rounded-[var(--radius-sm)] border border-white/[0.12] bg-transparent p-0.5"
+                  title="自定义颜色"
+                />
+                <input
+                  value={customColorDraft}
+                  onChange={(event) => setCustomColorDraft(event.target.value)}
+                  onBlur={() => commitCustomColor(customColorDraft)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur()
+                    if (event.key === 'Escape') {
+                      setCustomColorDraft(normalizeGroupColor(group.color))
+                      event.currentTarget.blur()
+                    }
+                  }}
+                  spellCheck={false}
+                  className={cn(
+                    'h-7 min-w-0 flex-1 rounded-[var(--radius-sm)] border border-white/[0.1] bg-black/20 px-2',
+                    'font-mono text-[11px] text-[var(--color-text-secondary)] outline-none transition-colors',
+                    'focus:border-[var(--color-accent)] focus:text-[var(--color-text-primary)]',
+                  )}
+                />
               </div>
             </div>
             <button
@@ -344,7 +392,7 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
       {(!group.collapsed || visibleProjectId) && (
         <div className="flex flex-col pb-1">
           {projects.map((project) => (
-            <ProjectItem key={project.id} project={project} onOpenProject={onOpenProject} />
+            <ProjectItem key={project.id} project={project} groupColor={group.color} onOpenProject={onOpenProject} />
           ))}
         </div>
       )}

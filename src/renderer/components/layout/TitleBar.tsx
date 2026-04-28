@@ -244,13 +244,8 @@ export function TitleBar(): JSX.Element | null {
   }, [addToast])
 
   const handleShowAbout = useCallback(() => {
-    addToast({
-      type: 'info',
-      title: '关于 FastAgents',
-      body: '一个面向多项目、多会话和多面板工作流的 Electron 桌面工作台。',
-      duration: 9000,
-    })
-  }, [addToast])
+    openSettings('about')
+  }, [openSettings])
 
   const titleMenus = useMemo<TitleMenuDefinition[]>(() => {
     const primaryIde = availableIdes[0]

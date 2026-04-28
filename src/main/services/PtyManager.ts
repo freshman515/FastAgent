@@ -131,9 +131,37 @@ function quoteShellArg(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`
 }
 
+function quotePowerShellArg(arg: string): string {
+  return `'${arg.replace(/'/g, "''")}'`
+}
+
+function quoteCmdArg(arg: string): string {
+  if (/^[A-Za-z0-9_./:\\=+@%,-]+$/.test(arg)) return arg
+  return `"${arg.replace(/"/g, '""')}"`
+}
+
 function quotePosixArg(arg: string): string {
   if (/^[A-Za-z0-9_./:=+@%,-]+$/.test(arg)) return arg
   return `'${arg.replace(/'/g, "'\\''")}'`
+}
+
+function buildWindowsShellCommand(
+  agentCmd: { command: string; args: string[] },
+  shellFamily: 'powershell' | 'cmd' | 'posix',
+  exitAfter: boolean,
+): string {
+  if (shellFamily === 'cmd') {
+    const commandLine = ['call', [agentCmd.command, ...agentCmd.args].map(quoteCmdArg).join(' ')].join(' ')
+    return exitAfter ? `${commandLine} & exit /b %ERRORLEVEL%` : commandLine
+  }
+
+  if (shellFamily === 'posix') {
+    const commandLine = [agentCmd.command, ...agentCmd.args].map(quotePosixArg).join(' ')
+    return exitAfter ? `${commandLine}; exit $?` : commandLine
+  }
+
+  const commandLine = `& ${[agentCmd.command, ...agentCmd.args].map(quotePowerShellArg).join(' ')}`
+  return exitAfter ? `${commandLine}; exit $LASTEXITCODE` : commandLine
 }
 
 function normalizeCwd(cwd: string): string {
@@ -396,10 +424,15 @@ export class PtyManager {
     }
 
     const id = `pty-${++this.idCounter}-${Date.now()}`
-    const shell = detectShell()
+    const shell = detectShell({
+      mode: options.terminalShellMode,
+      customCommand: options.terminalShellCommand,
+      customArgs: options.terminalShellArgs,
+    })
 
     let shellPath = shell.shell
     let shellArgs: string[] = [...shell.args]
+    let shellFamily = shell.family
     let effectiveResumeUUID = options.resumeUUID ?? null
     let claudeLaunchMode: ClaudeSessionLaunchMode | undefined
     let launchAgentDirectly = false
@@ -473,10 +506,12 @@ export class PtyManager {
       const wslLaunch = buildWslTerminalCommand(options)
       shellPath = wslLaunch.command
       shellArgs = wslLaunch.args
+      shellFamily = 'posix'
     } else if (agentCmd && isWindows && isWslSessionType(options.type)) {
       const wslLaunch = buildWslAgentCommand(options, agentCmd)
       shellPath = wslLaunch.command
       shellArgs = wslLaunch.args
+      shellFamily = 'posix'
       launchAgentDirectly = true
     } else if (agentCmd && !isWindows) {
       const fullCmd = [agentCmd.command, ...agentCmd.args].map(quoteShellArg).join(' ')
@@ -628,9 +663,9 @@ export class PtyManager {
     // Append "; exit" so shell exits when agent exits → triggers PTY exit event
     if (agentCmd && isWindows && !launchAgentDirectly) {
       setTimeout(() => {
-        const parts = [agentCmd.command, ...agentCmd.args]
-        const suffix = !isTerminalSessionType(options.type) ? ' ; exit' : ''
-        ptyProcess.write(parts.map(quoteShellArg).join(' ') + suffix + '\r')
+        ptyProcess.write(
+          buildWindowsShellCommand(agentCmd, shellFamily, !isTerminalSessionType(options.type)) + '\r',
+        )
       }, 500)
     }
 

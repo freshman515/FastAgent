@@ -1,6 +1,6 @@
 import { FileText, Minimize2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { SESSION_TYPE_CONFIG } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
@@ -19,14 +19,19 @@ interface SplitContainerProps {
   paneUiMode?: PaneUiMode
 }
 
-function SplitNodeRenderer({ node, projectId, framed = false, paneUiMode = 'separated' }: SplitContainerProps): JSX.Element {
+const SplitNodeRenderer = memo(function SplitNodeRenderer({
+  node,
+  projectId,
+  framed = false,
+  paneUiMode = 'separated',
+}: SplitContainerProps): JSX.Element {
   const classic = paneUiMode === 'classic'
 
   if (node.type === 'leaf') {
     const pane = <PaneView paneId={node.id} projectId={projectId} />
     if (classic || framed) return pane
     return (
-      <div className="h-full w-full overflow-hidden rounded-[var(--radius-panel)]">
+      <div className="split-pane-frame h-full w-full overflow-hidden rounded-[var(--radius-panel)]">
         {pane}
       </div>
     )
@@ -41,21 +46,21 @@ function SplitNodeRenderer({ node, projectId, framed = false, paneUiMode = 'sepa
       style={{ flexDirection: isHorizontal ? 'row' : 'column' }}
     >
       <div
-        className={cn('overflow-hidden', !classic && 'rounded-[var(--radius-panel)]')}
+        className={cn('split-node-frame overflow-hidden', !classic && 'rounded-[var(--radius-panel)]')}
         style={{ flex: `0 0 ${ratio * 100}%`, minWidth: 0, minHeight: 0 }}
       >
         <SplitNodeRenderer node={first} projectId={projectId} framed paneUiMode={paneUiMode} />
       </div>
       <ResizeHandle splitId={node.id} direction={direction} currentRatio={ratio} mode={paneUiMode} />
       <div
-        className={cn('overflow-hidden', !classic && 'rounded-[var(--radius-panel)]')}
+        className={cn('split-node-frame overflow-hidden', !classic && 'rounded-[var(--radius-panel)]')}
         style={{ flex: 1, minWidth: 0, minHeight: 0 }}
       >
         <SplitNodeRenderer node={second} projectId={projectId} framed paneUiMode={paneUiMode} />
       </div>
     </div>
   )
-}
+})
 
 function findLeaf(node: PaneNode, paneId: string): PaneNode | null {
   if (node.type === 'leaf') return node.id === paneId ? node : null

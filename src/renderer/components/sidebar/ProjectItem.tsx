@@ -1,13 +1,12 @@
 import { ArrowRightLeft, ChevronRight, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Group, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
-import { isAnonymousProject, removeAnonymousProject } from '@/lib/anonymous-project'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
-import { useGroupsStore } from '@/stores/groups'
+import { normalizeGroupColor, useGroupsStore } from '@/stores/groups'
 import { useSessionsStore } from '@/stores/sessions'
 import { usePanesStore } from '@/stores/panes'
 import { useGitStore } from '@/stores/git'
@@ -524,11 +523,11 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
 
 interface ProjectItemProps {
   project: Project
+  groupColor?: string
   onOpenProject?: (projectId: string) => void
 }
 
-export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.Element {
-  const isAnonymous = isAnonymousProject(project)
+export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemProps): JSX.Element {
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectProject = useProjectsStore((s) => s.selectProject)
   const removeProject = useProjectsStore((s) => s.removeProject)
@@ -619,8 +618,8 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
   }, [])
 
   const nonMainWorktrees = useMemo(
-    () => (isAnonymous ? [] : worktrees.filter((w) => !w.isMain)),
-    [isAnonymous, worktrees],
+    () => worktrees.filter((w) => !w.isMain),
+    [worktrees],
   )
   const hasWorktreeChildren = nonMainWorktrees.length > 0
   const mainWorktree = useMemo(() => worktrees.find((w) => w.isMain), [worktrees])
@@ -628,23 +627,36 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
   const sessions = useMemo(() => allSessions.filter((s) => s.projectId === project.id), [allSessions, project.id])
   const runningSessionCount = useMemo(() => sessions.filter((s) => s.status === 'running').length, [sessions])
   const otherGroups = useMemo(
-    () => (isAnonymous ? [] : allGroups.filter((g) => g.id !== project.groupId)),
-    [allGroups, isAnonymous, project.groupId],
+    () => allGroups.filter((g) => g.id !== project.groupId),
+    [allGroups, project.groupId],
   )
+  const effectiveGroupColor = useMemo(() => {
+    const color = groupColor ?? allGroups.find((group) => group.id === project.groupId)?.color
+    return color ? normalizeGroupColor(color) : null
+  }, [allGroups, groupColor, project.groupId])
+  const projectHoverStyle = useMemo(() => ({
+    '--project-hover-bg': effectiveGroupColor ? `${effectiveGroupColor}1f` : 'var(--color-bg-surface)',
+    '--project-hover-border': effectiveGroupColor ? `${effectiveGroupColor}42` : 'transparent',
+    '--project-hover-glow': effectiveGroupColor ? `${effectiveGroupColor}18` : 'transparent',
+    '--project-hover-icon': effectiveGroupColor ?? 'var(--color-text-secondary)',
+    '--project-selected-bg': effectiveGroupColor ? `${effectiveGroupColor}26` : 'var(--color-accent-muted)',
+    '--project-selected-border': effectiveGroupColor ? `${effectiveGroupColor}5c` : 'var(--color-accent)',
+    '--project-selected-glow': effectiveGroupColor ? `${effectiveGroupColor}22` : 'var(--color-accent-muted)',
+    '--project-selected-color': effectiveGroupColor ?? 'var(--color-accent)',
+  }) as CSSProperties, [effectiveGroupColor])
   const matchingTemplates = useMemo(() => templates.filter((t) => t.projectId === null || t.projectId === project.id), [templates, project.id])
 
   useEffect(() => {
-    if (isAnonymous) return
     useGitStore.getState().fetchStatus(project.id, project.path)
     useGitStore.getState().fetchWorktrees(project.id, project.path)
-  }, [isAnonymous, project.id, project.path])
+  }, [project.id, project.path])
 
   // Ensure main worktree exists once branch info is available
   useEffect(() => {
-    if (!isAnonymous && branchInfo) {
+    if (branchInfo) {
       useWorktreesStore.getState().ensureMainWorktree(project.id, project.path, branchInfo.current)
     }
-  }, [branchInfo, isAnonymous, project.id, project.path])
+  }, [branchInfo, project.id, project.path])
 
   const isSelected = selectedProjectId === project.id
   const isMainWtActive = isSelected && (!selectedWorktreeId || selectedWorktreeId === mainWorktree?.id)
@@ -657,14 +669,10 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
   }, [isMainWtActive, project.id])
 
   const handleRemove = useCallback(() => {
-    if (isAnonymous) {
-      void removeAnonymousProject()
-    } else {
-      removeProjectFromGroup(project.groupId, project.id)
-      removeProject(project.id)
-    }
+    removeProjectFromGroup(project.groupId, project.id)
+    removeProject(project.id)
     setShowMenu(null)
-  }, [isAnonymous, project.groupId, project.id, removeProject, removeProjectFromGroup])
+  }, [project.groupId, project.id, removeProject, removeProjectFromGroup])
 
   const handleCreateSession = useCallback((option: NewSessionOption) => {
     selectProject(project.id)
@@ -726,9 +734,8 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
     <div className="relative">
       {/* Main project row */}
       <div
-        draggable={!isAnonymous}
+        draggable
         onDragStart={(e) => {
-          if (isAnonymous) return
           e.dataTransfer.setData('project-id', project.id)
           e.dataTransfer.setData('source-group', project.groupId)
           e.dataTransfer.effectAllowed = 'move'
@@ -736,10 +743,11 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
         className={cn(
           'group relative flex h-8.5 cursor-pointer items-center gap-2.5 px-3 mx-1 rounded-[var(--radius-sm)] transition-all duration-200',
           isMainWtActive
-            ? 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)]/40 hover:text-[var(--color-text-primary)]',
+            ? 'bg-[var(--project-selected-bg)] text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--project-selected-border)] shadow-[inset_0_0_12px_var(--project-selected-glow)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--project-hover-bg)] hover:text-[var(--color-text-primary)] hover:ring-1 hover:ring-inset hover:ring-[var(--project-hover-border)] hover:shadow-[inset_0_0_12px_var(--project-hover-glow)]',
           projDragOver && 'ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-secondary)]',
         )}
+        style={projectHoverStyle}
         onClick={handleSelect}
         onDoubleClick={handleRowDoubleClick}
         onContextMenu={(e) => {
@@ -750,7 +758,6 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
           setContextMenu({ x: e.clientX, y: e.clientY })
         }}
         onDragOver={(e) => {
-          if (isAnonymous) return
           if (e.dataTransfer.types.includes('project-id')) {
             e.preventDefault()
             e.dataTransfer.dropEffect = 'move'
@@ -758,11 +765,9 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
           }
         }}
         onDragLeave={() => {
-          if (isAnonymous) return
           setProjDragOver(false)
         }}
         onDrop={(e) => {
-          if (isAnonymous) return
           e.stopPropagation(); setProjDragOver(false)
           const did = e.dataTransfer.getData('project-id'), sg = e.dataTransfer.getData('source-group')
           if (!did || did === project.id) return
@@ -772,17 +777,18 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
       >
         {/* Left vertical indicator for active project */}
         {isMainWtActive && (
-          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent)]" />
+          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--project-selected-color)] shadow-[0_0_8px_var(--project-selected-color)]" />
         )}
 
-        <div className="flex h-4 w-4 shrink-0 items-center justify-center">
+        <div className="flex h-4 w-7 shrink-0 items-center gap-1">
           {hasWorktreeChildren ? (
-            <button onClick={handleToggleExpand} className="flex h-full w-full items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+            <button onClick={handleToggleExpand} className="flex h-full w-3 shrink-0 items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
               <ChevronRight size={11} strokeWidth={2.5} className={cn('transition-transform duration-200', expanded && 'rotate-90')} />
             </button>
           ) : (
-            <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]')} />
+            <span className="w-3 shrink-0" />
           )}
+          <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--project-selected-color)]' : 'text-[var(--color-text-tertiary)] group-hover:text-[var(--project-hover-icon)]')} />
         </div>
 
         <span className={cn(
@@ -800,7 +806,7 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
             className={cn(
               'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none transition-all duration-200',
               sessions.length > 0
-                ? isMainWtActive ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+                ? isMainWtActive ? 'bg-[var(--project-selected-color)] text-white' : 'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
                 : 'text-[var(--color-text-tertiary)] opacity-40',
             )}
           >
@@ -809,7 +815,7 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
         </div>
 
         {/* Branch badge */}
-        {!isAnonymous && branchInfo?.current && (
+        {branchInfo?.current && (
           <div
             className={cn(
               'flex max-w-[80px] shrink-0 items-center gap-1 rounded-sm px-1 py-0.5 text-[10px] font-medium leading-none transition-all duration-200',
@@ -935,38 +941,34 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
               <List size={14} /> 显示所有项目
             </button>
 
-            {!isAnonymous && (
+            {/* Git section */}
+            <SectionDivider icon={GitBranch} label="Git" />
+            {branchInfo && branchInfo.current ? (
               <>
-                {/* Git section */}
-                <SectionDivider icon={GitBranch} label="Git" />
-                {branchInfo && branchInfo.current ? (
-                  <>
-                    <button
-                      ref={branchMenuRef}
-                      className={cn(MENU_ITEM, 'justify-between', branchSubmenuAnchor && 'bg-[var(--color-accent)]/15 text-white')}
-                      onMouseEnter={openBranchSub}
-                      onMouseLeave={scheduleBranchClose}
-                    >
-                      <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", branchSubmenuAnchor ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
-                      <span className="flex items-center gap-3"><GitBranch size={14} /> 分支</span>
-                      <ChevronRight size={14} opacity={0.4} />
-                    </button>
-                    <button className={MENU_ITEM} onClick={() => { setContextMenu(null); setShowNewWorktree(true) }}>
-                      <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
-                      <PlusIcon size={14} /> 新建工作树...
-                    </button>
-                  </>
-                ) : (
-                  <button className={MENU_ITEM} onClick={async () => {
-                    setContextMenu(null)
-                    await window.api.git.init(project.path)
-                    await useGitStore.getState().fetchStatus(project.id, project.path)
-                  }}>
-                    <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
-                    <PlusIcon size={14} /> 初始化仓库
-                  </button>
-                )}
+                <button
+                  ref={branchMenuRef}
+                  className={cn(MENU_ITEM, 'justify-between', branchSubmenuAnchor && 'bg-[var(--color-accent)]/15 text-white')}
+                  onMouseEnter={openBranchSub}
+                  onMouseLeave={scheduleBranchClose}
+                >
+                  <div className={cn("absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-200", branchSubmenuAnchor ? 'scale-y-100 opacity-100 shadow-[0_0_8px_var(--color-accent)]' : 'scale-y-0 opacity-0 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100')} />
+                  <span className="flex items-center gap-3"><GitBranch size={14} /> 分支</span>
+                  <ChevronRight size={14} opacity={0.4} />
+                </button>
+                <button className={MENU_ITEM} onClick={() => { setContextMenu(null); setShowNewWorktree(true) }}>
+                  <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                  <PlusIcon size={14} /> 新建工作树...
+                </button>
               </>
+            ) : (
+              <button className={MENU_ITEM} onClick={async () => {
+                setContextMenu(null)
+                await window.api.git.init(project.path)
+                await useGitStore.getState().fetchStatus(project.id, project.path)
+              }}>
+                <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                <PlusIcon size={14} /> 初始化仓库
+              </button>
             )}
 
             {/* Run */}
@@ -1010,7 +1012,7 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
             )}
 
             {/* Move to */}
-            {!isAnonymous && otherGroups.length > 0 && (
+            {otherGroups.length > 0 && (
               <>
                 <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
                 <button
@@ -1051,7 +1053,7 @@ export function ProjectItem({ project, onOpenProject }: ProjectItemProps): JSX.E
           )}
 
           {/* Branch submenu (hover popup) */}
-          {!isAnonymous && branchSubmenuAnchor && branchInfo && (
+          {branchSubmenuAnchor && branchInfo && (
             <BranchSubmenu
               project={project}
               branchInfo={branchInfo}

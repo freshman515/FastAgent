@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SessionType, ToastNotification, WorkspaceLayout } from '@shared/types'
+import type { SessionType, TerminalShellMode, ToastNotification, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
@@ -15,6 +15,7 @@ export type GitChangesViewMode = 'flat' | 'tree'
 export type GitReviewMode = 'claude-gui' | SessionType | `custom:${string}`
 export type GitReviewFixMode = 'claude-gui' | 'claude-code-cli'
 export type CanvasArrangeMode = 'free' | 'grid' | 'rowFlow' | 'colFlow'
+export type AppChromeStyle = 'floating' | 'joined'
 export type PaneUiMode = 'separated' | 'classic'
 export type TabUiMode = 'rounded' | 'square'
 export type PaneDensityMode = 'comfortable' | 'compact'
@@ -51,6 +52,17 @@ function normalizeGitReviewMode(raw: unknown): GitReviewMode | null {
     return raw as GitReviewMode
   }
   return GIT_REVIEW_SESSION_TYPES.has(raw as SessionType) ? raw as GitReviewMode : null
+}
+
+function normalizeTerminalShellMode(raw: unknown): TerminalShellMode {
+  return raw === 'auto'
+    || raw === 'pwsh'
+    || raw === 'powershell'
+    || raw === 'cmd'
+    || raw === 'gitbash'
+    || raw === 'custom'
+    ? raw
+    : DEFAULT_SETTINGS.terminalShellMode
 }
 
 export const DOCK_PANEL_IDS: DockPanelId[] = [
@@ -200,6 +212,12 @@ export interface AppSettings {
   newSessionOptionOrder: string[]
   /** Pop up a naming dialog when creating a new session */
   promptSessionNameOnCreate: boolean
+  /** Windows shell used for new Terminal and non-WSL agent PTYs. */
+  terminalShellMode: TerminalShellMode
+  /** Custom shell executable/path when terminalShellMode is custom. */
+  terminalShellCommand: string
+  /** Custom shell arguments when terminalShellMode is custom. */
+  terminalShellArgs: string
   wslDistroName: string
   wslShell: string
   wslUseLoginShell: boolean
@@ -219,6 +237,8 @@ export interface AppSettings {
   gitReviewFixMode: GitReviewFixMode
   /** Last visited settings dialog page — persisted so reopening lands on the previous tab */
   lastSettingsPage: string
+  /** Global shell treatment: floating rounded panels, or connected square panels. */
+  appChromeStyle: AppChromeStyle
   /** Visualizer canvas width in px (shared by melody and bars) */
   visualizerWidth: number
   /** Show play/pause/prev/next control buttons */
@@ -307,6 +327,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   hiddenNewSessionOptionIds: [],
   newSessionOptionOrder: [],
   promptSessionNameOnCreate: false,
+  terminalShellMode: 'auto',
+  terminalShellCommand: '',
+  terminalShellArgs: '',
   wslDistroName: '',
   wslShell: 'bash',
   wslUseLoginShell: false,
@@ -325,6 +348,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   gitReviewMode: 'codex',
   gitReviewFixMode: 'claude-gui',
   lastSettingsPage: 'general',
+  appChromeStyle: 'floating',
   visualizerWidth: 192,
   showPlayerControls: true,
   showTrackInfo: true,
@@ -379,7 +403,7 @@ interface UIState {
   dockPanelActiveTab: Record<DockSide, DockPanelId | null>
   dockPanelCollapsed: Record<DockSide, boolean>
   dockPanelWidth: Record<DockSide, number>
-  setDockPanelWidth: (side: DockSide, width: number) => void
+  setDockPanelWidth: (side: DockSide, width: number, persist?: boolean) => void
   toggleDockPanel: (side: DockSide) => void
   setDockPanelTab: (side: DockSide, tab: DockPanelId) => void
   activateDockPanel: (tab: DockPanelId) => void
@@ -1149,13 +1173,18 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   ...getDefaultDockPanelsState(),
 
-  setDockPanelWidth: (side, width) =>
+  setDockPanelWidth: (side, width, persist = true) =>
     set((state) => {
+      const nextWidth = clampDockPanelWidth(side, width)
+      if (state.dockPanelWidth[side] === nextWidth) return state
+
       const dockPanelWidth = {
         ...state.dockPanelWidth,
-        [side]: clampDockPanelWidth(side, width),
+        [side]: nextWidth,
       }
-      persistNextUI(state, { dockPanelWidth })
+      if (persist) {
+        persistNextUI(state, { dockPanelWidth })
+      }
       return { dockPanelWidth }
     }),
 
@@ -1346,6 +1375,9 @@ export const useUIStore = create<UIState>((set, get) => ({
         shouldPersistSettings = true
       }
       if (typeof raw.promptSessionNameOnCreate === 'boolean') s.promptSessionNameOnCreate = raw.promptSessionNameOnCreate
+      s.terminalShellMode = normalizeTerminalShellMode(raw.terminalShellMode)
+      if (typeof raw.terminalShellCommand === 'string') s.terminalShellCommand = raw.terminalShellCommand.trim()
+      if (typeof raw.terminalShellArgs === 'string') s.terminalShellArgs = raw.terminalShellArgs
       if (typeof raw.wslDistroName === 'string') s.wslDistroName = raw.wslDistroName.trim()
       if (typeof raw.wslShell === 'string') s.wslShell = raw.wslShell.trim() || DEFAULT_SETTINGS.wslShell
       if (typeof raw.wslUseLoginShell === 'boolean') s.wslUseLoginShell = raw.wslUseLoginShell
@@ -1454,6 +1486,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.workspaceLayout === 'panes' || raw.workspaceLayout === 'canvas') {
         s.workspaceLayout = raw.workspaceLayout
       }
+      if (raw.appChromeStyle === 'floating' || raw.appChromeStyle === 'joined') {
+        s.appChromeStyle = raw.appChromeStyle
+      }
       if (raw.paneUiMode === 'separated' || raw.paneUiMode === 'classic') {
         s.paneUiMode = raw.paneUiMode
       }
@@ -1496,6 +1531,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
     set({ settings: s })
     applyUIFont(s)
+    applyAppChromeStyle(s)
     registerCustomThemes(s.customThemes)
     applyTerminalThemeToApp(s.terminalTheme)
     if (shouldPersistSettings) {
@@ -1511,6 +1547,8 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   updateSettings: (updates) => {
     const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
+    settings.terminalShellMode = normalizeTerminalShellMode(settings.terminalShellMode)
+    settings.terminalShellCommand = settings.terminalShellCommand.trim()
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)
     if (
@@ -1528,6 +1566,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       dockPanelWidth: get().dockPanelWidth,
     })
     applyUIFont(settings)
+    applyAppChromeStyle(settings)
     if (updates.customThemes !== undefined) {
       registerCustomThemes(updates.customThemes)
     }
@@ -1603,4 +1642,10 @@ function applyUIFont(settings: AppSettings): void {
   root.style.setProperty('--ui-font-base', `${base}px`)                   // primary text
   root.style.setProperty('--ui-font-md', `${Math.round(14 * scale)}px`)   // headings
   root.style.setProperty('--ui-font-family', settings.uiFontFamily)
+}
+
+function applyAppChromeStyle(settings: AppSettings): void {
+  const root = document.documentElement
+  root.classList.toggle('app-chrome-joined', settings.appChromeStyle === 'joined')
+  root.classList.toggle('app-chrome-floating', settings.appChromeStyle === 'floating')
 }

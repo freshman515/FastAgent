@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/ui'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { switchProjectContext } from '@/lib/project-context'
+import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
 import { isTerminalSessionType } from '@shared/types'
 
 function focusCanvasCardSoon(cardId: string): void {
@@ -81,5 +82,6 @@ export function focusSessionTarget(sessionId: string): boolean {
     useCanvasUiStore.getState().requestSessionFocus(sessionId)
     focusCanvasSessionTarget(sessionId)
   }
+  scrollTerminalToLatestSoon(sessionId)
   return true
 }

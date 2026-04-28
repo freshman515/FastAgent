@@ -75,6 +75,42 @@
   --animate-fade-in: fade-in 0.15s ease-out;
 }
 
+:root.app-chrome-joined {
+  --layout-gap: 1px;
+}
+
+.app-chrome-joined .app-content-shell {
+  background: var(--color-border);
+}
+
+.app-chrome-joined .app-status-shell,
+.app-chrome-joined .status-bar-frame {
+  background: var(--color-bg-secondary);
+}
+
+.app-chrome-joined .app-main-frame,
+.app-chrome-joined .dock-strip-frame,
+.app-chrome-joined .dock-panel-content-frame,
+.app-chrome-joined .status-bar-frame,
+.app-chrome-joined .split-pane-frame,
+.app-chrome-joined .split-node-frame,
+.app-chrome-joined .pane-highlight-frame {
+  border-radius: 0 !important;
+}
+
+.app-chrome-joined .dock-strip-frame {
+  background: var(--color-bg-secondary);
+}
+
+.app-chrome-joined .dock-panel-frame {
+  box-shadow: none !important;
+}
+
+.settings-dialog,
+.settings-dialog * {
+  font-weight: 400 !important;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
@@ -285,6 +321,35 @@ body,
   background: color-mix(in srgb, var(--color-border) 55%, transparent);
   pointer-events: none;
   transition: opacity 120ms ease;
+}
+
+.tab-drag-image {
+  background: var(--color-bg-tertiary) !important;
+  color: var(--color-text-primary) !important;
+  opacity: 1 !important;
+  border-radius: 10px 10px 0 0 !important;
+  box-shadow:
+    inset 0 2px 0 0 color-mix(in srgb, var(--color-accent) 72%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.35) !important;
+}
+
+.tab-drag-image::before,
+.tab-drag-image::after {
+  display: none !important;
+}
+
+body.fastagents-tab-dragging,
+body.fastagents-tab-dragging * {
+  cursor: grabbing !important;
+}
+
+.tab-dragging-source {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-tertiary)) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow:
+    inset 0 2px 0 0 color-mix(in srgb, var(--color-accent) 64%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 /* Hide the divider next to the active tab / on hover — cleaner look */

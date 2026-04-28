@@ -1,6 +1,5 @@
 import type { HistoricalSession, Session, SessionType } from '@shared/types'
 import { isClaudeCodeType, isCodexType } from '@shared/types'
-import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { switchProjectContext } from '@/lib/project-context'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -59,7 +58,6 @@ function sessionTypeFor(entry: HistoricalSession): SessionType {
 export interface ResumeResult {
   sessionId: string
   matchedProjectId: string | null
-  anonymous: boolean
   /** True when we focused an already-open tab instead of creating a new one. */
   reused: boolean
 }
@@ -83,7 +81,7 @@ function findExistingSession(entry: HistoricalSession, sessions: Session[]): Ses
 
 function focusExistingSession(session: Session): void {
   // Re-enter the session's project context so the pane strip shows its tab,
-  // then surface + activate it. Mirrors the flow in createAnonymousTerminal.
+  // then surface + activate it.
   switchProjectContext(session.projectId, session.id, session.worktreeId ?? null)
   const paneStore = usePanesStore.getState()
   const existingPane = paneStore.findPaneForSession(session.id)
@@ -107,19 +105,15 @@ export async function resumeHistoricalSession(entry: HistoricalSession): Promise
     return {
       sessionId: existing.id,
       matchedProjectId: existing.projectId,
-      anonymous: false,
       reused: true,
     }
   }
 
   const matchedProjectId = findMatchingProjectId(entry.cwd)
-  let projectId = matchedProjectId
-  let anonymous = false
-  if (!projectId) {
-    const anon = await ensureAnonymousProject()
-    projectId = anon.id
-    anonymous = true
+  if (!matchedProjectId) {
+    throw new Error(`未找到与 ${entry.cwd || '该历史会话'} 匹配的项目，请先把对应目录添加到项目列表。`)
   }
+  const projectId = matchedProjectId
 
   const sessionType = sessionTypeFor(entry)
   const name = buildSessionName(entry)
@@ -150,5 +144,5 @@ export async function resumeHistoricalSession(entry: HistoricalSession): Promise
   paneStore.setPaneActiveSession(paneStore.activePaneId, sessionId)
   useSessionsStore.getState().setActive(sessionId)
 
-  return { sessionId, matchedProjectId, anonymous, reused: false }
+  return { sessionId, matchedProjectId, reused: false }
 }

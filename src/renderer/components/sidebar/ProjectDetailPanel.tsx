@@ -35,7 +35,8 @@ interface BranchView {
   dirty: boolean
 }
 
-const TREE_ROW = 'group/tree flex min-h-7 w-full items-center gap-2 rounded-[var(--radius-sm)] pr-2 text-left transition-colors'
+const TREE_ROW = 'group/tree relative flex min-h-7 w-full items-center gap-2 overflow-hidden rounded-[var(--radius-sm)] pr-2 text-left transition-colors'
+const ACTIVE_TAB_ROW = 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
 const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none transition-all duration-200 focus:border-[var(--color-accent)] focus:bg-black/40'
 const MODAL_PANEL = 'fixed left-1/2 top-1/3 z-[210] -translate-x-1/2 rounded-[var(--radius-lg)] border border-white/[0.08] bg-[var(--color-bg-secondary)]/95 p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.05)] backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-200'
 
@@ -524,7 +525,7 @@ export function ProjectDetailPanel({ projectId, onBack }: ProjectDetailPanelProp
     : branchView.sessions.length + branchView.editors.length
 
   const renderTabs = (tabSessions: Session[], tabs: EditorTab[], worktree?: Worktree): JSX.Element => (
-    <>
+    <div className="space-y-1">
       {tabSessions.map((session) => {
         const active = activeTabId === session.id
         const outputState = outputStates[session.id]
@@ -536,11 +537,12 @@ export function ProjectDetailPanel({ projectId, onBack }: ProjectDetailPanelProp
             className={cn(
               TREE_ROW,
               'pl-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-              active && 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]',
+              active && ACTIVE_TAB_ROW,
             )}
           >
+            {active && <span className="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r-full bg-[var(--color-accent)]" />}
             <SessionIconView fallbackSrc={getSessionIcon(session.type, isDarkTheme)} icon={session.customSessionIcon} className="h-4 w-4" imageClassName="h-3.5 w-3.5 object-contain" />
-            <span className="min-w-0 flex-1 truncate text-[12px]">{session.name}</span>
+            <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] leading-5">{session.name}</span>
             {session.status === 'running' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" />}
             {outputState === 'outputting' && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-accent)]" />}
             {outputState === 'unread' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />}
@@ -558,22 +560,23 @@ export function ProjectDetailPanel({ projectId, onBack }: ProjectDetailPanelProp
             className={cn(
               TREE_ROW,
               'pl-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-              active && 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)]',
+              active && ACTIVE_TAB_ROW,
             )}
           >
+            {active && <span className="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r-full bg-[var(--color-accent)]" />}
             <span
               className="flex h-4 w-5 shrink-0 items-center justify-center rounded-[3px] text-[8px] font-bold"
               style={{ backgroundColor: `${iconInfo.color}22`, color: iconInfo.color }}
             >
               {iconInfo.icon}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[12px]">{tab.fileName}</span>
+            <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] leading-5">{tab.fileName}</span>
             {tab.modified && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />}
             {tab.isDiff && <FileCode2 size={11} className="text-[var(--color-text-tertiary)]" />}
           </button>
         )
       })}
-    </>
+    </div>
   )
 
   if (!project) {
@@ -882,8 +885,8 @@ export function ProjectDetailPanel({ projectId, onBack }: ProjectDetailPanelProp
                   >
                     <SessionIconView fallbackSrc={getSessionIcon(iconType, isDarkTheme)} className="h-4 w-4" imageClassName="h-3.5 w-3.5 object-contain" />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] font-medium">{getHistoryTitle(session)}</div>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[9px] text-[var(--color-text-tertiary)]">
+                      <div className="truncate text-[var(--ui-font-sm)] font-medium leading-5">{getHistoryTitle(session)}</div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)]">
                         <span className="truncate">{session.source === 'codex' ? 'Codex' : 'Claude'}</span>
                         <span className="h-2.5 w-px shrink-0 bg-[var(--color-border)]" />
                         <span className="shrink-0">{time > 0 ? formatRelativeTime(time) : '未知时间'}</span>

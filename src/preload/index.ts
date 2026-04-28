@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '@shared/types'
 import type {
+  AppInfo,
   ClaudeCodeContext,
   ClaudeCodeLocalUsage,
   UpdaterEvent,
@@ -29,6 +30,8 @@ import type {
   SessionDataEvent,
   SessionExitEvent,
   SessionReplayPayload,
+  TerminalShellAvailability,
+  TerminalShellMode,
 } from '@shared/types'
 
 interface OpencodeRequest {
@@ -46,6 +49,10 @@ interface OpencodeSubscriptionRequest {
 }
 
 const api = {
+  app: {
+    getInfo: () => ipcRenderer.invoke(IPC.APP_INFO) as Promise<AppInfo>,
+  },
+
   window: {
     minimize: () => ipcRenderer.invoke(IPC.WINDOW_MINIMIZE),
     maximize: () => ipcRenderer.invoke(IPC.WINDOW_MAXIMIZE),
@@ -83,6 +90,8 @@ const api = {
       ipcRenderer.invoke(IPC.SHELL_OPEN_IN_IDE, ide, path) as Promise<OpenIdeResult>,
     listIdes: () =>
       ipcRenderer.invoke(IPC.SHELL_LIST_IDES) as Promise<ExternalIdeOption[]>,
+    resolveTerminalShell: (mode: TerminalShellMode) =>
+      ipcRenderer.invoke(IPC.SHELL_RESOLVE_TERMINAL_SHELL, mode) as Promise<TerminalShellAvailability>,
   },
 
   session: {
@@ -394,8 +403,6 @@ const api = {
         canvas?: Record<string, unknown>
         claudeGui?: Record<string, unknown>
       }>,
-    getAnonymousWorkspace: () =>
-      ipcRenderer.invoke('config:get-anonymous-workspace') as Promise<string>,
     write: (key: string, value: unknown) => ipcRenderer.invoke('config:write', key, value),
   },
 

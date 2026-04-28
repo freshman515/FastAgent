@@ -1,5 +1,6 @@
 import { GitBranch, List, Maximize2, Minimize2, Minus, MoreHorizontal, Plus, Square, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
+import { LayoutGroup, motion } from 'framer-motion'
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { usePanesStore, registerPaneElement, getPaneLeafIds, type PaneNode, type SplitPosition } from '@/stores/panes'
@@ -9,6 +10,7 @@ import { useEditorsStore, FILE_ICONS } from '@/stores/editors'
 import { useGitStore } from '@/stores/git'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { beginTabDragGuard, endTabDragGuard, getCurrentTabDragData } from '@/lib/tabDragGuard'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionTab } from '@/components/session/SessionTab'
 import { NewSessionMenu } from '@/components/session/NewSessionMenu'
@@ -38,13 +40,77 @@ interface WindowDragState {
 const isDetached = window.api.detach.isDetached
 
 function isTabDrag(e: React.DragEvent): boolean {
-  return e.dataTransfer.types.includes('session-tab-id') || e.dataTransfer.types.includes('session-tab-drag-token')
+  return e.dataTransfer.types.includes('session-tab-id')
+    || e.dataTransfer.types.includes('session-tab-drag-token')
+    || getCurrentTabDragData() !== null
+}
+
+interface TabDragMeta {
+  tabId: string
+  sourcePaneId: string
+  sourceWindowId: string
+}
+
+function getTabDragMeta(event: React.DragEvent): TabDragMeta | null {
+  const currentDrag = getCurrentTabDragData()
+  const tabId = event.dataTransfer.getData('session-tab-id') || currentDrag?.tabId || ''
+  const sourcePaneId = event.dataTransfer.getData('source-pane-id') || currentDrag?.sourcePaneId || ''
+  const sourceWindowId = event.dataTransfer.getData('source-window-id') || currentDrag?.sourceWindowId || 'main'
+
+  if (!tabId || !sourcePaneId) return null
+  return { tabId, sourcePaneId, sourceWindowId }
+}
+
+function getDropSideFromEvent(event: React.DragEvent): 'left' | 'right' {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  return event.clientX < rect.left + rect.width / 2 ? 'left' : 'right'
+}
+
+function getTabPointerRatio(event: React.DragEvent): number {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  if (rect.width <= 0) return 0.5
+  return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+}
+
+function getStableDropSide(event: React.DragEvent, previousSide: 'left' | 'right' | null): 'left' | 'right' | null {
+  const ratio = getTabPointerRatio(event)
+  if (ratio < 0.42) return 'left'
+  if (ratio > 0.58) return 'right'
+  return previousSide
+}
+
+function setTabDragImage(event: React.DragEvent): void {
+  const source = event.currentTarget as HTMLElement
+  const rect = source.getBoundingClientRect()
+  const preview = source.cloneNode(true) as HTMLElement
+  preview.classList.add('tab-drag-image')
+  preview.style.position = 'fixed'
+  preview.style.left = '0'
+  preview.style.top = '0'
+  preview.style.width = `${rect.width}px`
+  preview.style.height = `${rect.height}px`
+  preview.style.opacity = '1'
+  preview.style.pointerEvents = 'none'
+  preview.style.transform = 'translate(-200vw, -200vh)'
+  preview.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.35)'
+  document.body.appendChild(preview)
+  event.dataTransfer.setDragImage(
+    preview,
+    Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+    Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+  )
+  const remove = (): void => preview.remove()
+  window.addEventListener('drop', remove, { once: true, capture: true })
+  window.addEventListener('dragend', remove, { once: true, capture: true })
+  window.setTimeout(remove, 30000)
 }
 
 type EditorTabItem = ReturnType<typeof useEditorsStore.getState>['tabs'][number]
 type PaneTabItem =
   | { kind: 'session'; id: string; session: ReturnType<typeof useSessionsStore.getState>['sessions'][number] }
   | { kind: 'editor'; id: string; tab: EditorTabItem }
+type ExternalDragPreview = { tabId: string; targetId: string | null; side: 'left' | 'right' }
+type LiveTabPlacement = { tabId: string; targetId: string | null; side: 'left' | 'right'; targetPaneId: string }
 type DetachedTabDragPayload =
   | { kind: 'session'; session: ReturnType<typeof useSessionsStore.getState>['sessions'][number]; sourcePaneId: string; sourceWindowId: string }
   | { kind: 'editor'; editor: EditorTabItem; sourcePaneId: string; sourceWindowId: string }
@@ -155,7 +221,7 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
   onDragStart: (id: string, e: React.DragEvent) => void
   onDragOver: (id: string, e: React.DragEvent) => void
   onDragLeave: () => void
-  onDrop: (id: string) => void
+  onDrop: (id: string, e: React.DragEvent) => void
   onDragEnd: () => void
   onSelect: () => void
   canSplitSameType?: boolean
@@ -292,6 +358,8 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
       <div
         draggable
         onDragStart={(e) => {
+          setTabDragImage(e)
+          beginTabDragGuard({ tabId: tab.id, sourcePaneId: paneId, sourceWindowId: currentWindowId })
           const liveTab = useEditorsStore.getState().getTab(tab.id) ?? tab
           const dragToken = `tabdrag-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           dragTokenRef.current = dragToken
@@ -308,11 +376,21 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
           } satisfies DetachedTabDragPayload)
           onDragStart(tab.id, e)
         }}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(tab.id, e) }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          e.dataTransfer.dropEffect = 'move'
+          onDragOver(tab.id, e)
+        }}
         onDragLeave={onDragLeave}
-        onDrop={() => onDrop(tab.id)}
+        onDrop={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onDrop(tab.id, e)
+        }}
         onDragEnd={(e) => {
           onDragEnd()
+          endTabDragGuard()
           const dragToken = dragTokenRef.current
           dragTokenRef.current = null
           const dragResult = dragToken ? window.api.detach.finishTabDrag(dragToken) : null
@@ -339,7 +417,7 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
           'no-drag group flex h-[34px] cursor-pointer items-center gap-2 px-3 max-w-[220px] min-w-[120px]',
           'transition-all duration-200',
           activeTabClass,
-          isDragging && 'opacity-40',
+          isDragging && 'tab-dragging-source',
         )}
       >
         {/* File type icon */}
@@ -593,13 +671,13 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const [dropHighlight, setDropHighlight] = useState(false)
   const [edgeDrop, setEdgeDrop] = useState<DropZone | null>(null)
   const [dragTabId, setDragTabId] = useState<string | null>(null)
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
-  const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null)
+  const [externalDragPreview, setExternalDragPreview] = useState<ExternalDragPreview | null>(null)
   const termAreaRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const paneMenuButtonRef = useRef<HTMLButtonElement>(null)
   const tabListButtonRef = useRef<HTMLButtonElement>(null)
   const windowDragRef = useRef<WindowDragState | null>(null)
+  const liveTabPlacementRef = useRef<LiveTabPlacement | null>(null)
   const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
   const [paneActionMenu, setPaneActionMenu] = useState<{ x: number; y: number } | null>(null)
   const [tabListMenu, setTabListMenu] = useState<{ x: number; y: number } | null>(null)
@@ -656,6 +734,35 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     ? paneActiveSessionId
     : (paneSessions[0] ?? null)
 
+  const displayedTabs = useMemo<PaneTabItem[]>(() => {
+    if (!externalDragPreview || orderedTabs.some((tab) => tab.id === externalDragPreview.tabId)) {
+      return orderedTabs
+    }
+
+    const previewTab: PaneTabItem | null = externalDragPreview.tabId.startsWith('editor-')
+      ? (() => {
+          const tab = allEditorTabs.find((item) => item.id === externalDragPreview.tabId)
+          return tab ? { kind: 'editor' as const, id: tab.id, tab } : null
+        })()
+      : (() => {
+          const session = allSessions.find((item) => item.id === externalDragPreview.tabId)
+          return session ? { kind: 'session' as const, id: session.id, session } : null
+        })()
+
+    if (!previewTab) return orderedTabs
+
+    const next = [...orderedTabs]
+    const targetIndex = externalDragPreview.targetId
+      ? next.findIndex((tab) => tab.id === externalDragPreview.targetId)
+      : -1
+    const insertIndex = targetIndex === -1
+      ? next.length
+      : targetIndex + (externalDragPreview.side === 'right' ? 1 : 0)
+
+    next.splice(insertIndex, 0, previewTab)
+    return next
+  }, [allEditorTabs, allSessions, externalDragPreview, orderedTabs])
+
   const openPaneActionMenu = useCallback(() => {
     const rect = paneMenuButtonRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -680,6 +787,78 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     setPaneActionMenu(null)
     setTabListMenu(null)
   }, [getSameTypeTabIds, paneId, paneSessions.length])
+
+  const moveDraggedTabToEnd = useCallback((draggedId: string) => {
+    const state = usePanesStore.getState()
+    const current = state.paneSessions[paneId] ?? []
+    const fromIndex = current.indexOf(draggedId)
+    if (fromIndex === -1 || fromIndex === current.length - 1) return
+    const next = [...current]
+    const [moved] = next.splice(fromIndex, 1)
+    next.push(moved)
+    state.setPaneSessionOrder(paneId, next)
+  }, [paneId])
+
+  const placeTabInPane = useCallback((tabId: string, targetId: string | null, side: 'left' | 'right') => {
+    const state = usePanesStore.getState()
+    const current = state.paneSessions[paneId] ?? []
+    if (!current.includes(tabId)) return
+
+    const withoutDragged = current.filter((id) => id !== tabId)
+    const targetIndex = targetId ? withoutDragged.indexOf(targetId) : -1
+    const insertIndex = targetIndex === -1
+      ? withoutDragged.length
+      : targetIndex + (side === 'right' ? 1 : 0)
+    const next = [...withoutDragged]
+    next.splice(insertIndex, 0, tabId)
+
+    if (next.length === current.length && next.every((id, index) => id === current[index])) return
+    state.setPaneSessionOrder(paneId, next)
+  }, [paneId])
+
+  const activatePaneTab = useCallback((tabId: string) => {
+    const store = usePanesStore.getState()
+    store.setActivePaneId(paneId)
+    store.setPaneActiveSession(paneId, tabId)
+    if (!tabId.startsWith('editor-')) {
+      useSessionsStore.getState().setActive(tabId)
+    }
+  }, [paneId])
+
+  const handleLiveTabDragOver = useCallback((targetId: string, event: React.DragEvent) => {
+    const meta = getTabDragMeta(event)
+    const draggedId = dragTabId ?? (meta?.sourceWindowId === currentWindowId ? meta.tabId : null)
+    if (meta && meta.sourcePaneId !== paneId && targetId === meta.tabId) return
+    const previousPlacement = liveTabPlacementRef.current
+    const previousSide = previousPlacement?.tabId === draggedId
+      && previousPlacement.targetId === targetId
+      && previousPlacement.targetPaneId === paneId
+      ? previousPlacement.side
+      : null
+    const side = getStableDropSide(event, previousSide)
+    if (!side) return
+
+    if (meta && meta.sourceWindowId === currentWindowId && meta.sourcePaneId !== paneId) {
+      setExternalDragPreview((current) => (
+        current?.tabId === meta.tabId && current.targetId === targetId && current.side === side
+          ? current
+          : { tabId: meta.tabId, targetId, side }
+      ))
+      liveTabPlacementRef.current = { tabId: meta.tabId, targetId, side, targetPaneId: paneId }
+      return
+    }
+
+    setExternalDragPreview(null)
+    if (!draggedId || draggedId === targetId) return
+    if (previousPlacement?.tabId === draggedId
+      && previousPlacement.targetId === targetId
+      && previousPlacement.side === side
+      && previousPlacement.targetPaneId === paneId) {
+      return
+    }
+    placeTabInPane(draggedId, targetId, side)
+    liveTabPlacementRef.current = { tabId: draggedId, targetId, side, targetPaneId: paneId }
+  }, [currentWindowId, dragTabId, paneId, placeTabInPane])
 
   const organizePaneTabsByType = useCallback(() => {
     const groupRank = new Map(PANE_TAB_GROUP_ORDER.map((group, index) => [group, index]))
@@ -854,7 +1033,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
 
   const attachDraggedTab = useCallback((dragToken: string, zone?: DropZone | null) => {
     const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId) as DetachedTabDragPayload | null
-    if (!payload) return false
+    if (!payload) return null
 
     const tabId = payload.kind === 'session' ? payload.session.id : payload.editor.id
     if (payload.kind === 'session') {
@@ -876,8 +1055,69 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     if (payload.kind === 'session') {
       useSessionsStore.getState().setActive(payload.session.id)
     }
-    return true
+    return tabId
   }, [currentWindowId, paneId])
+
+  const commitDroppedTab = useCallback((targetId: string | null, side: 'left' | 'right', event: React.DragEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDropHighlight(false)
+    setEdgeDrop(null)
+    setExternalDragPreview(null)
+
+    const meta = getTabDragMeta(event)
+    const placement = liveTabPlacementRef.current
+    let resolvedTargetId = targetId
+    let resolvedSide = side
+    if (meta && placement?.tabId === meta.tabId && placement.targetPaneId === paneId) {
+      const targetSessions = usePanesStore.getState().paneSessions[paneId] ?? []
+      if (!resolvedTargetId || resolvedTargetId === meta.tabId || !targetSessions.includes(resolvedTargetId)) {
+        resolvedTargetId = placement.targetId
+        resolvedSide = placement.side
+      }
+    }
+    const dragToken = event.dataTransfer.getData('session-tab-drag-token')
+      || window.api.detach.getActiveTabDrag()
+    const sourceWindowId = meta?.sourceWindowId
+      || event.dataTransfer.getData('source-window-id')
+      || 'main'
+
+    if (dragToken && sourceWindowId !== currentWindowId) {
+      const attachedId = attachDraggedTab(dragToken)
+      if (attachedId) {
+        placeTabInPane(attachedId, resolvedTargetId, resolvedSide)
+        activatePaneTab(attachedId)
+      }
+      return
+    }
+
+    if (sourceWindowId !== currentWindowId && !dragToken) return
+
+    if (!meta && dragToken) {
+      const attachedId = attachDraggedTab(dragToken)
+      if (attachedId) {
+        placeTabInPane(attachedId, resolvedTargetId, resolvedSide)
+        activatePaneTab(attachedId)
+      }
+      return
+    }
+
+    if (!meta) return
+
+    const store = usePanesStore.getState()
+    if (meta.sourcePaneId !== paneId && !(store.paneSessions[paneId] ?? []).includes(meta.tabId)) {
+      store.moveSession(meta.sourcePaneId, paneId, meta.tabId)
+    }
+
+    placeTabInPane(meta.tabId, resolvedTargetId, resolvedSide)
+    activatePaneTab(meta.tabId)
+    setDragTabId(null)
+    liveTabPlacementRef.current = null
+  }, [activatePaneTab, attachDraggedTab, currentWindowId, paneId, placeTabInPane])
+
+  const handleTabDrop = useCallback((targetId: string, event: React.DragEvent) => {
+    commitDroppedTab(targetId, getDropSideFromEvent(event), event)
+  }, [commitDroppedTab])
 
   // Register pane DOM element for rect-based navigation
   useEffect(() => {
@@ -888,6 +1128,28 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   useEffect(() => {
     return () => stopWindowDrag()
   }, [stopWindowDrag])
+
+  useEffect(() => {
+    if (!dragTabId && !externalDragPreview) return
+
+    const endDrag = (): void => {
+      setDragTabId(null)
+      setExternalDragPreview(null)
+      liveTabPlacementRef.current = null
+      setDropHighlight(false)
+      setEdgeDrop(null)
+    }
+    const endDragSoon = (): void => {
+      window.setTimeout(endDrag, 0)
+    }
+
+    window.addEventListener('drop', endDragSoon, true)
+    window.addEventListener('dragend', endDrag, true)
+    return () => {
+      window.removeEventListener('drop', endDragSoon, true)
+      window.removeEventListener('dragend', endDrag, true)
+    }
+  }, [dragTabId, externalDragPreview])
 
   return (
     <div
@@ -903,7 +1165,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       {isMultiPane && showActivePaneBorder && isActivePane && (
         <div
           className={cn(
-            'pointer-events-none absolute inset-0 z-50',
+            'pane-highlight-frame pointer-events-none absolute inset-0 z-50',
             paneUiMode !== 'classic' && 'rounded-[var(--radius-panel)]',
           )}
           style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 4%, transparent)' }}
@@ -914,7 +1176,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         className={cn(
           'tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]',
           tabUiMode === 'square' ? 'tab-style-square' : 'tab-style-rounded',
-          dropHighlight && 'ring-2 ring-inset ring-[var(--color-accent)]',
+          dropHighlight && 'shadow-[inset_0_-1px_0_var(--color-accent-muted)] bg-[color-mix(in_srgb,var(--color-accent)_5%,var(--color-bg-secondary))]',
         )}
         style={{ height: paneDensityMode === 'compact' ? 32 : 38 }}
         onContextMenu={(e) => {
@@ -937,31 +1199,21 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         onDragOver={(e) => {
           if (isTabDrag(e)) {
             e.preventDefault()
+            e.stopPropagation()
             e.dataTransfer.dropEffect = 'move'
             setDropHighlight(true)
           }
         }}
-        onDragLeave={() => setDropHighlight(false)}
-        onDrop={(e) => {
+        onDragLeave={(e) => {
+          const nextTarget = e.relatedTarget
+          if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) return
           setDropHighlight(false)
-          const sessionId = e.dataTransfer.getData('session-tab-id')
-          const sourcePaneId = e.dataTransfer.getData('source-pane-id')
-          const sourceWindowId = e.dataTransfer.getData('source-window-id') || 'main'
-          const dragToken = e.dataTransfer.getData('session-tab-drag-token')
-            || window.api.detach.getActiveTabDrag()
-          if (dragToken && sourceWindowId !== currentWindowId) {
-            attachDraggedTab(dragToken)
-            return
-          }
-          if (sourceWindowId !== currentWindowId && !dragToken) return
-          // Cross-window fallback: getData may return empty, use IPC token
-          if (!sessionId && dragToken) {
-            attachDraggedTab(dragToken)
-            return
-          }
-          if (sessionId && sourcePaneId && sourcePaneId !== paneId) {
-            usePanesStore.getState().moveSession(sourcePaneId, paneId, sessionId)
-          }
+          setExternalDragPreview(null)
+          liveTabPlacementRef.current = null
+        }}
+        onDrop={(e) => {
+          if (!isTabDrag(e)) return
+          commitDroppedTab(externalDragPreview?.targetId ?? null, externalDragPreview?.side ?? 'right', e)
         }}
       >
         {/* Scrollable tabs + buttons area */}
@@ -971,6 +1223,47 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             paneDensityMode === 'compact' ? 'px-1' : 'px-2',
           )}
           style={{ position: 'relative', zIndex: 1 }}
+          onDragOver={(e) => {
+            if (!isTabDrag(e)) return
+            e.preventDefault()
+            e.stopPropagation()
+            e.dataTransfer.dropEffect = 'move'
+            const meta = getTabDragMeta(e)
+            const target = e.target as HTMLElement
+            if (target.closest('[data-pane-tab-id]')) return
+            if (meta && meta.sourceWindowId === currentWindowId && meta.sourcePaneId !== paneId) {
+              const tabStrip = e.currentTarget as HTMLElement
+              const realTabRects = Array.from(tabStrip.querySelectorAll<HTMLElement>('[data-pane-tab-id]'))
+                .filter((el) => el.dataset.paneTabId !== meta.tabId)
+                .map((el) => el.getBoundingClientRect())
+              const lastRight = realTabRects.length > 0
+                ? Math.max(...realTabRects.map((rect) => rect.right))
+                : -Infinity
+              const shouldMoveToEnd = realTabRects.length === 0 || e.clientX > lastRight + 4
+              if (!shouldMoveToEnd && externalDragPreview?.tabId === meta.tabId) return
+              setExternalDragPreview((current) => (
+                current?.tabId === meta.tabId && current.targetId === null && current.side === 'right'
+                  ? current
+          : { tabId: meta.tabId, targetId: null, side: 'right' }
+      ))
+      liveTabPlacementRef.current = { tabId: meta.tabId, targetId: null, side: 'right', targetPaneId: paneId }
+      return
+    }
+            setExternalDragPreview(null)
+            const draggedId = dragTabId ?? (
+              meta?.sourceWindowId === currentWindowId && meta.sourcePaneId === paneId ? meta.tabId : null
+            )
+            if (!draggedId) return
+            const previousPlacement = liveTabPlacementRef.current
+            if (previousPlacement?.tabId === draggedId
+              && previousPlacement.targetId === null
+              && previousPlacement.side === 'right'
+              && previousPlacement.targetPaneId === paneId) {
+              return
+            }
+            moveDraggedTabToEnd(draggedId)
+            liveTabPlacementRef.current = { tabId: draggedId, targetId: null, side: 'right', targetPaneId: paneId }
+          }}
           onMouseDown={handleTopBarBlankMouseDown}
           onDoubleClick={handleTopBarBlankDoubleClick}
         >
@@ -994,71 +1287,83 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               </span>
             )
           })()}
-          {orderedTabs.map((tab, index) => tab.kind === 'session' ? (
-            <SessionTab
-              key={tab.id}
-              session={tab.session}
-              isActive={tab.id === paneActiveSessionId}
-              isPaneFocused={isActivePane}
-              paneId={paneId}
-              isDragging={dragTabId === tab.id}
-              showDivider={index < orderedTabs.length - 1}
-              dropSide={dropTargetId === tab.id ? dropSide : null}
-              onDragStart={(id) => setDragTabId(id)}
-              onDragOver={(id, e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                const mid = rect.left + rect.width / 2
-                setDropTargetId(id)
-                setDropSide(e.clientX < mid ? 'left' : 'right')
-              }}
-              onDragLeave={() => { setDropTargetId(null); setDropSide(null) }}
-              onDrop={(id) => {
-                if (dragTabId && dragTabId !== id) {
-                  usePanesStore.getState().reorderPaneSessions(paneId, dragTabId, id)
-                }
-                setDropTargetId(null); setDropSide(null)
-              }}
-              onDragEnd={() => { setDragTabId(null); setDropTargetId(null); setDropSide(null) }}
-              canSplitSameType={canSplitSameType(tab.id)}
-              onSplitSameType={splitSameTypeToNewPane}
-              sameTypeLabel={PANE_TAB_GROUP_LABEL[tabGroupById.get(tab.id) ?? 'other']}
-            />
-          ) : (
-            <EditorTabButton
-              key={tab.id}
-              tab={tab.tab}
-              isActive={tab.id === paneActiveSessionId}
-              isPaneFocused={isActivePane}
-              paneId={paneId}
-              projectId={projectId}
-              currentWindowId={currentWindowId}
-              isDragging={dragTabId === tab.id}
-              showDivider={index < orderedTabs.length - 1}
-              dropSide={dropTargetId === tab.id ? dropSide : null}
-              onDragStart={(id) => setDragTabId(id)}
-              onDragOver={(id, e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                const mid = rect.left + rect.width / 2
-                setDropTargetId(id)
-                setDropSide(e.clientX < mid ? 'left' : 'right')
-              }}
-              onDragLeave={() => { setDropTargetId(null); setDropSide(null) }}
-              onDrop={(id) => {
-                if (dragTabId && dragTabId !== id) {
-                  usePanesStore.getState().reorderPaneSessions(paneId, dragTabId, id)
-                }
-                setDropTargetId(null); setDropSide(null)
-              }}
-              onDragEnd={() => { setDragTabId(null); setDropTargetId(null); setDropSide(null) }}
-              onSelect={() => {
-                usePanesStore.getState().setPaneActiveSession(paneId, tab.id)
-                usePanesStore.getState().setActivePaneId(paneId)
-              }}
-              canSplitSameType={canSplitSameType(tab.id)}
-              onSplitSameType={splitSameTypeToNewPane}
-              sameTypeLabel={PANE_TAB_GROUP_LABEL[tabGroupById.get(tab.id) ?? 'file']}
-            />
-          ))}
+          <LayoutGroup id={`pane-tabs-${paneId}`}>
+            {displayedTabs.map((tab, index) => (
+              <motion.div
+                key={tab.id}
+                layout="position"
+                data-pane-tab-id={tab.id}
+                transition={{ type: 'spring', stiffness: 520, damping: 42, mass: 0.55 }}
+                className="flex shrink-0 items-end"
+                style={{
+                  zIndex: dragTabId === tab.id || externalDragPreview?.tabId === tab.id ? 3 : 1,
+                  pointerEvents: externalDragPreview?.tabId === tab.id ? 'none' : undefined,
+                }}
+              >
+                {tab.kind === 'session' ? (
+                  <SessionTab
+                    session={tab.session}
+                    isActive={tab.id === paneActiveSessionId}
+                    isPaneFocused={isActivePane}
+                    paneId={paneId}
+                    isDragging={dragTabId === tab.id || externalDragPreview?.tabId === tab.id}
+                    showDivider={index < displayedTabs.length - 1}
+                    dropSide={null}
+                    onDragStart={(id) => {
+                      setDragTabId(id)
+                      liveTabPlacementRef.current = null
+                    }}
+                    onDragOver={(id, e) => {
+                      handleLiveTabDragOver(id, e)
+                    }}
+                    onDragLeave={() => {}}
+                    onDrop={handleTabDrop}
+                    onDragEnd={() => {
+                      setDragTabId(null)
+                      setExternalDragPreview(null)
+                      liveTabPlacementRef.current = null
+                    }}
+                    canSplitSameType={canSplitSameType(tab.id)}
+                    onSplitSameType={splitSameTypeToNewPane}
+                    sameTypeLabel={PANE_TAB_GROUP_LABEL[tabGroupById.get(tab.id) ?? 'other']}
+                  />
+                ) : (
+                  <EditorTabButton
+                    tab={tab.tab}
+                    isActive={tab.id === paneActiveSessionId}
+                    isPaneFocused={isActivePane}
+                    paneId={paneId}
+                    projectId={projectId}
+                    currentWindowId={currentWindowId}
+                    isDragging={dragTabId === tab.id || externalDragPreview?.tabId === tab.id}
+                    showDivider={index < displayedTabs.length - 1}
+                    dropSide={null}
+                    onDragStart={(id) => {
+                      setDragTabId(id)
+                      liveTabPlacementRef.current = null
+                    }}
+                    onDragOver={(id, e) => {
+                      handleLiveTabDragOver(id, e)
+                    }}
+                    onDragLeave={() => {}}
+                    onDrop={handleTabDrop}
+                    onDragEnd={() => {
+                      setDragTabId(null)
+                      setExternalDragPreview(null)
+                      liveTabPlacementRef.current = null
+                    }}
+                    onSelect={() => {
+                      usePanesStore.getState().setPaneActiveSession(paneId, tab.id)
+                      usePanesStore.getState().setActivePaneId(paneId)
+                    }}
+                    canSplitSameType={canSplitSameType(tab.id)}
+                    onSplitSameType={splitSameTypeToNewPane}
+                    sameTypeLabel={PANE_TAB_GROUP_LABEL[tabGroupById.get(tab.id) ?? 'file']}
+                  />
+                )}
+              </motion.div>
+            ))}
+          </LayoutGroup>
 
           <button
             ref={btnRef}
@@ -1350,6 +1655,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         onDragOver={(e) => {
           if (!isTabDrag(e)) return
           e.preventDefault()
+          e.stopPropagation()
           e.dataTransfer.dropEffect = 'move'
 
           const rect = termAreaRef.current?.getBoundingClientRect()
@@ -1368,9 +1674,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           const rect = termAreaRef.current?.getBoundingClientRect()
           const zone = rect ? getDropZoneFromPointer(e.clientX, e.clientY, rect) : edgeDrop
           setEdgeDrop(null)
-          const sessionId = e.dataTransfer.getData('session-tab-id')
-          const sourcePaneId = e.dataTransfer.getData('source-pane-id')
-          const sourceWindowId = e.dataTransfer.getData('source-window-id') || 'main'
+          const meta = getTabDragMeta(e)
+          const sessionId = meta?.tabId || e.dataTransfer.getData('session-tab-id')
+          const sourcePaneId = meta?.sourcePaneId || e.dataTransfer.getData('source-pane-id')
+          const sourceWindowId = meta?.sourceWindowId || e.dataTransfer.getData('source-window-id') || 'main'
           const dragToken = e.dataTransfer.getData('session-tab-drag-token')
             || window.api.detach.getActiveTabDrag()
           // Cross-window drop
@@ -1388,14 +1695,16 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               // Same pane: just split (session moves from this pane to new split)
               store.splitPane(paneId, zone, sessionId)
             } else {
-              // Cross-pane: first add session to this pane, remove from source, then split
-              store.addSessionToPane(paneId, sessionId)
-              store.removeSessionFromPane(sourcePaneId, sessionId)
+              // Cross-pane: move first so the target pane owns the active tab before splitting.
+              store.moveSession(sourcePaneId, paneId, sessionId)
               store.splitPane(paneId, zone, sessionId)
             }
           } else if (sourcePaneId !== paneId) {
             // Center drop: merge into this pane
             store.moveSession(sourcePaneId, paneId, sessionId)
+          }
+          if (!sessionId.startsWith('editor-')) {
+            useSessionsStore.getState().setActive(sessionId)
           }
         }}
       >

@@ -6,6 +6,26 @@ import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/a
 // ─── Global terminal registry for preview snapshots ───
 const terminalRegistry = new Map<string, Terminal>()
 
+export function scrollTerminalToLatest(sessionId: string): boolean {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return false
+  terminal.scrollToBottom()
+  return true
+}
+
+export function scrollTerminalToLatestSoon(sessionId: string): void {
+  let attempts = 0
+  const run = (): void => {
+    attempts += 1
+    if (scrollTerminalToLatest(sessionId)) return
+    if (attempts >= 16) return
+    window.setTimeout(run, 80)
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run)
+  })
+}
+
 export function getTerminalPreviewText(sessionId: string, lineCount = 16): string[] {
   const terminal = terminalRegistry.get(sessionId)
   if (!terminal) return []
@@ -35,6 +55,7 @@ import { usePanesStore } from '@/stores/panes'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { useEditorsStore } from '@/stores/editors'
 import { getXtermTheme, defaultDarkTheme } from '@/lib/ghosttyTheme'
+import { parseCustomSessionArgs } from '@/lib/createSession'
 
 const TERMINAL_FONT_SIZE_MIN = 8
 const TERMINAL_FONT_SIZE_MAX = 36
@@ -251,7 +272,7 @@ export function useXterm(
       const worktree = currentSession.worktreeId
         ? worktreeStore.worktrees.find((w) => w.id === currentSession.worktreeId)
         : worktreeStore.getMainWorktree(currentSession.projectId)
-      // session.cwd is an explicit override — set by the MCP bridge for anonymous
+      // session.cwd is an explicit override — set by the MCP bridge or history resume
       // cwds and by the history-resume flow when the original transcript's cwd
       // doesn't match any registered project. When present it takes priority
       // over project/worktree paths so `claude --resume` / `codex resume`
@@ -494,6 +515,9 @@ export function useXterm(
           geminiResumeId,
           command: currentSession.customSessionCommand,
           args: currentSession.customSessionArgs,
+          terminalShellMode: settings.terminalShellMode,
+          terminalShellCommand: settings.terminalShellMode === 'custom' ? settings.terminalShellCommand : undefined,
+          terminalShellArgs: settings.terminalShellMode === 'custom' ? parseCustomSessionArgs(settings.terminalShellArgs) : undefined,
           wslDistroName: isWslSession ? settings.wslDistroName : undefined,
           wslShell: isWslSession ? settings.wslShell : undefined,
           wslUseLoginShell: isWslSession ? settings.wslUseLoginShell : undefined,

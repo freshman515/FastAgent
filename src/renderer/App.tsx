@@ -10,7 +10,6 @@ import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { DetachedApp } from '@/DetachedApp'
-import { ensureAnonymousProject } from '@/lib/anonymous-project'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { switchProjectContext } from '@/lib/project-context'
 import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
@@ -30,7 +29,7 @@ import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { useMcpBridge } from '@/hooks/useMcpBridge'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useState } from 'react'
-import { ANONYMOUS_PROJECT_ID, isClaudeCodeType, type ClaudeGuiEvent } from '@shared/types'
+import { isClaudeCodeType, type ClaudeGuiEvent } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { cn } from '@/lib/utils'
@@ -42,6 +41,8 @@ interface EditorPathContext {
 }
 
 type PaneCommandTabGroup = 'terminal' | 'claude' | 'codex' | 'gemini' | 'opencode' | 'browser' | 'file' | 'other'
+
+const LEGACY_ANONYMOUS_PROJECT_ID = '__anonymous_project__'
 
 const PANE_COMMAND_GROUP_ORDER: PaneCommandTabGroup[] = ['terminal', 'claude', 'codex', 'gemini', 'opencode', 'browser', 'file', 'other']
 
@@ -445,6 +446,7 @@ function MainApp(): JSX.Element {
   const [ready, setReady] = useState(false)
   const [paneCommandMode, setPaneCommandMode] = useState(false)
   const [paneCommandRects, setPaneCommandRects] = useState<PaneElementRect[]>([])
+  const appChromeStyle = useUIStore((s) => s.settings.appChromeStyle)
   const paneCommandActivePaneId = usePanesStore((s) => s.activePaneId)
   const paneCommandRoot = usePanesStore((s) => s.root)
   const refreshPaneCommandRects = useCallback(() => {
@@ -458,7 +460,17 @@ function MainApp(): JSX.Element {
 
     void (async () => {
       const data = await window.api.config.read()
-      const rawWorktrees = (data as Record<string, unknown>).worktrees as unknown[] ?? []
+      const rawProjects = Array.isArray(data.projects) ? data.projects : []
+      const sanitizedProjects = rawProjects.filter((project) =>
+        !(project && typeof project === 'object' && (project as { id?: unknown }).id === LEGACY_ANONYMOUS_PROJECT_ID),
+      )
+      const removedLegacyAnonymousProjects = sanitizedProjects.length !== rawProjects.length
+
+      const allRawWorktrees = (data as Record<string, unknown>).worktrees as unknown[] ?? []
+      const rawWorktrees = (Array.isArray(allRawWorktrees) ? allRawWorktrees : []).filter((worktree) =>
+        !(worktree && typeof worktree === 'object' && (worktree as { projectId?: unknown }).projectId === LEGACY_ANONYMOUS_PROJECT_ID),
+      )
+      const removedLegacyAnonymousWorktrees = rawWorktrees.length !== (Array.isArray(allRawWorktrees) ? allRawWorktrees.length : 0)
       const validWorktreeIds = new Set(
         (Array.isArray(rawWorktrees) ? rawWorktrees : [])
           .map((worktree) => (worktree && typeof worktree === 'object' && typeof (worktree as { id?: unknown }).id === 'string')
@@ -470,6 +482,7 @@ function MainApp(): JSX.Element {
       const rawSessions = Array.isArray(data.sessions) ? data.sessions : []
       const sanitizedSessions = rawSessions.filter((session) => {
         if (!session || typeof session !== 'object') return true
+        if ((session as { projectId?: unknown }).projectId === LEGACY_ANONYMOUS_PROJECT_ID) return false
         const worktreeId = (session as { worktreeId?: unknown }).worktreeId
         return typeof worktreeId !== 'string' || validWorktreeIds.has(worktreeId)
       })
@@ -479,7 +492,7 @@ function MainApp(): JSX.Element {
         : []
       const { tabs: sanitizedEditors, changed: removedInvalidEditors } = await filterExistingEditorTabs(
         rawEditors,
-        data.projects,
+        sanitizedProjects,
         rawWorktrees,
       )
 
@@ -487,7 +500,7 @@ function MainApp(): JSX.Element {
 
       useGroupsStore.getState()._loadFromConfig(data.groups)
       useSessionGroupsStore.getState()._loadFromConfig((data as Record<string, unknown>).sessionGroups as unknown[] ?? [])
-      useProjectsStore.getState()._loadFromConfig(data.projects)
+      useProjectsStore.getState()._loadFromConfig(sanitizedProjects)
       useSessionsStore.getState()._loadFromConfig(sanitizedSessions)
       useEditorsStore.getState()._loadFromConfig(sanitizedEditors)
       useUIStore.getState()._loadSettings(data.ui, (data as Record<string, unknown>).customThemes as Record<string, unknown> | undefined)
@@ -497,16 +510,6 @@ function MainApp(): JSX.Element {
       useLaunchesStore.getState()._loadFromConfig((data as Record<string, unknown>).launches as unknown[] ?? [])
       useClaudeGuiStore.getState()._loadFromConfig((data as Record<string, unknown>).claudeGui as Record<string, unknown> ?? {})
       useCanvasStore.getState().loadFromConfig((data as Record<string, unknown>).canvas as Record<string, unknown> ?? {})
-
-      const hasAnonymousProjectData = sanitizedSessions.some((session) =>
-        session && typeof session === 'object' && (session as { projectId?: unknown }).projectId === ANONYMOUS_PROJECT_ID,
-      ) || (Array.isArray(data.projects) && data.projects.some((project) =>
-        project && typeof project === 'object' && (project as { id?: unknown }).id === ANONYMOUS_PROJECT_ID,
-      ))
-
-      if (hasAnonymousProjectData) {
-        await ensureAnonymousProject()
-      }
 
       const validSessionIds = sanitizedSessions
         .map((session) => (session && typeof session === 'object' && typeof (session as { id?: unknown }).id === 'string')
@@ -530,6 +533,12 @@ function MainApp(): JSX.Element {
         window.api.config.write('panes', {})
       } else if (removedInvalidPaneTabs && sanitizedPanes) {
         window.api.config.write('panes', sanitizedPanes)
+      }
+      if (removedLegacyAnonymousProjects) {
+        window.api.config.write('projects', sanitizedProjects)
+      }
+      if (removedLegacyAnonymousWorktrees) {
+        window.api.config.write('worktrees', rawWorktrees)
       }
 
       // Restore the last visible context from the saved pane layout instead of
@@ -1259,18 +1268,19 @@ function MainApp(): JSX.Element {
     <div className={cn(
       'flex h-full flex-col bg-[var(--color-titlebar-bg)]',
       isMac && !hideChrome && 'pt-7',
+      appChromeStyle === 'joined' ? 'app-shell-joined' : 'app-shell-floating',
       showPaneCommandPaneNumbers && 'pane-command-mode',
     )}>
       {!hideChrome && <TitleBar />}
       <div className={cn(
-        'flex flex-1 overflow-hidden',
+        'app-content-shell flex flex-1 overflow-hidden',
         !hideChrome && 'gap-[var(--layout-gap)] p-[var(--layout-gap)]',
       )}>
         {!hideChrome && <LeftPanel />}
 
         {/* Main panel */}
         <div className={cn(
-          'flex-1 overflow-hidden',
+          'app-main-frame flex-1 overflow-hidden',
           !hideChrome && 'rounded-[var(--radius-panel)]',
         )}>
           <MainPanel />
@@ -1282,7 +1292,7 @@ function MainApp(): JSX.Element {
 
       {/* Status bar */}
       {!hideChrome && (
-        <div className="px-[var(--layout-gap)] pb-[var(--layout-gap)]">
+        <div className="app-status-shell px-[var(--layout-gap)] pb-[var(--layout-gap)]">
           <StatusBar />
         </div>
       )}

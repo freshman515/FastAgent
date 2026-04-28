@@ -2,10 +2,30 @@ import { create } from 'zustand'
 import type { Group } from '@shared/types'
 import { generateId } from '@/lib/utils'
 
-const GROUP_COLORS = [
-  '#7c6aef', '#3ecf7b', '#f0a23b', '#ef5757', '#5fa0f5',
-  '#e879a8', '#45c8c8', '#c084fc', '#f97316', '#64748b',
+export const DEFAULT_GROUP_COLOR = '#7c6aef'
+
+export const GROUP_COLOR_PRESETS = [
+  '#7c6aef', '#8b5cf6', '#a855f7', '#c084fc',
+  '#5fa0f5', '#38bdf8', '#45c8c8', '#14b8a6',
+  '#3ecf7b', '#84cc16', '#facc15', '#f0a23b',
+  '#f97316', '#ef5757', '#f43f5e', '#e879a8',
+  '#f472b6', '#64748b', '#8e8e96', '#d4d4d8',
 ]
+
+export function parseGroupColor(color: unknown): string | null {
+  if (typeof color !== 'string') return null
+  const value = color.trim()
+  const shortHex = /^#([0-9a-f]{3})$/i.exec(value)
+  if (shortHex) {
+    return `#${shortHex[1].split('').map((char) => `${char}${char}`).join('')}`.toLowerCase()
+  }
+  if (/^#[0-9a-f]{6}$/i.test(value)) return value.toLowerCase()
+  return null
+}
+
+export function normalizeGroupColor(color: unknown): string {
+  return parseGroupColor(color) ?? DEFAULT_GROUP_COLOR
+}
 
 function sanitizeGroup(g: unknown): Group | null {
   if (!g || typeof g !== 'object') return null
@@ -14,7 +34,7 @@ function sanitizeGroup(g: unknown): Group | null {
   return {
     id: obj.id,
     name: obj.name,
-    color: typeof obj.color === 'string' ? obj.color : '#7c6aef',
+    color: normalizeGroupColor(obj.color),
     collapsed: obj.collapsed === true,
     projectIds: Array.isArray(obj.projectIds)
       ? obj.projectIds.filter((x) => typeof x === 'string')
@@ -57,11 +77,11 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
 
   addGroup: (name) => {
     const id = generateId()
-    const colorIndex = get().groups.length % GROUP_COLORS.length
+    const colorIndex = get().groups.length % GROUP_COLOR_PRESETS.length
     const newGroup: Group = {
       id,
       name,
-      color: GROUP_COLORS[colorIndex],
+      color: GROUP_COLOR_PRESETS[colorIndex],
       collapsed: false,
       projectIds: [],
     }
@@ -82,7 +102,10 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
 
   updateGroup: (id, updates) =>
     set((state) => {
-      const groups = state.groups.map((g) => (g.id === id ? { ...g, ...updates } : g))
+      const safeUpdates = updates.color === undefined
+        ? updates
+        : { ...updates, color: normalizeGroupColor(updates.color) }
+      const groups = state.groups.map((g) => (g.id === id ? { ...g, ...safeUpdates } : g))
       persist(groups)
       return { groups }
     }),

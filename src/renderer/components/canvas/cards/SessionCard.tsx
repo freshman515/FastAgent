@@ -5,6 +5,7 @@ import { useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
+import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
 import type { CanvasCard } from '@shared/types'
 import { TerminalView } from '@/components/session/TerminalView'
 import { BrowserSessionView } from '@/components/session/BrowserSessionView'
@@ -78,6 +79,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
       : coordinateMode
   const sessionIcon = getSessionIcon(session.type, isDarkTheme)
   const displayTitle = formatSessionCardTitle(session.name, card.sessionRemark)
+  const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
 
   const startRename = (): void => {
     setTitleMenu(null)
@@ -174,6 +176,11 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
     removeCard(card.id)
   }
 
+  const scrollToBottom = (): void => {
+    setTitleMenu(null)
+    scrollTerminalToLatestSoon(session.id)
+  }
+
   const handleCloseSession = (): void => {
     if (session.pinned) return
     if (session.ptyId) {
@@ -245,6 +252,9 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
           <div className="fixed inset-0 z-[420]" onPointerDown={() => setTitleMenu(null)} />
           <CanvasMenuPanel x={titleMenu.x} y={titleMenu.y} width={188} height={320}>
             <CanvasMenuItem label={isMaximized ? '还原' : '最大化'} onClick={isMaximized ? restoreCard : maximizeCard} />
+            {canScrollToBottom && (
+              <CanvasMenuItem label="滚动到底部" onClick={scrollToBottom} />
+            )}
             <CanvasMenuItem label={card.favorite ? '取消收藏' : '收藏卡片'} onClick={toggleFavorite} />
             <CanvasMenuItem label="保存卡片快照" onClick={saveCardSnapshot} />
             {(card.cardSnapshots?.length ?? 0) > 0 && (

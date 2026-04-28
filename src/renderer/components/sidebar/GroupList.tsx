@@ -58,7 +58,7 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
           {searchQuery ? '未找到匹配项目' : '暂无项目或分组'}
         </p>
         <p className="mt-1 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-          {searchQuery ? '尝试搜索其他关键词' : '点击上方按钮新建分组或匿名终端'}
+          {searchQuery ? '尝试搜索其他关键词' : '点击上方按钮新建分组，或先添加一个项目'}
         </p>
       </div>
     )
