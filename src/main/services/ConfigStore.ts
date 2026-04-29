@@ -2,8 +2,13 @@ import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const CONFIG_DIR = join(app.getPath('userData'), 'config')
-const CONFIG_FILE = join(CONFIG_DIR, 'data.json')
+function getConfigDir(): string {
+  return join(app.getPath('userData'), 'config')
+}
+
+function getConfigFile(): string {
+  return join(getConfigDir(), 'data.json')
+}
 
 interface ConfigData {
   groups: unknown[]
@@ -38,8 +43,9 @@ const DEFAULT_DATA: ConfigData = {
 let cache: ConfigData | null = null
 
 function ensureDir(): void {
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true })
+  const configDir = getConfigDir()
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true })
   }
 }
 
@@ -48,13 +54,14 @@ export function readConfig(): ConfigData {
 
   ensureDir()
 
-  if (!existsSync(CONFIG_FILE)) {
+  const configFile = getConfigFile()
+  if (!existsSync(configFile)) {
     cache = { ...DEFAULT_DATA }
     return cache
   }
 
   try {
-    const raw = readFileSync(CONFIG_FILE, 'utf-8')
+    const raw = readFileSync(configFile, 'utf-8')
     const parsed = JSON.parse(raw)
     cache = {
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
@@ -84,11 +91,12 @@ export function writeConfig(key: keyof ConfigData, value: unknown): void {
 
   ensureDir()
   // Atomic write: write to .tmp then rename
-  const tmpFile = CONFIG_FILE + '.tmp'
+  const configFile = getConfigFile()
+  const tmpFile = configFile + '.tmp'
   writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8')
-  writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), 'utf-8')
+  writeFileSync(configFile, JSON.stringify(data, null, 2), 'utf-8')
 }
 
 export function getConfigPath(): string {
-  return CONFIG_FILE
+  return getConfigFile()
 }

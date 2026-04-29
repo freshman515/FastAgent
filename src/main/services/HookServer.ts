@@ -124,23 +124,25 @@ export class HookServer {
   }
 
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    if (req.method === 'GET' && req.url === '/health') {
+    const pathname = req.url ? new URL(req.url, 'http://127.0.0.1').pathname : ''
+
+    if (req.method === 'GET' && pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true, app: 'fast-agents' }))
       return
     }
 
-    if (req.method === 'POST' && req.url === '/agent-hook') {
+    if (req.method === 'POST' && pathname === '/agent-hook') {
       this.handleAgentHook(req, res)
       return
     }
 
-    if (req.method === 'POST' && req.url === '/status-line') {
+    if (req.method === 'POST' && pathname === '/status-line') {
       this.handleStatusLine(req, res)
       return
     }
 
-    if (req.method === 'POST' && req.url === '/permission') {
+    if (req.method === 'POST' && pathname === '/permission') {
       this.handlePermission(req, res)
       return
     }

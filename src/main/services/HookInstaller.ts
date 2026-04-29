@@ -5,14 +5,30 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
+import { getAppProfileId, getConfiguredUserDataDir } from './AppPaths'
 
-const CLAUDE_HOOK_SCRIPT_NAME = 'fastagents-hook.cjs'
-const CLAUDE_HOOK_MARKER = 'fastagents-hook'
-const CODEX_HOOK_SCRIPT_NAME = 'fastagents-codex-hook.cjs'
-const CODEX_HOOK_MARKER = 'fastagents-codex-hook'
-const PERM_MARKER = 'fast-agents' // marker in permission URL
+const CLAUDE_HOOK_SCRIPT_BASE = 'fastagents-hook'
+const CODEX_HOOK_SCRIPT_BASE = 'fastagents-codex-hook'
+const HTTP_HOOK_MARKER_BASE = 'fast-agents' // marker in HTTP hook URLs
 const DEFAULT_HOOK_PORT = 24680
 const HOOK_PORT_RANGE = 5
+
+function getProfileSuffix(): string {
+  const profileId = getAppProfileId()
+  return profileId === 'stable' ? '' : `-${profileId}`
+}
+
+function getClaudeHookMarker(): string {
+  return `${CLAUDE_HOOK_SCRIPT_BASE}${getProfileSuffix()}`
+}
+
+function getCodexHookMarker(): string {
+  return `${CODEX_HOOK_SCRIPT_BASE}${getProfileSuffix()}`
+}
+
+function getHttpHookMarker(): string {
+  return `${HTTP_HOOK_MARKER_BASE}${getProfileSuffix()}`
+}
 
 function getClaudeDir(): string {
   return join(homedir(), '.claude')
@@ -27,7 +43,19 @@ function getHooksDir(): string {
 }
 
 function getClaudeScriptPath(): string {
-  return join(getHooksDir(), CLAUDE_HOOK_SCRIPT_NAME)
+  return join(getHooksDir(), `${CLAUDE_HOOK_SCRIPT_BASE}${getProfileSuffix()}.cjs`)
+}
+
+function getProfileHooksDir(): string {
+  return join(getConfiguredUserDataDir(), 'agent-hooks')
+}
+
+function getProfileClaudeScriptPath(): string {
+  return join(getProfileHooksDir(), `${CLAUDE_HOOK_SCRIPT_BASE}${getProfileSuffix()}.cjs`)
+}
+
+function getProfileClaudeSettingsPath(port: number): string {
+  return join(getProfileHooksDir(), `claude-settings-${port}.json`)
 }
 
 function getCodexDir(): string {
@@ -47,7 +75,7 @@ function getCodexHooksDir(): string {
 }
 
 function getCodexScriptPath(): string {
-  return join(getCodexHooksDir(), CODEX_HOOK_SCRIPT_NAME)
+  return join(getCodexHooksDir(), `${CODEX_HOOK_SCRIPT_BASE}${getProfileSuffix()}.cjs`)
 }
 
 /** Generate the hook script content — for command hooks (Stop, etc.) */
@@ -104,6 +132,7 @@ function buildPortList(activePort: number): number[] {
 
 /** Generate the Codex Stop hook script. It no-ops when FastAgents is not running. */
 function generateCodexScript(port: number): string {
+  const logFileName = `${CODEX_HOOK_SCRIPT_BASE}${getProfileSuffix()}.log`
   return `// FastAgents Codex Hook — sends Codex Stop events to FastAgents
 // Auto-generated — do not edit manually
 const fs = require('fs');
@@ -111,7 +140,7 @@ const http = require('http');
 const path = require('path');
 
 const PORTS = ${JSON.stringify(buildPortList(port))};
-const LOG_PATH = path.join(process.env.USERPROFILE || process.env.HOME || '.', '.codex', 'hooks', 'fastagents-codex-hook.log');
+const LOG_PATH = path.join(process.env.USERPROFILE || process.env.HOME || '.', '.codex', 'hooks', ${JSON.stringify(logFileName)});
 
 function log(entry) {
   try {
@@ -279,19 +308,19 @@ function addCommandHook(
   })
 }
 
-function addHttpHook(settings: Record<string, unknown>, event: string, url: string): void {
+function addHttpHook(settings: Record<string, unknown>, event: string, url: string, marker: string): void {
   const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>
   settings.hooks = hooks
 
   if (!Array.isArray(hooks[event])) hooks[event] = []
 
-  if (hasHttpHook(hooks[event], PERM_MARKER)) {
+  if (hasHttpHook(hooks[event], marker)) {
     // Update URL if port changed
     for (const entry of hooks[event]) {
-      if (entry.type === 'http' && entry.url?.includes(PERM_MARKER)) entry.url = url
+      if (entry.type === 'http' && entry.url?.includes(marker)) entry.url = url
       if (entry.hooks) {
         for (const h of entry.hooks) {
-          if (h.type === 'http' && h.url?.includes(PERM_MARKER)) h.url = url
+          if (h.type === 'http' && h.url?.includes(marker)) h.url = url
         }
       }
     }
@@ -347,6 +376,9 @@ function registerClaudeHooks(port: number): void {
     return
   }
 
+  const commandMarker = getClaudeHookMarker()
+  const httpMarker = getHttpHookMarker()
+
   // Write hook script for command hooks
   const hooksDir = getHooksDir()
   mkdirSync(hooksDir, { recursive: true })
@@ -358,20 +390,58 @@ function registerClaudeHooks(port: number): void {
 
   // Activity events: Stop, UserPromptSubmit, PreToolUse, PostToolUse (all non-blocking)
   for (const event of CLAUDE_ACTIVITY_EVENTS) {
-    addCommandHook(settings, event, command, CLAUDE_HOOK_MARKER)
+    addCommandHook(settings, event, command, commandMarker)
   }
 
   // Notification: status-line hook (non-blocking — captures model, context, cost)
-  // Include port in a query param so the PERM_MARKER match works for cleanup
-  const statusUrl = `http://127.0.0.1:${port}/status-line?src=fast-agents`
-  addHttpHook(settings, 'Notification', statusUrl)
+  // Include the profile marker in a query param so sibling FastAgents profiles
+  // can coexist without replacing each other's hook URLs.
+  const statusUrl = `http://127.0.0.1:${port}/status-line?src=${encodeURIComponent(httpMarker)}`
+  addHttpHook(settings, 'Notification', statusUrl, httpMarker)
 
   // PermissionRequest: HTTP hook (blocking — Claude Code waits for our response)
-  const permUrl = `http://127.0.0.1:${port}/permission`
-  addHttpHook(settings, 'PermissionRequest', permUrl)
+  const permUrl = `http://127.0.0.1:${port}/permission?src=${encodeURIComponent(httpMarker)}`
+  addHttpHook(settings, 'PermissionRequest', permUrl, httpMarker)
 
   writeSettings(settings)
-  console.log(`[HookInstaller] registered Claude hooks → port ${port}`)
+  console.log(`[HookInstaller] registered Claude hooks (${getAppProfileId()}) → port ${port}`)
+}
+
+export function createClaudeHookSettingsFile(port: number): string | null {
+  const scriptPath = getProfileClaudeScriptPath()
+  const settingsPath = getProfileClaudeSettingsPath(port)
+  const command = `node "${scriptPath.replace(/\\/g, '/')}"`
+  const httpMarker = getHttpHookMarker()
+  const settings: Record<string, unknown> = {}
+
+  try {
+    mkdirSync(dirname(scriptPath), { recursive: true })
+    writeFileSync(scriptPath, generateClaudeScript(port), { mode: 0o755 })
+
+    for (const event of CLAUDE_ACTIVITY_EVENTS) {
+      addCommandHook(settings, event, command, getClaudeHookMarker())
+    }
+
+    addHttpHook(
+      settings,
+      'Notification',
+      `http://127.0.0.1:${port}/status-line?src=${encodeURIComponent(httpMarker)}`,
+      httpMarker,
+    )
+    addHttpHook(
+      settings,
+      'PermissionRequest',
+      `http://127.0.0.1:${port}/permission?src=${encodeURIComponent(httpMarker)}`,
+      httpMarker,
+    )
+
+    mkdirSync(dirname(settingsPath), { recursive: true })
+    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf-8')
+    return settingsPath
+  } catch (err) {
+    console.warn('[HookInstaller] failed to create per-session Claude hook settings:', err)
+    return null
+  }
 }
 
 function registerCodexHooks(port: number): void {
@@ -386,17 +456,18 @@ function registerCodexHooks(port: number): void {
   const hooksConfig = readJsonObject(getCodexHooksJsonPath())
   const scriptPath = getCodexScriptPath().replace(/\\/g, '/')
   const command = `node "${scriptPath}"`
+  const commandMarker = getCodexHookMarker()
 
   addCommandHook(
     hooksConfig,
     'Stop',
     command,
-    CODEX_HOOK_MARKER,
+    commandMarker,
     'Notifying FastAgents',
   )
 
   writeJsonObject(getCodexHooksJsonPath(), hooksConfig)
-  console.log(`[HookInstaller] registered Codex Stop hook → port ${port}`)
+  console.log(`[HookInstaller] registered Codex Stop hook (${getAppProfileId()}) → port ${port}`)
 }
 
 /** Register hooks in user-level agent config files and write hook scripts */
@@ -407,43 +478,67 @@ export function registerHooks(port: number): void {
 
 /** Remove our hooks from settings.json and delete script */
 export function unregisterHooks(): void {
+  const claudeCommandMarker = getClaudeHookMarker()
+  const codexCommandMarker = getCodexHookMarker()
+  const httpMarker = getHttpHookMarker()
+
   try {
-    if (!existsSync(getSettingsPath())) return
+    if (existsSync(getSettingsPath())) {
+      const settings = readSettings()
+      const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>
 
-    const settings = readSettings()
-    const hooks = (settings.hooks ?? {}) as Record<string, HookEntry[]>
+      // Remove command hooks
+      for (const event of CLAUDE_ACTIVITY_EVENTS) {
+        if (!Array.isArray(hooks[event])) continue
+        hooks[event] = hooks[event].filter(
+          (e) => !e.hooks?.some((h) => h.type === 'command' && h.command?.includes(claudeCommandMarker)),
+        )
+        if (hooks[event].length === 0) delete hooks[event]
+      }
 
-    // Remove command hooks
-    for (const event of CLAUDE_ACTIVITY_EVENTS) {
-      if (!Array.isArray(hooks[event])) continue
-      hooks[event] = hooks[event].filter(
-        (e) => !e.hooks?.some((h) => h.type === 'command' && h.command?.includes(CLAUDE_HOOK_MARKER)),
-      )
-      if (hooks[event].length === 0) delete hooks[event]
+      // Remove HTTP hooks
+      for (const event of ['PermissionRequest', 'Notification']) {
+        if (!Array.isArray(hooks[event])) continue
+        hooks[event] = hooks[event].filter((e) => {
+          if (e.type === 'http' && e.url?.includes(httpMarker)) return false
+          if (e.hooks) {
+            e.hooks = e.hooks.filter((h) => !(h.type === 'http' && h.url?.includes(httpMarker)))
+            if (e.hooks.length === 0) return false
+          }
+          return true
+        })
+        if (hooks[event].length === 0) delete hooks[event]
+      }
+
+      settings.hooks = hooks
+      writeSettings(settings)
+
+      const scriptPath = getClaudeScriptPath()
+      if (existsSync(scriptPath)) unlinkSync(scriptPath)
     }
-
-    // Remove HTTP hooks
-    for (const event of ['PermissionRequest', 'Notification']) {
-      if (!Array.isArray(hooks[event])) continue
-      hooks[event] = hooks[event].filter((e) => {
-        if (e.type === 'http' && e.url?.includes(PERM_MARKER)) return false
-        if (e.hooks) {
-          e.hooks = e.hooks.filter((h) => !(h.type === 'http' && h.url?.includes(PERM_MARKER)))
-          if (e.hooks.length === 0) return false
-        }
-        return true
-      })
-      if (hooks[event].length === 0) delete hooks[event]
-    }
-
-    settings.hooks = hooks
-    writeSettings(settings)
-
-    const scriptPath = getClaudeScriptPath()
-    if (existsSync(scriptPath)) unlinkSync(scriptPath)
 
     console.log('[HookInstaller] unregistered hooks')
   } catch (err) {
     console.error('[HookInstaller] cleanup error:', err)
+  }
+
+  try {
+    if (!existsSync(getCodexHooksJsonPath())) return
+
+    const hooksConfig = readJsonObject(getCodexHooksJsonPath())
+    const hooks = (hooksConfig.hooks ?? {}) as Record<string, HookEntry[]>
+    if (Array.isArray(hooks.Stop)) {
+      hooks.Stop = hooks.Stop.filter(
+        (e) => !e.hooks?.some((h) => h.type === 'command' && h.command?.includes(codexCommandMarker)),
+      )
+      if (hooks.Stop.length === 0) delete hooks.Stop
+      hooksConfig.hooks = hooks
+      writeJsonObject(getCodexHooksJsonPath(), hooksConfig)
+    }
+
+    const scriptPath = getCodexScriptPath()
+    if (existsSync(scriptPath)) unlinkSync(scriptPath)
+  } catch (err) {
+    console.error('[HookInstaller] Codex cleanup error:', err)
   }
 }

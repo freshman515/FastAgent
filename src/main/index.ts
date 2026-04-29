@@ -16,6 +16,9 @@ import { updaterService } from './services/UpdaterService'
 import { orchestratorService } from './services/OrchestratorService'
 import { installBundledSkills } from './services/SkillInstaller'
 import { isCodexType, type SessionType } from '@shared/types'
+import { configureAppPaths, shouldRegisterGlobalAgentConfig } from './services/AppPaths'
+
+configureAppPaths()
 
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
@@ -358,7 +361,12 @@ app.whenReady().then(async () => {
 
   // Start hook server and register Claude Code hooks
   hookServer.start().then((port) => {
-    registerHooks(port)
+    ptyManager.setHookPort(port)
+    if (shouldRegisterGlobalAgentConfig()) {
+      registerHooks(port)
+    } else {
+      console.log(`[HookInstaller] global hooks skipped for isolated dev profile; Claude sessions use per-session settings → port ${port}`)
+    }
   }).catch((err) => {
     console.error('[HookServer] failed to start:', err)
   })
@@ -487,8 +495,11 @@ app.on('before-quit', async (e) => {
   }
 
   hookServer.stop()
+  ptyManager.setHookPort(null)
   orchestratorService.dispose()
-  unregisterHooks()
+  if (shouldRegisterGlobalAgentConfig()) {
+    unregisterHooks()
+  }
   mediaMonitor.stop()
   stopIdeServer()
   void claudeGuiService.stop()

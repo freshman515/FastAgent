@@ -127,6 +127,21 @@ pnpm install
 pnpm dev
 ```
 
+开发版会自动使用独立的 Electron profile，不和已安装的正式版共享 FastAgents 配置、项目、分组、会话、画布、缓存和 MCP 临时文件。默认目录形如：
+
+```text
+%APPDATA%\FastAgents Dev\<workspace-name>-<hash>\
+```
+
+如需指定开发版数据目录，可设置：
+
+```powershell
+$env:FASTAGENTS_USER_DATA_DIR='D:\path\to\fastagents-dev-profile'
+pnpm dev
+```
+
+Claude / Codex / Gemini 等外部 CLI 的登录态仍沿用各自工具的系统登录，不由 FastAgents 隔离。
+
 ### 构建
 
 ```bash

@@ -16,6 +16,7 @@ import {
   registerFastAgentsMcpInCodex,
   syncMetaAgentToCodexAgentsMd,
 } from './FastAgentsMcpService'
+import { shouldRegisterGlobalAgentConfig } from './AppPaths'
 
 // ─── ANSI / control-sequence stripping ──────────────────────────────────────
 
@@ -151,25 +152,27 @@ export class OrchestratorService {
       this.lastDataAt.set(ptyId, nowMs())
     })
 
-    // Auto-register the MCP bridge in Claude Code (~/.claude.json) and
-    // Codex (~/.codex/config.toml) so neither CLI needs manual setup and
-    // the bridge stays in sync with the latest port/token.
-    try {
-      registerFastAgentsMcpInClaudeProjects({ port: this.port!, token: this.token! })
-    } catch (err) {
-      console.warn('[orchestrator] auto-register to ~/.claude.json failed:', err)
-    }
-    try {
-      registerFastAgentsMcpInCodex({ port: this.port!, token: this.token! })
-    } catch (err) {
-      console.warn('[orchestrator] auto-register to ~/.codex/config.toml failed:', err)
-    }
-    // Mirror the Meta-Agent section from ~/.claude/CLAUDE.md into
-    // ~/.codex/AGENTS.md so Codex gets the same guidance. Idempotent.
-    try {
-      syncMetaAgentToCodexAgentsMd()
-    } catch (err) {
-      console.warn('[orchestrator] sync CLAUDE.md → AGENTS.md failed:', err)
+    // Packaged builds keep the convenience global registrations. Dev builds
+    // run from a separate profile and pass MCP config per spawned session, so
+    // they do not overwrite the user's stable Claude/Codex config.
+    if (shouldRegisterGlobalAgentConfig()) {
+      try {
+        registerFastAgentsMcpInClaudeProjects({ port: this.port!, token: this.token! })
+      } catch (err) {
+        console.warn('[orchestrator] auto-register to ~/.claude.json failed:', err)
+      }
+      try {
+        registerFastAgentsMcpInCodex({ port: this.port!, token: this.token! })
+      } catch (err) {
+        console.warn('[orchestrator] auto-register to ~/.codex/config.toml failed:', err)
+      }
+      // Mirror the Meta-Agent section from ~/.claude/CLAUDE.md into
+      // ~/.codex/AGENTS.md so Codex gets the same guidance. Idempotent.
+      try {
+        syncMetaAgentToCodexAgentsMd()
+      } catch (err) {
+        console.warn('[orchestrator] sync CLAUDE.md → AGENTS.md failed:', err)
+      }
     }
 
     console.log(`[orchestrator] HTTP server on 127.0.0.1:${this.port}`)

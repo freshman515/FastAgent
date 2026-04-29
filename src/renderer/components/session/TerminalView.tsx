@@ -405,16 +405,16 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
           type="button"
           onClick={scrollToLatest}
           className={cn(
-            'absolute bottom-4 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full',
-            'border border-white/[0.08] bg-[var(--color-bg-secondary)]/70 text-[var(--color-text-secondary)]',
-            'opacity-45 shadow-lg shadow-black/20 backdrop-blur-md transition-all duration-150',
+            'absolute bottom-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full',
+            'border border-white/[0.12] bg-[var(--color-bg-secondary)]/90 text-[var(--color-text-secondary)]',
+            'opacity-80 shadow-lg shadow-black/25 backdrop-blur-md transition-all duration-150',
             'hover:scale-105 hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] hover:opacity-100',
             'active:scale-95',
           )}
-          title="滚动到最新位置"
+          title="滚动到最新位置 (Ctrl+End / Ctrl+↓ / Cmd+↓)"
           aria-label="滚动到最新位置"
         >
-          <ChevronDown size={18} strokeWidth={2.4} />
+          <ChevronDown size={20} strokeWidth={2.4} />
         </button>
         {voiceCaptureState && (
           <div className="absolute bottom-16 right-4 z-30 flex items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/95 px-3 py-2 shadow-xl shadow-black/35 backdrop-blur-md">
@@ -552,6 +552,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
                 <ChevronDown size={13} />
                 滚动到底部
               </span>
+              <span className="text-[10px] text-[var(--color-text-tertiary)]">Ctrl+End</span>
             </button>
             <div className="my-1 h-px bg-[var(--color-border)]" />
             <button

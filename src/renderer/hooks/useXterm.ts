@@ -618,6 +618,16 @@ export function useXterm(
       // Allow IME composition (Chinese/Japanese/Korean input)
       if (e.isComposing || e.keyCode === 229) return true
 
+      // Jump to latest output without sending navigation keys to the shell.
+      if (!e.shiftKey && !e.altKey
+        && ((e.ctrlKey && !e.metaKey && (e.key === 'End' || e.key === 'ArrowDown'))
+          || (e.metaKey && !e.ctrlKey && e.key === 'ArrowDown'))) {
+        e.preventDefault()
+        e.stopPropagation()
+        terminal.scrollToBottom()
+        return false
+      }
+
       // Let global shortcuts bubble to window for App-level handlers
       if ((e.ctrlKey && e.key === 'Tab')
         || (e.ctrlKey && e.key === 'w')

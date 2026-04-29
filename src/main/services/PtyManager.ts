@@ -13,6 +13,8 @@ import { detectShell, buildAgentCommand } from './ShellDetector'
 import { resolveClaudeSessionLaunch } from './ClaudeSessionResolver'
 import { createFastAgentsMcpConfig, ensureFastAgentsMcpBridgePath } from './FastAgentsMcpService'
 import { escapeTomlString, windowsPathToWslPath } from './WslPath'
+import { createClaudeHookSettingsFile } from './HookInstaller'
+import { shouldRegisterGlobalAgentConfig } from './AppPaths'
 
 const isWindows = process.platform === 'win32'
 const HeadlessTerminal = (headlessPkg as { Terminal: new (options?: Record<string, unknown>) => import('@xterm/headless').Terminal }).Terminal
@@ -207,20 +209,21 @@ function buildCodexMcpArgs(
   if (!options.sessionId) return []
 
   const args: string[] = []
+  const bridgePath = ensureFastAgentsMcpBridgePath(isWslSessionType(options.type) ? 'wsl' : 'windows')
+  if (bridgePath) {
+    args.push(
+      '-c',
+      'mcp_servers.fastagents.command="node"',
+      '-c',
+      `mcp_servers.fastagents.args=["${escapeTomlString(bridgePath)}"]`,
+      '-c',
+      `mcp_servers.fastagents.env.FASTAGENTS_MCP_PORT="${mcpEnv.port}"`,
+      '-c',
+      `mcp_servers.fastagents.env.FASTAGENTS_MCP_TOKEN="${escapeTomlString(mcpEnv.token)}"`,
+    )
+  }
+
   if (isWslSessionType(options.type)) {
-    const bridgePath = ensureFastAgentsMcpBridgePath('wsl')
-    if (bridgePath) {
-      args.push(
-        '-c',
-        'mcp_servers.fastagents.command="node"',
-        '-c',
-        `mcp_servers.fastagents.args=["${escapeTomlString(bridgePath)}"]`,
-        '-c',
-        `mcp_servers.fastagents.env.FASTAGENTS_MCP_PORT="${mcpEnv.port}"`,
-        '-c',
-        `mcp_servers.fastagents.env.FASTAGENTS_MCP_TOKEN="${escapeTomlString(mcpEnv.token)}"`,
-      )
-    }
     args.push(
       '-c',
       `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID="${escapeTomlString(options.sessionId)}"`,
@@ -311,6 +314,7 @@ export class PtyManager {
   /** Populated by OrchestratorService.init() so PTYs spawned afterwards see the
    *  MCP bridge port + token in their env. */
   private mcpEnv: McpBridgeEnv | null = null
+  private hookPort: number | null = null
 
   /** Observers notified once per visible PTY data chunk. Used by the
    *  orchestrator service to track per-PTY idle time for /wait_idle. */
@@ -322,6 +326,10 @@ export class PtyManager {
 
   getMcpEnv(): McpBridgeEnv | null {
     return this.mcpEnv
+  }
+
+  setHookPort(port: number | null): void {
+    this.hookPort = port
   }
 
   addDataObserver(observer: DataObserver): () => void {
@@ -480,11 +488,20 @@ export class PtyManager {
         agentCmd.args.push('--mcp-config', mcpConfigPath)
       }
     }
-    // Codex CLI spawns MCP servers with a *sealed* env — only the env vars
-    // declared in ~/.codex/config.toml's [mcp_servers.fastagents] table are
-    // visible to the bridge. SESSION_ID is per-PTY so it can't live in the
-    // global TOML. Override it on the command line using Codex's `-c` flag
-    // which accepts dotted keys into the config.
+    if (
+      agentCmd
+      && isClaudeCodeType(options.type)
+      && this.hookPort
+      && !shouldRegisterGlobalAgentConfig()
+    ) {
+      const hookSettingsPath = createClaudeHookSettingsFile(this.hookPort)
+      if (hookSettingsPath) {
+        agentCmd.args.push('--settings', hookSettingsPath)
+      }
+    }
+    // Codex CLI spawns MCP servers with a *sealed* env, so pass the complete
+    // MCP config on the command line. This keeps dev/stable FastAgents
+    // profiles independent instead of sharing ~/.codex/config.toml.
     //
     // Note: we deliberately pass the value *without* TOML quotes. Codex
     // parses the value as TOML first; since a session id like `mo1gtu87-
