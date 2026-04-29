@@ -813,6 +813,8 @@ export const LEGACY_DEFAULT_VOICE_API_ENDPOINT = 'http://127.0.0.1:10095/asr'
 export type VoiceInputMode = 'system' | 'api'
 export type VoiceApiBodyMode = 'multipart' | 'raw'
 export type VoiceAudioFormat = 'encoded' | 'pcm_s16le'
+export type VoiceLocalAsrStartupAction = 'start' | 'restart'
+export type VoiceLocalAsrServiceAction = VoiceLocalAsrStartupAction | 'status'
 
 export interface VoiceTranscribeRequest {
   endpoint: string
@@ -834,6 +836,21 @@ export interface VoiceTranscribeResult {
   raw?: unknown
 }
 
+export interface VoiceLocalAsrServiceRequest {
+  action: VoiceLocalAsrServiceAction
+  containerName: string
+}
+
+export interface VoiceLocalAsrServiceResult {
+  ok: boolean
+  action: VoiceLocalAsrServiceAction
+  containerName: string
+  running?: boolean
+  alreadyRunning?: boolean
+  output?: string
+  error?: string
+}
+
 export interface VoiceStreamStartRequest {
   endpoint: string
   sampleRate: number
@@ -843,6 +860,17 @@ export interface VoiceStreamStartRequest {
 export interface VoiceStreamStartResult {
   ok: boolean
   streamId?: string
+  error?: string
+}
+
+export interface VoiceStreamWarmupRequest {
+  endpoint: string
+  sampleRate: number
+  timeoutMs: number
+}
+
+export interface VoiceStreamWarmupResult {
+  ok: boolean
   error?: string
 }
 
@@ -901,8 +929,10 @@ export const IPC = {
   WINDOW_SET_FULLSCREEN: 'window:set-fullscreen',
   WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
   WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
+  VOICE_LOCAL_ASR_SERVICE: 'voice:local-asr-service',
   VOICE_TRANSCRIBE: 'voice:transcribe',
   VOICE_STREAM_START: 'voice:stream-start',
+  VOICE_STREAM_WARMUP: 'voice:stream-warmup',
   VOICE_STREAM_CHUNK: 'voice:stream-chunk',
   VOICE_STREAM_STOP: 'voice:stream-stop',
   VOICE_STREAM_CANCEL: 'voice:stream-cancel',

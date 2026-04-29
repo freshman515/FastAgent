@@ -175,6 +175,16 @@ export function registerGitHandlers(): void {
     }
   })
 
+  // Filesystem: lightweight path metadata for terminal/file-link routing
+  ipcMain.handle('fs:stat', async (_event, targetPath: string) => {
+    try {
+      const s = await stat(targetPath)
+      return { exists: true, isDir: s.isDirectory(), isFile: s.isFile() }
+    } catch {
+      return { exists: false, isDir: false, isFile: false }
+    }
+  })
+
   // Git show HEAD version of a file
   ipcMain.handle('git:show-head', async (_event, cwd: string, filePath: string) => {
     try {

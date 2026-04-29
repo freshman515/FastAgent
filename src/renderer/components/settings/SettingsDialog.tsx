@@ -1,7 +1,7 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
-import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode } from '@shared/types'
+import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
 import {
   CANVAS_FOCUS_FONT_PX_MAX,
@@ -83,14 +83,21 @@ const TERMINAL_SHELL_OPTIONS: Array<{ id: TerminalShellMode; label: string; desc
   { id: 'custom', label: '自定义', desc: '指定自己的 shell 路径和参数' },
 ]
 
+const LOCAL_ASR_SHORTCUT_LABEL = 'Ctrl+Alt+V'
+
 const VOICE_INPUT_OPTIONS: Array<{ id: VoiceInputMode; label: string; desc: string }> = [
   { id: 'system', label: '系统语音输入', desc: '保留当前 Windows Win+H 输入方式' },
-  { id: 'api', label: '本地 ASR', desc: '支持 FunASR WebSocket 或 HTTP ASR 接口' },
+  { id: 'api', label: '本地 ASR', desc: `支持 FunASR WebSocket 或 HTTP ASR 接口，${LOCAL_ASR_SHORTCUT_LABEL}` },
 ]
 
 const VOICE_API_BODY_OPTIONS: Array<{ id: VoiceApiBodyMode; label: string; desc: string }> = [
   { id: 'multipart', label: 'Multipart', desc: '以文件字段上传音频，适合多数 ASR 服务' },
   { id: 'raw', label: 'Raw Body', desc: '直接把音频作为请求体发送' },
+]
+
+const VOICE_LOCAL_ASR_STARTUP_OPTIONS: Array<{ id: VoiceLocalAsrStartupAction; label: string; desc: string }> = [
+  { id: 'start', label: '启动', desc: '仅在容器未运行时启动' },
+  { id: 'restart', label: '重启', desc: '每次使用前重启容器' },
 ]
 
 function isVoiceWebSocketEndpoint(endpoint: string): boolean {
@@ -1660,6 +1667,8 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
 
 function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   const addToast = useUIStore((s) => s.addToast)
+  const [voiceServiceBusy, setVoiceServiceBusy] = useState<VoiceLocalAsrServiceAction | null>(null)
+  const [voiceServiceStatus, setVoiceServiceStatus] = useState<VoiceLocalAsrServiceResult | null>(null)
   const inputClass = cn(
     'h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
     'font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
@@ -1692,6 +1701,95 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
         })
       })
   }, [addToast, onUpdate])
+
+  const refreshVoiceServiceStatus = useCallback(async (showToast = false) => {
+    const containerName = settings.voiceLocalAsrDockerContainer.trim()
+    if (!containerName) {
+      setVoiceServiceStatus(null)
+      if (showToast) addToast({ type: 'error', title: '容器名未配置', body: '请先填写本地 ASR Docker 容器名。' })
+      return
+    }
+
+    setVoiceServiceBusy('status')
+    try {
+      const result = await window.api.window.manageVoiceLocalAsrService({ action: 'status', containerName })
+      setVoiceServiceStatus(result)
+      if (showToast) {
+        addToast({
+          type: result.ok && result.running ? 'success' : 'error',
+          title: result.ok && result.running ? '本地 ASR 正在运行' : '本地 ASR 未运行',
+          body: result.ok ? result.containerName : result.error ?? '无法检测 Docker 容器状态。',
+        })
+      }
+    } catch (error) {
+      const result: VoiceLocalAsrServiceResult = {
+        ok: false,
+        action: 'status',
+        containerName,
+        error: error instanceof Error ? error.message : String(error),
+      }
+      setVoiceServiceStatus(result)
+      if (showToast) {
+        addToast({ type: 'error', title: '本地 ASR 状态检测失败', body: result.error })
+      }
+    } finally {
+      setVoiceServiceBusy(null)
+    }
+  }, [addToast, settings.voiceLocalAsrDockerContainer])
+
+  const handleVoiceServiceAction = useCallback(async (action: VoiceLocalAsrStartupAction) => {
+    const containerName = settings.voiceLocalAsrDockerContainer.trim()
+    if (!containerName) {
+      addToast({ type: 'error', title: '容器名未配置', body: '请先填写本地 ASR Docker 容器名。' })
+      return
+    }
+
+    setVoiceServiceBusy(action)
+    try {
+      const result = await window.api.window.manageVoiceLocalAsrService({ action, containerName })
+      if (!result.ok) {
+        setVoiceServiceStatus(result)
+        addToast({
+          type: 'error',
+          title: action === 'restart' ? '重启本地 ASR 失败' : '启动本地 ASR 失败',
+          body: result.error ?? 'Docker 命令执行失败。',
+        })
+        return
+      }
+
+      setVoiceServiceStatus(result)
+      addToast({
+        type: 'success',
+        title: action === 'restart' ? '本地 ASR 已重启' : '本地 ASR 已就绪',
+        body: result.alreadyRunning ? `${result.containerName} 已在运行。` : result.output || result.containerName,
+      })
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: action === 'restart' ? '重启本地 ASR 失败' : '启动本地 ASR 失败',
+        body: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setVoiceServiceBusy(null)
+    }
+  }, [addToast, settings.voiceLocalAsrDockerContainer])
+
+  useEffect(() => {
+    void refreshVoiceServiceStatus(false)
+  }, [refreshVoiceServiceStatus])
+
+  const voiceServiceStatusLabel = voiceServiceStatus
+    ? voiceServiceStatus.ok
+      ? voiceServiceStatus.running ? '运行中' : '未运行'
+      : '无法检测'
+    : '未检测'
+  const voiceServiceStatusClass = voiceServiceStatus
+    ? voiceServiceStatus.ok
+      ? voiceServiceStatus.running
+        ? 'border-[var(--color-success)]/25 bg-[var(--color-success)]/10 text-[var(--color-success)]'
+        : 'border-amber-400/25 bg-amber-400/10 text-amber-300'
+      : 'border-[var(--color-error)]/25 bg-[var(--color-error)]/10 text-[var(--color-error)]'
+    : 'border-white/[0.08] bg-white/[0.04] text-[var(--color-text-tertiary)]'
 
   return (
     <div className={PAGE_STACK}>
@@ -1765,6 +1863,79 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
             />
           </label>
         </div>
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/25 p-3">
+          <div className="flex flex-col gap-3">
+            <ToggleRow
+              label="使用前自动启动本地 ASR 容器"
+              description="开始本地 ASR 录音前自动准备 Docker 容器；Docker Desktop 仍需处于可用状态。"
+              checked={settings.voiceLocalAsrAutoStart}
+              onChange={(value) => onUpdate('voiceLocalAsrAutoStart', value)}
+            />
+            <div className="grid grid-cols-[1.1fr_0.9fr] gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Docker 容器名</span>
+                <input
+                  value={settings.voiceLocalAsrDockerContainer}
+                  onChange={(event) => onUpdate('voiceLocalAsrDockerContainer', event.target.value)}
+                  placeholder="funasr-realtime"
+                  className={inputClass}
+                />
+              </label>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">自动动作</span>
+                <SegmentedChoice
+                  value={settings.voiceLocalAsrStartupAction}
+                  options={VOICE_LOCAL_ASR_STARTUP_OPTIONS}
+                  onChange={(value) => onUpdate('voiceLocalAsrStartupAction', value)}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-[var(--ui-font-xs)] font-semibold',
+                voiceServiceStatusClass,
+              )}>
+                {voiceServiceStatus?.ok && voiceServiceStatus.running ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+                {voiceServiceStatusLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => void refreshVoiceServiceStatus(true)}
+                disabled={voiceServiceBusy !== null}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-white/[0.08] bg-white/[0.04] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-white/[0.08] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={voiceServiceBusy === 'status' ? 'animate-spin' : undefined} />
+                刷新状态
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleVoiceServiceAction('start')}
+                disabled={voiceServiceBusy !== null}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-white/[0.08] bg-white/[0.04] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-white/[0.08] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Play size={13} />
+                启动容器
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleVoiceServiceAction('restart')}
+                disabled={voiceServiceBusy !== null}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-[var(--ui-font-xs)] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RotateCcw size={13} className={voiceServiceBusy === 'restart' ? 'animate-spin' : undefined} />
+                重启容器
+              </button>
+              <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+                快捷键：{LOCAL_ASR_SHORTCUT_LABEL}
+              </span>
+            </div>
+            {voiceServiceStatus && !voiceServiceStatus.ok && voiceServiceStatus.error && (
+              <div className="rounded-[var(--radius-sm)] bg-[var(--color-error)]/8 px-2.5 py-2 text-[var(--ui-font-2xs)] leading-relaxed text-[var(--color-error)]">
+                {voiceServiceStatus.error}
+              </div>
+            )}
+          </div>
+        </div>
         {voiceEndpointIsWebSocket ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 px-3 py-2 text-[var(--ui-font-xs)] leading-relaxed text-[var(--color-text-tertiary)]">
             FunASR WebSocket 模式：PCM S16LE / 16 kHz / 单声道，2pass 协议。
@@ -1809,7 +1980,7 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
           </>
         )}
         <span className="text-[var(--ui-font-2xs)] leading-relaxed text-[var(--color-text-tertiary)]">
-          本地 ASR 模式会在终端右键菜单中录音，停止后把返回文本插入当前终端输入区。Windows 系统语音输入入口会保留。
+          本地 ASR 模式会在终端右键菜单中录音，也可在终端里按 {LOCAL_ASR_SHORTCUT_LABEL} 开始/停止录音。Windows 系统语音输入入口会保留。
         </span>
       </SettingsSection>
       <div className="flex items-center gap-2 mb-1">

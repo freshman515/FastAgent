@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_FUNASR_WS_ENDPOINT, LEGACY_DEFAULT_VOICE_API_ENDPOINT } from '@shared/types'
-import type { SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, WorkspaceLayout } from '@shared/types'
+import type { SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrStartupAction, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
@@ -72,6 +72,10 @@ function normalizeVoiceInputMode(raw: unknown): VoiceInputMode {
 
 function normalizeVoiceApiBodyMode(raw: unknown): VoiceApiBodyMode {
   return raw === 'multipart' || raw === 'raw' ? raw : DEFAULT_SETTINGS.voiceApiBodyMode
+}
+
+function normalizeVoiceLocalAsrServiceAction(raw: unknown): VoiceLocalAsrStartupAction {
+  return raw === 'start' || raw === 'restart' ? raw : DEFAULT_SETTINGS.voiceLocalAsrStartupAction
 }
 
 function normalizeVoiceApiTimeoutMs(raw: unknown): number {
@@ -258,6 +262,12 @@ export interface AppSettings {
   voiceApiTimeoutMs: number
   /** Optional Authorization header value for ASR API. */
   voiceApiAuthorization: string
+  /** Automatically start the configured local ASR Docker container before recording. */
+  voiceLocalAsrAutoStart: boolean
+  /** Docker container name used for the local ASR service. */
+  voiceLocalAsrDockerContainer: string
+  /** Docker action used when automatically preparing the local ASR service. */
+  voiceLocalAsrStartupAction: VoiceLocalAsrStartupAction
   wslDistroName: string
   wslShell: string
   wslUseLoginShell: boolean
@@ -378,6 +388,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   voiceApiResponseTextPath: 'text',
   voiceApiTimeoutMs: 30000,
   voiceApiAuthorization: '',
+  voiceLocalAsrAutoStart: true,
+  voiceLocalAsrDockerContainer: 'funasr-realtime',
+  voiceLocalAsrStartupAction: 'start',
   wslDistroName: '',
   wslShell: 'bash',
   wslUseLoginShell: false,
@@ -1454,6 +1467,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.voiceApiResponseTextPath === 'string') s.voiceApiResponseTextPath = raw.voiceApiResponseTextPath.trim() || DEFAULT_SETTINGS.voiceApiResponseTextPath
       s.voiceApiTimeoutMs = normalizeVoiceApiTimeoutMs(raw.voiceApiTimeoutMs)
       if (typeof raw.voiceApiAuthorization === 'string') s.voiceApiAuthorization = raw.voiceApiAuthorization.trim()
+      if (typeof raw.voiceLocalAsrAutoStart === 'boolean') s.voiceLocalAsrAutoStart = raw.voiceLocalAsrAutoStart
+      if (typeof raw.voiceLocalAsrDockerContainer === 'string') s.voiceLocalAsrDockerContainer = raw.voiceLocalAsrDockerContainer.trim() || DEFAULT_SETTINGS.voiceLocalAsrDockerContainer
+      s.voiceLocalAsrStartupAction = normalizeVoiceLocalAsrServiceAction(raw.voiceLocalAsrStartupAction)
       if (typeof raw.wslDistroName === 'string') s.wslDistroName = raw.wslDistroName.trim()
       if (typeof raw.wslShell === 'string') s.wslShell = raw.wslShell.trim() || DEFAULT_SETTINGS.wslShell
       if (typeof raw.wslUseLoginShell === 'boolean') s.wslUseLoginShell = raw.wslUseLoginShell
@@ -1632,6 +1648,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.voiceApiResponseTextPath = settings.voiceApiResponseTextPath.trim() || DEFAULT_SETTINGS.voiceApiResponseTextPath
     settings.voiceApiTimeoutMs = normalizeVoiceApiTimeoutMs(settings.voiceApiTimeoutMs)
     settings.voiceApiAuthorization = settings.voiceApiAuthorization.trim()
+    settings.voiceLocalAsrDockerContainer = settings.voiceLocalAsrDockerContainer.trim() || DEFAULT_SETTINGS.voiceLocalAsrDockerContainer
+    settings.voiceLocalAsrStartupAction = normalizeVoiceLocalAsrServiceAction(settings.voiceLocalAsrStartupAction)
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))
     settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)

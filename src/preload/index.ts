@@ -32,6 +32,8 @@ import type {
   SessionReplayPayload,
   TerminalShellAvailability,
   TerminalShellMode,
+  VoiceLocalAsrServiceRequest,
+  VoiceLocalAsrServiceResult,
   VoiceTranscribeRequest,
   VoiceTranscribeResult,
   VoiceStreamChunkPayload,
@@ -39,6 +41,8 @@ import type {
   VoiceStreamStartRequest,
   VoiceStreamStartResult,
   VoiceStreamStopRequest,
+  VoiceStreamWarmupRequest,
+  VoiceStreamWarmupResult,
 } from '@shared/types'
 
 interface OpencodeRequest {
@@ -69,10 +73,14 @@ const api = {
     isFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_IS_FULLSCREEN) as Promise<boolean>,
     startVoiceInput: () =>
       ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
+    manageVoiceLocalAsrService: (options: VoiceLocalAsrServiceRequest) =>
+      ipcRenderer.invoke(IPC.VOICE_LOCAL_ASR_SERVICE, options) as Promise<VoiceLocalAsrServiceResult>,
     transcribeVoiceInput: (options: VoiceTranscribeRequest) =>
       ipcRenderer.invoke(IPC.VOICE_TRANSCRIBE, options) as Promise<VoiceTranscribeResult>,
     startVoiceInputStream: (options: VoiceStreamStartRequest) =>
       ipcRenderer.invoke(IPC.VOICE_STREAM_START, options) as Promise<VoiceStreamStartResult>,
+    warmupVoiceInputStream: (options: VoiceStreamWarmupRequest) =>
+      ipcRenderer.invoke(IPC.VOICE_STREAM_WARMUP, options) as Promise<VoiceStreamWarmupResult>,
     sendVoiceInputStreamChunk: (payload: VoiceStreamChunkPayload) =>
       ipcRenderer.send(IPC.VOICE_STREAM_CHUNK, payload),
     stopVoiceInputStream: (payload: VoiceStreamStopRequest) =>
@@ -354,6 +362,8 @@ const api = {
 
   fs: {
     readDir: (path: string) => ipcRenderer.invoke('fs:read-dir', path) as Promise<Array<{ name: string; isDir: boolean }>>,
+    stat: (path: string) =>
+      ipcRenderer.invoke('fs:stat', path) as Promise<{ exists: boolean; isDir: boolean; isFile: boolean }>,
     readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path) as Promise<string>,
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:write-file', path, content) as Promise<void>,
     createFile: (path: string) => ipcRenderer.invoke('fs:create-file', path) as Promise<void>,

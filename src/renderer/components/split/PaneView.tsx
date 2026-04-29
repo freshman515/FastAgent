@@ -1119,6 +1119,64 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     commitDroppedTab(targetId, getDropSideFromEvent(event), event)
   }, [commitDroppedTab])
 
+  const handleContentDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!isTabDrag(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+
+    const rect = termAreaRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const zone = getDropZoneFromPointer(event.clientX, event.clientY, rect)
+    setEdgeDrop((current) => current === zone ? current : zone)
+  }, [])
+
+  const handleContentDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
+    setEdgeDrop(null)
+  }, [])
+
+  const handleContentDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = termAreaRef.current?.getBoundingClientRect()
+    const zone = rect ? getDropZoneFromPointer(event.clientX, event.clientY, rect) : edgeDrop
+    setEdgeDrop(null)
+    const meta = getTabDragMeta(event)
+    const sessionId = meta?.tabId || event.dataTransfer.getData('session-tab-id')
+    const sourcePaneId = meta?.sourcePaneId || event.dataTransfer.getData('source-pane-id')
+    const sourceWindowId = meta?.sourceWindowId || event.dataTransfer.getData('source-window-id') || 'main'
+    const dragToken = event.dataTransfer.getData('session-tab-drag-token')
+      || window.api.detach.getActiveTabDrag()
+    // Cross-window drop
+    if (dragToken && (sourceWindowId !== currentWindowId || !sessionId)) {
+      attachDraggedTab(dragToken, zone)
+      return
+    }
+    if (sourceWindowId !== currentWindowId && !dragToken) return
+    if (!sessionId || !sourcePaneId) return
+    const store = usePanesStore.getState()
+
+    if (zone && zone !== 'center') {
+      // Edge drop -> split this pane.
+      if (sourcePaneId === paneId) {
+        // Same pane: just split (session moves from this pane to new split).
+        store.splitPane(paneId, zone, sessionId)
+      } else {
+        // Cross-pane: move first so the target pane owns the active tab before splitting.
+        store.moveSession(sourcePaneId, paneId, sessionId)
+        store.splitPane(paneId, zone, sessionId)
+      }
+    } else if (sourcePaneId !== paneId) {
+      // Center drop: merge into this pane.
+      store.moveSession(sourcePaneId, paneId, sessionId)
+    }
+    if (!sessionId.startsWith('editor-')) {
+      useSessionsStore.getState().setActive(sessionId)
+    }
+  }, [attachDraggedTab, currentWindowId, edgeDrop, paneId])
+
   // Register pane DOM element for rect-based navigation
   useEffect(() => {
     registerPaneElement(paneId, paneRootRef.current)
@@ -1652,61 +1710,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           'relative flex-1 overflow-hidden bg-[var(--color-bg-primary)]',
           edgeDrop && 'ring-1 ring-inset ring-[var(--color-accent)]/25',
         )}
-        onDragOver={(e) => {
-          if (!isTabDrag(e)) return
-          e.preventDefault()
-          e.stopPropagation()
-          e.dataTransfer.dropEffect = 'move'
-
-          const rect = termAreaRef.current?.getBoundingClientRect()
-          if (!rect) return
-          const zone = getDropZoneFromPointer(e.clientX, e.clientY, rect)
-          setEdgeDrop((current) => current === zone ? current : zone)
-        }}
-        onDragLeave={(e) => {
-          const nextTarget = e.relatedTarget
-          if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) return
-          setEdgeDrop(null)
-        }}
-        onDrop={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          const rect = termAreaRef.current?.getBoundingClientRect()
-          const zone = rect ? getDropZoneFromPointer(e.clientX, e.clientY, rect) : edgeDrop
-          setEdgeDrop(null)
-          const meta = getTabDragMeta(e)
-          const sessionId = meta?.tabId || e.dataTransfer.getData('session-tab-id')
-          const sourcePaneId = meta?.sourcePaneId || e.dataTransfer.getData('source-pane-id')
-          const sourceWindowId = meta?.sourceWindowId || e.dataTransfer.getData('source-window-id') || 'main'
-          const dragToken = e.dataTransfer.getData('session-tab-drag-token')
-            || window.api.detach.getActiveTabDrag()
-          // Cross-window drop
-          if (dragToken && (sourceWindowId !== currentWindowId || !sessionId)) {
-            attachDraggedTab(dragToken, zone)
-            return
-          }
-          if (sourceWindowId !== currentWindowId && !dragToken) return
-          if (!sessionId || !sourcePaneId) return
-          const store = usePanesStore.getState()
-
-          if (zone && zone !== 'center') {
-            // Edge drop → split this pane
-            if (sourcePaneId === paneId) {
-              // Same pane: just split (session moves from this pane to new split)
-              store.splitPane(paneId, zone, sessionId)
-            } else {
-              // Cross-pane: move first so the target pane owns the active tab before splitting.
-              store.moveSession(sourcePaneId, paneId, sessionId)
-              store.splitPane(paneId, zone, sessionId)
-            }
-          } else if (sourcePaneId !== paneId) {
-            // Center drop: merge into this pane
-            store.moveSession(sourcePaneId, paneId, sessionId)
-          }
-          if (!sessionId.startsWith('editor-')) {
-            useSessionsStore.getState().setActive(sessionId)
-          }
-        }}
+        onDragOver={handleContentDragOver}
+        onDragLeave={handleContentDragLeave}
+        onDrop={handleContentDrop}
       >
         {sessions.map((session) => {
           const isActive = session.id === paneActiveSessionId
@@ -1757,6 +1763,15 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
               onIconClick={handleEmptyIconClick}
             />
           </div>
+        )}
+
+        {(dragTabId || externalDragPreview) && (
+          <div
+            className="absolute inset-0 z-40"
+            onDragOver={handleContentDragOver}
+            onDragLeave={handleContentDragLeave}
+            onDrop={handleContentDrop}
+          />
         )}
 
         {/* Tab drop preview overlay */}

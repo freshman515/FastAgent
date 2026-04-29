@@ -4,11 +4,16 @@ import { promisify } from 'node:util'
 import WebSocket, { type RawData } from 'ws'
 import {
   IPC,
+  type VoiceLocalAsrServiceAction,
+  type VoiceLocalAsrServiceRequest,
+  type VoiceLocalAsrServiceResult,
   type VoiceStreamChunkPayload,
   type VoiceStreamEvent,
   type VoiceStreamStartRequest,
   type VoiceStreamStartResult,
   type VoiceStreamStopRequest,
+  type VoiceStreamWarmupRequest,
+  type VoiceStreamWarmupResult,
   type VoiceTranscribeRequest,
   type VoiceTranscribeResult,
 } from '@shared/types'
@@ -63,6 +68,77 @@ async function startWindowsVoiceInput(): Promise<{ ok: boolean; error?: string }
     return { ok: true }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function normalizeCommandOutput(stdout?: string, stderr?: string): string {
+  return [stdout, stderr]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
+function commandErrorMessage(error: unknown): string {
+  const maybe = error as { message?: string; stdout?: string; stderr?: string }
+  const output = normalizeCommandOutput(maybe.stdout, maybe.stderr)
+  return output || maybe.message || String(error)
+}
+
+function validateDockerContainerName(containerName: string): string | null {
+  const trimmed = containerName.trim()
+  if (!trimmed) return null
+  return /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(trimmed) ? trimmed : null
+}
+
+async function runDockerContainerAction(
+  action: VoiceLocalAsrServiceAction,
+  containerName: string,
+): Promise<VoiceLocalAsrServiceResult> {
+  const normalizedContainerName = validateDockerContainerName(containerName)
+  if (!normalizedContainerName) {
+    return {
+      ok: false,
+      action,
+      containerName: containerName.trim(),
+      error: 'Docker 容器名无效。请只使用字母、数字、点、下划线或短横线。',
+    }
+  }
+
+  try {
+    if (action === 'status' || action === 'start') {
+      const inspect = await execFileAsync(
+        'docker',
+        ['inspect', '--format', '{{.State.Running}}', normalizedContainerName],
+        { timeout: 15000, windowsHide: true },
+      )
+      const running = inspect.stdout.trim() === 'true'
+      if (action === 'status') {
+        return { ok: true, action, containerName: normalizedContainerName, running }
+      }
+      if (running) {
+        return { ok: true, action, containerName: normalizedContainerName, running: true, alreadyRunning: true }
+      }
+    }
+
+    const result = await execFileAsync(
+      'docker',
+      [action, normalizedContainerName],
+      { timeout: 60000, windowsHide: true },
+    )
+    return {
+      ok: true,
+      action,
+      containerName: normalizedContainerName,
+      running: true,
+      output: normalizeCommandOutput(result.stdout, result.stderr),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      action,
+      containerName: normalizedContainerName,
+      error: commandErrorMessage(error),
+    }
   }
 }
 
@@ -353,6 +429,86 @@ async function stopFunasrVoiceStream(
   return { ok: true }
 }
 
+async function warmupFunasrVoiceStream(options: VoiceStreamWarmupRequest): Promise<VoiceStreamWarmupResult> {
+  const endpoint = options.endpoint.trim()
+  if (!endpoint) return { ok: false, error: '未配置 FunASR WebSocket 地址。' }
+
+  let url: URL
+  try {
+    url = new URL(endpoint)
+  } catch {
+    return { ok: false, error: 'FunASR WebSocket 地址不是有效 URL。' }
+  }
+
+  if (!isWebSocketProtocol(url.protocol)) {
+    return { ok: false, error: 'FunASR 预热只支持 ws/wss 地址。' }
+  }
+
+  const sampleRate = typeof options.sampleRate === 'number' && Number.isFinite(options.sampleRate)
+    ? Math.max(8000, Math.min(48000, Math.round(options.sampleRate)))
+    : 16000
+  const timeoutMs = Math.max(1000, Math.min(30000, Math.round(options.timeoutMs || 10000)))
+
+  return new Promise((resolve) => {
+    let settled = false
+    const ws = new WebSocket(url.toString(), { perMessageDeflate: false })
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const settle = (result: VoiceStreamWarmupResult): void => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close()
+        }
+      } catch {
+        // Ignore close races while tearing down a warmup stream.
+      }
+      resolve(result)
+    }
+
+    timer = setTimeout(() => {
+      settle({ ok: false, error: 'FunASR WebSocket 预热超时。' })
+    }, timeoutMs)
+
+    ws.once('open', () => {
+      const config = {
+        mode: '2pass',
+        wav_name: `fastagents-warmup-${Date.now()}`,
+        wav_format: 'pcm',
+        is_speaking: true,
+        chunk_size: [...FUNASR_CHUNK_SIZE],
+        chunk_interval: FUNASR_CHUNK_INTERVAL,
+        audio_fs: sampleRate,
+        itn: true,
+      }
+
+      const silence = Buffer.alloc(getFunasrChunkBytes(sampleRate) * 2)
+      sendWebSocketData(ws, JSON.stringify(config))
+        .then(() => sendWebSocketData(ws, silence))
+        .then(() => delay(Math.min(240, getFunasrChunkDurationMs())))
+        .then(() => sendWebSocketData(ws, JSON.stringify({ is_speaking: false })))
+        .then(() => settle({ ok: true }))
+        .catch((error) => {
+          settle({ ok: false, error: error instanceof Error ? error.message : String(error) })
+        })
+    })
+
+    ws.on('message', () => {
+      // Warmup responses are intentionally ignored; the connection only primes the ASR runtime.
+    })
+
+    ws.once('error', (error) => {
+      settle({ ok: false, error: error.message || 'FunASR WebSocket 预热失败。' })
+    })
+
+    ws.once('close', () => {
+      settle({ ok: false, error: 'FunASR WebSocket 预热连接已关闭。' })
+    })
+  })
+}
+
 async function sendFunasrPcmChunks(ws: WebSocket, audio: ArrayBuffer, sampleRate: number): Promise<void> {
   const bytes = new Uint8Array(audio)
   const chunkBytes = getFunasrChunkBytes(sampleRate)
@@ -602,12 +758,21 @@ export function registerWindowHandlers(): void {
     return startWindowsVoiceInput()
   })
 
+  ipcMain.handle(IPC.VOICE_LOCAL_ASR_SERVICE, async (_event, options: VoiceLocalAsrServiceRequest) => {
+    const action = options.action === 'status' || options.action === 'restart' ? options.action : 'start'
+    return runDockerContainerAction(action, options.containerName)
+  })
+
   ipcMain.handle(IPC.VOICE_TRANSCRIBE, async (_event, options: VoiceTranscribeRequest) => {
     return transcribeVoiceInput(options)
   })
 
   ipcMain.handle(IPC.VOICE_STREAM_START, async (event, options: VoiceStreamStartRequest) => {
     return startFunasrVoiceStream(event.sender, options)
+  })
+
+  ipcMain.handle(IPC.VOICE_STREAM_WARMUP, async (_event, options: VoiceStreamWarmupRequest) => {
+    return warmupFunasrVoiceStream(options)
   })
 
   ipcMain.on(IPC.VOICE_STREAM_CHUNK, (event, payload: VoiceStreamChunkPayload) => {

@@ -1,16 +1,196 @@
 import { useEffect, useRef, useState } from 'react'
-import { Terminal, type IBufferLine, type ILink, type ILinkProvider } from '@xterm/xterm'
+import {
+  Terminal,
+  type IBufferLine,
+  type IDecoration,
+  type ILink,
+  type ILinkProvider,
+  type IMarker,
+} from '@xterm/xterm'
 import { addTimelineEvent } from '@/components/rightpanel/SessionTimeline'
 import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/agentRuntime'
 
 // ─── Global terminal registry for preview snapshots ───
 const terminalRegistry = new Map<string, Terminal>()
+const terminalQuestionLines = new Map<string, Set<number>>()
+const terminalQuestionAnchors = new Map<string, number>()
+const terminalQuestionHighlights = new Map<string, {
+  decoration: IDecoration
+  marker: IMarker
+  timeoutId: number
+}>()
+
+export interface TerminalQuestionNavigation {
+  previousLine: number | null
+  nextLine: number | null
+}
+
+function isTerminalAtBottom(terminal: Terminal): boolean {
+  const buffer = terminal.buffer.active
+  return buffer.viewportY >= buffer.baseY
+}
+
+function getQuestionLineSet(sessionId: string): Set<number> {
+  let lines = terminalQuestionLines.get(sessionId)
+  if (!lines) {
+    lines = new Set<number>()
+    terminalQuestionLines.set(sessionId, lines)
+  }
+  return lines
+}
+
+function looksLikeUserQuestionLine(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return /^(?:>|›|❯)\s+\S/.test(trimmed)
+    || /^(?:User|Human|You|用户|我)[:：]\s+\S/i.test(trimmed)
+    || /^╭.*(?:User|Human|You|用户)/i.test(trimmed)
+}
+
+function markTerminalQuestionLine(sessionId: string, terminal: Terminal, line: number): void {
+  const buffer = terminal.buffer.active
+  const maxLine = buffer.baseY + Math.max(0, terminal.rows - 1)
+  const boundedLine = Math.max(0, Math.min(line, maxLine))
+  getQuestionLineSet(sessionId).add(boundedLine)
+}
+
+function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number[] {
+  const buffer = terminal.buffer.active
+  const lines = new Set<number>()
+  const endLine = buffer.baseY + terminal.rows
+
+  for (const line of getQuestionLineSet(sessionId)) {
+    if (line >= 0 && line < endLine && buffer.getLine(line)) {
+      lines.add(line)
+    }
+  }
+
+  for (let lineIndex = 0; lineIndex < endLine; lineIndex += 1) {
+    const line = buffer.getLine(lineIndex)
+    if (!line) continue
+    if (looksLikeUserQuestionLine(line.translateToString(true))) {
+      lines.add(lineIndex)
+    }
+  }
+
+  return [...lines].sort((a, b) => a - b)
+}
 
 export function scrollTerminalToLatest(sessionId: string): boolean {
   const terminal = terminalRegistry.get(sessionId)
   if (!terminal) return false
+  clearTerminalQuestionHighlight(sessionId)
+  terminalQuestionAnchors.delete(sessionId)
   terminal.scrollToBottom()
   return true
+}
+
+function clearTerminalQuestionHighlight(sessionId: string): void {
+  const highlight = terminalQuestionHighlights.get(sessionId)
+  if (!highlight) return
+  window.clearTimeout(highlight.timeoutId)
+  highlight.decoration.dispose()
+  highlight.marker.dispose()
+  terminalQuestionHighlights.delete(sessionId)
+}
+
+export function getTerminalQuestionNavigation(
+  sessionId: string,
+  referenceLine?: number | null,
+): TerminalQuestionNavigation {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return { previousLine: null, nextLine: null }
+
+  const lines = getTerminalQuestionLines(sessionId, terminal)
+  const clickedQuestionLine = referenceLine != null && lines.includes(referenceLine)
+    ? referenceLine
+    : null
+  const anchorLine = terminalQuestionAnchors.get(sessionId) ?? null
+  const viewportStart = terminal.buffer.active.viewportY
+  const viewportEnd = viewportStart + Math.max(0, terminal.rows - 1)
+  const visibleAnchorLine = anchorLine != null
+    && anchorLine >= viewportStart
+    && anchorLine <= viewportEnd
+    && lines.includes(anchorLine)
+    ? anchorLine
+    : null
+
+  if (anchorLine != null && visibleAnchorLine === null) {
+    terminalQuestionAnchors.delete(sessionId)
+  }
+
+  const currentLine = clickedQuestionLine
+    ?? visibleAnchorLine
+    ?? referenceLine
+    ?? (isTerminalAtBottom(terminal) ? viewportEnd + 1 : viewportStart)
+  let previousLine: number | null = null
+  let nextLine: number | null = null
+
+  for (const line of lines) {
+    if (line < currentLine) {
+      previousLine = line
+      continue
+    }
+    if (line > currentLine) {
+      nextLine = line
+      break
+    }
+  }
+
+  return { previousLine, nextLine }
+}
+
+export function scrollTerminalToQuestion(sessionId: string, line: number): boolean {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return false
+  const topLine = Math.max(0, line - 2)
+  terminalQuestionAnchors.set(sessionId, line)
+  terminal.focus()
+  terminal.scrollToLine(topLine)
+  flashTerminalQuestionLine(sessionId, terminal, line)
+  return true
+}
+
+function flashTerminalQuestionLine(sessionId: string, terminal: Terminal, line: number): void {
+  clearTerminalQuestionHighlight(sessionId)
+
+  const buffer = terminal.buffer.active
+  const cursorLine = buffer.baseY + buffer.cursorY
+  const marker = terminal.registerMarker(line - cursorLine)
+  if (!marker) return
+
+  const decoration = terminal.registerDecoration({
+    marker,
+    x: 0,
+    width: terminal.cols,
+    height: 1,
+  })
+  if (!decoration) {
+    marker.dispose()
+    return
+  }
+
+  decoration.onRender((element) => {
+    element.classList.add('terminal-question-jump-highlight')
+  })
+
+  const timeoutId = window.setTimeout(() => {
+    const current = terminalQuestionHighlights.get(sessionId)
+    if (current?.decoration !== decoration) return
+    clearTerminalQuestionHighlight(sessionId)
+  }, 1800)
+
+  terminalQuestionHighlights.set(sessionId, { decoration, marker, timeoutId })
+}
+
+export function scrollTerminalToAdjacentQuestion(
+  sessionId: string,
+  direction: 'previous' | 'next',
+): boolean {
+  const navigation = getTerminalQuestionNavigation(sessionId)
+  const line = direction === 'previous' ? navigation.previousLine : navigation.nextLine
+  if (line === null) return false
+  return scrollTerminalToQuestion(sessionId, line)
 }
 
 export function scrollTerminalToLatestSoon(sessionId: string): void {
@@ -60,40 +240,124 @@ import { parseCustomSessionArgs } from '@/lib/createSession'
 const TERMINAL_FONT_SIZE_MIN = 8
 const TERMINAL_FONT_SIZE_MAX = 36
 
-/** File extensions we treat as clickable when referenced in the terminal. */
-const CLICKABLE_FILE_EXT_RE = /\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?$/
-
-/** Match file path candidates like `src/foo.ts:42`, `./foo.py`, `C:\\x\\y.rs:1:2`. */
-const FILE_PATH_RE = /(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_][\w.\-+]*[\\/])[\w.\-+\\/]*\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/g
+/** Match file path candidates like `src/foo.ts:42`, `./foo.py`, `C:\\x\\y.rs:1:2`, or quoted paths with spaces. */
+const FILE_PATH_RE = /"((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_][^"'\r\n]*[\\/])[^"\r\n]+)"|'((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_][^"'\r\n]*[\\/])[^'\r\n]+)'|((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_][^\s<>"'`|]*[\\/])[^\s<>"'`|]+)/g
+const WINDOWS_ABSOLUTE_FILE_PATH_RE = /[A-Za-z]:[\\/][^\r\n<>"'`|]*?\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?(?=$|[\s,;!?)\]}>"'`，。；！）】])/g
 
 const URL_RE = /https?:\/\/[^\s<>()"'`\\]+/g
 
-interface ParsedFileRef {
+export interface ParsedFileRef {
   path: string
   line: number | null
   column: number | null
 }
 
+export interface TerminalFileLinkCandidate {
+  raw: string
+  start: number
+  end: number
+  ref: ParsedFileRef
+}
+
 function parseFileRef(raw: string): ParsedFileRef | null {
-  if (!CLICKABLE_FILE_EXT_RE.test(raw)) return null
-  const match = raw.match(/^(.*?)(?::(\d+)(?::(\d+))?)?$/)
+  const cleaned = raw.trim().replace(/[.,;!?)\]}>'"`]+$/, '')
+  const match = cleaned.match(/^(.*?)(?::(\d+)(?::(\d+))?)?$/)
   if (!match) return null
+  const path = match[1]
+  if (!looksLikeFilePath(path)) return null
   return {
-    path: match[1],
+    path,
     line: match[2] ? parseInt(match[2], 10) : null,
     column: match[3] ? parseInt(match[3], 10) : null,
   }
 }
 
-function isAbsolutePath(path: string): boolean {
+function looksLikeFilePath(path: string): boolean {
+  if (!path || path.includes('://')) return false
+  return /^[A-Za-z]:[\\/]/.test(path)
+    || path.startsWith('/')
+    || /^\.{1,2}[\\/]/.test(path)
+    || /[\\/]/.test(path)
+}
+
+export function isTerminalAbsolutePath(path: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('/')
 }
 
-function joinCwd(cwd: string, relative: string): string {
+export function joinTerminalCwd(cwd: string, relative: string): string {
   const sep = cwd.includes('\\') && !cwd.includes('/') ? '\\' : '/'
   const trimmedCwd = cwd.replace(/[\\/]+$/, '')
   const normalizedRelative = relative.replace(/^\.[\\/]+/, '')
   return `${trimmedCwd}${sep}${normalizedRelative}`
+}
+
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && bStart < aEnd
+}
+
+export function parseTerminalFileLinks(
+  text: string,
+  blockedRanges: Array<{ start: number; end: number }> = [],
+): TerminalFileLinkCandidate[] {
+  const candidates: TerminalFileLinkCandidate[] = []
+  const occupiedRanges = [...blockedRanges]
+
+  const addCandidate = (raw: string, start: number): void => {
+    const ref = parseFileRef(raw)
+    if (!ref) return
+    const end = start + raw.length
+    if (occupiedRanges.some((range) => rangesOverlap(start, end, range.start, range.end))) return
+    occupiedRanges.push({ start, end })
+    candidates.push({ raw, start, end, ref })
+  }
+
+  WINDOWS_ABSOLUTE_FILE_PATH_RE.lastIndex = 0
+  let wm: RegExpExecArray | null
+  while ((wm = WINDOWS_ABSOLUTE_FILE_PATH_RE.exec(text)) !== null) {
+    const raw = wm[0].replace(/[.,;!?)\]}>'"`，。；！）】]+$/, '')
+    addCandidate(raw, wm.index)
+  }
+
+  FILE_PATH_RE.lastIndex = 0
+  let fm: RegExpExecArray | null
+  while ((fm = FILE_PATH_RE.exec(text)) !== null) {
+    const rawMatch = fm[0]
+    const candidate = fm[1] ?? fm[2] ?? fm[3] ?? rawMatch
+    const offset = rawMatch.indexOf(candidate)
+    const raw = candidate.replace(/[.,;!?)\]}>'"`]+$/, '')
+    addCandidate(raw, fm.index + Math.max(0, offset))
+  }
+
+  return candidates
+}
+
+function stringIndexToCellBoundary(line: IBufferLine, stringIndex: number): number {
+  let textIndex = 0
+  for (let column = 0; column < line.length; column += 1) {
+    const cell = line.getCell(column)
+    const chars = cell?.getChars() ?? ''
+    if (!chars) continue
+    if (textIndex >= stringIndex) return column
+    textIndex += chars.length
+    if (textIndex >= stringIndex) return column + Math.max(1, cell?.getWidth() ?? 1)
+  }
+  return line.length
+}
+
+function fileLinkRange(line: IBufferLine, candidate: TerminalFileLinkCandidate, y: number): ILink['range'] {
+  const startCell = stringIndexToCellBoundary(line, candidate.start)
+  const endCell = stringIndexToCellBoundary(line, candidate.end)
+  return { start: { x: startCell + 1, y }, end: { x: Math.max(startCell + 1, endCell), y } }
+}
+
+export function findTerminalFileLinkAtCell(line: IBufferLine, cellColumn: number): TerminalFileLinkCandidate | null {
+  const text = line.translateToString(true)
+  const candidates = parseTerminalFileLinks(text)
+  return candidates.find((candidate) => {
+    const startCell = stringIndexToCellBoundary(line, candidate.start)
+    const endCell = stringIndexToCellBoundary(line, candidate.end)
+    return cellColumn >= startCell && cellColumn < endCell
+  }) ?? null
 }
 
 const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350] as const
@@ -181,6 +445,7 @@ export function useXterm(
   searchAddonRef: React.RefObject<SearchAddon | null>
   terminalRef: React.RefObject<Terminal | null>
   pasteFromClipboardRef: React.RefObject<(() => Promise<void>) | null>
+  isAtBottom: boolean
 } {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -190,6 +455,7 @@ export function useXterm(
   const sessionRef = useRef(session)
   const lastPtyDimensionsRef = useRef<{ ptyId: string; cols: number; rows: number } | null>(null)
   const pendingPtyResizeRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
   sessionRef.current = session
 
   const requestPtyResize = (
@@ -316,6 +582,11 @@ export function useXterm(
     searchAddonRef.current = searchAddon
     terminal.open(container)
     terminalRegistry.set(sessionId, terminal)
+    const updateBottomState = (): void => {
+      if (!destroyed) setIsAtBottom(isTerminalAtBottom(terminal))
+    }
+    updateBottomState()
+    const onScrollDisposable = terminal.onScroll(updateBottomState)
 
     // Resolve current session cwd for relative file path links
     const resolveSessionCwd = (): string | null => {
@@ -326,32 +597,41 @@ export function useXterm(
         ? worktreeStore.worktrees.find((w) => w.id === current.worktreeId)
         : worktreeStore.getMainWorktree(current.projectId)
       const project = projectsStore.projects.find((p) => p.id === current.projectId)
-      return wt?.path ?? project?.path ?? current.cwd ?? null
+      return current.cwd ?? wt?.path ?? project?.path ?? null
     }
 
-    const openFileLink = (ref: ParsedFileRef): void => {
+    const openFileLink = async (ref: ParsedFileRef): Promise<void> => {
       const cwd = resolveSessionCwd()
-      const absolute = isAbsolutePath(ref.path) ? ref.path : (cwd ? joinCwd(cwd, ref.path) : null)
+      const absolute = isTerminalAbsolutePath(ref.path) ? ref.path : (cwd ? joinTerminalCwd(cwd, ref.path) : null)
       if (!absolute) return
+
+      const info = await window.api.fs.stat(absolute)
+      if (info.exists && info.isDir) {
+        void window.api.shell.openPath(absolute)
+        return
+      }
+
       const context = {
         projectId: sessionRef.current.projectId,
         worktreeId: sessionRef.current.worktreeId ?? null,
       }
       const editors = useEditorsStore.getState()
-      if (ref.line !== null) {
-        editors.openFileAtLocation(absolute, { line: ref.line, column: ref.column ?? 1 }, context)
-      } else {
-        editors.openFile(absolute, context)
-      }
+      const tabId = ref.line !== null
+        ? editors.openFileAtLocation(absolute, { line: ref.line, column: ref.column ?? 1 }, context)
+        : editors.openFile(absolute, context)
+      const paneStore = usePanesStore.getState()
+      paneStore.addSessionToPane(paneStore.activePaneId, tabId)
+      paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
     }
 
-    // Link provider — Ctrl/Cmd+Click to open URL in browser or file path in editor
+    // Link provider - double-click opens URLs and file paths.
     const linkProvider: ILinkProvider = {
       provideLinks(y, callback) {
         const line = terminal.buffer.active.getLine(y - 1)
         if (!line) { callback(undefined); return }
         const text = line.translateToString(true)
         const links: ILink[] = []
+        const occupiedRanges: Array<{ start: number; end: number }> = []
 
         URL_RE.lastIndex = 0
         let m: RegExpExecArray | null
@@ -360,30 +640,26 @@ export function useXterm(
           if (stripped.length === 0) continue
           const start = m.index
           const end = start + stripped.length
+          occupiedRanges.push({ start, end })
           links.push({
             range: { start: { x: start + 1, y }, end: { x: end, y } },
             text: stripped,
             activate: (event) => {
-              if (event.ctrlKey || event.metaKey) {
+              if (event.detail >= 2) {
                 void window.api.shell.openExternal(stripped)
               }
             },
           })
         }
 
-        FILE_PATH_RE.lastIndex = 0
-        let fm: RegExpExecArray | null
-        while ((fm = FILE_PATH_RE.exec(text)) !== null) {
-          const raw = fm[0].replace(/[.,;!?)\]}>'"`]+$/, '')
-          const ref = parseFileRef(raw)
-          if (!ref) continue
-          const start = fm.index
-          const end = start + raw.length
+        for (const candidate of parseTerminalFileLinks(text, occupiedRanges)) {
           links.push({
-            range: { start: { x: start + 1, y }, end: { x: end, y } },
-            text: raw,
+            range: fileLinkRange(line, candidate, y),
+            text: candidate.raw,
             activate: (event) => {
-              if (event.ctrlKey || event.metaKey) openFileLink(ref)
+              if (event.detail >= 2) {
+                void openFileLink(candidate.ref)
+              }
             },
           })
         }
@@ -451,7 +727,7 @@ export function useXterm(
           pendingRestoreEvents.push(event)
           return
         }
-        terminal.write(event.data)
+        terminal.write(event.data, updateBottomState)
       }
     })
 
@@ -461,6 +737,7 @@ export function useXterm(
         ptyId = null
         terminal.write(
           `\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`,
+          updateBottomState,
         )
         useSessionsStore.getState().updateStatus(sessionId, 'stopped')
         addTimelineEvent(sessionId, 'stop', `Exited with code ${event.exitCode}`)
@@ -494,6 +771,7 @@ export function useXterm(
         }
         pendingRestoreEvents.length = 0
 
+        updateBottomState()
         scheduleRepaint(false)
       }
     }
@@ -553,6 +831,28 @@ export function useXterm(
     // Undo stack for software undo (used by non-terminal sessions).
     // Each entry is a "chunk" that was added in one action (paste = one chunk, keystroke = one char).
     let undoStack: string[] = []
+    let pendingQuestionStartLine: number | null = null
+
+    const getCursorBufferLine = (): number => terminal.buffer.active.baseY + terminal.buffer.active.cursorY
+
+    const trackPotentialQuestionInput = (data: string): void => {
+      const plainData = data
+        .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+        .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+      const hasPrintable = [...plainData].some((ch) => {
+        const code = ch.charCodeAt(0)
+        return code >= 32 && code !== 127
+      })
+
+      if (hasPrintable && pendingQuestionStartLine === null) {
+        pendingQuestionStartLine = getCursorBufferLine()
+      }
+
+      if (/[\r\n]/.test(plainData) && pendingQuestionStartLine !== null) {
+        markTerminalQuestionLine(sessionId, terminal, pendingQuestionStartLine)
+        pendingQuestionStartLine = null
+      }
+    }
 
     // Unified clipboard paste — used by Ctrl+V handler and the context-menu
     // "Paste" action so both paths record undo chunks and share the image /
@@ -618,13 +918,29 @@ export function useXterm(
       // Allow IME composition (Chinese/Japanese/Korean input)
       if (e.isComposing || e.keyCode === 229) return true
 
+      const isPlainCtrl = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey
+
+      if (isPlainCtrl && (e.key === 'ArrowUp' || e.key.toLowerCase() === 'k')) {
+        e.preventDefault()
+        e.stopPropagation()
+        scrollTerminalToAdjacentQuestion(sessionId, 'previous')
+        return false
+      }
+
+      if (isPlainCtrl && (e.key === 'ArrowDown' || e.key.toLowerCase() === 'j')) {
+        e.preventDefault()
+        e.stopPropagation()
+        scrollTerminalToAdjacentQuestion(sessionId, 'next')
+        return false
+      }
+
       // Jump to latest output without sending navigation keys to the shell.
       if (!e.shiftKey && !e.altKey
-        && ((e.ctrlKey && !e.metaKey && (e.key === 'End' || e.key === 'ArrowDown'))
+        && ((e.ctrlKey && !e.metaKey && e.key === 'End')
           || (e.metaKey && !e.ctrlKey && e.key === 'ArrowDown'))) {
         e.preventDefault()
         e.stopPropagation()
-        terminal.scrollToBottom()
+        scrollTerminalToLatest(sessionId)
         return false
       }
 
@@ -634,6 +950,7 @@ export function useXterm(
         || (e.ctrlKey && e.key === 'p')
         || (e.ctrlKey && e.key >= '1' && e.key <= '9')
         || (e.ctrlKey && e.key === 'f')
+        || (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'v')
         || (e.ctrlKey && e.shiftKey && e.key === 'T')
         || e.key === 'F11') {
         return false
@@ -695,6 +1012,7 @@ export function useXterm(
     // xterm → PTY
     const onDataDisposable = terminal.onData((data) => {
       if (ptyId) {
+        trackPotentialQuestionInput(data)
         // Track individual keystrokes for non-terminal sessions (pastes are tracked at call site)
         if (sessionType !== 'terminal' && sessionType !== 'terminal-wsl' && data.length === 1) {
           const code = data.charCodeAt(0)
@@ -728,12 +1046,14 @@ export function useXterm(
       if (ptyId) {
         requestPtyResize(ptyId, cols, rows)
       }
+      updateBottomState()
     })
 
     // Container resize observer
     const resizeObserver = new ResizeObserver(() => {
       if (!destroyed) {
         refitAndRefreshTerminal(terminal, fitAddon, container)
+        updateBottomState()
       }
     })
     resizeObserver.observe(container)
@@ -763,7 +1083,9 @@ export function useXterm(
 
     return () => {
       destroyed = true
+      clearTerminalQuestionHighlight(sessionId)
       terminalRegistry.delete(sessionId)
+      terminalQuestionAnchors.delete(sessionId)
       terminalRef.current = null
       fitAddonRef.current = null
       searchAddonRef.current = null
@@ -772,6 +1094,7 @@ export function useXterm(
       offExit()
       onDataDisposable.dispose()
       onResizeDisposable.dispose()
+      onScrollDisposable.dispose()
       linkProviderDisposable.dispose()
       resizeObserver.disconnect()
       container.removeEventListener('wheel', onWheel, { capture: true })
@@ -847,5 +1170,5 @@ export function useXterm(
     })
   }, [])
 
-  return { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef }
+  return { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef, isAtBottom }
 }
