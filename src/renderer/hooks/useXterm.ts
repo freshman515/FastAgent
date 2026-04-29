@@ -12,7 +12,7 @@ import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/a
 
 // ─── Global terminal registry for preview snapshots ───
 const terminalRegistry = new Map<string, Terminal>()
-const terminalQuestionLines = new Map<string, Set<number>>()
+const terminalQuestionMarkers = new Map<string, Set<IMarker>>()
 const terminalQuestionAnchors = new Map<string, number>()
 const terminalQuestionHighlights = new Map<string, {
   decoration: IDecoration
@@ -24,19 +24,22 @@ export interface TerminalQuestionNavigation {
   previousLine: number | null
   nextLine: number | null
 }
+type TerminalQuestionNavigationOptions = {
+  syncAnchorToViewport?: boolean
+}
 
 function isTerminalAtBottom(terminal: Terminal): boolean {
   const buffer = terminal.buffer.active
   return buffer.viewportY >= buffer.baseY
 }
 
-function getQuestionLineSet(sessionId: string): Set<number> {
-  let lines = terminalQuestionLines.get(sessionId)
-  if (!lines) {
-    lines = new Set<number>()
-    terminalQuestionLines.set(sessionId, lines)
+function getQuestionMarkerSet(sessionId: string): Set<IMarker> {
+  let markers = terminalQuestionMarkers.get(sessionId)
+  if (!markers) {
+    markers = new Set<IMarker>()
+    terminalQuestionMarkers.set(sessionId, markers)
   }
-  return lines
+  return markers
 }
 
 function looksLikeUserQuestionLine(text: string): boolean {
@@ -47,11 +50,35 @@ function looksLikeUserQuestionLine(text: string): boolean {
     || /^╭.*(?:User|Human|You|用户)/i.test(trimmed)
 }
 
+function looksLikeAgentToolActivityLine(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return /^[•●]\s+(?:Ran|Read|Edited|Added|Updated|Deleted|Created|Searched|Listed|Opened|Called|Checked|Built)\b/i.test(trimmed)
+    || /^Ran\s+(?:rg|git|pnpm|npm|node|python|Get-Content|docker|gh)\b/i.test(trimmed)
+}
+
+function isNearAgentToolActivityLine(terminal: Terminal, line: number): boolean {
+  const buffer = terminal.buffer.active
+  for (let offset = 0; offset <= 2; offset += 1) {
+    const candidate = buffer.getLine(line - offset)
+    if (candidate && looksLikeAgentToolActivityLine(candidate.translateToString(true))) {
+      return true
+    }
+  }
+  return false
+}
+
 function markTerminalQuestionLine(sessionId: string, terminal: Terminal, line: number): void {
   const buffer = terminal.buffer.active
   const maxLine = buffer.baseY + Math.max(0, terminal.rows - 1)
   const boundedLine = Math.max(0, Math.min(line, maxLine))
-  getQuestionLineSet(sessionId).add(boundedLine)
+  const cursorLine = buffer.baseY + buffer.cursorY
+  const marker = terminal.registerMarker(boundedLine - cursorLine)
+  if (!marker) return
+
+  const markers = getQuestionMarkerSet(sessionId)
+  markers.add(marker)
+  marker.onDispose(() => markers.delete(marker))
 }
 
 function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number[] {
@@ -59,8 +86,10 @@ function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number
   const lines = new Set<number>()
   const endLine = buffer.baseY + terminal.rows
 
-  for (const line of getQuestionLineSet(sessionId)) {
-    if (line >= 0 && line < endLine && buffer.getLine(line)) {
+  for (const marker of getQuestionMarkerSet(sessionId)) {
+    const line = marker.line
+    if (line < 0) continue
+    if (line >= 0 && line < endLine && buffer.getLine(line) && !isNearAgentToolActivityLine(terminal, line)) {
       lines.add(line)
     }
   }
@@ -74,6 +103,37 @@ function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number
   }
 
   return [...lines].sort((a, b) => a - b)
+}
+
+function getTerminalViewportBounds(terminal: Terminal): { start: number; end: number } {
+  const start = terminal.buffer.active.viewportY
+  return { start, end: start + Math.max(0, terminal.rows - 1) }
+}
+
+function getNearestVisibleQuestionLine(terminal: Terminal, lines: number[]): number | null {
+  const { start, end } = getTerminalViewportBounds(terminal)
+  const visibleLines = lines.filter((line) => line >= start && line <= end)
+  if (visibleLines.length === 0) return null
+
+  const buffer = terminal.buffer.active
+  const referenceLine = isTerminalAtBottom(terminal)
+    ? buffer.baseY + buffer.cursorY
+    : start + 2
+
+  return visibleLines.reduce((nearest, line) => (
+    Math.abs(line - referenceLine) < Math.abs(nearest - referenceLine) ? line : nearest
+  ), visibleLines[0])
+}
+
+function syncTerminalQuestionAnchorToViewport(
+  sessionId: string,
+  terminal: Terminal,
+  lines: number[],
+): number | null {
+  const nearestLine = getNearestVisibleQuestionLine(terminal, lines)
+  if (nearestLine === null) return null
+  terminalQuestionAnchors.set(sessionId, nearestLine)
+  return nearestLine
 }
 
 export function scrollTerminalToLatest(sessionId: string): boolean {
@@ -97,6 +157,7 @@ function clearTerminalQuestionHighlight(sessionId: string): void {
 export function getTerminalQuestionNavigation(
   sessionId: string,
   referenceLine?: number | null,
+  options: TerminalQuestionNavigationOptions = {},
 ): TerminalQuestionNavigation {
   const terminal = terminalRegistry.get(sessionId)
   if (!terminal) return { previousLine: null, nextLine: null }
@@ -106,8 +167,7 @@ export function getTerminalQuestionNavigation(
     ? referenceLine
     : null
   const anchorLine = terminalQuestionAnchors.get(sessionId) ?? null
-  const viewportStart = terminal.buffer.active.viewportY
-  const viewportEnd = viewportStart + Math.max(0, terminal.rows - 1)
+  const { start: viewportStart, end: viewportEnd } = getTerminalViewportBounds(terminal)
   const visibleAnchorLine = anchorLine != null
     && anchorLine >= viewportStart
     && anchorLine <= viewportEnd
@@ -119,8 +179,15 @@ export function getTerminalQuestionNavigation(
     terminalQuestionAnchors.delete(sessionId)
   }
 
+  const syncedAnchorLine = clickedQuestionLine === null
+    && visibleAnchorLine === null
+    && options.syncAnchorToViewport
+    ? syncTerminalQuestionAnchorToViewport(sessionId, terminal, lines)
+    : null
+
   const currentLine = clickedQuestionLine
     ?? visibleAnchorLine
+    ?? syncedAnchorLine
     ?? referenceLine
     ?? (isTerminalAtBottom(terminal) ? viewportEnd + 1 : viewportStart)
   let previousLine: number | null = null
@@ -187,7 +254,7 @@ export function scrollTerminalToAdjacentQuestion(
   sessionId: string,
   direction: 'previous' | 'next',
 ): boolean {
-  const navigation = getTerminalQuestionNavigation(sessionId)
+  const navigation = getTerminalQuestionNavigation(sessionId, null, { syncAnchorToViewport: true })
   const line = direction === 'previous' ? navigation.previousLine : navigation.nextLine
   if (line === null) return false
   return scrollTerminalToQuestion(sessionId, line)
@@ -360,7 +427,16 @@ export function findTerminalFileLinkAtCell(line: IBufferLine, cellColumn: number
   }) ?? null
 }
 
-const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350] as const
+const TERMINAL_BOTTOM_SAFE_PADDING_PX = 4
+const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350, 700] as const
+
+function applyTerminalFitSafeArea(terminal: Terminal): void {
+  const element = terminal.element
+  if (!element) return
+
+  element.style.boxSizing = 'border-box'
+  element.style.paddingBottom = `${TERMINAL_BOTTOM_SAFE_PADDING_PX}px`
+}
 
 function refitAndRefreshTerminal(
   terminal: Terminal | null,
@@ -374,8 +450,12 @@ function refitAndRefreshTerminal(
   if (rect.width <= 0 || rect.height <= 0) return null
 
   try {
+    const shouldStayAtBottom = isTerminalAtBottom(terminal)
     fitAddon.fit()
     if (terminal.rows > 0) {
+      if (shouldStayAtBottom) {
+        terminal.scrollToBottom()
+      }
       terminal.refresh(0, terminal.rows - 1)
     }
     if (focus) {
@@ -581,6 +661,7 @@ export function useXterm(
     terminal.unicode.activeVersion = '11'
     searchAddonRef.current = searchAddon
     terminal.open(container)
+    applyTerminalFitSafeArea(terminal)
     terminalRegistry.set(sessionId, terminal)
     const updateBottomState = (): void => {
       if (!destroyed) setIsAtBottom(isTerminalAtBottom(terminal))
@@ -1050,11 +1131,17 @@ export function useXterm(
     })
 
     // Container resize observer
+    let resizeRepaintCleanup: (() => void) | null = null
     const resizeObserver = new ResizeObserver(() => {
-      if (!destroyed) {
-        refitAndRefreshTerminal(terminal, fitAddon, container)
-        updateBottomState()
-      }
+      if (destroyed) return
+
+      resizeRepaintCleanup?.()
+      resizeRepaintCleanup = scheduleTerminalRepaint(
+        terminal,
+        fitAddon,
+        container,
+        () => updateBottomState(),
+      )
     })
     resizeObserver.observe(container)
 
@@ -1086,6 +1173,8 @@ export function useXterm(
       clearTerminalQuestionHighlight(sessionId)
       terminalRegistry.delete(sessionId)
       terminalQuestionAnchors.delete(sessionId)
+      terminalQuestionMarkers.get(sessionId)?.forEach((marker) => marker.dispose())
+      terminalQuestionMarkers.delete(sessionId)
       terminalRef.current = null
       fitAddonRef.current = null
       searchAddonRef.current = null
@@ -1096,6 +1185,7 @@ export function useXterm(
       onResizeDisposable.dispose()
       onScrollDisposable.dispose()
       linkProviderDisposable.dispose()
+      resizeRepaintCleanup?.()
       resizeObserver.disconnect()
       container.removeEventListener('wheel', onWheel, { capture: true })
       for (const cleanup of repaintCleanups) {

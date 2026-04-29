@@ -9,6 +9,8 @@ const BROWSER_PARTITION = 'persist:fastagents-browser'
 const BROWSER_CONTEXT_TEXT_LIMIT = 12000
 const BROWSER_CONTEXT_HEADING_LIMIT = 24
 const BROWSER_CONTEXT_LINK_LIMIT = 24
+const WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:'])
+const EXTERNAL_OPEN_PROTOCOLS = new Set(['http:', 'https:'])
 
 type BrowserWebviewElement = HTMLElement & {
   canGoBack: () => boolean
@@ -61,6 +63,24 @@ function normalizeBrowserTarget(raw: string): string {
   if (isLocalTarget(value)) return `http://${value}`
   if (/^[^\s/]+\.[^\s]+/.test(value)) return `https://${value}`
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`
+}
+
+function getUrlProtocol(raw: string): string | null {
+  try {
+    return new URL(raw).protocol.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function isAllowedWebviewNavigation(raw: string): boolean {
+  const protocol = getUrlProtocol(raw)
+  return protocol !== null && WEBVIEW_NAVIGATION_PROTOCOLS.has(protocol)
+}
+
+function isExternalOpenTarget(raw: string): boolean {
+  const protocol = getUrlProtocol(raw)
+  return protocol !== null && EXTERNAL_OPEN_PROTOCOLS.has(protocol)
 }
 
 function getCurrentWebviewUrl(webview: BrowserWebviewElement | null): string | null {
@@ -287,6 +307,13 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
       setLoadError(null)
       syncNavigationState()
     }
+    const handleWillNavigate = (event: Event): void => {
+      const nextUrl = (event as WebviewUrlEvent).url
+      if (!nextUrl || isAllowedWebviewNavigation(nextUrl)) return
+      event.preventDefault()
+      setLoading(false)
+      syncNavigationState()
+    }
     const handleFail = (event: Event): void => {
       const detail = event as WebviewUrlEvent
       if (detail.errorCode === -3 || detail.isMainFrame === false) return
@@ -300,11 +327,14 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
       const nextUrl = (event as WebviewUrlEvent).url
       if (!nextUrl) return
       event.preventDefault()
+      if (!isExternalOpenTarget(nextUrl)) return
       void window.api.shell.openExternal(nextUrl)
     }
 
     webview.addEventListener('did-start-loading', handleStart)
     webview.addEventListener('did-stop-loading', handleStop)
+    webview.addEventListener('will-navigate', handleWillNavigate)
+    webview.addEventListener('will-frame-navigate', handleWillNavigate)
     webview.addEventListener('did-navigate', handleNavigate)
     webview.addEventListener('did-navigate-in-page', handleNavigate)
     webview.addEventListener('did-fail-load', handleFail)
@@ -315,6 +345,8 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
     return () => {
       webview.removeEventListener('did-start-loading', handleStart)
       webview.removeEventListener('did-stop-loading', handleStop)
+      webview.removeEventListener('will-navigate', handleWillNavigate)
+      webview.removeEventListener('will-frame-navigate', handleWillNavigate)
       webview.removeEventListener('did-navigate', handleNavigate)
       webview.removeEventListener('did-navigate-in-page', handleNavigate)
       webview.removeEventListener('did-fail-load', handleFail)
@@ -325,6 +357,11 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
 
   const navigateTo = useCallback((target: string) => {
     const nextUrl = normalizeBrowserTarget(target)
+    if (!isAllowedWebviewNavigation(nextUrl)) {
+      setLoadError('已阻止打开外部应用链接')
+      setAddress(nextUrl)
+      return
+    }
     setLoadError(null)
     persistUrl(nextUrl)
     loadInWebview(nextUrl)

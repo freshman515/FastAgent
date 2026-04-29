@@ -1,5 +1,5 @@
-import { X, ChevronUp, ChevronDown, Copy, ClipboardPaste, FileText, FolderOpen, Keyboard, ListChecks, Search, Eraser, Mic, Send } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { X, Zap, ChevronUp, ChevronDown, Copy, ClipboardPaste, FileText, Keyboard, ListChecks, Search, Eraser, Mic, Pause, Play, Send, Undo2 } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { Session } from '@shared/types'
 import {
@@ -44,7 +44,21 @@ type StreamingVoiceState = {
   committedText: string
   liveText: string
   insertedText: string
+  submittedText: string
+  segments: string[]
+  autoSubmitted: boolean
+  lastAutoSubmittedText: string
+  lastAutoSubmittedAt: number
+  lastCommandKey: string
   sentEnd: boolean
+}
+type VoicePreview = {
+  confirmed: string
+  tentative: string
+}
+type VoiceReplacementCommand = {
+  from?: string
+  to: string
 }
 type TerminalContextFileLink = ParsedFileRef & {
   absolutePath: string
@@ -53,30 +67,23 @@ type TerminalContextFileLink = ParsedFileRef & {
 const FUNASR_TARGET_SAMPLE_RATE = 16000
 const FUNASR_STREAM_FINAL_IDLE_MS = 1200
 const LOCAL_ASR_READY_CACHE_MS = 5 * 60 * 1000
-const LOCAL_ASR_WARMUP_CACHE_MS = 10 * 60 * 1000
 const LOCAL_ASR_SHORTCUT_LABEL = 'Ctrl+Alt+V'
 const MEDIA_RECORDER_VOICE_TIMESLICE_MS = 250
-const VOICE_WAVE_BAR_COUNT = 40
+const VOICE_AUTO_EXECUTE_DUPLICATE_MS = 1500
+const VOICE_WAVE_BAR_COUNT = 24
+const CONTEXT_MENU_VIEWPORT_MARGIN = 8
 const VOICE_WAVE_BAR_INDICES = Array.from({ length: VOICE_WAVE_BAR_COUNT }, (_, index) => index)
 type LocalAsrStartupAction = 'start' | 'restart'
 type LocalAsrReadyCache = { containerName: string; checkedAt: number }
-type LocalAsrWarmupCache = { endpoint: string; containerName: string; checkedAt: number }
 type LocalAsrReadyInFlight = {
   containerName: string
   action: LocalAsrStartupAction
   quiet: boolean
   promise: Promise<boolean>
 }
-type LocalAsrWarmupInFlight = {
-  endpoint: string
-  containerName: string
-  promise: Promise<boolean>
-}
 
 let localAsrReadyCache: LocalAsrReadyCache | null = null
-let localAsrWarmupCache: LocalAsrWarmupCache | null = null
 let localAsrReadyInFlight: LocalAsrReadyInFlight | null = null
-let localAsrWarmupInFlight: LocalAsrWarmupInFlight | null = null
 
 function hasFreshLocalAsrReadyCache(containerName: string): boolean {
   return Boolean(
@@ -90,25 +97,9 @@ function markLocalAsrReady(containerName: string): void {
   localAsrReadyCache = { containerName, checkedAt: Date.now() }
 }
 
-function hasFreshLocalAsrWarmupCache(endpoint: string, containerName: string): boolean {
-  return Boolean(
-    localAsrWarmupCache
-      && localAsrWarmupCache.endpoint === endpoint
-      && localAsrWarmupCache.containerName === containerName
-      && Date.now() - localAsrWarmupCache.checkedAt < LOCAL_ASR_WARMUP_CACHE_MS,
-  )
-}
-
-function markLocalAsrWarm(containerName: string, endpoint: string): void {
-  localAsrWarmupCache = { endpoint, containerName, checkedAt: Date.now() }
-}
-
 function invalidateLocalAsrReady(containerName?: string): void {
   if (!containerName || localAsrReadyCache?.containerName === containerName) {
     localAsrReadyCache = null
-  }
-  if (!containerName || localAsrWarmupCache?.containerName === containerName) {
-    localAsrWarmupCache = null
   }
 }
 
@@ -146,6 +137,105 @@ function mergeRecognizedText(base: string, addition: string): string {
   return left + right
 }
 
+function mergeVoiceSegments(segments: string[]): string {
+  return segments.reduce((current, segment) => mergeRecognizedText(current, segment), '')
+}
+
+function appendVoiceSegment(segments: string[], text: string): string[] {
+  const value = text.trim()
+  if (!value) return segments
+  const currentText = mergeVoiceSegments(segments)
+  if (currentText && value.startsWith(currentText)) {
+    const delta = value.slice(currentText.length).trim()
+    return delta ? [...segments, delta] : segments
+  }
+  if (currentText && currentText.endsWith(value)) return segments
+  const last = segments.at(-1) ?? ''
+  if (last === value || last.endsWith(value)) return segments
+  if (value.startsWith(last) && last) return [...segments.slice(0, -1), value]
+  return [...segments, value]
+}
+
+function stripSubmittedVoiceText(text: string, submittedText: string): string {
+  const value = text.trim()
+  const submitted = submittedText.trim()
+  if (!value || !submitted) return value
+  if (value === submitted) return ''
+  if (value.startsWith(submitted)) return value.slice(submitted.length).trimStart()
+  if (submitted.startsWith(value) || submitted.endsWith(value)) return ''
+  return value
+}
+
+function getStreamingVoiceText(state: StreamingVoiceState): string {
+  const recognizedText = state.liveText
+    ? mergeRecognizedText(state.committedText, state.liveText)
+    : state.committedText
+  return stripSubmittedVoiceText(recognizedText, state.submittedText) || state.insertedText
+}
+
+function getVoicePreviewParts(state: StreamingVoiceState): VoicePreview {
+  const text = getStreamingVoiceText(state)
+  if (!text) return { confirmed: '', tentative: '' }
+
+  const confirmed = stripSubmittedVoiceText(state.committedText, state.submittedText)
+  if (!state.liveText) return { confirmed: text, tentative: '' }
+  if (confirmed && text.startsWith(confirmed)) {
+    return { confirmed, tentative: text.slice(confirmed.length).trimStart() }
+  }
+  return { confirmed: '', tentative: text }
+}
+
+function normalizeVoiceCommandText(text: string): string {
+  return text
+    .trim()
+    .replace(/[，。！？、,.!?;；:：\s]/g, '')
+    .toLowerCase()
+}
+
+function isVoiceUndoCommand(text: string): boolean {
+  const value = normalizeVoiceCommandText(text)
+  return ['不对', '错了', '撤销', '重来', '上一句不对', '这句不对'].includes(value)
+}
+
+function parseVoiceReplacementCommand(text: string): VoiceReplacementCommand | null {
+  const value = text.trim().replace(/\s+/g, '')
+  const replaceLast = value.match(/^(?:改成|改为|修改为|换成|替换为)(.+)$/)
+  if (replaceLast?.[1]) return { to: replaceLast[1] }
+
+  const replaceSpecific = value.match(/^(?:把|将)(.+?)(?:改成|改为|修改为|换成|替换为)(.+)$/)
+  if (replaceSpecific?.[1] && replaceSpecific[2]) {
+    return { from: replaceSpecific[1], to: replaceSpecific[2] }
+  }
+
+  return null
+}
+
+function isClearScreenVoiceCommand(text: string): boolean {
+  const value = normalizeVoiceCommandText(text)
+  return ['清屏', '清空屏幕', '清除屏幕', 'clear'].includes(value)
+}
+
+function applyVoiceShortcutCommand(text: string): string {
+  const value = text.trim()
+  if (!value || value.startsWith('/')) return value
+  const compact = normalizeVoiceCommandText(value)
+  if (
+    compact.includes('检查这段代码')
+    || compact.includes('检查代码')
+    || compact.includes('审查这段代码')
+    || compact.includes('review这段代码')
+  ) {
+    return `/review ${value.replace(/^(帮我|请帮我|请)\s*/u, '').trim()}`
+  }
+  return value
+}
+
+function consumeVoiceCommand(state: StreamingVoiceState, key: string): boolean {
+  if (state.lastCommandKey === key) return false
+  state.lastCommandKey = key
+  return true
+}
+
 function isOfflineFunasrMessage(message: Record<string, unknown>): boolean {
   const mode = typeof message.mode === 'string' ? message.mode.toLowerCase() : ''
   return mode.includes('offline') || message.is_final === true
@@ -174,7 +264,9 @@ function audioBufferToVoiceLevel(audioBuffer: AudioBuffer): number {
   return normalizeVoiceLevel(Math.sqrt(sumSquares / sampleCount))
 }
 
-function getVoiceCaptureCopy(state: VoiceCaptureState, acceptsInput: boolean): { title: string; subtitle: string } {
+function getVoiceCaptureCopy(state: VoiceCaptureState, acceptsInput: boolean, paused: boolean, processing: boolean): { title: string; subtitle: string } {
+  if (state === 'recording' && paused) return { title: '已暂停', subtitle: '点击继续' }
+  if (state === 'recording' && processing) return { title: '正在处理', subtitle: '等待识别' }
   if (state === 'recording' && !acceptsInput) return { title: '等待焦点', subtitle: '切回后继续输入' }
   if (state === 'recording') return { title: '正在录音', subtitle: '实时输入' }
   if (state === 'finishing') return { title: '正在收尾', subtitle: '等待最终文本' }
@@ -262,8 +354,14 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     fileLink: TerminalContextFileLink | null
     questionNavigation: TerminalQuestionNavigation
   } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement | null>(null)
+  const [contextMenuMeasuredHeight, setContextMenuMeasuredHeight] = useState(0)
   const [sendPicker, setSendPicker] = useState<{ x: number; y: number; text: string; mode: SendPickerMode } | null>(null)
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState | null>(null)
+  const [voiceInputPaused, setVoiceInputPaused] = useState(false)
+  const [voiceAutoExecute, setVoiceAutoExecute] = useState(false)
+  const [voiceAsrProcessing, setVoiceAsrProcessing] = useState(false)
+  const [, setVoicePreview] = useState<VoicePreview>({ confirmed: '', tentative: '' })
   const [voiceLevel, setVoiceLevel] = useState(0)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
@@ -279,9 +377,18 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const streamingVoiceRef = useRef<StreamingVoiceState | null>(null)
   const streamingFinishTimerRef = useRef<number | null>(null)
   const voiceAcceptsInputRef = useRef(isActive)
+  const voiceInputPausedRef = useRef(false)
+  const voiceAutoExecuteRef = useRef(false)
+  const autoExecuteStreamingVoiceRef = useRef<((state: StreamingVoiceState) => boolean) | null>(null)
   useEffect(() => {
     voiceAcceptsInputRef.current = isActive
   }, [isActive])
+  useEffect(() => {
+    voiceInputPausedRef.current = voiceInputPaused
+  }, [voiceInputPaused])
+  useEffect(() => {
+    voiceAutoExecuteRef.current = voiceAutoExecute
+  }, [voiceAutoExecute])
   const targetSessions = useMemo(
     () => allSessions.filter((item) =>
       item.id !== session.id
@@ -362,7 +469,9 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     return { ...candidate.ref, absolutePath }
   }, [resolveTerminalLinkPath, terminalRef])
   const voiceWaveBars = useMemo(() => {
-    const level = voiceCaptureState === 'recording' && isActive ? Math.max(voiceLevel, 0.05) : 0.16
+    const level = voiceCaptureState === 'recording' && isActive && !voiceInputPaused
+      ? Math.max(voiceLevel, 0.05)
+      : 0.08
     const midpoint = (VOICE_WAVE_BAR_COUNT - 1) / 2
 
     return VOICE_WAVE_BAR_INDICES.map((index) => {
@@ -376,8 +485,10 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         opacity: Math.max(0.38, Math.min(1, 0.46 + level * 0.7 + centerWeight * 0.16)),
       }
     })
-  }, [isActive, voiceCaptureState, voiceLevel])
-  const voiceCaptureCopy = voiceCaptureState ? getVoiceCaptureCopy(voiceCaptureState, isActive) : null
+  }, [isActive, voiceCaptureState, voiceInputPaused, voiceLevel])
+  const voiceCaptureCopy = voiceCaptureState ? getVoiceCaptureCopy(voiceCaptureState, isActive, voiceInputPaused, voiceAsrProcessing) : null
+  const showVoiceSendButton = voiceCaptureState === 'recording' && streamingVoiceRef.current !== null
+  const showVoicePauseButton = voiceCaptureState === 'recording' && streamingVoiceRef.current !== null
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
@@ -445,6 +556,29 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     return () => window.removeEventListener('keydown', onKey)
   }, [contextMenu, sendPicker])
 
+  useLayoutEffect(() => {
+    if (!contextMenu) {
+      setContextMenuMeasuredHeight(0)
+      return
+    }
+
+    const menu = contextMenuRef.current
+    if (!menu) return
+
+    const measureMenu = (): void => {
+      setContextMenuMeasuredHeight(Math.ceil(menu.getBoundingClientRect().height))
+    }
+
+    measureMenu()
+    const resizeObserver = new ResizeObserver(measureMenu)
+    resizeObserver.observe(menu)
+    window.addEventListener('resize', measureMenu)
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', measureMenu)
+    }
+  }, [contextMenu])
+
   const openContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault()
     const term = terminalRef.current
@@ -473,22 +607,6 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     await pasteFromClipboardRef.current?.()
   }, [pasteFromClipboardRef])
 
-  const doPasteAndSubmit = useCallback(async () => {
-    setContextMenu(null)
-    try {
-      const text = await navigator.clipboard.readText()
-      if (!text) return
-      terminalRef.current?.focus()
-      if (session.ptyId) {
-        await window.api.session.submit(session.ptyId, text, true)
-      } else {
-        terminalRef.current?.paste(`${text}\r`)
-      }
-    } catch (error) {
-      addToast({ type: 'error', title: '粘贴失败', body: error instanceof Error ? error.message : String(error) })
-    }
-  }, [addToast, session.ptyId, terminalRef])
-
   const doCopyCwd = useCallback(() => {
     setContextMenu(null)
     if (!sessionCwd) return
@@ -498,12 +616,6 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         addToast({ type: 'error', title: '复制失败', body: error instanceof Error ? error.message : String(error) })
       })
   }, [addToast, sessionCwd])
-
-  const doOpenCwd = useCallback(() => {
-    setContextMenu(null)
-    if (!sessionCwd) return
-    void window.api.shell.openPath(sessionCwd)
-  }, [sessionCwd])
 
   const openEditorFile = useCallback((fileLink: TerminalContextFileLink) => {
     const context = {
@@ -526,8 +638,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     openEditorFile(fileLink)
   }, [contextMenu?.fileLink, openEditorFile])
 
-  const doClearInput = useCallback(() => {
-    setContextMenu(null)
+  const clearTerminalInput = useCallback(() => {
     terminalRef.current?.focus()
     const clearCurrentLine = '\x15\x0b'
     if (session.ptyId) {
@@ -536,6 +647,11 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
       terminalRef.current?.paste(clearCurrentLine)
     }
   }, [session.ptyId, terminalRef])
+
+  const doClearInput = useCallback(() => {
+    setContextMenu(null)
+    clearTerminalInput()
+  }, [clearTerminalInput])
 
   const doSystemVoiceInput = useCallback(() => {
     setContextMenu(null)
@@ -659,6 +775,11 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   }, [])
 
   const finishStreamingVoiceInput = useCallback((cancelRemote = true) => {
+    const state = streamingVoiceRef.current
+    if (state?.sentEnd && voiceAutoExecuteRef.current) {
+      autoExecuteStreamingVoiceRef.current?.(state)
+    }
+
     cleanupStreamingAudio()
     stopVoiceLevelMeter()
 
@@ -673,6 +794,10 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     }
 
     streamingVoiceRef.current = null
+    voiceInputPausedRef.current = false
+    setVoiceInputPaused(false)
+    setVoiceAsrProcessing(false)
+    setVoicePreview({ confirmed: '', tentative: '' })
     setVoiceCaptureState(null)
   }, [cleanupStreamingAudio, stopVoiceLevelMeter])
 
@@ -685,6 +810,19 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     }, FUNASR_STREAM_FINAL_IDLE_MS)
   }, [finishStreamingVoiceInput])
 
+  const writeTerminalData = useCallback((payload: string) => {
+    if (!payload) return
+    if (session.ptyId) {
+      window.api.session.write(session.ptyId, payload)
+    } else {
+      terminalRef.current?.paste(payload)
+    }
+  }, [session.ptyId, terminalRef])
+
+  const updateVoicePreviewFromState = useCallback((state: StreamingVoiceState) => {
+    setVoicePreview(getVoicePreviewParts(state))
+  }, [])
+
   const writeStreamingVoiceText = useCallback((nextText: string) => {
     const state = streamingVoiceRef.current
     if (!state || !voiceAcceptsInputRef.current || nextText === state.insertedText) return
@@ -695,14 +833,92 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     const addition = nextText.slice(prefixLength)
     const payload = `${'\x7f'.repeat(deleteCount)}${addition}`
 
-    if (payload && session.ptyId) {
-      window.api.session.write(session.ptyId, payload)
-    } else if (addition) {
-      terminalRef.current?.paste(addition)
-    }
+    if (payload) writeTerminalData(payload)
 
     state.insertedText = nextText
-  }, [session.ptyId, terminalRef])
+    updateVoicePreviewFromState(state)
+  }, [terminalRef, updateVoicePreviewFromState, writeTerminalData])
+
+  const markStreamingVoiceTextHandled = useCallback((state: StreamingVoiceState, text: string) => {
+    if (!text.trim()) return
+    state.submittedText = mergeRecognizedText(state.submittedText, text)
+    state.liveText = ''
+    updateVoicePreviewFromState(state)
+  }, [updateVoicePreviewFromState])
+
+  const undoLastVoiceSegment = useCallback((suppressedText = '') => {
+    const state = streamingVoiceRef.current
+    if (!state) return false
+
+    const liveText = state.liveText.trim()
+    if (liveText && !suppressedText.trim()) {
+      state.submittedText = mergeRecognizedText(state.submittedText, liveText)
+      state.liveText = ''
+      writeStreamingVoiceText(stripSubmittedVoiceText(state.committedText, state.submittedText))
+      updateVoicePreviewFromState(state)
+      return true
+    }
+
+    const suppressed = mergeRecognizedText(state.liveText, suppressedText)
+    state.liveText = ''
+    const removed = state.segments.pop() ?? ''
+    if (removed || suppressed) {
+      state.submittedText = mergeRecognizedText(state.submittedText, mergeRecognizedText(removed, suppressed))
+    }
+
+    if (state.segments.length > 0) {
+      state.committedText = mergeVoiceSegments(state.segments)
+    } else {
+      state.committedText = ''
+    }
+
+    if (!removed && state.insertedText) {
+      state.submittedText = mergeRecognizedText(state.submittedText, state.insertedText)
+    }
+
+    const nextText = state.committedText
+      ? stripSubmittedVoiceText(state.committedText, state.submittedText)
+      : ''
+    writeStreamingVoiceText(nextText)
+    updateVoicePreviewFromState(state)
+    return true
+  }, [updateVoicePreviewFromState, writeStreamingVoiceText])
+
+  const replaceStreamingVoiceText = useCallback((command: VoiceReplacementCommand, suppressedText = '') => {
+    const state = streamingVoiceRef.current
+    if (!state || !command.to.trim()) return false
+
+    const currentText = getStreamingVoiceText(state)
+    let nextText = currentText
+    if (command.from && currentText.includes(command.from)) {
+      nextText = currentText.replace(command.from, command.to)
+      state.segments = [nextText]
+    } else if (state.segments.length > 0) {
+      state.segments[state.segments.length - 1] = command.to
+      nextText = mergeVoiceSegments(state.segments)
+    } else {
+      nextText = command.to
+      state.segments = [nextText]
+    }
+
+    state.liveText = ''
+    state.committedText = nextText
+    if (suppressedText && !suppressedText.includes(command.to)) {
+      markStreamingVoiceTextHandled(state, suppressedText)
+    }
+    writeStreamingVoiceText(getStreamingVoiceText(state))
+    updateVoicePreviewFromState(state)
+    return true
+  }, [markStreamingVoiceTextHandled, updateVoicePreviewFromState, writeStreamingVoiceText])
+
+  const executeVoiceTerminalCommand = useCallback((command: string, state: StreamingVoiceState, suppressedText: string) => {
+    markStreamingVoiceTextHandled(state, mergeRecognizedText(getStreamingVoiceText(state), suppressedText))
+    if (state.insertedText) {
+      writeStreamingVoiceText('')
+    }
+    writeTerminalData(`${command}\r`)
+    setVoiceAsrProcessing(false)
+  }, [markStreamingVoiceTextHandled, writeStreamingVoiceText, writeTerminalData])
 
   const handleStreamingFunasrMessage = useCallback((message: Record<string, unknown>) => {
     const state = streamingVoiceRef.current
@@ -713,22 +929,82 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     }
 
     const text = typeof message.text === 'string' ? message.text.trim() : ''
+    const isFinalMessage = isOfflineFunasrMessage(message)
     if (text) {
-      if (isOfflineFunasrMessage(message)) {
-        state.committedText = mergeRecognizedText(state.committedText, text)
+      setVoiceAsrProcessing(false)
+
+      if (isVoiceUndoCommand(text)) {
+        if (consumeVoiceCommand(state, `undo:${normalizeVoiceCommandText(text)}`)) {
+          undoLastVoiceSegment(text)
+        }
+        return
+      }
+
+      const replacementCommand = parseVoiceReplacementCommand(text)
+      if (replacementCommand) {
+        if (consumeVoiceCommand(state, `replace:${normalizeVoiceCommandText(text)}`)) {
+          replaceStreamingVoiceText(replacementCommand, text)
+        }
+        return
+      }
+
+      if (isClearScreenVoiceCommand(text)) {
+        if (consumeVoiceCommand(state, `command:${normalizeVoiceCommandText(text)}`)) {
+          executeVoiceTerminalCommand('clear', state, text)
+        }
+        return
+      }
+
+      const inputText = applyVoiceShortcutCommand(text)
+      state.lastCommandKey = ''
+      if (isFinalMessage) {
+        state.segments = appendVoiceSegment(state.segments, inputText)
+        state.committedText = mergeVoiceSegments(state.segments)
         state.liveText = ''
       } else {
-        state.liveText = mergeRecognizedText(state.liveText, text)
+        state.liveText = inputText.startsWith('/')
+          ? inputText
+          : mergeRecognizedText(state.liveText, inputText)
       }
     }
 
-    const nextText = state.liveText
-      ? mergeRecognizedText(state.committedText, state.liveText)
-      : state.committedText
+    const nextText = getStreamingVoiceText(state)
+    const normalizedNextText = nextText.trim()
+    const isDuplicateAutoFinal = isFinalMessage
+      && voiceAutoExecuteRef.current
+      && normalizedNextText
+      && normalizedNextText === state.lastAutoSubmittedText
+      && Date.now() - state.lastAutoSubmittedAt < VOICE_AUTO_EXECUTE_DUPLICATE_MS
+    if (isDuplicateAutoFinal) {
+      if (state.insertedText) {
+        writeStreamingVoiceText('')
+      }
+      state.committedText = ''
+      state.liveText = ''
+      state.submittedText = ''
+      state.segments = []
+      state.lastCommandKey = ''
+      updateVoicePreviewFromState(state)
+      return
+    }
+
     writeStreamingVoiceText(nextText)
+    updateVoicePreviewFromState(state)
+
+    if (isFinalMessage && voiceAutoExecuteRef.current && normalizedNextText) {
+      autoExecuteStreamingVoiceRef.current?.(state)
+      return
+    }
 
     if (state.sentEnd) scheduleStreamingFinish()
-  }, [scheduleStreamingFinish, writeStreamingVoiceText])
+  }, [
+    executeVoiceTerminalCommand,
+    replaceStreamingVoiceText,
+    scheduleStreamingFinish,
+    undoLastVoiceSegment,
+    updateVoicePreviewFromState,
+    writeStreamingVoiceText,
+  ])
 
   const stopStreamingVoiceInput = useCallback(() => {
     const state = streamingVoiceRef.current
@@ -736,6 +1012,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
 
     state.sentEnd = true
     cleanupStreamingAudio()
+    setVoiceAsrProcessing(true)
     setVoiceCaptureState('finishing')
 
     const streamId = voiceStreamIdRef.current
@@ -770,11 +1047,106 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     recorder.stop()
   }, [stopStreamingVoiceInput])
 
-  const startStreamingVoiceInput = useCallback(async (serviceReadyPromise?: Promise<boolean>) => {
+  const submitVoiceInput = useCallback((options?: { state?: StreamingVoiceState; auto?: boolean }) => {
     setContextMenu(null)
     terminalRef.current?.focus()
 
+    const state = options?.state ?? streamingVoiceRef.current
+    if (state) {
+      const recognizedText = getStreamingVoiceText(state)
+      const submittedText = recognizedText || state.insertedText
+      if (options?.auto && !submittedText) return false
+      const normalizedSubmittedText = submittedText.trim()
+      if (
+        options?.auto
+        && normalizedSubmittedText
+        && normalizedSubmittedText === state.lastAutoSubmittedText
+        && Date.now() - state.lastAutoSubmittedAt < VOICE_AUTO_EXECUTE_DUPLICATE_MS
+      ) {
+        return false
+      }
+      if (submittedText) {
+        state.submittedText = mergeRecognizedText(state.submittedText, submittedText)
+      }
+      if (options?.auto && normalizedSubmittedText) {
+        state.lastAutoSubmittedText = normalizedSubmittedText
+        state.lastAutoSubmittedAt = Date.now()
+      }
+      state.committedText = ''
+      state.insertedText = ''
+      state.liveText = ''
+      state.submittedText = ''
+      state.segments = []
+      state.lastCommandKey = ''
+      state.autoSubmitted = options?.auto === true || state.autoSubmitted
+      updateVoicePreviewFromState(state)
+    } else if (options?.auto) {
+      return false
+    }
+
+    writeTerminalData('\r')
+    return true
+  }, [terminalRef, updateVoicePreviewFromState, writeTerminalData])
+
+  useEffect(() => {
+    autoExecuteStreamingVoiceRef.current = (state) => submitVoiceInput({ state, auto: true })
+    return () => {
+      autoExecuteStreamingVoiceRef.current = null
+    }
+  }, [submitVoiceInput])
+
+  const sendCurrentVoiceInput = useCallback(() => {
+    submitVoiceInput()
+  }, [submitVoiceInput])
+
+  const clearCurrentVoiceInput = useCallback(() => {
+    setContextMenu(null)
+    clearTerminalInput()
+
+    const state = streamingVoiceRef.current
+    if (!state) return
+
+    state.committedText = ''
+    state.liveText = ''
+    state.insertedText = ''
+    state.submittedText = ''
+    state.segments = []
+    state.lastAutoSubmittedText = ''
+    state.lastAutoSubmittedAt = 0
+    state.lastCommandKey = ''
+    updateVoicePreviewFromState(state)
+  }, [clearTerminalInput, updateVoicePreviewFromState])
+
+  const sendVoiceEscape = useCallback(() => {
+    setContextMenu(null)
+    terminalRef.current?.focus()
+
+    writeTerminalData('\x1b')
+  }, [terminalRef, writeTerminalData])
+
+  const toggleVoiceInputPaused = useCallback(() => {
+    if (!streamingVoiceRef.current || voiceCaptureState !== 'recording') return
+    setContextMenu(null)
+    setVoiceInputPaused((current) => {
+      const next = !current
+      voiceInputPausedRef.current = next
+      if (next) {
+        setVoiceLevel(0)
+      } else {
+        terminalRef.current?.focus()
+      }
+      return next
+    })
+  }, [terminalRef, voiceCaptureState])
+
+  const startStreamingVoiceInput = useCallback(async (serviceReadyPromise?: Promise<boolean>) => {
+    setContextMenu(null)
+    terminalRef.current?.focus()
+    setVoicePreview({ confirmed: '', tentative: '' })
+    setVoiceAsrProcessing(true)
+
     if (!navigator.mediaDevices?.getUserMedia) {
+      setVoiceAsrProcessing(false)
       addToast({ type: 'error', title: '无法录音', body: '当前环境不支持浏览器录音 API。' })
       return
     }
@@ -782,6 +1154,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     const AudioContextConstructor = window.AudioContext
       ?? (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AudioContextConstructor) {
+      setVoiceAsrProcessing(false)
       addToast({ type: 'error', title: '无法录音', body: '当前环境不支持实时音频处理。' })
       return
     }
@@ -800,6 +1173,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
       ])
       if (!serviceReady) {
         stream.getTracks().forEach((track) => track.stop())
+        setVoiceAsrProcessing(false)
         return
       }
       const audioContext = new AudioContextConstructor()
@@ -848,6 +1222,12 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         committedText: '',
         liveText: '',
         insertedText: '',
+        submittedText: '',
+        segments: [],
+        autoSubmitted: false,
+        lastAutoSubmittedText: '',
+        lastAutoSubmittedAt: 0,
+        lastCommandKey: '',
         sentEnd: false,
       }
 
@@ -859,8 +1239,8 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         const state = streamingVoiceRef.current
         if (!streamId || !state || state.sentEnd) return
 
-        if (!voiceAcceptsInputRef.current) {
-          setVoiceLevel((current) => current * 0.82)
+        if (!voiceAcceptsInputRef.current || voiceInputPausedRef.current) {
+          setVoiceLevel((current) => current * (voiceInputPausedRef.current ? 0.55 : 0.82))
           const silence = createSilentPcmS16le(event.inputBuffer, FUNASR_TARGET_SAMPLE_RATE)
           window.api.window.sendVoiceInputStreamChunk({ streamId, audio: silence })
           return
@@ -868,6 +1248,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
 
         const nextVoiceLevel = audioBufferToVoiceLevel(event.inputBuffer)
         setVoiceLevel((current) => current * 0.62 + nextVoiceLevel * 0.38)
+        if (nextVoiceLevel > 0.14) setVoiceAsrProcessing(true)
 
         const pcm = audioBufferToPcmS16le(event.inputBuffer, FUNASR_TARGET_SAMPLE_RATE)
         if (pcm.byteLength > 0) {
@@ -877,9 +1258,12 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
 
       source.connect(processor)
       processor.connect(audioContext.destination)
+      voiceInputPausedRef.current = false
+      setVoiceInputPaused(false)
       setVoiceCaptureState('recording')
     } catch (error) {
       finishStreamingVoiceInput()
+      setVoiceAsrProcessing(false)
       addToast({ type: 'error', title: '无法开始录音', body: error instanceof Error ? error.message : String(error) })
     }
   }, [
@@ -972,74 +1356,6 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     settings.voiceLocalAsrStartupAction,
   ])
 
-  const warmupLocalAsrStream = useCallback(async (): Promise<boolean> => {
-    const endpoint = settings.voiceApiUrl.trim()
-    const containerName = settings.voiceLocalAsrDockerContainer.trim()
-    if (!endpoint || !isWebSocketVoiceEndpoint(endpoint)) return false
-    if (hasFreshLocalAsrWarmupCache(endpoint, containerName)) return true
-
-    if (
-      localAsrWarmupInFlight
-      && localAsrWarmupInFlight.endpoint === endpoint
-      && localAsrWarmupInFlight.containerName === containerName
-    ) {
-      return localAsrWarmupInFlight.promise
-    }
-
-    const warmupPromise = (async (): Promise<boolean> => {
-      const ready = await ensureLocalAsrServiceReady({ quiet: true })
-      if (!ready) return false
-
-      const result = await window.api.window.warmupVoiceInputStream({
-        endpoint,
-        sampleRate: FUNASR_TARGET_SAMPLE_RATE,
-        timeoutMs: settings.voiceApiTimeoutMs,
-      })
-      if (!result.ok) return false
-
-      if (containerName) markLocalAsrReady(containerName)
-      markLocalAsrWarm(containerName, endpoint)
-      return true
-    })()
-
-    localAsrWarmupInFlight = { endpoint, containerName, promise: warmupPromise }
-    try {
-      return await warmupPromise
-    } finally {
-      if (localAsrWarmupInFlight?.promise === warmupPromise) {
-        localAsrWarmupInFlight = null
-      }
-    }
-  }, [
-    ensureLocalAsrServiceReady,
-    settings.voiceApiTimeoutMs,
-    settings.voiceApiUrl,
-    settings.voiceLocalAsrDockerContainer,
-  ])
-
-  useEffect(() => {
-    if (
-      !isActive
-      || settingsOpen
-      || settings.voiceInputMode !== 'api'
-      || !settings.voiceApiUrl.trim()
-      || !isWebSocketVoiceEndpoint(settings.voiceApiUrl)
-    ) {
-      return
-    }
-
-    const timer = window.setTimeout(() => {
-      void warmupLocalAsrStream()
-    }, 350)
-    return () => window.clearTimeout(timer)
-  }, [
-    isActive,
-    settings.voiceApiUrl,
-    settings.voiceInputMode,
-    settingsOpen,
-    warmupLocalAsrStream,
-  ])
-
   const startApiVoiceInput = useCallback(async () => {
     setContextMenu(null)
     terminalRef.current?.focus()
@@ -1121,6 +1437,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
             if (!voiceAcceptsInputRef.current) return
             terminalRef.current?.focus()
             terminalRef.current?.paste(result.text)
+            if (voiceAutoExecuteRef.current) writeTerminalData('\r')
           })
           .catch((error) => {
             addToast({ type: 'error', title: '语音识别失败', body: error instanceof Error ? error.message : String(error) })
@@ -1135,7 +1452,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
       stopVoiceLevelMeter()
       setVoiceCaptureState(null)
     }
-  }, [addToast, ensureLocalAsrServiceReady, settings, startStreamingVoiceInput, startVoiceLevelMeter, stopVoiceLevelMeter, terminalRef])
+  }, [addToast, ensureLocalAsrServiceReady, settings, startStreamingVoiceInput, startVoiceLevelMeter, stopVoiceLevelMeter, terminalRef, writeTerminalData])
 
   useEffect(() => {
     if (!isActive || settingsOpen) return
@@ -1286,12 +1603,15 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const menuWidth = 200
   const questionMenuItemCount = (contextMenu?.questionNavigation.previousLine != null ? 1 : 0)
     + (contextMenu?.questionNavigation.nextLine != null ? 1 : 0)
-  const menuHeight = (contextMenu?.fileLink ? 590 : 548)
+  const estimatedContextMenuHeight = (contextMenu?.fileLink ? 590 : 548)
     + (questionMenuItemCount > 0 ? 8 + questionMenuItemCount * 34 : 0)
+  const contextMenuMaxHeight = Math.max(160, window.innerHeight - CONTEXT_MENU_VIEWPORT_MARGIN * 2)
+  const menuHeight = Math.min(contextMenuMeasuredHeight || estimatedContextMenuHeight, contextMenuMaxHeight)
   const contextMenuStyle = contextMenu
     ? {
-        left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - menuWidth - 8)),
-        top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - menuHeight - 8)),
+        left: Math.max(CONTEXT_MENU_VIEWPORT_MARGIN, Math.min(contextMenu.x, window.innerWidth - menuWidth - CONTEXT_MENU_VIEWPORT_MARGIN)),
+        top: Math.max(CONTEXT_MENU_VIEWPORT_MARGIN, Math.min(contextMenu.y, window.innerHeight - menuHeight - CONTEXT_MENU_VIEWPORT_MARGIN)),
+        maxHeight: contextMenuMaxHeight,
       }
     : undefined
   const pickerWidth = 240
@@ -1366,19 +1686,21 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
           </button>
         )}
         {voiceCaptureState && (
-          <div className="absolute bottom-4 left-4 right-16 z-30 flex min-h-14 items-center gap-3 rounded-[var(--radius-lg)] border border-white/[0.14] bg-[linear-gradient(135deg,rgba(16,18,24,0.94),rgba(36,28,42,0.94))] px-3 py-2.5 text-white shadow-[0_16px_48px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:left-1/2 sm:right-auto sm:w-[440px] sm:max-w-[calc(100%-112px)] sm:-translate-x-1/2">
-            <div
-              className={cn(
-                'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] border shadow-[0_0_24px_rgba(244,63,94,0.30)]',
-                voiceCaptureState === 'recording'
-                  ? 'border-rose-200/30 bg-rose-500/20 text-rose-100'
-                  : 'border-cyan-200/25 bg-cyan-500/20 text-cyan-100',
-              )}
-            >
-              {voiceCaptureState === 'recording' && <span className="absolute inset-0 rounded-[var(--radius-lg)] bg-rose-400/20 animate-ping" />}
-              <Mic size={18} strokeWidth={2.4} className="relative" />
-            </div>
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 flex flex-wrap items-end justify-center gap-2 text-white sm:left-1/2 sm:right-auto sm:w-[min(900px,calc(100%-32px))] sm:-translate-x-1/2 sm:flex-nowrap">
+            <div className="pointer-events-auto inline-flex min-h-14 max-w-[calc(100vw-32px)] items-center gap-3 rounded-[var(--radius-lg)] border border-white/[0.14] bg-[linear-gradient(135deg,rgba(16,18,24,0.94),rgba(36,28,42,0.94))] px-3 py-2.5 shadow-[0_16px_48px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+              <div
+                className={cn(
+                  'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] border shadow-[0_0_24px_rgba(244,63,94,0.30)]',
+                  voiceCaptureState === 'recording' && voiceInputPaused
+                    ? 'border-amber-200/30 bg-amber-500/20 text-amber-100'
+                    : voiceCaptureState === 'recording'
+                    ? 'border-rose-200/30 bg-rose-500/20 text-rose-100'
+                    : 'border-cyan-200/25 bg-cyan-500/20 text-cyan-100',
+                )}
+              >
+                {voiceCaptureState === 'recording' && !voiceInputPaused && <span className="absolute inset-0 rounded-[var(--radius-lg)] bg-rose-400/20 animate-ping" />}
+                <Mic size={18} strokeWidth={2.4} className="relative" />
+              </div>
               <div className="min-w-[64px]">
                 <span className="block truncate text-sm font-semibold leading-5 text-white">
                   {voiceCaptureCopy?.title}
@@ -1387,30 +1709,112 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
                   {voiceCaptureCopy?.subtitle}
                 </span>
               </div>
-              <div className="flex h-9 min-w-0 flex-1 items-center justify-between px-1" aria-hidden="true">
+              <div className="relative flex h-7 min-w-[140px] max-w-[32vw] w-[230px] shrink items-center justify-between px-1" aria-hidden="true">
+                {voiceAsrProcessing && <span className="absolute inset-x-1 top-1/2 h-6 -translate-y-1/2 rounded-full bg-cyan-300/10 blur-sm animate-pulse" />}
                 {voiceWaveBars.map((bar, index) => (
                   <span
                     key={index}
                     className={cn(
-                      'w-[3px] rounded-full bg-gradient-to-t from-rose-500 via-fuchsia-300 to-cyan-200 shadow-[0_0_10px_rgba(244,114,182,0.36)] transition-[height,opacity] duration-75 ease-out',
-                      voiceCaptureState === 'transcribing' && 'animate-pulse',
+                      'relative w-[3px] rounded-full bg-gradient-to-t from-rose-500 via-fuchsia-300 to-cyan-200 shadow-[0_0_10px_rgba(244,114,182,0.36)] transition-[height,opacity] duration-75 ease-out',
+                      (voiceCaptureState === 'transcribing' || voiceAsrProcessing) && 'animate-pulse',
                     )}
                     style={{ height: `${Math.min(30, bar.height)}px`, opacity: bar.opacity }}
                   />
                 ))}
               </div>
-              <div className="shrink-0">
-                {voiceCaptureState === 'recording' && (
-                  <button
-                    type="button"
-                    onClick={stopApiVoiceInput}
-                    className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] bg-rose-500 px-2.5 text-[11px] font-semibold text-white shadow-[0_8px_20px_rgba(244,63,94,0.28)] transition-colors hover:bg-rose-400 active:bg-rose-600"
-                  >
-                    <X size={13} strokeWidth={2.4} />
-                    停止
-                  </button>
-                )}
-              </div>
+              {voiceCaptureState === 'recording' && (
+                <button
+                  type="button"
+                  onClick={stopApiVoiceInput}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] bg-rose-500 px-2.5 text-[11px] font-semibold text-white shadow-[0_8px_20px_rgba(244,63,94,0.28)] transition-colors hover:bg-rose-400 active:bg-rose-600"
+                  title="停止录音"
+                  aria-label="停止录音"
+                >
+                  <X size={13} strokeWidth={2.4} />
+                  停止
+                </button>
+              )}
+            </div>
+            <div className="pointer-events-auto flex min-h-14 shrink-0 flex-wrap items-center justify-end gap-1.5 rounded-[var(--radius-lg)] border border-white/[0.14] bg-[rgba(18,18,25,0.94)] px-2 py-2 shadow-[0_16px_48px_rgba(0,0,0,0.36)] backdrop-blur-xl">
+              {showVoicePauseButton && (
+                <button
+                  type="button"
+                  onClick={toggleVoiceInputPaused}
+                  className={cn(
+                    'inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-white shadow-[0_8px_20px_rgba(245,158,11,0.22)] transition-colors',
+                    voiceInputPaused
+                      ? 'bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600'
+                      : 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600',
+                  )}
+                  title={voiceInputPaused ? '继续语音输入' : '暂停语音输入'}
+                  aria-label={voiceInputPaused ? '继续语音输入' : '暂停语音输入'}
+                >
+                  {voiceInputPaused
+                    ? <Play size={13} strokeWidth={2.4} />
+                    : <Pause size={13} strokeWidth={2.4} />}
+                </button>
+              )}
+              {showVoiceSendButton && (
+                <button
+                  type="button"
+                  onClick={() => undoLastVoiceSegment()}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-white/10 bg-white/8 text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition-colors hover:bg-white/14 active:bg-white/6"
+                  title="撤销上一段语音"
+                  aria-label="撤销上一段语音"
+                >
+                  <Undo2 size={13} strokeWidth={2.4} />
+                </button>
+              )}
+              {showVoiceSendButton && (
+                <button
+                  type="button"
+                  onClick={sendVoiceEscape}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-white/10 bg-white/8 px-2.5 text-[11px] font-semibold text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition-colors hover:bg-white/14 active:bg-white/6"
+                  title="发送 Esc 到终端"
+                  aria-label="发送 Esc 到终端"
+                >
+                  <Keyboard size={13} strokeWidth={2.4} />
+                  Esc
+                </button>
+              )}
+              {showVoiceSendButton && (
+                <button
+                  type="button"
+                  onClick={clearCurrentVoiceInput}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-white/10 bg-white/8 text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition-colors hover:bg-white/14 active:bg-white/6"
+                  title="清空当前语音输入"
+                  aria-label="清空当前语音输入"
+                >
+                  <Eraser size={13} strokeWidth={2.4} />
+                </button>
+              )}
+              {showVoiceSendButton && (
+                <button
+                  type="button"
+                  onClick={() => setVoiceAutoExecute((current) => !current)}
+                  className={cn(
+                    'inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-white shadow-[0_8px_20px_rgba(250,204,21,0.18)] transition-colors',
+                    voiceAutoExecute
+                      ? 'bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600'
+                      : 'border border-white/10 bg-white/8 hover:bg-white/14 active:bg-white/6',
+                  )}
+                  title={voiceAutoExecute ? '自动执行已开启' : '自动执行已关闭'}
+                  aria-label={voiceAutoExecute ? '自动执行已开启' : '自动执行已关闭'}
+                >
+                  <Zap size={13} strokeWidth={2.4} />
+                </button>
+              )}
+              {showVoiceSendButton && (
+                <button
+                  type="button"
+                  onClick={sendCurrentVoiceInput}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-cyan-500 text-white shadow-[0_8px_20px_rgba(6,182,212,0.24)] transition-colors hover:bg-cyan-400 active:bg-cyan-600"
+                  title="发送当前输入并继续录音"
+                  aria-label="发送当前输入并继续录音"
+                >
+                  <Send size={13} strokeWidth={2.4} />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1426,7 +1830,8 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
             }}
           />
           <div
-            className="no-drag fixed z-[120] w-[200px] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 shadow-xl shadow-black/35"
+            ref={contextMenuRef}
+            className="no-drag fixed z-[120] w-[200px] overflow-y-auto overscroll-contain rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 shadow-xl shadow-black/35"
             style={contextMenuStyle}
           >
             {contextMenu.fileLink && (
@@ -1475,17 +1880,6 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
             <button
               type="button"
               className={CONTEXT_MENU_ITEM}
-              onClick={doPasteAndSubmit}
-            >
-              <span className="flex items-center gap-2">
-                <ClipboardPaste size={13} />
-                粘贴并回车
-              </span>
-              <span className="text-[10px] text-[var(--color-text-tertiary)]">Enter</span>
-            </button>
-            <button
-              type="button"
-              className={CONTEXT_MENU_ITEM}
               onClick={doClearInput}
             >
               <span className="flex items-center gap-2">
@@ -1503,17 +1897,6 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
               <span className="flex items-center gap-2">
                 <Copy size={13} />
                 复制工作目录
-              </span>
-            </button>
-            <button
-              type="button"
-              className={CONTEXT_MENU_ITEM}
-              onClick={doOpenCwd}
-              disabled={!sessionCwd}
-            >
-              <span className="flex items-center gap-2">
-                <FolderOpen size={13} />
-                在资源管理器打开
               </span>
             </button>
             <div className="my-1 h-px bg-[var(--color-border)]" />

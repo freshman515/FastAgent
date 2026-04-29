@@ -23,8 +23,52 @@ configureAppPaths()
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
 const canvasBookmarkShortcutWebContents = new Set<number>()
+const EXTERNAL_WEB_PROTOCOLS = new Set(['http:', 'https:'])
+const BROWSER_WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:'])
 
 type StartupWindowState = 'maximized' | 'normal'
+
+function getUrlProtocol(raw: string): string | null {
+  try {
+    return new URL(raw).protocol.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function isExternalWebUrl(raw: string): boolean {
+  const protocol = getUrlProtocol(raw)
+  return protocol !== null && EXTERNAL_WEB_PROTOCOLS.has(protocol)
+}
+
+function isAllowedBrowserWebviewNavigation(raw: string): boolean {
+  const protocol = getUrlProtocol(raw)
+  return protocol !== null && BROWSER_WEBVIEW_NAVIGATION_PROTOCOLS.has(protocol)
+}
+
+function openExternalWebUrl(raw: string): void {
+  if (!isExternalWebUrl(raw)) return
+  void shell.openExternal(raw)
+}
+
+function installExternalProtocolGuards(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.setWindowOpenHandler((details) => {
+      openExternalWebUrl(details.url)
+      return { action: 'deny' }
+    })
+
+    if (contents.getType() !== 'webview') return
+
+    const blockExternalAppNavigation = (event: Electron.Event, url: string): void => {
+      if (isAllowedBrowserWebviewNavigation(url)) return
+      event.preventDefault()
+    }
+
+    contents.on('will-navigate', blockExternalAppNavigation)
+    contents.on('will-frame-navigate', blockExternalAppNavigation)
+  })
+}
 
 function getAltDigitShortcutIndex(input: Electron.Input): number | null {
   if (
@@ -149,7 +193,7 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalWebUrl(details.url)
     return { action: 'deny' }
   })
 
@@ -161,6 +205,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  installExternalProtocolGuards()
   installBundledSkills()
   registerAllHandlers()
 
