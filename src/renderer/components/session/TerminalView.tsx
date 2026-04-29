@@ -20,10 +20,116 @@ const CONTEXT_MENU_ITEM =
   'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-secondary)]'
 type SendPickerMode = 'send' | 'insert'
 type VoiceCaptureState = 'recording' | 'transcribing'
+type PreparedVoiceAudio = {
+  audio: ArrayBuffer
+  mimeType: string
+  audioFormat?: 'encoded' | 'pcm_s16le'
+  sampleRate?: number
+}
+type StreamingVoiceState = {
+  committedText: string
+  liveText: string
+  insertedText: string
+  sentEnd: boolean
+}
+
+const FUNASR_TARGET_SAMPLE_RATE = 16000
+const FUNASR_STREAM_FINAL_IDLE_MS = 1600
 
 function buildBracketedPastePayload(text: string): string {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   return normalized.includes('\n') ? `\x1b[200~${normalized}\x1b[201~` : normalized
+}
+
+function isWebSocketVoiceEndpoint(endpoint: string): boolean {
+  return /^wss?:\/\//i.test(endpoint.trim())
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  const max = Math.min(a.length, b.length)
+  let index = 0
+  while (index < max && a[index] === b[index]) index += 1
+  return index
+}
+
+function mergeRecognizedText(base: string, addition: string): string {
+  const left = base.trim()
+  const right = addition.trim()
+  if (!right) return left
+  if (!left) return right
+  if (left.endsWith(right)) return left
+  if (right.startsWith(left)) return right
+
+  const maxOverlap = Math.min(left.length, right.length)
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (left.slice(-overlap) === right.slice(0, overlap)) {
+      return left + right.slice(overlap)
+    }
+  }
+
+  return left + right
+}
+
+function isOfflineFunasrMessage(message: Record<string, unknown>): boolean {
+  const mode = typeof message.mode === 'string' ? message.mode.toLowerCase() : ''
+  return mode.includes('offline') || message.is_final === true
+}
+
+function audioBufferToPcmS16le(audioBuffer: AudioBuffer, targetSampleRate: number): ArrayBuffer {
+  if (audioBuffer.length === 0) throw new Error('录音为空。')
+
+  const sourceRate = audioBuffer.sampleRate
+  const channelCount = Math.max(1, audioBuffer.numberOfChannels)
+  const channels = Array.from({ length: channelCount }, (_, index) => audioBuffer.getChannelData(index))
+  const targetLength = Math.max(1, Math.round(audioBuffer.duration * targetSampleRate))
+  const pcm = new Int16Array(targetLength)
+
+  for (let i = 0; i < targetLength; i += 1) {
+    const sourcePosition = i * sourceRate / targetSampleRate
+    const sourceIndex = Math.min(Math.floor(sourcePosition), audioBuffer.length - 1)
+    const nextIndex = Math.min(sourceIndex + 1, audioBuffer.length - 1)
+    const fraction = sourcePosition - sourceIndex
+    let mixed = 0
+
+    for (const channel of channels) {
+      const current = channel[sourceIndex]
+      const next = channel[nextIndex]
+      mixed += current + (next - current) * fraction
+    }
+
+    const sample = Math.max(-1, Math.min(1, mixed / channelCount))
+    pcm[i] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff)
+  }
+
+  return pcm.buffer.slice(0)
+}
+
+async function prepareVoiceAudio(blob: Blob, mimeType: string, websocketEndpoint: boolean): Promise<PreparedVoiceAudio> {
+  if (!websocketEndpoint) {
+    return {
+      audio: await blob.arrayBuffer(),
+      mimeType,
+      audioFormat: 'encoded',
+    }
+  }
+
+  const AudioContextConstructor = window.AudioContext
+    ?? (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextConstructor) throw new Error('当前环境不支持音频解码。')
+
+  const encoded = await blob.arrayBuffer()
+  const audioContext = new AudioContextConstructor()
+  try {
+    const decoded = await audioContext.decodeAudioData(encoded.slice(0))
+    return {
+      audio: audioBufferToPcmS16le(decoded, FUNASR_TARGET_SAMPLE_RATE),
+      mimeType: 'audio/pcm; codec=s16le; rate=16000',
+      audioFormat: 'pcm_s16le',
+      sampleRate: FUNASR_TARGET_SAMPLE_RATE,
+    }
+  } finally {
+    void audioContext.close().catch(() => {})
+  }
 }
 
 export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Element {
@@ -41,6 +147,13 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const voiceStreamIdRef = useRef<string | null>(null)
+  const voiceStreamUnsubscribeRef = useRef<(() => void) | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null)
+  const streamingVoiceRef = useRef<StreamingVoiceState | null>(null)
+  const streamingFinishTimerRef = useRef<number | null>(null)
   const targetSessions = useMemo(
     () => allSessions.filter((item) =>
       item.id !== session.id
@@ -155,18 +268,256 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     }, 80)
   }, [terminalRef])
 
+  const cleanupStreamingAudio = useCallback(() => {
+    if (streamingFinishTimerRef.current !== null) {
+      window.clearTimeout(streamingFinishTimerRef.current)
+      streamingFinishTimerRef.current = null
+    }
+
+    const processor = audioProcessorRef.current
+    if (processor) {
+      processor.onaudioprocess = null
+      try {
+        processor.disconnect()
+      } catch {
+        // Audio nodes may already be disconnected while stopping.
+      }
+    }
+    audioProcessorRef.current = null
+
+    const source = audioSourceRef.current
+    if (source) {
+      try {
+        source.disconnect()
+      } catch {
+        // Audio nodes may already be disconnected while stopping.
+      }
+    }
+    audioSourceRef.current = null
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+
+    const audioContext = audioContextRef.current
+    audioContextRef.current = null
+    if (audioContext && audioContext.state !== 'closed') {
+      void audioContext.close().catch(() => {})
+    }
+  }, [])
+
+  const finishStreamingVoiceInput = useCallback((cancelRemote = true) => {
+    cleanupStreamingAudio()
+
+    const unsubscribe = voiceStreamUnsubscribeRef.current
+    voiceStreamUnsubscribeRef.current = null
+    unsubscribe?.()
+
+    const streamId = voiceStreamIdRef.current
+    voiceStreamIdRef.current = null
+    if (cancelRemote && streamId) {
+      void window.api.window.cancelVoiceInputStream({ streamId }).catch(() => {})
+    }
+
+    streamingVoiceRef.current = null
+    setVoiceCaptureState(null)
+  }, [cleanupStreamingAudio])
+
+  const scheduleStreamingFinish = useCallback(() => {
+    if (streamingFinishTimerRef.current !== null) {
+      window.clearTimeout(streamingFinishTimerRef.current)
+    }
+    streamingFinishTimerRef.current = window.setTimeout(() => {
+      finishStreamingVoiceInput()
+    }, FUNASR_STREAM_FINAL_IDLE_MS)
+  }, [finishStreamingVoiceInput])
+
+  const writeStreamingVoiceText = useCallback((nextText: string) => {
+    const state = streamingVoiceRef.current
+    if (!state || nextText === state.insertedText) return
+
+    terminalRef.current?.focus()
+    const prefixLength = commonPrefixLength(state.insertedText, nextText)
+    const deleteCount = Array.from(state.insertedText.slice(prefixLength)).length
+    const addition = nextText.slice(prefixLength)
+    const payload = `${'\x7f'.repeat(deleteCount)}${addition}`
+
+    if (payload && session.ptyId) {
+      window.api.session.write(session.ptyId, payload)
+    } else if (addition) {
+      terminalRef.current?.paste(addition)
+    }
+
+    state.insertedText = nextText
+  }, [session.ptyId, terminalRef])
+
+  const handleStreamingFunasrMessage = useCallback((message: Record<string, unknown>) => {
+    const state = streamingVoiceRef.current
+    if (!state) return
+
+    const text = typeof message.text === 'string' ? message.text.trim() : ''
+    if (text) {
+      if (isOfflineFunasrMessage(message)) {
+        state.committedText = mergeRecognizedText(state.committedText, text)
+        state.liveText = ''
+      } else {
+        state.liveText = mergeRecognizedText(state.liveText, text)
+      }
+    }
+
+    const nextText = state.liveText
+      ? mergeRecognizedText(state.committedText, state.liveText)
+      : state.committedText
+    writeStreamingVoiceText(nextText)
+
+    if (state.sentEnd) scheduleStreamingFinish()
+  }, [scheduleStreamingFinish, writeStreamingVoiceText])
+
+  const stopStreamingVoiceInput = useCallback(() => {
+    const state = streamingVoiceRef.current
+    if (!state) return
+
+    state.sentEnd = true
+    cleanupStreamingAudio()
+    setVoiceCaptureState('transcribing')
+
+    const streamId = voiceStreamIdRef.current
+    if (!streamId) {
+      finishStreamingVoiceInput(false)
+      return
+    }
+
+    void window.api.window.stopVoiceInputStream({ streamId })
+      .then((result) => {
+        if (!result.ok && result.error) {
+          addToast({ type: 'error', title: '语音识别失败', body: result.error })
+          finishStreamingVoiceInput(false)
+          return
+        }
+        scheduleStreamingFinish()
+      })
+      .catch((error) => {
+        addToast({ type: 'error', title: '语音识别失败', body: error instanceof Error ? error.message : String(error) })
+        finishStreamingVoiceInput(false)
+      })
+  }, [addToast, cleanupStreamingAudio, finishStreamingVoiceInput, scheduleStreamingFinish])
+
   const stopApiVoiceInput = useCallback(() => {
+    if (streamingVoiceRef.current) {
+      stopStreamingVoiceInput()
+      return
+    }
+
     const recorder = mediaRecorderRef.current
     if (!recorder || recorder.state === 'inactive') return
     recorder.stop()
-  }, [])
+  }, [stopStreamingVoiceInput])
+
+  const startStreamingVoiceInput = useCallback(async () => {
+    setContextMenu(null)
+    terminalRef.current?.focus()
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      addToast({ type: 'error', title: '无法录音', body: '当前环境不支持浏览器录音 API。' })
+      return
+    }
+
+    const AudioContextConstructor = window.AudioContext
+      ?? (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextConstructor) {
+      addToast({ type: 'error', title: '无法录音', body: '当前环境不支持实时音频处理。' })
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          autoGainControl: true,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      })
+      const audioContext = new AudioContextConstructor()
+      await audioContext.resume()
+
+      const source = audioContext.createMediaStreamSource(stream)
+      const processor = audioContext.createScriptProcessor(4096, 1, 1)
+      const unsubscribe = window.api.window.onVoiceInputStreamEvent((event) => {
+        if (event.streamId !== voiceStreamIdRef.current) return
+
+        if (event.type === 'message') {
+          handleStreamingFunasrMessage(event.message)
+          return
+        }
+
+        if (event.type === 'error') {
+          addToast({ type: 'error', title: '语音识别失败', body: event.error })
+          finishStreamingVoiceInput(false)
+          return
+        }
+
+        finishStreamingVoiceInput(false)
+      })
+
+      mediaStreamRef.current = stream
+      audioContextRef.current = audioContext
+      audioSourceRef.current = source
+      audioProcessorRef.current = processor
+      voiceStreamUnsubscribeRef.current = unsubscribe
+
+      const startResult = await window.api.window.startVoiceInputStream({
+        endpoint: settings.voiceApiUrl.trim(),
+        sampleRate: FUNASR_TARGET_SAMPLE_RATE,
+        timeoutMs: settings.voiceApiTimeoutMs,
+      })
+
+      if (!startResult.ok || !startResult.streamId) {
+        unsubscribe()
+        throw new Error(startResult.error ?? 'FunASR WebSocket 连接失败。')
+      }
+
+      voiceStreamIdRef.current = startResult.streamId
+      streamingVoiceRef.current = {
+        committedText: '',
+        liveText: '',
+        insertedText: '',
+        sentEnd: false,
+      }
+
+      processor.onaudioprocess = (event): void => {
+        const streamId = voiceStreamIdRef.current
+        const state = streamingVoiceRef.current
+        if (!streamId || !state || state.sentEnd) return
+
+        const output = event.outputBuffer.getChannelData(0)
+        output.fill(0)
+
+        const pcm = audioBufferToPcmS16le(event.inputBuffer, FUNASR_TARGET_SAMPLE_RATE)
+        if (pcm.byteLength > 0) {
+          window.api.window.sendVoiceInputStreamChunk({ streamId, audio: pcm })
+        }
+      }
+
+      source.connect(processor)
+      processor.connect(audioContext.destination)
+      setVoiceCaptureState('recording')
+    } catch (error) {
+      finishStreamingVoiceInput()
+      addToast({ type: 'error', title: '无法开始录音', body: error instanceof Error ? error.message : String(error) })
+    }
+  }, [addToast, finishStreamingVoiceInput, handleStreamingFunasrMessage, settings.voiceApiTimeoutMs, settings.voiceApiUrl, terminalRef])
 
   const startApiVoiceInput = useCallback(async () => {
     setContextMenu(null)
     terminalRef.current?.focus()
 
     if (!settings.voiceApiUrl.trim()) {
-      addToast({ type: 'error', title: '语音 API 未配置', body: '请先在设置 > 终端 > 语音输入中配置本地 ASR API 地址。' })
+      addToast({ type: 'error', title: '本地 ASR 未配置', body: '请先在设置 > 终端 > 语音输入中配置本地 ASR 地址。' })
+      return
+    }
+
+    if (isWebSocketVoiceEndpoint(settings.voiceApiUrl)) {
+      await startStreamingVoiceInput()
       return
     }
 
@@ -207,11 +558,14 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
 
         setVoiceCaptureState('transcribing')
         const blob = new Blob(chunks, { type: mimeType })
-        void blob.arrayBuffer()
-          .then((audio) => window.api.window.transcribeVoiceInput({
+        const websocketEndpoint = isWebSocketVoiceEndpoint(settings.voiceApiUrl)
+        void prepareVoiceAudio(blob, mimeType, websocketEndpoint)
+          .then((prepared) => window.api.window.transcribeVoiceInput({
             endpoint: settings.voiceApiUrl,
-            audio,
-            mimeType,
+            audio: prepared.audio,
+            mimeType: prepared.mimeType,
+            audioFormat: prepared.audioFormat,
+            sampleRate: prepared.sampleRate,
             bodyMode: settings.voiceApiBodyMode,
             fileFieldName: settings.voiceApiFileFieldName,
             responseTextPath: settings.voiceApiResponseTextPath,
@@ -238,7 +592,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
       addToast({ type: 'error', title: '无法开始录音', body: error instanceof Error ? error.message : String(error) })
       setVoiceCaptureState(null)
     }
-  }, [addToast, settings, terminalRef])
+  }, [addToast, settings, startStreamingVoiceInput, terminalRef])
 
   const doVoiceInput = useCallback(() => {
     if (settings.voiceInputMode === 'api') {
@@ -250,12 +604,13 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
 
   useEffect(() => {
     return () => {
+      finishStreamingVoiceInput()
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop()
       }
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     }
-  }, [])
+  }, [finishStreamingVoiceInput])
 
   const openSendPicker = useCallback((mode: SendPickerMode) => {
     const term = terminalRef.current
@@ -482,7 +837,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
                 语音输入
               </span>
               <span className="text-[10px] text-[var(--color-text-tertiary)]">
-                {settings.voiceInputMode === 'api' ? 'API' : 'Win+H'}
+                {settings.voiceInputMode === 'api' ? 'ASR' : 'Win+H'}
               </span>
             </button>
             <button
@@ -493,10 +848,10 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
             >
               <span className="flex items-center gap-2">
                 <Mic size={13} />
-                {settings.voiceInputMode === 'api' ? '系统语音输入' : '本地 API 语音输入'}
+                {settings.voiceInputMode === 'api' ? '系统语音输入' : '本地 ASR 语音输入'}
               </span>
               <span className="text-[10px] text-[var(--color-text-tertiary)]">
-                {settings.voiceInputMode === 'api' ? 'Win+H' : 'API'}
+                {settings.voiceInputMode === 'api' ? 'Win+H' : 'ASR'}
               </span>
             </button>
             <button

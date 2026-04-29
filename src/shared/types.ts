@@ -807,13 +807,19 @@ export interface StructuredWorkerReport {
   updatedAt: number
 }
 
+export const DEFAULT_FUNASR_WS_ENDPOINT = 'ws://127.0.0.1:10096'
+export const LEGACY_DEFAULT_VOICE_API_ENDPOINT = 'http://127.0.0.1:10095/asr'
+
 export type VoiceInputMode = 'system' | 'api'
 export type VoiceApiBodyMode = 'multipart' | 'raw'
+export type VoiceAudioFormat = 'encoded' | 'pcm_s16le'
 
 export interface VoiceTranscribeRequest {
   endpoint: string
   audio: ArrayBuffer
   mimeType: string
+  audioFormat?: VoiceAudioFormat
+  sampleRate?: number
   bodyMode: VoiceApiBodyMode
   fileFieldName: string
   responseTextPath: string
@@ -827,6 +833,32 @@ export interface VoiceTranscribeResult {
   error?: string
   raw?: unknown
 }
+
+export interface VoiceStreamStartRequest {
+  endpoint: string
+  sampleRate: number
+  timeoutMs: number
+}
+
+export interface VoiceStreamStartResult {
+  ok: boolean
+  streamId?: string
+  error?: string
+}
+
+export interface VoiceStreamChunkPayload {
+  streamId: string
+  audio: ArrayBuffer
+}
+
+export interface VoiceStreamStopRequest {
+  streamId: string
+}
+
+export type VoiceStreamEvent =
+  | { streamId: string; type: 'message'; message: Record<string, unknown> }
+  | { streamId: string; type: 'error'; error: string }
+  | { streamId: string; type: 'closed' }
 
 // ─── IPC Channels ───
 
@@ -870,6 +902,11 @@ export const IPC = {
   WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
   WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
   VOICE_TRANSCRIBE: 'voice:transcribe',
+  VOICE_STREAM_START: 'voice:stream-start',
+  VOICE_STREAM_CHUNK: 'voice:stream-chunk',
+  VOICE_STREAM_STOP: 'voice:stream-stop',
+  VOICE_STREAM_CANCEL: 'voice:stream-cancel',
+  VOICE_STREAM_EVENT: 'voice:stream-event',
 
   DIALOG_SELECT_FOLDER: 'dialog:select-folder',
   SHELL_OPEN_PATH: 'shell:open-path',

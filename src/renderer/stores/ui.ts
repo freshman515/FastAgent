@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { DEFAULT_FUNASR_WS_ENDPOINT, LEGACY_DEFAULT_VOICE_API_ENDPOINT } from '@shared/types'
 import type { SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
@@ -200,6 +201,15 @@ const DEFAULT_QUICK_COMMANDS = [
 ] as const
 
 const DEFAULT_QUICK_COMMAND_IDS: Set<string> = new Set(DEFAULT_QUICK_COMMANDS.map((cmd) => cmd.id))
+const NEW_SESSION_MENU_PRESET_VERSION = 1
+export const DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS = [
+  'terminal-wsl',
+  'claude-code-wsl',
+  'claude-code-yolo-wsl',
+  'claude-gui',
+  'codex-wsl',
+  'codex-yolo-wsl',
+] as const
 
 export interface AppSettings {
   uiFontSize: number
@@ -222,6 +232,8 @@ export interface AppSettings {
   installedPlugins: InstalledPlugin[]
   /** New session menu option ids hidden by the user. Built-ins use SessionType, custom launchers use custom:<id>. */
   hiddenNewSessionOptionIds: string[]
+  /** Internal preset marker for default new-session menu visibility migrations. */
+  newSessionMenuPresetVersion: number
   /** New session menu option order. Built-ins use SessionType, custom launchers use custom:<id>. */
   newSessionOptionOrder: string[]
   /** Pop up a naming dialog when creating a new session */
@@ -352,14 +364,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultCustomSessionId: null,
   customSessionDefinitions: [],
   installedPlugins: [],
-  hiddenNewSessionOptionIds: [],
+  hiddenNewSessionOptionIds: [...DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS],
+  newSessionMenuPresetVersion: NEW_SESSION_MENU_PRESET_VERSION,
   newSessionOptionOrder: [],
   promptSessionNameOnCreate: false,
   terminalShellMode: 'auto',
   terminalShellCommand: '',
   terminalShellArgs: '',
   voiceInputMode: 'system',
-  voiceApiUrl: 'http://127.0.0.1:10095/asr',
+  voiceApiUrl: DEFAULT_FUNASR_WS_ENDPOINT,
   voiceApiBodyMode: 'multipart',
   voiceApiFileFieldName: 'file',
   voiceApiResponseTextPath: 'text',
@@ -1399,6 +1412,19 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.hiddenNewSessionOptionIds !== undefined) {
         s.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(raw.hiddenNewSessionOptionIds)
       }
+      const newSessionMenuPresetVersion = typeof raw.newSessionMenuPresetVersion === 'number' && Number.isFinite(raw.newSessionMenuPresetVersion)
+        ? Math.max(0, Math.round(raw.newSessionMenuPresetVersion))
+        : 0
+      s.newSessionMenuPresetVersion = newSessionMenuPresetVersion
+      if (newSessionMenuPresetVersion < NEW_SESSION_MENU_PRESET_VERSION) {
+        const oldDefaultVisibility = raw.hiddenNewSessionOptionIds === undefined
+          || (Array.isArray(raw.hiddenNewSessionOptionIds) && normalizeHiddenNewSessionOptionIds(raw.hiddenNewSessionOptionIds).length === 0)
+        if (oldDefaultVisibility) {
+          s.hiddenNewSessionOptionIds = [...DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS]
+        }
+        s.newSessionMenuPresetVersion = NEW_SESSION_MENU_PRESET_VERSION
+        shouldPersistSettings = true
+      }
       if (raw.newSessionOptionOrder !== undefined) {
         s.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(raw.newSessionOptionOrder)
       }
@@ -1414,7 +1440,15 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.terminalShellCommand === 'string') s.terminalShellCommand = raw.terminalShellCommand.trim()
       if (typeof raw.terminalShellArgs === 'string') s.terminalShellArgs = raw.terminalShellArgs
       s.voiceInputMode = normalizeVoiceInputMode(raw.voiceInputMode)
-      if (typeof raw.voiceApiUrl === 'string') s.voiceApiUrl = raw.voiceApiUrl.trim()
+      if (typeof raw.voiceApiUrl === 'string') {
+        const voiceApiUrl = raw.voiceApiUrl.trim()
+        if (voiceApiUrl === LEGACY_DEFAULT_VOICE_API_ENDPOINT) {
+          s.voiceApiUrl = DEFAULT_SETTINGS.voiceApiUrl
+          shouldPersistSettings = true
+        } else {
+          s.voiceApiUrl = voiceApiUrl
+        }
+      }
       s.voiceApiBodyMode = normalizeVoiceApiBodyMode(raw.voiceApiBodyMode)
       if (typeof raw.voiceApiFileFieldName === 'string') s.voiceApiFileFieldName = raw.voiceApiFileFieldName.trim() || DEFAULT_SETTINGS.voiceApiFileFieldName
       if (typeof raw.voiceApiResponseTextPath === 'string') s.voiceApiResponseTextPath = raw.voiceApiResponseTextPath.trim() || DEFAULT_SETTINGS.voiceApiResponseTextPath
@@ -1599,6 +1633,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.voiceApiTimeoutMs = normalizeVoiceApiTimeoutMs(settings.voiceApiTimeoutMs)
     settings.voiceApiAuthorization = settings.voiceApiAuthorization.trim()
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
+    settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))
     settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)
     if (
       settings.defaultCustomSessionId

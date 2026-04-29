@@ -34,6 +34,11 @@ import type {
   TerminalShellMode,
   VoiceTranscribeRequest,
   VoiceTranscribeResult,
+  VoiceStreamChunkPayload,
+  VoiceStreamEvent,
+  VoiceStreamStartRequest,
+  VoiceStreamStartResult,
+  VoiceStreamStopRequest,
 } from '@shared/types'
 
 interface OpencodeRequest {
@@ -66,6 +71,19 @@ const api = {
       ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
     transcribeVoiceInput: (options: VoiceTranscribeRequest) =>
       ipcRenderer.invoke(IPC.VOICE_TRANSCRIBE, options) as Promise<VoiceTranscribeResult>,
+    startVoiceInputStream: (options: VoiceStreamStartRequest) =>
+      ipcRenderer.invoke(IPC.VOICE_STREAM_START, options) as Promise<VoiceStreamStartResult>,
+    sendVoiceInputStreamChunk: (payload: VoiceStreamChunkPayload) =>
+      ipcRenderer.send(IPC.VOICE_STREAM_CHUNK, payload),
+    stopVoiceInputStream: (payload: VoiceStreamStopRequest) =>
+      ipcRenderer.invoke(IPC.VOICE_STREAM_STOP, payload) as Promise<{ ok: boolean; error?: string }>,
+    cancelVoiceInputStream: (payload: VoiceStreamStopRequest) =>
+      ipcRenderer.invoke(IPC.VOICE_STREAM_CANCEL, payload) as Promise<{ ok: boolean; error?: string }>,
+    onVoiceInputStreamEvent: (callback: (event: VoiceStreamEvent) => void) => {
+      const handler = (_: unknown, event: VoiceStreamEvent) => callback(event)
+      ipcRenderer.on(IPC.VOICE_STREAM_EVENT, handler)
+      return () => ipcRenderer.removeListener(IPC.VOICE_STREAM_EVENT, handler)
+    },
   },
 
   shortcuts: {

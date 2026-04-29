@@ -1,5 +1,6 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
 import {
@@ -9,6 +10,7 @@ import {
   CANVAS_SESSION_CARD_HEIGHT_MIN,
   CANVAS_SESSION_CARD_WIDTH_MAX,
   CANVAS_SESSION_CARD_WIDTH_MIN,
+  DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS,
   useUIStore,
   type AppSettings,
   type CustomSessionDefinition,
@@ -83,13 +85,17 @@ const TERMINAL_SHELL_OPTIONS: Array<{ id: TerminalShellMode; label: string; desc
 
 const VOICE_INPUT_OPTIONS: Array<{ id: VoiceInputMode; label: string; desc: string }> = [
   { id: 'system', label: '系统语音输入', desc: '保留当前 Windows Win+H 输入方式' },
-  { id: 'api', label: '本地 ASR API', desc: '录音后发送到本地部署的语音模型' },
+  { id: 'api', label: '本地 ASR', desc: '支持 FunASR WebSocket 或 HTTP ASR 接口' },
 ]
 
 const VOICE_API_BODY_OPTIONS: Array<{ id: VoiceApiBodyMode; label: string; desc: string }> = [
   { id: 'multipart', label: 'Multipart', desc: '以文件字段上传音频，适合多数 ASR 服务' },
   { id: 'raw', label: 'Raw Body', desc: '直接把音频作为请求体发送' },
 ]
+
+function isVoiceWebSocketEndpoint(endpoint: string): boolean {
+  return /^wss?:\/\//i.test(endpoint.trim())
+}
 
 // ─── Shared components ───
 
@@ -558,6 +564,9 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
   const showAllNewSessionOptions = useCallback(() => {
     onUpdate('hiddenNewSessionOptionIds', [])
   }, [onUpdate])
+  const restoreDefaultNewSessionOptions = useCallback(() => {
+    onUpdate('hiddenNewSessionOptionIds', [...DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS])
+  }, [onUpdate])
   const resetNewSessionOptionOrder = useCallback(() => {
     onUpdate('newSessionOptionOrder', [])
   }, [onUpdate])
@@ -648,6 +657,19 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
             >
               <RotateCcw size={12} />
               默认排序
+            </button>
+            <button
+              onClick={restoreDefaultNewSessionOptions}
+              disabled={settings.hiddenNewSessionOptionIds.length === DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS.length
+                && DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS.every((id) => settings.hiddenNewSessionOptionIds.includes(id))}
+              className={cn(
+                'flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1',
+                'text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] transition-colors',
+                'hover:border-[var(--color-border-hover)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40',
+              )}
+            >
+              <RotateCcw size={12} />
+              默认显示
             </button>
             <button
               onClick={showAllNewSessionOptions}
@@ -1643,6 +1665,7 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
     'font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
     'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
   )
+  const voiceEndpointIsWebSocket = isVoiceWebSocketEndpoint(settings.voiceApiUrl)
   const handleShellModeChange = useCallback((value: TerminalShellMode) => {
     if (!isWindowsPlatform() || value === 'custom') {
       onUpdate('terminalShellMode', value)
@@ -1713,7 +1736,7 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
           </div>
         )}
       </SettingsSection>
-      <SettingsSection icon={AudioLines} title="语音输入" description="右键终端时可使用系统语音输入，也可以录音后发送到本地 ASR API。">
+      <SettingsSection icon={AudioLines} title="语音输入" description="右键终端时可使用系统语音输入，也可以录音后发送到本地 ASR 服务。">
         <SegmentedChoice
           value={settings.voiceInputMode}
           options={VOICE_INPUT_OPTIONS}
@@ -1721,11 +1744,11 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
         />
         <div className="grid grid-cols-[1.4fr_0.8fr] gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">本地 ASR API 地址</span>
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">本地 ASR 地址</span>
             <input
               value={settings.voiceApiUrl}
               onChange={(event) => onUpdate('voiceApiUrl', event.target.value)}
-              placeholder="http://127.0.0.1:10095/asr"
+              placeholder={DEFAULT_FUNASR_WS_ENDPOINT}
               className={inputClass}
             />
           </label>
@@ -1742,43 +1765,51 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
             />
           </label>
         </div>
-        <SegmentedChoice
-          value={settings.voiceApiBodyMode}
-          options={VOICE_API_BODY_OPTIONS}
-          onChange={(value) => onUpdate('voiceApiBodyMode', value)}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">音频文件字段</span>
-            <input
-              value={settings.voiceApiFileFieldName}
-              onChange={(event) => onUpdate('voiceApiFileFieldName', event.target.value)}
-              placeholder="file"
-              className={inputClass}
-              disabled={settings.voiceApiBodyMode === 'raw'}
+        {voiceEndpointIsWebSocket ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 px-3 py-2 text-[var(--ui-font-xs)] leading-relaxed text-[var(--color-text-tertiary)]">
+            FunASR WebSocket 模式：PCM S16LE / 16 kHz / 单声道，2pass 协议。
+          </div>
+        ) : (
+          <>
+            <SegmentedChoice
+              value={settings.voiceApiBodyMode}
+              options={VOICE_API_BODY_OPTIONS}
+              onChange={(value) => onUpdate('voiceApiBodyMode', value)}
             />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">识别文本路径</span>
-            <input
-              value={settings.voiceApiResponseTextPath}
-              onChange={(event) => onUpdate('voiceApiResponseTextPath', event.target.value)}
-              placeholder="text"
-              className={inputClass}
-            />
-          </label>
-        </div>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Authorization 头（可选）</span>
-          <input
-            value={settings.voiceApiAuthorization}
-            onChange={(event) => onUpdate('voiceApiAuthorization', event.target.value)}
-            placeholder="Bearer ..."
-            className={inputClass}
-          />
-        </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">音频文件字段</span>
+                <input
+                  value={settings.voiceApiFileFieldName}
+                  onChange={(event) => onUpdate('voiceApiFileFieldName', event.target.value)}
+                  placeholder="file"
+                  className={inputClass}
+                  disabled={settings.voiceApiBodyMode === 'raw'}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">识别文本路径</span>
+                <input
+                  value={settings.voiceApiResponseTextPath}
+                  onChange={(event) => onUpdate('voiceApiResponseTextPath', event.target.value)}
+                  placeholder="text"
+                  className={inputClass}
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Authorization 头（可选）</span>
+              <input
+                value={settings.voiceApiAuthorization}
+                onChange={(event) => onUpdate('voiceApiAuthorization', event.target.value)}
+                placeholder="Bearer ..."
+                className={inputClass}
+              />
+            </label>
+          </>
+        )}
         <span className="text-[var(--ui-font-2xs)] leading-relaxed text-[var(--color-text-tertiary)]">
-          API 模式会在终端右键菜单中录音，停止后把音频发送到这里配置的接口，并把返回文本插入当前终端输入区。Windows 系统语音输入入口会保留。
+          本地 ASR 模式会在终端右键菜单中录音，停止后把返回文本插入当前终端输入区。Windows 系统语音输入入口会保留。
         </span>
       </SettingsSection>
       <div className="flex items-center gap-2 mb-1">
