@@ -42,7 +42,7 @@ function getQuestionLineSet(sessionId: string): Set<number> {
 function looksLikeUserQuestionLine(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
-  return /^(?:>|›|❯)\s+\S/.test(trimmed)
+  return /^(?:›|❯)\s+\S/.test(trimmed)
     || /^(?:User|Human|You|用户|我)[:：]\s+\S/i.test(trimmed)
     || /^╭.*(?:User|Human|You|用户)/i.test(trimmed)
 }
