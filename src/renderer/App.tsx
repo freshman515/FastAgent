@@ -323,8 +323,10 @@ async function filterExistingEditorTabs(
   const existingTabs = (await Promise.all(
     sanitizedTabs.map(async (tab) => {
       try {
-        await window.api.fs.readFile(tab.filePath)
-        return tab
+        const stat = await window.api.fs.stat(tab.filePath)
+        if (stat.isFile) return tab
+        changed = true
+        return null
       } catch {
         changed = true
         return null

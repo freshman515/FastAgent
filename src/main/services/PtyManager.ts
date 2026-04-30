@@ -12,7 +12,7 @@ import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
 import { resolveClaudeSessionLaunch } from './ClaudeSessionResolver'
 import { createFastAgentsMcpConfig, ensureFastAgentsMcpBridgePath } from './FastAgentsMcpService'
-import { escapeTomlString, windowsPathToWslPath } from './WslPath'
+import { windowsPathToWslPath } from './WslPath'
 import { createClaudeHookSettingsFile } from './HookInstaller'
 import { shouldRegisterGlobalAgentConfig } from './AppPaths'
 
@@ -61,7 +61,7 @@ export interface ManagedSessionInfo {
 // replay to start mid-stream, which drops earlier content and can leave the
 // restored screen visually blank/truncated.
 const MAX_REPLAY_CHARS = 4 * 1024 * 1024
-const AGENT_START_FALLBACK_MS = 3000
+const AGENT_START_FALLBACK_MS = 30_000
 const AGENT_INPUT_READY_QUIET_MS = 1000
 const QUEUED_INPUT_WRITE_GAP_MS = 120
 const AGENT_SUBMIT_BASE_DELAY_MS = 550
@@ -127,6 +127,58 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[()][0-2AB]|\x1b[>=<]|\x1b\[[\?!]?[0-9;]*[hlm]/g, '')
 }
 
+function includesAgentStartMarker(data: string): boolean {
+  return [
+    'OpenAI Codex',
+    'Claude Code',
+    'Welcome to Claude',
+    'Gemini',
+    'OpenCode',
+    '• Booting MCP server',
+    '• Starting MCP servers',
+  ].some((marker) => data.includes(marker))
+}
+
+function findAgentOutputStart(data: string): number {
+  const markers = [
+    '\x1b[?1049h',
+    '• Booting MCP server',
+    '• Starting MCP servers',
+    'OpenAI Codex',
+    'Claude Code',
+    'Welcome to Claude',
+    'Gemini',
+    'OpenCode',
+  ]
+  let keywordIndex = -1
+  for (const marker of markers) {
+    const index = data.indexOf(marker)
+    if (index !== -1 && (keywordIndex === -1 || index < keywordIndex)) {
+      keywordIndex = index
+    }
+  }
+  if (keywordIndex === -1) return 0
+
+  const altScreenIndex = data.lastIndexOf('\x1b[?1049h', keywordIndex)
+  if (altScreenIndex !== -1 && keywordIndex - altScreenIndex < 10_000) {
+    return altScreenIndex
+  }
+
+  const startCandidates = [
+    data.lastIndexOf('• Booting MCP server', keywordIndex),
+    data.lastIndexOf('• Starting MCP servers', keywordIndex),
+    data.lastIndexOf('╭', keywordIndex),
+  ].filter((index) => index !== -1 && keywordIndex - index < 4_000)
+
+  if (startCandidates.length > 0) return Math.min(...startCandidates)
+
+  const lineStart = Math.max(
+    data.lastIndexOf('\n', keywordIndex),
+    data.lastIndexOf('\r', keywordIndex),
+  )
+  return lineStart === -1 ? keywordIndex : lineStart + 1
+}
+
 function quoteShellArg(arg: string): string {
   if (/^[A-Za-z0-9_./:=+-]+$/.test(arg)) return arg
   if (isWindows) return `"${arg.replace(/"/g, '\\"')}"`
@@ -145,6 +197,12 @@ function quoteCmdArg(arg: string): string {
 function quotePosixArg(arg: string): string {
   if (/^[A-Za-z0-9_./:=+@%,-]+$/.test(arg)) return arg
   return `'${arg.replace(/'/g, "'\\''")}'`
+}
+
+function tomlCliString(value: string): string {
+  if (!value.includes("'")) return `'${value}'`
+  if (!value.includes("'''")) return `'''${value}'''`
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
 function buildWindowsShellCommand(
@@ -213,27 +271,27 @@ function buildCodexMcpArgs(
   if (bridgePath) {
     args.push(
       '-c',
-      'mcp_servers.fastagents.command="node"',
+      `mcp_servers.fastagents.command=${tomlCliString('node')}`,
       '-c',
-      `mcp_servers.fastagents.args=["${escapeTomlString(bridgePath)}"]`,
+      `mcp_servers.fastagents.args=[${tomlCliString(bridgePath)}]`,
       '-c',
-      `mcp_servers.fastagents.env.FASTAGENTS_MCP_PORT="${mcpEnv.port}"`,
+      `mcp_servers.fastagents.env.FASTAGENTS_MCP_PORT=${tomlCliString(String(mcpEnv.port))}`,
       '-c',
-      `mcp_servers.fastagents.env.FASTAGENTS_MCP_TOKEN="${escapeTomlString(mcpEnv.token)}"`,
+      `mcp_servers.fastagents.env.FASTAGENTS_MCP_TOKEN=${tomlCliString(mcpEnv.token)}`,
     )
   }
 
   if (isWslSessionType(options.type)) {
     args.push(
       '-c',
-      `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID="${escapeTomlString(options.sessionId)}"`,
+      `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${tomlCliString(options.sessionId)}`,
     )
     return args
   }
 
   args.push(
     '-c',
-    `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${options.sessionId}`,
+    `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${tomlCliString(options.sessionId)}`,
   )
   return args
 }
@@ -503,14 +561,10 @@ export class PtyManager {
     // MCP config on the command line. This keeps dev/stable FastAgents
     // profiles independent instead of sharing ~/.codex/config.toml.
     //
-    // Note: we deliberately pass the value *without* TOML quotes. Codex
-    // parses the value as TOML first; since a session id like `mo1gtu87-
-    // rsjk8r` fails TOML parsing (bare identifier with a dash), it falls
-    // back to treating the raw string as a literal. Wrapping in `"..."`
-    // would be correct TOML but then the shell (pwsh on Windows, bash on
-    // Unix) re-quotes the whole arg and the extra escape sequences get
-    // mis-parsed — PowerShell does not recognize `\"` so the argument
-    // splits mid-value and codex sees a stray positional PROMPT.
+    // Use TOML literal strings here. Windows PowerShell 5 strips embedded
+    // double quotes from native command arguments, so a value like
+    // `args=["C:\\path"]` reaches Codex as `args=[C:\\path]`. Single-quoted
+    // TOML strings survive both Windows PowerShell and PowerShell 7.
     if (
       agentCmd
       && isCodexType(options.type)
@@ -529,6 +583,12 @@ export class PtyManager {
       shellPath = wslLaunch.command
       shellArgs = wslLaunch.args
       shellFamily = 'posix'
+      launchAgentDirectly = true
+    } else if (agentCmd && isWindows) {
+      const cmdShell = detectShell({ mode: 'cmd' })
+      shellPath = cmdShell.shell
+      shellArgs = ['/d', '/s', '/c', buildWindowsShellCommand(agentCmd, 'cmd', true)]
+      shellFamily = 'cmd'
       launchAgentDirectly = true
     } else if (agentCmd && !isWindows) {
       const fullCmd = [agentCmd.command, ...agentCmd.args].map(quoteShellArg).join(' ')
@@ -583,20 +643,15 @@ export class PtyManager {
 
     this.ptys.set(id, managed)
 
-    // For agent sessions on Windows, suppress output until the agent CLI actually starts.
-    // The shell prompt + command echo arrive before the agent banner.
-    // Strategy: after the command is written (500ms), wait for agent-specific text,
-    // or fall back to a short timeout.
     const isAgentSession = !isTerminalSessionType(options.type)
-    let agentStarted = !isAgentSession
+    const suppressShellLaunchOutput = isAgentSession && isWindows && !launchAgentDirectly
+    let agentStarted = !suppressShellLaunchOutput
     let suppressedOutput = ''
 
-    // Agent banner keywords (case-insensitive checked)
-    const AGENT_KEYWORDS = ['Claude Code', 'Codex', 'Gemini', 'gemini', 'opencode', 'OpenCode', 'open-code']
-
     let agentStartFallback: NodeJS.Timeout | null = null
-    if (isAgentSession) {
-      // Fallback: start forwarding after 3s no matter what
+    if (suppressShellLaunchOutput) {
+      // Last-resort fallback for unknown agent banners. Keep it long enough
+      // that normal CLI startup has already emitted a recognizable marker.
       agentStartFallback = setTimeout(() => {
         agentStarted = true
         suppressedOutput = ''
@@ -612,7 +667,16 @@ export class PtyManager {
       }
     }
 
+    const appendReplayData = (data: string): void => {
+      managed.replayBuffer += data
+      if (managed.replayBuffer.length > MAX_REPLAY_CHARS) {
+        managed.replayBuffer = managed.replayBuffer.slice(-MAX_REPLAY_CHARS)
+      }
+    }
+
     const emitVisibleData = (data: string): void => {
+      if (!data) return
+      appendReplayData(data)
       queueMirrorWrite(managed.mirror, data)
       managed.dataSeq += 1
       sendToWindows({ ptyId: id, data, seq: managed.dataSeq })
@@ -624,22 +688,17 @@ export class PtyManager {
 
     // Forward data to all windows
     ptyProcess.onData((data) => {
-      // Append to replay buffer (always, for graceful shutdown capture)
-      managed.replayBuffer += data
-      if (managed.replayBuffer.length > MAX_REPLAY_CHARS) {
-        managed.replayBuffer = managed.replayBuffer.slice(-MAX_REPLAY_CHARS)
-      }
-
       // For agent sessions, suppress shell prompt/command, only show agent output
-      if (!agentStarted) {
+      if (suppressShellLaunchOutput && !agentStarted) {
         suppressedOutput += data
-        const raw = managed.replayBuffer
+        const raw = suppressedOutput
         const clean = stripAnsi(raw)
-        const detected = AGENT_KEYWORDS.some((kw) => clean.includes(kw) || raw.includes(kw))
+        const detected = includesAgentStartMarker(clean) || includesAgentStartMarker(raw)
         if (detected) {
           agentStarted = true
+          const visibleOutput = raw.slice(findAgentOutputStart(raw))
           suppressedOutput = ''
-          emitVisibleData(data)
+          emitVisibleData(visibleOutput)
         }
         return
       }
@@ -659,9 +718,12 @@ export class PtyManager {
         managed.inputReadyTimer = null
       }
 
-      if (!agentStarted && suppressedOutput) {
+      if (suppressShellLaunchOutput && !agentStarted && suppressedOutput) {
         agentStarted = true
-        emitVisibleData(suppressedOutput)
+        const clean = stripAnsi(suppressedOutput)
+        if (includesAgentStartMarker(clean) || includesAgentStartMarker(suppressedOutput)) {
+          emitVisibleData(suppressedOutput.slice(findAgentOutputStart(suppressedOutput)))
+        }
         suppressedOutput = ''
       }
 
@@ -676,8 +738,8 @@ export class PtyManager {
       }
     })
 
-    // For agent sessions on Windows, send the command after shell is ready
-    // Append "; exit" so shell exits when agent exits → triggers PTY exit event
+    // Fallback for any future Windows agent path that still launches through
+    // an interactive shell instead of a one-shot command.
     if (agentCmd && isWindows && !launchAgentDirectly) {
       setTimeout(() => {
         ptyProcess.write(

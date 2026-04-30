@@ -15,6 +15,7 @@ import { getIdeStateSnapshot } from './IdeServer'
 import { ptyManager } from './PtyManager'
 import { activityMonitor } from './ActivityMonitor'
 import {
+  cleanupLegacyFastTerminalMcpRegistrations,
   registerFastAgentsMcpInClaudeProjects,
   registerFastAgentsMcpInCodex,
   syncMetaAgentToCodexAgentsMd,
@@ -170,6 +171,11 @@ export class OrchestratorService {
     ptyManager.addDataObserver((ptyId) => {
       this.lastDataAt.set(ptyId, nowMs())
     })
+
+    // FastTerminal used the same global Codex/Claude MCP registration names
+    // during early development. Remove those stale registrations so Codex
+    // sessions launched by FastAgents only boot the MCP servers they need.
+    cleanupLegacyFastTerminalMcpRegistrations()
 
     // Packaged builds keep the convenience global registrations. Dev builds
     // run from a separate profile and pass MCP config per spawned session, so

@@ -358,6 +358,110 @@ function removeTomlSection(source: string, header: string): string {
   return [...lines.slice(0, start), ...lines.slice(end)].join('\n')
 }
 
+function removeTomlSectionsByPrefix(source: string, headerPrefix: string): string {
+  const lines = source.length ? source.split(/\r?\n/) : []
+  const kept: string[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const trimmed = lines[i].trim()
+    const sectionMatch = trimmed.match(/^\[\[?([^\]]+)\]?\]$/)
+    if (sectionMatch) {
+      const header = sectionMatch[1].trim()
+      const shouldRemove = header === headerPrefix || header.startsWith(`${headerPrefix}.`)
+      if (shouldRemove) {
+        i += 1
+        while (i < lines.length) {
+          const nextTrimmed = lines[i].trim()
+          if (nextTrimmed.startsWith('[') && nextTrimmed.endsWith(']')) break
+          i += 1
+        }
+        while (kept.length > 0 && kept[kept.length - 1].trim() === '') kept.pop()
+        continue
+      }
+    }
+
+    kept.push(lines[i])
+    i += 1
+  }
+
+  return kept.join('\n')
+}
+
+function removeFastTerminalMcpServers(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  let changed = false
+  const record = value as Record<string, unknown>
+  const mcpServers = record.mcpServers
+  if (mcpServers && typeof mcpServers === 'object' && !Array.isArray(mcpServers)) {
+    const servers = mcpServers as Record<string, unknown>
+    for (const [name, server] of Object.entries(servers)) {
+      const serialized = JSON.stringify(server)?.toLowerCase() ?? ''
+      if (
+        name.toLowerCase() === 'fastterminal'
+        || serialized.includes('fastterminal-mcp')
+        || serialized.includes('fast-terminal\\\\mcp')
+        || serialized.includes('fast-terminal/mcp')
+      ) {
+        delete servers[name]
+        changed = true
+      }
+    }
+  }
+
+  for (const item of Object.values(record)) {
+    if (item && typeof item === 'object') {
+      changed = removeFastTerminalMcpServers(item) || changed
+    }
+  }
+
+  return changed
+}
+
+function cleanupFastTerminalMcpFromCodex(): boolean {
+  const original = readCodexConfig()
+  if (!original) return false
+  const updated = removeTomlSectionsByPrefix(original, 'mcp_servers.fastterminal')
+  if (updated === original) return false
+  writeCodexConfig(updated.endsWith('\n') ? updated : `${updated}\n`)
+  return true
+}
+
+function cleanupFastTerminalMcpFromClaude(): boolean {
+  const path = getClaudeJsonPath()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown
+  } catch {
+    return false
+  }
+
+  if (!removeFastTerminalMcpServers(parsed)) return false
+  writeClaudeJson(parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {})
+  return true
+}
+
+export function cleanupLegacyFastTerminalMcpRegistrations(): void {
+  try {
+    if (cleanupFastTerminalMcpFromCodex()) {
+      console.log('[FastAgentsMcp] removed legacy fastterminal MCP from ~/.codex/config.toml')
+    }
+  } catch (err) {
+    console.warn('[FastAgentsMcp] failed to clean fastterminal MCP from ~/.codex/config.toml:', err)
+  }
+
+  try {
+    if (cleanupFastTerminalMcpFromClaude()) {
+      console.log('[FastAgentsMcp] removed legacy fastterminal MCP from ~/.claude.json')
+    }
+  } catch (err) {
+    console.warn('[FastAgentsMcp] failed to clean fastterminal MCP from ~/.claude.json:', err)
+  }
+}
+
 export function registerFastAgentsMcpInClaudeProjects(options: Pick<McpConfigOptions, 'port' | 'token'>): void {
   const bridgePath = ensureBridgeScript()
   if (!bridgePath) return

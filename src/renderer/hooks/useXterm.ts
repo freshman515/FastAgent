@@ -429,6 +429,7 @@ export function findTerminalFileLinkAtCell(line: IBufferLine, cellColumn: number
 
 const TERMINAL_BOTTOM_SAFE_PADDING_PX = 4
 const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350, 700] as const
+const INITIAL_TERMINAL_FIT_ATTEMPTS = 8
 
 function applyTerminalFitSafeArea(terminal: Terminal): void {
   const element = terminal.element
@@ -465,6 +466,35 @@ function refitAndRefreshTerminal(
   } catch {
     return null
   }
+}
+
+function fallbackTerminalDimensions(terminal: Terminal): { cols: number; rows: number } {
+  return {
+    cols: Math.max(1, terminal.cols || 80),
+    rows: Math.max(1, terminal.rows || 24),
+  }
+}
+
+async function waitForInitialTerminalFit(
+  terminal: Terminal,
+  fitAddon: FitAddon,
+  container: HTMLElement,
+  isDisposed: () => boolean,
+): Promise<{ cols: number; rows: number }> {
+  for (let attempt = 0; attempt < INITIAL_TERMINAL_FIT_ATTEMPTS; attempt += 1) {
+    if (isDisposed()) break
+
+    const dimensions = refitAndRefreshTerminal(terminal, fitAddon, container)
+    if (dimensions && dimensions.cols > 0 && dimensions.rows > 0) {
+      return dimensions
+    }
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
+  }
+
+  return fallbackTerminalDimensions(terminal)
 }
 
 function scheduleTerminalRepaint(
@@ -831,6 +861,10 @@ export function useXterm(
       ptyId = existingPtyId
 
       try {
+        const dimensions = await waitForInitialTerminalFit(terminal, fitAddon, container, () => destroyed)
+        if (destroyed) return
+        requestPtyResize(existingPtyId, dimensions.cols, dimensions.rows, 0)
+
         const replay = await window.api.session.getReplay(existingPtyId)
         if (destroyed) return
 
@@ -862,9 +896,11 @@ export function useXterm(
       // append only live chunks that arrived after the snapshot sequence.
       void restoreFromSnapshot()
     } else {
-      // Create new PTY
-      window.api.session
-        .create({
+      const createPty = async (): Promise<void> => {
+        const dimensions = await waitForInitialTerminalFit(terminal, fitAddon, container, () => destroyed)
+        if (destroyed) return
+
+        const result = await window.api.session.create({
           cwd: cwd!,
           type: sessionType,
           sessionId,
@@ -883,30 +919,33 @@ export function useXterm(
           wslPathPrefix: isWslSession ? settings.wslPathPrefix : undefined,
           wslInitScript: isWslSession ? settings.wslInitScript : undefined,
           wslEnvVars: isWslSession ? settings.wslEnvVars : undefined,
-          cols: terminal.cols || 80,
-          rows: terminal.rows || 24,
+          cols: dimensions.cols,
+          rows: dimensions.rows,
         })
-        .then((result) => {
-          if (destroyed) {
-            window.api.session.kill(result.ptyId)
-            return
-          }
-          ptyId = result.ptyId
-          const nextSessionUpdates: Partial<Omit<Session, 'id'>> = {
-            ptyId,
-            status: 'running',
-            initialized: true,
-          }
-          if (isClaudeCodeType(sessionType) && result.resumeUUID) {
-            nextSessionUpdates.resumeUUID = result.resumeUUID
-          }
-          useSessionsStore
-            .getState()
-            .updateSession(sessionId, nextSessionUpdates)
-          addTimelineEvent(sessionId, 'start', `Session started (${sessionType})`)
+        if (destroyed) {
+          window.api.session.kill(result.ptyId)
+          return
+        }
 
-          scheduleRepaint(false)
-        })
+        ptyId = result.ptyId
+        requestPtyResize(ptyId, dimensions.cols, dimensions.rows, 0)
+        const nextSessionUpdates: Partial<Omit<Session, 'id'>> = {
+          ptyId,
+          status: 'running',
+          initialized: true,
+        }
+        if (isClaudeCodeType(sessionType) && result.resumeUUID) {
+          nextSessionUpdates.resumeUUID = result.resumeUUID
+        }
+        useSessionsStore
+          .getState()
+          .updateSession(sessionId, nextSessionUpdates)
+        addTimelineEvent(sessionId, 'start', `Session started (${sessionType})`)
+
+        scheduleRepaint(false)
+      }
+
+      void createPty()
     }
 
     // Undo stack for software undo (used by non-terminal sessions).
