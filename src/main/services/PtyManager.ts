@@ -3,7 +3,8 @@ import type { IPty } from '@lydell/node-pty'
 import headlessPkg from '@xterm/headless'
 import serializePkg from '@xterm/addon-serialize'
 import { execFileSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import { BrowserWindow } from 'electron'
 import { IPC, isClaudeCodeType, isCodexType, isTerminalSessionType, isWslSessionType } from '@shared/types'
 import type { SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
@@ -197,6 +198,94 @@ function quoteCmdArg(arg: string): string {
 function quotePosixArg(arg: string): string {
   if (/^[A-Za-z0-9_./:=+@%,-]+$/.test(arg)) return arg
   return `'${arg.replace(/'/g, "'\\''")}'`
+}
+
+function findWindowsCommandOnPath(command: string): string | null {
+  if (!isWindows) return null
+
+  const hasDirectory = command.includes('\\') || command.includes('/')
+  const hasExtension = /\.[A-Za-z0-9]+$/.test(command)
+  const pathExts = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM')
+    .split(';')
+    .filter(Boolean)
+  const commandCandidates = hasExtension
+    ? [command]
+    : pathExts.map((ext) => `${command}${ext}`)
+
+  const directories = hasDirectory
+    ? ['']
+    : (process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean)
+
+  for (const dir of directories) {
+    for (const candidate of commandCandidates) {
+      const fullPath = dir ? join(dir, candidate) : candidate
+      if (existsSync(fullPath)) return fullPath
+    }
+  }
+
+  return null
+}
+
+function resolveWindowsNodeCommand(npmBinDir: string): string {
+  const localNode = join(npmBinDir, 'node.exe')
+  if (existsSync(localNode)) return localNode
+  return findWindowsCommandOnPath('node') ?? 'node.exe'
+}
+
+function resolveWindowsCmdShim(
+  commandPath: string,
+): { command: string; argsPrefix: string[] } | null {
+  if (!/\.cmd$/i.test(commandPath)) return null
+
+  let contents = ''
+  try {
+    contents = readFileSync(commandPath, 'utf8')
+  } catch {
+    return null
+  }
+
+  const npmBinDir = dirname(commandPath)
+  const directExeMatch = contents.match(/"%dp0%\\([^"]+\.exe)"\s+%*/i)
+  if (directExeMatch) {
+    const executable = join(npmBinDir, directExeMatch[1])
+    if (existsSync(executable)) return { command: executable, argsPrefix: [] }
+  }
+
+  const nodeScriptMatch = contents.match(/"%_prog%"\s+"%dp0%\\([^"]+)"\s+%*/i)
+  if (nodeScriptMatch) {
+    const script = join(npmBinDir, nodeScriptMatch[1])
+    if (existsSync(script)) {
+      return {
+        command: resolveWindowsNodeCommand(npmBinDir),
+        argsPrefix: [script],
+      }
+    }
+  }
+
+  return null
+}
+
+function resolveWindowsDirectAgentCommand(
+  agentCmd: { command: string; args: string[] },
+): { command: string; args: string[] } | null {
+  if (!isWindows) return agentCmd
+
+  const resolvedCommand = findWindowsCommandOnPath(agentCmd.command)
+  if (!resolvedCommand) return null
+
+  const shim = resolveWindowsCmdShim(resolvedCommand)
+  if (shim) {
+    return {
+      command: shim.command,
+      args: [...shim.argsPrefix, ...agentCmd.args],
+    }
+  }
+
+  if (/\.cmd$/i.test(resolvedCommand) || /\.bat$/i.test(resolvedCommand)) {
+    return null
+  }
+
+  return { command: resolvedCommand, args: agentCmd.args }
 }
 
 function tomlCliString(value: string): string {
@@ -585,11 +674,18 @@ export class PtyManager {
       shellFamily = 'posix'
       launchAgentDirectly = true
     } else if (agentCmd && isWindows) {
-      const cmdShell = detectShell({ mode: 'cmd' })
-      shellPath = cmdShell.shell
-      shellArgs = ['/d', '/s', '/c', buildWindowsShellCommand(agentCmd, 'cmd', true)]
-      shellFamily = 'cmd'
-      launchAgentDirectly = true
+      const directLaunch = resolveWindowsDirectAgentCommand(agentCmd)
+      if (directLaunch) {
+        shellPath = directLaunch.command
+        shellArgs = directLaunch.args
+        launchAgentDirectly = true
+      } else {
+        const cmdShell = detectShell({ mode: 'cmd' })
+        shellPath = cmdShell.shell
+        shellArgs = ['/d', '/s', '/c', buildWindowsShellCommand(agentCmd, 'cmd', true)]
+        shellFamily = 'cmd'
+        launchAgentDirectly = true
+      }
     } else if (agentCmd && !isWindows) {
       const fullCmd = [agentCmd.command, ...agentCmd.args].map(quoteShellArg).join(' ')
       shellArgs = ['-c', fullCmd]
