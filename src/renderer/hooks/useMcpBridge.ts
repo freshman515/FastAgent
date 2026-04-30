@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import {
+  type McpCloseSessionRequest,
   type McpCreateSessionRequest,
   type McpSessionInfo,
 } from '@shared/types'
@@ -15,6 +16,7 @@ import { createAgentWorktree } from '@/lib/agent-worktrees'
  *
  *   - list all sessions (id / name / type / cwd / pane / hasPty)
  *   - create a new session and attach it to the current active pane
+ *   - close a session tab from renderer-owned pane/session state
  *
  * Direct PTY operations (read output / write input / wait_for_idle) are
  * served by main-process code without crossing this bridge.
@@ -30,9 +32,14 @@ export function useMcpBridge(): void {
       void handleCreateSession(req)
     })
 
+    const offClose = window.api.mcp.onCloseSessionRequest((req) => {
+      handleCloseSession(req)
+    })
+
     return () => {
       offList()
       offCreate()
+      offClose()
     }
   }, [])
 }
@@ -89,6 +96,59 @@ function findProjectIdByCwd(cwd?: string): string | null {
     }
   }
   return best?.id ?? null
+}
+
+function sessionsShareMcpScope(source: { projectId: string; worktreeId?: string; cwd?: string }, target: { projectId: string; worktreeId?: string; cwd?: string }): boolean {
+  if (source.projectId && target.projectId && source.projectId === target.projectId) return true
+
+  const sourceCwd = source.cwd ? normalizePath(source.cwd) : ''
+  const targetCwd = target.cwd ? normalizePath(target.cwd) : ''
+  return Boolean(sourceCwd && targetCwd && (sourceCwd === targetCwd || targetCwd.startsWith(`${sourceCwd}/`) || sourceCwd.startsWith(`${targetCwd}/`)))
+}
+
+function handleCloseSession(req: McpCloseSessionRequest): void {
+  try {
+    const sessionStore = useSessionsStore.getState()
+    const paneStore = usePanesStore.getState()
+    const target = sessionStore.sessions.find((session) => session.id === req.targetSessionId)
+    if (!target) {
+      throw new Error(`Session not found: ${req.targetSessionId}`)
+    }
+    if (target.pinned) {
+      throw new Error('Pinned sessions cannot be closed.')
+    }
+    if (req.sourceSessionId && req.sourceSessionId === req.targetSessionId) {
+      throw new Error('Refusing to close the calling session itself.')
+    }
+    if (req.sourceSessionId) {
+      const source = sessionStore.sessions.find((session) => session.id === req.sourceSessionId)
+      if (!source) {
+        throw new Error('Calling session is no longer available.')
+      }
+      if (!sessionsShareMcpScope(source, target)) {
+        throw new Error('Target session is outside the current workspace scope.')
+      }
+    }
+
+    for (const [paneId, sessionIds] of Object.entries(paneStore.paneSessions)) {
+      if (sessionIds.includes(req.targetSessionId)) {
+        paneStore.removeSessionFromPane(paneId, req.targetSessionId)
+      }
+    }
+    sessionStore.removeSession(req.targetSessionId)
+
+    window.api.mcp.respondCloseSession({
+      requestId: req.requestId,
+      ok: true,
+      closed: true,
+    })
+  } catch (err) {
+    window.api.mcp.respondCloseSession({
+      requestId: req.requestId,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 async function handleCreateSession(req: McpCreateSessionRequest): Promise<void> {

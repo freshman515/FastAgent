@@ -65,7 +65,7 @@ interface EditorsState {
 
 const EXT_LANG_MAP: Record<string, string> = {
   ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact',
-  json: 'json', md: 'markdown', css: 'css', scss: 'scss', less: 'less',
+  json: 'json', md: 'markdown', markdown: 'markdown', mdx: 'markdown', css: 'css', scss: 'scss', less: 'less',
   html: 'html', xml: 'xml', svg: 'xml', xaml: 'xml', axaml: 'xml', yaml: 'yaml', yml: 'yaml',
   py: 'python', rs: 'rust', go: 'go', java: 'java', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
   cs: 'csharp', rb: 'ruby', php: 'php', sh: 'shell', bash: 'shell',

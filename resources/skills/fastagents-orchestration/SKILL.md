@@ -37,12 +37,14 @@ description: 通过 fa_* MCP 工具编排多个 FastAgents 会话。适用于 Co
 - `fa_list_sessions`：需要发现会话 ID、类型、状态、cwd、`[SELF]` 时使用。
 - `fa_create_session`：创建一个 bounded worker agent 或后台终端。
 - `fa_write_session`：向非当前会话发送明确任务或命令。
+- `fa_close_session`：关闭非当前会话的标签页，并终止其仍在运行的进程。
 - `fa_wait_for_idle`：等待 worker 或终端输出稳定。
 - `fa_read_session`：读取 worker 结果、终端输出或已有会话状态。
 
 硬性规则：
 
 - 永远不要对 `[SELF]` 会话调用 `fa_write_session`。
+- 需要关闭别的会话时使用 `fa_close_session`，不要只发送 `/quit` 或 `exit`，否则可能只退出进程但保留标签页。
 - 不要让两个 worker 同时拥有同一批文件的写权限。
 - 告诉 worker：它不是代码库里的唯一会话，不能回滚用户或其他会话的改动。
 - 主控会话负责最终整合，不要让 worker 之间互相协调。
@@ -59,6 +61,20 @@ description: 通过 fa_* MCP 工具编排多个 FastAgents 会话。适用于 Co
 7. 主控检查 worker 改动，必要时本地跑验证。
 8. 整合结果时保留用户改动和 worker 改动，除非有明确理由替换。
 9. 最终答复由主控总结，不直接拼接 worker transcript。
+
+## 无限运行模式
+
+当用户明确说“启动无限运行”“无限运行这个任务”“按任务文件一直跑完”或同等意思时，主控会话进入无限运行模式：
+
+- 不要在每个子任务完成后停下来问用户是否继续。
+- 自己读取任务文本或任务文件，拆成可执行队列，并按依赖和风险排序。
+- 自己决定哪些任务由主控完成，哪些任务通过 `fa_create_session` 派发给 worker。
+- 默认优先使用 Codex / Codex YOLO，除非用户限制了可用会话类型。
+- worker 完成后必须 `fa_read_session` 检查输出和报告，必要时继续读取仓库状态或运行验证。
+- 主控要做二次复核：发现问题时把明确修改意见通过 `fa_write_session` 发回原 worker。
+- worker 修完后再次复核；直到通过、阻塞明确、或达到主控认为合理的轮次上限。
+- 一个任务结束后自动启动下一个任务，直到队列完成、用户停止、或出现无法自行处理的硬阻塞。
+- 结束时再总结整体状态；中途只更新任务状态，不把“是否继续”交还给用户。
 
 ## 委派模板
 

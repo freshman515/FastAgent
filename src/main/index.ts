@@ -66,7 +66,8 @@ function installExternalProtocolGuards(): void {
     }
 
     contents.on('will-navigate', blockExternalAppNavigation)
-    contents.on('will-frame-navigate', blockExternalAppNavigation)
+    ;(contents as unknown as { on(event: 'will-frame-navigate', listener: (event: Electron.Event, url: string) => void): void })
+      .on('will-frame-navigate', blockExternalAppNavigation)
   })
 }
 

@@ -1,5 +1,5 @@
 import { X, Zap, ChevronUp, ChevronDown, Copy, ClipboardPaste, FileText, Keyboard, ListChecks, Search, Eraser, Mic, Pause, Play, Send, Undo2 } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { Session } from '@shared/types'
 import {
@@ -63,6 +63,17 @@ type VoiceReplacementCommand = {
 type TerminalContextFileLink = ParsedFileRef & {
   absolutePath: string
 }
+type VoiceControlPosition = {
+  x: number
+  y: number
+}
+type VoiceControlDragState = {
+  pointerId: number
+  startPointerX: number
+  startPointerY: number
+  startX: number
+  startY: number
+}
 
 const FUNASR_TARGET_SAMPLE_RATE = 16000
 const FUNASR_STREAM_FINAL_IDLE_MS = 1200
@@ -72,6 +83,7 @@ const MEDIA_RECORDER_VOICE_TIMESLICE_MS = 250
 const VOICE_AUTO_EXECUTE_DUPLICATE_MS = 1500
 const VOICE_WAVE_BAR_COUNT = 24
 const CONTEXT_MENU_VIEWPORT_MARGIN = 8
+const VOICE_CONTROL_VIEWPORT_MARGIN = 12
 const VOICE_WAVE_BAR_INDICES = Array.from({ length: VOICE_WAVE_BAR_COUNT }, (_, index) => index)
 type LocalAsrStartupAction = 'start' | 'restart'
 type LocalAsrReadyCache = { containerName: string; checkedAt: number }
@@ -101,6 +113,19 @@ function invalidateLocalAsrReady(containerName?: string): void {
   if (!containerName || localAsrReadyCache?.containerName === containerName) {
     localAsrReadyCache = null
   }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(value, max))
+}
+
+function voiceControlPositionsAreEqual(a: VoiceControlPosition, b: VoiceControlPosition): boolean {
+  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5
+}
+
+function targetBlocksVoiceControlDrag(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && Boolean(target.closest('button,a,input,textarea,select,[role="button"],[data-no-voice-drag]'))
 }
 
 function buildBracketedPastePayload(text: string): string {
@@ -344,6 +369,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const settings = useUIStore((s) => s.settings)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
   const addToast = useUIStore((s) => s.addToast)
+  const terminalViewRef = useRef<HTMLDivElement | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -363,6 +389,10 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const [voiceAsrProcessing, setVoiceAsrProcessing] = useState(false)
   const [, setVoicePreview] = useState<VoicePreview>({ confirmed: '', tentative: '' })
   const [voiceLevel, setVoiceLevel] = useState(0)
+  const [voiceControlPosition, setVoiceControlPosition] = useState<VoiceControlPosition | null>(null)
+  const [voiceControlDragging, setVoiceControlDragging] = useState(false)
+  const voiceControlRef = useRef<HTMLDivElement | null>(null)
+  const voiceControlDragRef = useRef<VoiceControlDragState | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -489,6 +519,102 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const voiceCaptureCopy = voiceCaptureState ? getVoiceCaptureCopy(voiceCaptureState, isActive, voiceInputPaused, voiceAsrProcessing) : null
   const showVoiceSendButton = voiceCaptureState === 'recording' && streamingVoiceRef.current !== null
   const showVoicePauseButton = voiceCaptureState === 'recording' && streamingVoiceRef.current !== null
+
+  const clampVoiceControlPosition = useCallback((position: VoiceControlPosition): VoiceControlPosition => {
+    const root = terminalViewRef.current
+    const control = voiceControlRef.current
+    if (!root || !control) return position
+
+    const rootRect = root.getBoundingClientRect()
+    const controlRect = control.getBoundingClientRect()
+    const maxX = Math.max(VOICE_CONTROL_VIEWPORT_MARGIN, rootRect.width - controlRect.width - VOICE_CONTROL_VIEWPORT_MARGIN)
+    const maxY = Math.max(VOICE_CONTROL_VIEWPORT_MARGIN, rootRect.height - controlRect.height - VOICE_CONTROL_VIEWPORT_MARGIN)
+
+    return {
+      x: clampNumber(position.x, VOICE_CONTROL_VIEWPORT_MARGIN, maxX),
+      y: clampNumber(position.y, VOICE_CONTROL_VIEWPORT_MARGIN, maxY),
+    }
+  }, [])
+
+  const settleVoiceControlPosition = useCallback(() => {
+    setVoiceControlPosition((current) => {
+      if (!current) return current
+
+      const next = clampVoiceControlPosition(current)
+      return voiceControlPositionsAreEqual(current, next) ? current : next
+    })
+  }, [clampVoiceControlPosition])
+
+  const startVoiceControlDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || targetBlocksVoiceControlDrag(event.target)) return
+
+    const root = terminalViewRef.current
+    const control = voiceControlRef.current
+    if (!root || !control) return
+
+    const rootRect = root.getBoundingClientRect()
+    const controlRect = control.getBoundingClientRect()
+    const startPosition = clampVoiceControlPosition({
+      x: controlRect.left - rootRect.left,
+      y: controlRect.top - rootRect.top,
+    })
+
+    voiceControlDragRef.current = {
+      pointerId: event.pointerId,
+      startPointerX: event.clientX,
+      startPointerY: event.clientY,
+      startX: startPosition.x,
+      startY: startPosition.y,
+    }
+    setVoiceControlPosition(startPosition)
+    setVoiceControlDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }, [clampVoiceControlPosition])
+
+  const moveVoiceControlDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = voiceControlDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    setVoiceControlPosition(clampVoiceControlPosition({
+      x: drag.startX + event.clientX - drag.startPointerX,
+      y: drag.startY + event.clientY - drag.startPointerY,
+    }))
+    event.preventDefault()
+  }, [clampVoiceControlPosition])
+
+  const finishVoiceControlDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = voiceControlDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    voiceControlDragRef.current = null
+    setVoiceControlDragging(false)
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // The browser may already have released capture after pointer cancellation.
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!voiceCaptureState) return
+    settleVoiceControlPosition()
+  }, [settleVoiceControlPosition, showVoicePauseButton, showVoiceSendButton, voiceCaptureState])
+
+  useEffect(() => {
+    if (!voiceControlPosition) return
+
+    const handleResize = (): void => settleVoiceControlPosition()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [settleVoiceControlPosition, voiceControlPosition])
+
+  useEffect(() => {
+    if (voiceCaptureState) return
+
+    voiceControlDragRef.current = null
+    setVoiceControlDragging(false)
+  }, [voiceCaptureState])
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
@@ -1622,10 +1748,13 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
         top: Math.max(8, Math.min(sendPicker.y, window.innerHeight - pickerHeight - 8)),
       }
     : undefined
+  const voiceControlStyle: CSSProperties | undefined = voiceControlPosition
+    ? { left: voiceControlPosition.x, top: voiceControlPosition.y }
+    : undefined
 
   return (
     <div className="terminal-view group/terminal-view h-full w-full bg-[var(--color-terminal-bg)]">
-      <div className="relative h-full w-full bg-[var(--color-terminal-bg)]">
+      <div ref={terminalViewRef} className="relative h-full w-full bg-[var(--color-terminal-bg)]">
       {/* Search bar */}
       {searchOpen && (
         <div className="terminal-search-bar absolute right-3 top-3 z-10 flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 shadow-lg">
@@ -1686,7 +1815,19 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
           </button>
         )}
         {voiceCaptureState && (
-          <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 flex flex-wrap items-end justify-center gap-2 text-white sm:left-1/2 sm:right-auto sm:w-[min(900px,calc(100%-32px))] sm:-translate-x-1/2 sm:flex-nowrap">
+          <div
+            ref={voiceControlRef}
+            className={cn(
+              'pointer-events-auto absolute z-30 flex w-max max-w-[calc(100%-32px)] flex-wrap items-end justify-center gap-2 touch-none select-none text-white sm:flex-nowrap [&_button]:cursor-pointer',
+              voiceControlDragging ? 'cursor-grabbing' : 'cursor-grab',
+              voiceControlPosition ? 'left-0 top-0' : 'bottom-4 left-1/2 -translate-x-1/2',
+            )}
+            style={voiceControlStyle}
+            onPointerDown={startVoiceControlDrag}
+            onPointerMove={moveVoiceControlDrag}
+            onPointerUp={finishVoiceControlDrag}
+            onPointerCancel={finishVoiceControlDrag}
+          >
             <div className="pointer-events-auto inline-flex min-h-14 max-w-[calc(100vw-32px)] items-center gap-3 rounded-[var(--radius-lg)] border border-white/[0.14] bg-[linear-gradient(135deg,rgba(16,18,24,0.94),rgba(36,28,42,0.94))] px-3 py-2.5 shadow-[0_16px_48px_rgba(0,0,0,0.42)] backdrop-blur-xl">
               <div
                 className={cn(

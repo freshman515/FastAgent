@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { IPC, type McpCreateSessionResponse, type McpSessionInfo } from '@shared/types'
+import { IPC, type McpCloseSessionResponse, type McpCreateSessionResponse, type McpSessionInfo } from '@shared/types'
 import { orchestratorService } from '../services/OrchestratorService'
 
 /**
@@ -27,6 +27,14 @@ export function registerMcpHandlers(): void {
     (_event, payload: McpCreateSessionResponse) => {
       if (!payload || typeof payload.requestId !== 'string') return
       orchestratorService.resolveCreateSession(payload.requestId, payload)
+    },
+  )
+
+  ipcMain.on(
+    IPC.MCP_CLOSE_SESSION_RESPONSE,
+    (_event, payload: McpCloseSessionResponse) => {
+      if (!payload || typeof payload.requestId !== 'string') return
+      orchestratorService.resolveCloseSession(payload.requestId, payload)
     },
   )
 }

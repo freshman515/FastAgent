@@ -324,6 +324,19 @@ export interface McpCreateSessionResponse {
   error?: string
 }
 
+export interface McpCloseSessionRequest {
+  requestId: string
+  sourceSessionId: string | null
+  targetSessionId: string
+}
+
+export interface McpCloseSessionResponse {
+  requestId: string
+  ok: boolean
+  closed?: boolean
+  error?: string
+}
+
 export interface McpListSessionsResponse {
   requestId: string
   sessions: McpSessionInfo[]
@@ -914,6 +927,8 @@ export const IPC = {
   MCP_LIST_SESSIONS_RESPONSE: 'mcp:list-sessions-response',
   MCP_CREATE_SESSION_REQUEST: 'mcp:create-session-request',
   MCP_CREATE_SESSION_RESPONSE: 'mcp:create-session-response',
+  MCP_CLOSE_SESSION_REQUEST: 'mcp:close-session-request',
+  MCP_CLOSE_SESSION_RESPONSE: 'mcp:close-session-response',
 
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPOND: 'permission:respond',

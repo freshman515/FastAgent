@@ -21,6 +21,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useTemplatesStore } from '@/stores/templates'
 import { useTasksStore } from '@/stores/tasks'
+import { useInfiniteTasksStore } from '@/stores/infiniteTasks'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { detectLanguage, type EditorTab, sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
 import { useLaunchesStore } from '@/stores/launches'
@@ -506,6 +507,7 @@ function MainApp(): JSX.Element {
       useUIStore.getState()._loadSettings(data.ui, (data as Record<string, unknown>).customThemes as Record<string, unknown> | undefined)
       useTemplatesStore.getState()._loadFromConfig((data as Record<string, unknown>).templates as unknown[] ?? [])
       useTasksStore.getState()._loadFromConfig({ activeTasks: (data as Record<string, unknown>).activeTasks as unknown[] ?? [] })
+      useInfiniteTasksStore.getState()._loadFromConfig((data as Record<string, unknown>).infiniteTasks as unknown ?? {})
       useWorktreesStore.getState()._loadFromConfig(rawWorktrees)
       useLaunchesStore.getState()._loadFromConfig((data as Record<string, unknown>).launches as unknown[] ?? [])
       useClaudeGuiStore.getState()._loadFromConfig((data as Record<string, unknown>).claudeGui as Record<string, unknown> ?? {})

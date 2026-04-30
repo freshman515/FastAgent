@@ -18,6 +18,8 @@ import type {
   FileSearchResult,
   HistoricalSessionDeleteResult,
   HistoricalSessionListResult,
+  McpCloseSessionRequest,
+  McpCloseSessionResponse,
   McpCreateSessionRequest,
   McpCreateSessionResponse,
   McpSessionInfo,
@@ -206,6 +208,13 @@ const api = {
     },
     respondCreateSession: (payload: McpCreateSessionResponse) =>
       ipcRenderer.send(IPC.MCP_CREATE_SESSION_RESPONSE, payload),
+    onCloseSessionRequest: (callback: (req: McpCloseSessionRequest) => void) => {
+      const handler = (_: unknown, req: McpCloseSessionRequest) => callback(req)
+      ipcRenderer.on(IPC.MCP_CLOSE_SESSION_REQUEST, handler)
+      return () => ipcRenderer.removeListener(IPC.MCP_CLOSE_SESSION_REQUEST, handler)
+    },
+    respondCloseSession: (payload: McpCloseSessionResponse) =>
+      ipcRenderer.send(IPC.MCP_CLOSE_SESSION_RESPONSE, payload),
   },
 
   sessionHistory: {
@@ -430,6 +439,7 @@ const api = {
         worktrees?: unknown[]
         templates?: unknown[]
         activeTasks?: unknown[]
+        infiniteTasks?: unknown
         ui: Record<string, unknown>
         panes?: Record<string, unknown>
         canvas?: Record<string, unknown>

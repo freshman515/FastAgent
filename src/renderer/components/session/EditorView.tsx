@@ -2,6 +2,7 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import * as monaco from 'monaco-editor'
+import { Code2, Columns2, Eye } from 'lucide-react'
 import { type EditorCursorInfo, useEditorsStore } from '@/stores/editors'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -11,6 +12,7 @@ import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { defineMonacoTheme, MONACO_THEME_NAME } from '@/lib/monacoTheme'
 import { registerEnhancedCSharpLanguage } from '@/lib/csharpLanguage'
+import { renderMarkdown } from '@/lib/markdown'
 
 // Configure Monaco workers for Vite
 self.MonacoEnvironment = {
@@ -57,6 +59,15 @@ interface EditorDisplaySettings {
   stickyScroll: boolean
   fontLigatures: boolean
 }
+
+type MarkdownEditorMode = 'source' | 'preview' | 'split'
+type PreviewTextPoint = {
+  node: Text
+  offset: number
+}
+type PreviewTextIndexEntry = PreviewTextPoint | null
+
+const MARKDOWN_PREVIEW_SELECTION_OVERLAY = 'markdown-preview-selection-overlay'
 
 function buildEditorOptions(settings: EditorDisplaySettings): monaco.editor.IStandaloneEditorConstructionOptions {
   return {
@@ -182,6 +193,164 @@ function formatDetailedCodePath(filePath: string, range: { startLine: number; en
 
 function normalizeEditorFilePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function normalizePreviewSearchText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function stripMarkdownSelectionSyntax(text: string): string {
+  return text
+    .replace(/^```[^\n]*\n?/gm, '')
+    .replace(/^```\s*$/gm, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/[*_~|]/g, ' ')
+}
+
+function getRenderedMarkdownText(markdown: string): string {
+  const container = document.createElement('div')
+  container.innerHTML = renderMarkdown(markdown)
+  return container.textContent ?? ''
+}
+
+function getMarkdownSelectionNeedles(selectionText: string): string[] {
+  const candidates = [
+    getRenderedMarkdownText(selectionText),
+    stripMarkdownSelectionSyntax(selectionText),
+    selectionText,
+  ]
+
+  return Array.from(new Set(
+    candidates
+      .map(normalizePreviewSearchText)
+      .filter((candidate) => candidate.length >= 2),
+  )).sort((a, b) => b.length - a.length)
+}
+
+function clearMarkdownPreviewSelection(container: HTMLElement): void {
+  container.querySelector(`.${MARKDOWN_PREVIEW_SELECTION_OVERLAY}`)?.remove()
+}
+
+function buildMarkdownPreviewTextIndex(container: HTMLElement): { text: string; map: PreviewTextIndexEntry[] } {
+  const map: PreviewTextIndexEntry[] = []
+  let text = ''
+
+  const appendSpace = (): void => {
+    if (!text || text.endsWith(' ')) return
+    text += ' '
+    map.push(null)
+  }
+
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: (node) => {
+        const element = node.parentElement
+        if (
+          !element
+          || element.closest(`script,style,.${MARKDOWN_PREVIEW_SELECTION_OVERLAY}`)
+        ) {
+          return NodeFilter.FILTER_REJECT
+        }
+        return NodeFilter.FILTER_ACCEPT
+      },
+    },
+  )
+
+  let node = walker.nextNode() as Text | null
+  while (node) {
+    const value = node.data
+    for (let index = 0; index < value.length; index += 1) {
+      if (/\s/.test(value[index])) {
+        appendSpace()
+      } else {
+        text += value[index]
+        map.push({ node, offset: index })
+      }
+    }
+    appendSpace()
+    node = walker.nextNode() as Text | null
+  }
+
+  while (text.endsWith(' ')) {
+    text = text.slice(0, -1)
+    map.pop()
+  }
+
+  return { text, map }
+}
+
+function getPreviewTextPoint(
+  map: PreviewTextIndexEntry[],
+  startIndex: number,
+  endIndex: number,
+  direction: 1 | -1,
+): PreviewTextPoint | null {
+  for (let index = startIndex; direction > 0 ? index <= endIndex : index >= endIndex; index += direction) {
+    const point = map[index]
+    if (point) return point
+  }
+  return null
+}
+
+function highlightMarkdownPreviewSelection(container: HTMLElement, selectionText: string): void {
+  clearMarkdownPreviewSelection(container)
+  const needles = getMarkdownSelectionNeedles(selectionText)
+  if (needles.length === 0) return
+
+  const { text, map } = buildMarkdownPreviewTextIndex(container)
+  const normalizedText = text.toLowerCase()
+  const match = needles
+    .map((needle) => ({ index: normalizedText.indexOf(needle.toLowerCase()), length: needle.length }))
+    .find((candidate) => candidate.index >= 0)
+  if (!match) return
+
+  const startPoint = getPreviewTextPoint(map, match.index, match.index + match.length - 1, 1)
+  const endPoint = getPreviewTextPoint(map, match.index + match.length - 1, match.index, -1)
+  if (!startPoint || !endPoint) return
+
+  const range = document.createRange()
+  range.setStart(startPoint.node, startPoint.offset)
+  range.setEnd(endPoint.node, endPoint.offset + 1)
+
+  const containerRect = container.getBoundingClientRect()
+  const overlay = document.createElement('div')
+  overlay.className = MARKDOWN_PREVIEW_SELECTION_OVERLAY
+
+  for (const rect of Array.from(range.getClientRects())) {
+    if (rect.width < 1 || rect.height < 1) continue
+    const highlight = document.createElement('span')
+    highlight.className = 'markdown-preview-selection-highlight'
+    highlight.style.left = `${rect.left - containerRect.left + container.scrollLeft}px`
+    highlight.style.top = `${rect.top - containerRect.top + container.scrollTop}px`
+    highlight.style.width = `${rect.width}px`
+    highlight.style.height = `${rect.height}px`
+    overlay.appendChild(highlight)
+  }
+
+  if (overlay.childElementCount > 0) container.appendChild(overlay)
+  range.detach()
+}
+
+function getScrollableRatio(scrollTop: number, scrollHeight: number, clientHeight: number): number {
+  const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+  return maxScrollTop <= 0 ? 0 : scrollTop / maxScrollTop
+}
+
+function getSelectionTextWithinElement(element: HTMLElement | null): string {
+  if (!element) return ''
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return ''
+  const text = selection.toString()
+  if (!text) return ''
+  return element.contains(selection.anchorNode) || element.contains(selection.focusNode) ? text : ''
 }
 
 type AddToast = ReturnType<typeof useUIStore.getState>['addToast']
@@ -374,6 +543,8 @@ interface EditorViewProps {
 
 export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  const markdownPreviewRef = useRef<HTMLDivElement>(null)
+  const markdownScrollSyncRef = useRef<'source' | 'preview' | null>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | monaco.editor.IStandaloneDiffEditor | null>(null)
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
@@ -399,6 +570,10 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const [sendPicker, setSendPicker] = useState<{ prompt: string; x: number; y: number } | null>(null)
   const contextMenuEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [markdownPreviewContextMenu, setMarkdownPreviewContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [markdownMode, setMarkdownMode] = useState<MarkdownEditorMode>('source')
+  const [markdownSource, setMarkdownSource] = useState('')
+  const [markdownSelectionText, setMarkdownSelectionText] = useState('')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -416,6 +591,11 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
         fontLigatures: editorFontLigatures,
       }),
     [editorFontFamily, editorFontLigatures, editorFontSize, editorLineNumbers, editorMinimap, editorStickyScroll, editorWordWrap],
+  )
+  const isMarkdownEditor = tab?.language === 'markdown' && !tab.isDiff
+  const renderedMarkdown = useMemo(
+    () => (isMarkdownEditor ? renderMarkdown(markdownSource) : ''),
+    [isMarkdownEditor, markdownSource],
   )
 
   useEffect(() => {
@@ -563,6 +743,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       window.api.fs.readFile(tab.filePath).then((content) => {
         if (disposed) return
         savedContentRef.current = content
+        if (tab.language === 'markdown') setMarkdownSource(content)
         const opts = buildEditorOptions({
           fontFamily: useUIStore.getState().settings.editorFontFamily,
           fontSize: useUIStore.getState().settings.editorFontSize,
@@ -579,6 +760,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
         // Track modifications
         editor.onDidChangeModelContent(() => {
           const current = editor.getValue()
+          if (tab.language === 'markdown') setMarkdownSource(current)
           setModified(editorTabId, current !== savedContentRef.current)
         })
 
@@ -589,6 +771,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           const position = selection.getPosition()
           const selectionInfo = buildSelectionInfo(selection, editor.getModel())
           const selections = buildSelectionsInfo(editor.getSelections(), editor.getModel())
+          if (tab.language === 'markdown') setMarkdownSelectionText(selectionInfo?.text ?? '')
           setLastFocusedTabId(editorTabId)
           setCursorInfo({ line: position.lineNumber, column: position.column, selection: selectionInfo, selections })
           window.api.ide.selectionChanged({
@@ -648,6 +831,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             savedContentRef.current = diskContent
             const viewState = editor.saveViewState()
             editor.setValue(diskContent)
+            if (tab.language === 'markdown') setMarkdownSource(diskContent)
             if (viewState) editor.restoreViewState(viewState)
           }).catch(() => {})
         }
@@ -683,6 +867,84 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorTabId, tab?.filePath, tab?.isDiff])
+
+  useEffect(() => {
+    if (!isMarkdownEditor) {
+      setMarkdownMode('source')
+      setMarkdownSelectionText('')
+    }
+  }, [isMarkdownEditor])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    const frame = window.requestAnimationFrame(() => {
+      if ('getModifiedEditor' in editor) {
+        editor.layout()
+        return
+      }
+      editor.layout()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [isMarkdownEditor, markdownMode])
+
+  useEffect(() => {
+    if (!isMarkdownEditor || markdownMode !== 'split') return
+    const editor = editorRef.current
+    const preview = markdownPreviewRef.current
+    if (!editor || !preview || 'getModifiedEditor' in editor) return
+
+    const syncPreviewFromSource = (): void => {
+      if (markdownScrollSyncRef.current === 'preview') return
+      markdownScrollSyncRef.current = 'source'
+      const ratio = getScrollableRatio(editor.getScrollTop(), editor.getScrollHeight(), editor.getLayoutInfo().height)
+      preview.scrollTop = ratio * Math.max(0, preview.scrollHeight - preview.clientHeight)
+      window.requestAnimationFrame(() => {
+        if (markdownScrollSyncRef.current === 'source') markdownScrollSyncRef.current = null
+      })
+    }
+
+    const syncSourceFromPreview = (): void => {
+      if (markdownScrollSyncRef.current === 'source') return
+      markdownScrollSyncRef.current = 'preview'
+      const ratio = getScrollableRatio(preview.scrollTop, preview.scrollHeight, preview.clientHeight)
+      editor.setScrollTop(ratio * Math.max(0, editor.getScrollHeight() - editor.getLayoutInfo().height))
+      window.requestAnimationFrame(() => {
+        if (markdownScrollSyncRef.current === 'preview') markdownScrollSyncRef.current = null
+      })
+    }
+
+    const disposable = editor.onDidScrollChange((event) => {
+      if (event.scrollTopChanged) syncPreviewFromSource()
+    })
+    preview.addEventListener('scroll', syncSourceFromPreview, { passive: true })
+    syncPreviewFromSource()
+
+    return () => {
+      disposable.dispose()
+      preview.removeEventListener('scroll', syncSourceFromPreview)
+      markdownScrollSyncRef.current = null
+    }
+  }, [isMarkdownEditor, markdownMode, renderedMarkdown])
+
+  useEffect(() => {
+    const preview = markdownPreviewRef.current
+    if (!preview || !isMarkdownEditor || markdownMode !== 'split') return
+
+    const frame = window.requestAnimationFrame(() => {
+      if (!markdownSelectionText.trim()) {
+        clearMarkdownPreviewSelection(preview)
+        return
+      }
+      highlightMarkdownPreviewSelection(preview, markdownSelectionText)
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      clearMarkdownPreviewSelection(preview)
+    }
+  }, [isMarkdownEditor, markdownMode, markdownSelectionText, renderedMarkdown])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -721,13 +983,17 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   useEffect(() => {
     if (!isActive || !editorRef.current) return
     setLastFocusedTabId(editorTabId)
+    if (isMarkdownEditor && markdownMode === 'preview') {
+      setCursorInfo(null)
+      return
+    }
     const ed = editorRef.current
     if ('getModifiedEditor' in ed) {
       (ed as monaco.editor.IStandaloneDiffEditor).getModifiedEditor().focus()
     } else {
       (ed as monaco.editor.IStandaloneCodeEditor).focus()
     }
-  }, [editorTabId, isActive, setLastFocusedTabId])
+  }, [editorTabId, isActive, isMarkdownEditor, markdownMode, setCursorInfo, setLastFocusedTabId])
 
   // Get running sessions for picker — only current project, deduplicated
   const allSessions = useSessionsStore((s) => s.sessions)
@@ -783,6 +1049,26 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       })
     })
   }
+  const copyMarkdownPreviewSelection = async (): Promise<void> => {
+    const selectedText = getSelectionTextWithinElement(markdownPreviewRef.current)
+    if (!selectedText) return
+    await navigator.clipboard.writeText(selectedText)
+  }
+  const copyMarkdownPreviewText = async (): Promise<void> => {
+    const text = markdownPreviewRef.current?.innerText.trim()
+    if (!text) return
+    await navigator.clipboard.writeText(text)
+  }
+  const runMarkdownPreviewMenuAction = (action: () => void | Promise<void>): void => {
+    setMarkdownPreviewContextMenu(null)
+    Promise.resolve(action()).catch((err: unknown) => {
+      addToast({
+        type: 'error',
+        title: '阅读视图操作失败',
+        body: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
 
   function triggerProjectTextSearch(editor: monaco.editor.IStandaloneCodeEditor): void {
     const query = getSelectedTextOrCurrentWord(editor)
@@ -810,13 +1096,137 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   }
 
   return (
-    <div className="h-full w-full relative bg-[var(--color-bg-primary)]">
+    <div className="h-full w-full relative flex flex-col bg-[var(--color-bg-primary)]">
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Loading...</span>
         </div>
       )}
-      <div ref={containerRef} className="h-full w-full" />
+      {isMarkdownEditor && (
+        <div className="relative flex h-9 shrink-0 items-center justify-end border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/70 px-2">
+          <div className="pointer-events-none absolute inset-x-28 top-0 flex h-full items-center justify-center">
+            <span className="truncate text-sm font-medium text-[var(--color-text-secondary)]">
+              {tab.fileName}
+            </span>
+          </div>
+          <div className="inline-flex overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+            <button
+              type="button"
+              onClick={() => setMarkdownMode('source')}
+              aria-label="源码模式"
+              aria-pressed={markdownMode === 'source'}
+              title="源码模式"
+              className={cn(
+                'flex h-6 w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors',
+                markdownMode === 'source'
+                  ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              <Code2 size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMarkdownMode('preview')}
+              aria-label="阅读模式"
+              aria-pressed={markdownMode === 'preview'}
+              title="阅读模式"
+              className={cn(
+                'flex h-6 w-8 items-center justify-center border-l border-[var(--color-border)] text-[var(--color-text-tertiary)] transition-colors',
+                markdownMode === 'preview'
+                  ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              <Eye size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMarkdownMode('split')}
+              aria-label="分屏模式"
+              aria-pressed={markdownMode === 'split'}
+              title="分屏模式"
+              className={cn(
+                'flex h-6 w-8 items-center justify-center border-l border-[var(--color-border)] text-[var(--color-text-tertiary)] transition-colors',
+                markdownMode === 'split'
+                  ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              <Columns2 size={13} strokeWidth={2.2} />
+            </button>
+          </div>
+        </div>
+      )}
+      <div className={cn('min-h-0 w-full flex-1', isMarkdownEditor && markdownMode === 'split' ? 'flex' : 'relative')}>
+        <div
+          ref={containerRef}
+          aria-hidden={isMarkdownEditor && markdownMode === 'preview'}
+          className={cn(
+            'min-h-0 min-w-0',
+            !isMarkdownEditor && 'h-full w-full',
+            isMarkdownEditor && markdownMode === 'source' && 'h-full w-full',
+            isMarkdownEditor && markdownMode === 'split' && 'h-full w-1/2 border-r border-[var(--color-border)]',
+            isMarkdownEditor && markdownMode === 'preview' && 'pointer-events-none absolute inset-0 h-full w-full opacity-0',
+          )}
+        />
+        {isMarkdownEditor && markdownMode !== 'source' && (
+          <div
+            ref={markdownPreviewRef}
+            tabIndex={0}
+            className={cn(
+              'markdown-preview-content ai-summary-content select-text relative h-full min-w-0 overflow-auto bg-[var(--color-bg-primary)] px-8 py-7 text-[13px] leading-6 text-[var(--color-text-secondary)] outline-none',
+              markdownMode === 'split' ? 'w-1/2' : 'w-full',
+            )}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              setMarkdownPreviewContextMenu({ x: event.clientX, y: event.clientY })
+            }}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+                const selectedText = getSelectionTextWithinElement(markdownPreviewRef.current)
+                if (!selectedText) return
+                event.preventDefault()
+                void navigator.clipboard.writeText(selectedText)
+              }
+            }}
+            dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
+          />
+        )}
+      </div>
+
+      {markdownPreviewContextMenu && createPortal(
+        <>
+          <div
+            className="fixed inset-0"
+            style={{ zIndex: 9998 }}
+            onMouseDown={() => setMarkdownPreviewContextMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              setMarkdownPreviewContextMenu(null)
+            }}
+          />
+          <div
+            style={{ top: markdownPreviewContextMenu.y, left: markdownPreviewContextMenu.x, zIndex: 9999 }}
+            className="fixed min-w-40 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[#343436] py-1 shadow-lg shadow-black/35"
+            onMouseDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <EditorMenuItem
+              label="复制"
+              shortcut="Ctrl+C"
+              disabled={!getSelectionTextWithinElement(markdownPreviewRef.current)}
+              onClick={() => runMarkdownPreviewMenuAction(copyMarkdownPreviewSelection)}
+            />
+            <EditorMenuDivider />
+            <EditorMenuItem
+              label="复制全文"
+              onClick={() => runMarkdownPreviewMenuAction(copyMarkdownPreviewText)}
+            />
+          </div>
+        </>,
+        document.body,
+      )}
 
       {editorContextMenu && tab && createPortal(
         <>

@@ -18,6 +18,7 @@ interface ConfigData {
   worktrees: unknown[]
   templates: unknown[]
   activeTasks: unknown[]
+  infiniteTasks: Record<string, unknown>
   ui: Record<string, unknown>
   panes: Record<string, unknown>
   canvas: Record<string, unknown>
@@ -33,6 +34,7 @@ const DEFAULT_DATA: ConfigData = {
   worktrees: [],
   templates: [],
   activeTasks: [],
+  infiniteTasks: {},
   ui: {},
   panes: {},
   canvas: {},
@@ -71,6 +73,7 @@ export function readConfig(): ConfigData {
       worktrees: Array.isArray(parsed.worktrees) ? parsed.worktrees : [],
       templates: Array.isArray(parsed.templates) ? parsed.templates : [],
       activeTasks: Array.isArray(parsed.activeTasks) ? parsed.activeTasks : [],
+      infiniteTasks: parsed.infiniteTasks && typeof parsed.infiniteTasks === 'object' && !Array.isArray(parsed.infiniteTasks) ? parsed.infiniteTasks : {},
       ui: parsed.ui && typeof parsed.ui === 'object' ? parsed.ui : {},
       panes: parsed.panes && typeof parsed.panes === 'object' ? parsed.panes : {},
       canvas: parsed.canvas && typeof parsed.canvas === 'object' ? parsed.canvas : {},

@@ -486,6 +486,72 @@ body.fastagents-tab-dragging * {
   text-align: left;
 }
 
+.markdown-preview-content {
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.markdown-preview-content * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.markdown-preview-content h1,
+.markdown-preview-content h2,
+.markdown-preview-content h3 {
+  margin: 1.2em 0 0.55em;
+  line-height: 1.25;
+}
+
+.markdown-preview-content h1 {
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 24px;
+}
+
+.markdown-preview-content h2 {
+  font-size: 19px;
+}
+
+.markdown-preview-content h3 {
+  font-size: 16px;
+}
+
+.markdown-preview-content p,
+.markdown-preview-content ul,
+.markdown-preview-content ol,
+.markdown-preview-content blockquote,
+.markdown-preview-content pre,
+.markdown-preview-content table {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.markdown-preview-content pre {
+  padding: 12px;
+}
+
+.markdown-preview-content img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.markdown-preview-selection-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.markdown-preview-selection-highlight {
+  position: absolute;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-accent) 34%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 44%, transparent);
+}
+
 /* Focus visible */
 *:focus-visible {
   outline: 1px solid var(--color-accent);

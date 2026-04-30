@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Activity, Archive, Bot, Clock, Command, Files, GitBranch, History, Layers3, ListTodo, MessageSquareText, Network, Search, Sparkles, SquareKanban } from 'lucide-react'
+import { Activity, Archive, Bot, Clock, Command, Files, GitBranch, History, Infinity as InfinityIcon, Layers3, ListTodo, MessageSquareText, Search, Sparkles, SquareKanban } from 'lucide-react'
 import type { DockPanelId } from '@/stores/ui'
 import claudeIcon from '@/assets/icons/Claude.png'
 import { ProjectsPanel } from '@/components/sidebar/ProjectsPanel'
@@ -11,7 +11,7 @@ import { QuickCommands } from '@/components/rightpanel/QuickCommands'
 import { PromptManager } from '@/components/rightpanel/PromptManager'
 import { PromptOptimizerPanel } from '@/components/rightpanel/PromptOptimizerPanel'
 import { TodoList } from '@/components/rightpanel/TodoList'
-import { TaskOrchestrator } from '@/components/rightpanel/TaskOrchestrator'
+import { InfiniteTaskPanel } from '@/components/rightpanel/InfiniteTaskPanel'
 import { FileTree } from '@/components/rightpanel/FileTree'
 import { ProjectSearch } from '@/components/rightpanel/ProjectSearch'
 import { SessionTimeline } from '@/components/rightpanel/SessionTimeline'
@@ -63,9 +63,9 @@ export const DOCK_PANEL_DEFINITIONS: Record<DockPanelId, DockPanelDefinition> = 
   },
   tasks: {
     id: 'tasks',
-    label: '任务编排',
-    icon: Network,
-    render: () => <TaskOrchestrator />,
+    label: '无限任务',
+    icon: InfinityIcon,
+    render: () => <InfiniteTaskPanel />,
   },
   commands: {
     id: 'commands',

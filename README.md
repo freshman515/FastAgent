@@ -77,6 +77,7 @@ FastAgents 会给 Claude Code 会话自动注入本地 MCP 工具，让一个 Ag
 - 列出当前工作区的所有 session。
 - 读取其他 session 的最近输出。
 - 向其他 session 发送输入。
+- 关闭其他 session 标签页，并终止其仍在运行的进程。
 - 创建新的 Claude Code、Codex、Gemini、OpenCode 或 Terminal 会话。
 - 等待某个 session 输出静止。
 - 读取当前编辑器打开文件、选区和上下文。

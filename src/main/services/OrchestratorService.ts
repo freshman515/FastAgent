@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto'
 import { BrowserWindow } from 'electron'
 import {
   IPC,
+  type McpCloseSessionRequest,
+  type McpCloseSessionResponse,
   type McpCreateSessionRequest,
   type McpCreateSessionResponse,
   type McpCreatableSessionType,
@@ -11,6 +13,7 @@ import {
 } from '@shared/types'
 import { getIdeStateSnapshot } from './IdeServer'
 import { ptyManager } from './PtyManager'
+import { activityMonitor } from './ActivityMonitor'
 import {
   registerFastAgentsMcpInClaudeProjects,
   registerFastAgentsMcpInCodex,
@@ -62,6 +65,21 @@ const READ_BODY_LIMIT_BYTES = 64 * 1024
 
 function nowMs(): number {
   return Date.now()
+}
+
+function normalizeMcpScopePath(path: string | null | undefined): string {
+  return typeof path === 'string'
+    ? path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '').toLowerCase()
+    : ''
+}
+
+function mcpSessionsShareRendererScope(source: McpSessionInfo | null | undefined, target: McpSessionInfo): boolean {
+  if (!source) return false
+  if (source.projectId && target.projectId && source.projectId === target.projectId) return true
+
+  const sourceCwd = normalizeMcpScopePath(source.cwd)
+  const targetCwd = normalizeMcpScopePath(target.cwd)
+  return Boolean(sourceCwd && targetCwd && (sourceCwd === targetCwd || sourceCwd.startsWith(`${targetCwd}/`) || targetCwd.startsWith(`${sourceCwd}/`)))
 }
 
 function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
@@ -117,6 +135,7 @@ export class OrchestratorService {
 
   private readonly pendingListSessions = new Map<string, PendingRequest<McpSessionInfo[]>>()
   private readonly pendingCreateSession = new Map<string, PendingRequest<McpCreateSessionResponse>>()
+  private readonly pendingCloseSession = new Map<string, PendingRequest<McpCloseSessionResponse>>()
 
   async init(): Promise<void> {
     this.token = randomBytes(32).toString('hex')
@@ -206,6 +225,14 @@ export class OrchestratorService {
     pending.resolve(response)
   }
 
+  resolveCloseSession(requestId: string, response: McpCloseSessionResponse): void {
+    const pending = this.pendingCloseSession.get(requestId)
+    if (!pending) return
+    this.pendingCloseSession.delete(requestId)
+    clearTimeout(pending.timer)
+    pending.resolve(response)
+  }
+
   dispose(): void {
     for (const pending of this.pendingListSessions.values()) {
       clearTimeout(pending.timer)
@@ -217,6 +244,11 @@ export class OrchestratorService {
       pending.reject(new Error('Orchestrator disposed'))
     }
     this.pendingCreateSession.clear()
+    for (const pending of this.pendingCloseSession.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error('Orchestrator disposed'))
+    }
+    this.pendingCloseSession.clear()
     if (this.server) {
       try { this.server.close() } catch { /* ignore */ }
       this.server = null
@@ -258,6 +290,18 @@ export class OrchestratorService {
       const callerSessionId = req.headers['x-fastagents-session-id']
       const sessions = await this.listSessions(typeof callerSessionId === 'string' ? callerSessionId : null)
       jsonResponse(res, 200, { sessions })
+      return
+    }
+
+    const sessionCloseMatch = route.path.match(/^\/fa\/sessions\/([^/]+)$/)
+    if (sessionCloseMatch) {
+      if (route.method !== 'DELETE') {
+        errorResponse(res, 405, 'Method not allowed for this resource')
+        return
+      }
+      const sessionId = decodeURIComponent(sessionCloseMatch[1])
+      const callerSessionId = headerString(req.headers['x-fastagents-session-id'])
+      await this.handleCloseSession(res, sessionId, callerSessionId)
       return
     }
 
@@ -341,19 +385,21 @@ export class OrchestratorService {
     // Reconcile renderer-reported metadata with live PtyManager state + apply
     // workspace scoping. Outside-scope sessions are simply omitted — the
     // agent never learns about them.
-    return sessions
-      .map((session) => ({
-        ...session,
-        hasPty: ptyManager.findPtyIdBySessionId(session.id) !== null,
-        isSelf: callerSessionId !== null && callerSessionId === session.id,
-      }))
-      .filter((session) => {
-        if (!callerSessionId) return true
-        if (session.id === callerSessionId) return true
-        // Only include sessions the caller is allowed to see. Sessions with
-        // no live PTY are excluded by canAccessSession anyway.
-        return ptyManager.canAccessSession(callerSessionId, session.id)
-      })
+    const reconciled = sessions.map((session) => ({
+      ...session,
+      hasPty: ptyManager.findPtyIdBySessionId(session.id) !== null,
+      isSelf: callerSessionId !== null && callerSessionId === session.id,
+    }))
+    const caller = callerSessionId
+      ? reconciled.find((session) => session.id === callerSessionId)
+      : null
+
+    return reconciled.filter((session) => {
+      if (!callerSessionId) return true
+      if (session.id === callerSessionId) return true
+      if (ptyManager.canAccessSession(callerSessionId, session.id)) return true
+      return !session.hasPty && mcpSessionsShareRendererScope(caller, session)
+    })
   }
 
   private async handleReadOutput(
@@ -500,6 +546,65 @@ export class OrchestratorService {
         session_id: result.sessionId,
         worktree_fallback: result.worktreeFallback === true,
         worktree_error: result.worktreeError ?? null,
+      })
+    } catch (err) {
+      errorResponse(res, 504, err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  private async handleCloseSession(
+    res: ServerResponse,
+    sessionId: string,
+    callerSessionId: string | null,
+  ): Promise<void> {
+    if (callerSessionId && callerSessionId === sessionId) {
+      errorResponse(res, 400, 'Refusing to close the calling session itself.')
+      return
+    }
+
+    const livePtyId = ptyManager.findPtyIdBySessionId(sessionId)
+    if (callerSessionId && livePtyId && !ptyManager.canAccessSession(callerSessionId, sessionId)) {
+      errorResponse(res, 403, 'Target session is outside the current workspace scope.')
+      return
+    }
+
+    const win = this.resolveMainWindow()
+    if (!win) {
+      errorResponse(res, 503, 'Main window not ready')
+      return
+    }
+
+    const requestId = `mcp-close-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const payload: McpCloseSessionRequest = {
+      requestId,
+      sourceSessionId: callerSessionId,
+      targetSessionId: sessionId,
+    }
+
+    try {
+      const result = await new Promise<McpCloseSessionResponse>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.pendingCloseSession.delete(requestId)
+          reject(new Error('Timed out waiting for renderer to close session'))
+        }, RENDERER_REQUEST_TIMEOUT_MS)
+        this.pendingCloseSession.set(requestId, { resolve, reject, timer })
+        win.webContents.send(IPC.MCP_CLOSE_SESSION_REQUEST, payload)
+      })
+
+      if (!result.ok) {
+        errorResponse(res, 500, result.error ?? 'Renderer failed to close session')
+        return
+      }
+
+      if (livePtyId) {
+        activityMonitor.stopMonitoring(livePtyId)
+        ptyManager.kill(livePtyId)
+        this.lastDataAt.delete(livePtyId)
+      }
+
+      jsonResponse(res, 200, {
+        ok: true,
+        closed: result.closed === true,
       })
     } catch (err) {
       errorResponse(res, 504, err instanceof Error ? err.message : String(err))

@@ -140,6 +140,21 @@ const TOOLS = [
     },
   },
   {
+    name: 'fa_close_session',
+    description:
+      'Close a FastAgents session tab and terminate its backing process if it is still running. Refuses to close the calling agent\'s own session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'Renderer session id, exactly as returned by fa_list_sessions.',
+        },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
     name: 'fa_create_session',
     description:
       'Create a new FastAgents session in the active pane. Use this to spawn a worker agent (claude-code / codex / gemini / opencode) or a plain terminal for a follow-up task.',
@@ -273,6 +288,16 @@ async function callTool(name, args) {
       if (typeof args.press_enter === 'boolean') body.press_enter = args.press_enter
       const data = await request('POST', `/fa/sessions/${encodeURIComponent(sessionId)}/input`, body)
       return `Wrote ${data.bytesWritten ?? args.input.length} bytes to session ${sessionId}.`
+    }
+
+    case 'fa_close_session': {
+      const sessionId = String(args.session_id || '')
+      if (!sessionId) throw new Error('session_id is required')
+      if (sessionId === SELF_SESSION_ID) {
+        throw new Error('Refusing to close the calling agent\'s own session.')
+      }
+      await request('DELETE', `/fa/sessions/${encodeURIComponent(sessionId)}`)
+      return `Closed session ${sessionId}.`
     }
 
     case 'fa_create_session': {

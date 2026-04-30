@@ -1730,7 +1730,7 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
       }
       setVoiceServiceStatus(result)
       if (showToast) {
-        addToast({ type: 'error', title: '本地 ASR 状态检测失败', body: result.error })
+        addToast({ type: 'error', title: '本地 ASR 状态检测失败', body: result.error ?? '无法检测 Docker 容器状态。' })
       }
     } finally {
       setVoiceServiceBusy(null)
