@@ -34,7 +34,8 @@ export function useActivityMonitor(): void {
               setOutputState(session.id, isViewing ? 'idle' : 'unread')
               updateStatus(session.id, 'idle')
 
-              if (!isViewing && useUIStore.getState().settings.notificationToastEnabled) {
+              const settings = useUIStore.getState().settings
+              if (!isViewing && settings.notificationToastEnabled) {
                 const project = useProjectsStore
                   .getState()
                   .projects.find((p) => p.id === session.projectId)
@@ -44,6 +45,7 @@ export function useActivityMonitor(): void {
                   type: 'info',
                   sessionId: session.id,
                   projectId: session.projectId,
+                  duration: settings.notificationToastDurationMs,
                 })
 
                 window.api.notification.show({
@@ -89,7 +91,8 @@ export function useActivityMonitor(): void {
       if (!session) return
 
       const isViewing = activeSessionId === session.id
-      if (!isViewing && useUIStore.getState().settings.notificationToastEnabled) {
+      const settings = useUIStore.getState().settings
+      if (!isViewing && settings.notificationToastEnabled) {
         const project = useProjectsStore
           .getState()
           .projects.find((p) => p.id === session.projectId)
@@ -99,6 +102,7 @@ export function useActivityMonitor(): void {
           type: event.exitCode === 0 ? 'success' : 'warning',
           sessionId: session.id,
           projectId: session.projectId,
+          duration: settings.notificationToastDurationMs,
         })
       }
     })

@@ -11,6 +11,8 @@ import {
   CANVAS_SESSION_CARD_WIDTH_MAX,
   CANVAS_SESSION_CARD_WIDTH_MIN,
   DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS,
+  NOTIFICATION_TOAST_DURATION_MS_MAX,
+  NOTIFICATION_TOAST_DURATION_MS_MIN,
   useUIStore,
   type AppSettings,
   type CustomSessionDefinition,
@@ -268,6 +270,38 @@ function PercentSlider({ label, value, onChange, trailing }: {
       <input
         type="range" min={0} max={100} step={1} value={Math.round(value * 100)}
         onChange={(e) => onChange(Number(e.target.value) / 100)}
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.08] accent-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
+      />
+    </div>
+  )
+}
+
+function DurationSlider({ label, description, value, min, max, step, onChange }: {
+  label: string
+  description: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (v: number) => void
+}): JSX.Element {
+  const seconds = Math.round(value / 1000)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col">
+          <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
+          <span className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-tertiary)]">{description}</span>
+        </div>
+        <span className="shrink-0 text-[11px] font-mono font-bold text-[var(--color-text-secondary)]">{seconds} 秒</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
         className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.08] accent-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
       />
     </div>
@@ -1231,6 +1265,17 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
       <PageIntro title="通知设置" description="控制 Agent 完成任务时是否弹出提醒和播放声音。" />
       <SettingsSection icon={Bell} title="完成提醒" description="会话任务完成时的桌面通知与音效。">
         <ToggleRow label="弹出通知" description="在右下角弹出 toast 和系统桌面通知（仅当未在查看该会话时）" checked={settings.notificationToastEnabled} onChange={(v) => onUpdate('notificationToastEnabled', v)} />
+        {settings.notificationToastEnabled && (
+          <DurationSlider
+            label="通知停留时间"
+            description="右下角完成通知自动关闭前的停留时间。"
+            value={settings.notificationToastDurationMs}
+            min={NOTIFICATION_TOAST_DURATION_MS_MIN}
+            max={NOTIFICATION_TOAST_DURATION_MS_MAX}
+            step={1000}
+            onChange={(v) => onUpdate('notificationToastDurationMs', v)}
+          />
+        )}
         <ToggleRow label="完成音效" description="播放像素风提示音（正在查看时也会响）" checked={settings.notificationSoundEnabled} onChange={(v) => onUpdate('notificationSoundEnabled', v)} />
         {settings.notificationSoundEnabled && (
           <PercentSlider

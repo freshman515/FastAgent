@@ -163,13 +163,13 @@ export function useCardDrag({
       const bounds = getDraggedScreenBounds()
       if (!bounds) return { x: 0, y: 0 }
 
-      const rect = viewportEl.getBoundingClientRect()
       let x = 0
       let y = 0
-      const leftDistance = bounds.left - rect.left
-      const rightDistance = rect.right - bounds.right
-      const topDistance = bounds.top - rect.top
-      const bottomDistance = rect.bottom - bounds.bottom
+      const rect = viewportEl.getBoundingClientRect()
+      const leftDistance = bounds.left
+      const rightDistance = rect.width - bounds.right
+      const topDistance = bounds.top
+      const bottomDistance = rect.height - bounds.bottom
 
       if (leftDistance < EDGE_PAN_MARGIN_PX) {
         x = getEdgePanSpeed(leftDistance)

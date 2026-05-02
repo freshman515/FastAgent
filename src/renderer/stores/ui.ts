@@ -30,6 +30,9 @@ export const CANVAS_FOCUS_FONT_PX_MAX = 48
 export const CANVAS_FOCUS_FONT_TARGET_DEFAULT = 17
 export const CANVAS_FOCUS_FONT_RANGE_MIN_DEFAULT = 14
 export const CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT = 20
+export const NOTIFICATION_TOAST_DURATION_MS_MIN = 1000
+export const NOTIFICATION_TOAST_DURATION_MS_MAX = 30000
+export const NOTIFICATION_TOAST_DURATION_MS_DEFAULT = 8000
 
 const GIT_REVIEW_SESSION_TYPES = new Set<SessionType>([
   'claude-code',
@@ -303,6 +306,8 @@ export interface AppSettings {
   popoutPosition: 'cursor' | 'center'
   /** Show in-app toast / system notification when an agent task completes */
   notificationToastEnabled: boolean
+  /** How long completion toast notifications stay visible, in milliseconds. */
+  notificationToastDurationMs: number
   /** Play a sound when an agent task completes */
   notificationSoundEnabled: boolean
   /** Notification sound volume, 0..1 */
@@ -417,6 +422,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   popoutHeight: 600,
   popoutPosition: 'cursor',
   notificationToastEnabled: true,
+  notificationToastDurationMs: NOTIFICATION_TOAST_DURATION_MS_DEFAULT,
   notificationSoundEnabled: true,
   notificationSoundVolume: 0.6,
   quickCommandGroups: [],
@@ -1016,6 +1022,12 @@ function clampCanvasFocusFontPx(size: number): number {
   return Math.round(Math.max(CANVAS_FOCUS_FONT_PX_MIN, Math.min(CANVAS_FOCUS_FONT_PX_MAX, size)))
 }
 
+function normalizeNotificationToastDurationMs(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(Math.max(NOTIFICATION_TOAST_DURATION_MS_MIN, Math.min(NOTIFICATION_TOAST_DURATION_MS_MAX, value)))
+    : DEFAULT_SETTINGS.notificationToastDurationMs
+}
+
 function normalizeCanvasFocusFontSettings(settings: AppSettings): AppSettings {
   const minPx = clampCanvasFocusFontPx(settings.canvasFocusReadableFontMinPx)
   const maxPx = clampCanvasFocusFontPx(settings.canvasFocusReadableFontMaxPx)
@@ -1510,6 +1522,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.popoutHeight === 'number') s.popoutHeight = Math.max(300, Math.min(1080, raw.popoutHeight))
       if (raw.popoutPosition === 'cursor' || raw.popoutPosition === 'center') s.popoutPosition = raw.popoutPosition
       if (typeof raw.notificationToastEnabled === 'boolean') s.notificationToastEnabled = raw.notificationToastEnabled
+      s.notificationToastDurationMs = normalizeNotificationToastDurationMs(raw.notificationToastDurationMs)
       if (typeof raw.notificationSoundEnabled === 'boolean') s.notificationSoundEnabled = raw.notificationSoundEnabled
       if (typeof raw.notificationSoundVolume === 'number') {
         s.notificationSoundVolume = Math.max(0, Math.min(1, raw.notificationSoundVolume))
@@ -1650,6 +1663,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.voiceApiAuthorization = settings.voiceApiAuthorization.trim()
     settings.voiceLocalAsrDockerContainer = settings.voiceLocalAsrDockerContainer.trim() || DEFAULT_SETTINGS.voiceLocalAsrDockerContainer
     settings.voiceLocalAsrStartupAction = normalizeVoiceLocalAsrServiceAction(settings.voiceLocalAsrStartupAction)
+    settings.notificationToastDurationMs = normalizeNotificationToastDurationMs(settings.notificationToastDurationMs)
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))
     settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)

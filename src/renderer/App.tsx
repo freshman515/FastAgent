@@ -850,7 +850,7 @@ function MainApp(): JSX.Element {
         ? useProjectsStore.getState().projects.find((p) => p.id === session.projectId)
         : undefined
       const body = project ? `${project.name}\n${name}` : name
-      const { notificationToastEnabled, notificationSoundEnabled, notificationSoundVolume } =
+      const { notificationToastEnabled, notificationToastDurationMs, notificationSoundEnabled, notificationSoundVolume } =
         useUIStore.getState().settings
       if (notificationToastEnabled) {
         useUIStore.getState().addToast({
@@ -859,7 +859,7 @@ function MainApp(): JSX.Element {
           type: 'success',
           sessionId: session?.id,
           projectId: session?.projectId,
-          duration: 8000,
+          duration: notificationToastDurationMs,
         })
       }
       if (notificationSoundEnabled) {
