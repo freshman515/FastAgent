@@ -1,5 +1,6 @@
 import { app, ipcMain } from 'electron'
-import { IPC, type AppInfo } from '@shared/types'
+import { IPC, type AppInfo, type WebUiInfo } from '@shared/types'
+import { webUiService } from '../services/WebUiService'
 
 const REPOSITORY_OWNER = 'freshman515'
 const REPOSITORY_REPO = 'FastAgent'
@@ -24,5 +25,12 @@ export function registerAppInfoHandlers(): void {
       url: REPOSITORY_URL,
     },
     updateFeed: `${REPOSITORY_URL}/releases`,
+  }))
+
+  ipcMain.handle(IPC.WEB_UI_GET_INFO, (): WebUiInfo => ({
+    url: webUiService.getLocalClaimUrl(),
+    lanUrls: webUiService.getLanClaimUrls(),
+    port: webUiService.getPort(),
+    host: webUiService.getHost(),
   }))
 }

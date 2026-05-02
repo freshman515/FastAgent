@@ -30,7 +30,7 @@ import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { useMcpBridge } from '@/hooks/useMcpBridge'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useState } from 'react'
-import { isClaudeCodeType, type ClaudeGuiEvent } from '@shared/types'
+import { isClaudeCodeType, type ClaudeGuiEvent, type ConfigChangedEvent } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { cn } from '@/lib/utils'
@@ -436,6 +436,14 @@ function sanitizePanesConfig(raw: unknown, validTabIds: Set<string>): { panes: R
   }
 }
 
+async function applyConfigChange(event: ConfigChangedEvent): Promise<void> {
+  if (window.api.detach.isDetached) return
+  if (event.key !== 'sessions') return
+
+  useSessionsStore.getState()._syncFromConfig(Array.isArray(event.value) ? event.value : [])
+  usePanesStore.getState().syncSessionIds(useSessionsStore.getState().sessions.map((session) => session.id))
+}
+
 export function App(): JSX.Element {
   // If this window is a detached pop-out, render the detached UI instead
   if (window.api.detach.isDetached) {
@@ -603,6 +611,16 @@ function MainApp(): JSX.Element {
       disposed = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    const unsubscribe = window.api.config.onChanged((event) => {
+      void applyConfigChange(event)
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [ready])
 
   useActivityMonitor()
   const activePaneTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)

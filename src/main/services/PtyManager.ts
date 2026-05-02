@@ -7,7 +7,7 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { BrowserWindow } from 'electron'
 import { IPC, isClaudeCodeType, isCodexType, isTerminalSessionType, isWslSessionType } from '@shared/types'
-import type { SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
+import type { ManagedSessionInfo, SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
 import { isClaudeSessionUuid, type ClaudeSessionLaunchMode } from '@shared/claudeSession'
 import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
@@ -46,14 +46,6 @@ interface ManagedPty {
   queuedInput: QueuedInput[]
   inputReadyTimer: NodeJS.Timeout | null
   inputFlushInProgress: boolean
-}
-
-export interface ManagedSessionInfo {
-  ptyId: string
-  sessionId: string
-  cwd: string
-  type: SessionCreateOptions['type']
-  startedAt: number
 }
 
 // Agent CLIs (especially Codex/Claude) emit a lot of ANSI/TUI repaint traffic.
@@ -452,6 +444,8 @@ interface McpBridgeEnv {
 }
 
 export type DataObserver = (ptyId: string) => void
+export type SessionDataObserver = (event: { ptyId: string; data: string; seq: number }) => void
+export type SessionExitObserver = (event: { ptyId: string; exitCode: number; resumeUUID?: string | null }) => void
 
 export class PtyManager {
   private readonly ptys = new Map<string, ManagedPty>()
@@ -466,6 +460,8 @@ export class PtyManager {
   /** Observers notified once per visible PTY data chunk. Used by the
    *  orchestrator service to track per-PTY idle time for /wait_idle. */
   private readonly dataObservers = new Set<DataObserver>()
+  private readonly sessionDataObservers = new Set<SessionDataObserver>()
+  private readonly sessionExitObservers = new Set<SessionExitObserver>()
 
   setMcpEnv(env: McpBridgeEnv | null): void {
     this.mcpEnv = env
@@ -484,6 +480,16 @@ export class PtyManager {
     return () => { this.dataObservers.delete(observer) }
   }
 
+  addSessionDataObserver(observer: SessionDataObserver): () => void {
+    this.sessionDataObservers.add(observer)
+    return () => { this.sessionDataObservers.delete(observer) }
+  }
+
+  addSessionExitObserver(observer: SessionExitObserver): () => void {
+    this.sessionExitObservers.add(observer)
+    return () => { this.sessionExitObservers.delete(observer) }
+  }
+
   /** Reverse lookup: renderer Session.id → ptyId. */
   findPtyIdBySessionId(sessionId: string): string | null {
     for (const [ptyId, managed] of this.ptys) {
@@ -498,6 +504,26 @@ export class PtyManager {
         observer(ptyId)
       } catch {
         // Observer errors must never break the data path.
+      }
+    }
+  }
+
+  private notifySessionDataObservers(event: { ptyId: string; data: string; seq: number }): void {
+    for (const observer of this.sessionDataObservers) {
+      try {
+        observer(event)
+      } catch {
+        // Observer errors must never break the data path.
+      }
+    }
+  }
+
+  private notifySessionExitObservers(event: { ptyId: string; exitCode: number; resumeUUID?: string | null }): void {
+    for (const observer of this.sessionExitObservers) {
+      try {
+        observer(event)
+      } catch {
+        // Observer errors must never break the exit path.
       }
     }
   }
@@ -576,6 +602,16 @@ export class PtyManager {
   create(options: SessionCreateOptions): SessionCreateResult {
     if (options.type === 'browser' || options.type === 'claude-gui') {
       throw new Error(`${options.type} sessions do not use a PTY`)
+    }
+
+    if (options.sessionId) {
+      const existing = this.getManagedSession(options.sessionId)
+      if (existing) {
+        return {
+          ptyId: existing.ptyId,
+          resumeUUID: this.ptys.get(existing.ptyId)?.resumeId ?? null,
+        }
+      }
     }
 
     const id = `pty-${++this.idCounter}-${Date.now()}`
@@ -775,7 +811,9 @@ export class PtyManager {
       appendReplayData(data)
       queueMirrorWrite(managed.mirror, data)
       managed.dataSeq += 1
-      sendToWindows({ ptyId: id, data, seq: managed.dataSeq })
+      const payload = { ptyId: id, data, seq: managed.dataSeq }
+      sendToWindows(payload)
+      this.notifySessionDataObservers(payload)
       this.notifyDataObservers(id)
       if (isAgentSession) {
         this.scheduleInputReady(id)
@@ -823,11 +861,13 @@ export class PtyManager {
         suppressedOutput = ''
       }
 
+      const exitPayload = { ptyId: id, exitCode, resumeUUID: managed.resumeId }
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
-          win.webContents.send(IPC.SESSION_EXIT, { ptyId: id, exitCode, resumeUUID: managed.resumeId })
+          win.webContents.send(IPC.SESSION_EXIT, exitPayload)
         }
       }
+      this.notifySessionExitObservers(exitPayload)
       if (this.ptys.has(id)) {
         disposeTerminalMirror(managed.mirror)
         this.ptys.delete(id)

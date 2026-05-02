@@ -4,6 +4,7 @@ import type {
   AppInfo,
   ClaudeCodeContext,
   ClaudeCodeLocalUsage,
+  ConfigChangedEvent,
   UpdaterEvent,
   ClaudeDiffReviewOptions,
   ClaudeDiffReviewResult,
@@ -18,6 +19,7 @@ import type {
   FileSearchResult,
   HistoricalSessionDeleteResult,
   HistoricalSessionListResult,
+  ManagedSessionInfo,
   McpCloseSessionRequest,
   McpCloseSessionResponse,
   McpCreateSessionRequest,
@@ -45,6 +47,7 @@ import type {
   VoiceStreamStopRequest,
   VoiceStreamWarmupRequest,
   VoiceStreamWarmupResult,
+  WebUiInfo,
 } from '@shared/types'
 
 interface OpencodeRequest {
@@ -64,6 +67,11 @@ interface OpencodeSubscriptionRequest {
 const api = {
   app: {
     getInfo: () => ipcRenderer.invoke(IPC.APP_INFO) as Promise<AppInfo>,
+  },
+
+  webUi: {
+    isWebRuntime: false,
+    getInfo: () => ipcRenderer.invoke(IPC.WEB_UI_GET_INFO) as Promise<WebUiInfo>,
   },
 
   window: {
@@ -139,6 +147,8 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_REPLAY, ptyId) as Promise<SessionReplayPayload>,
     getActivity: (ptyId: string) =>
       ipcRenderer.invoke(IPC.SESSION_ACTIVITY, ptyId) as Promise<boolean>,
+    getManaged: (sessionId: string) =>
+      ipcRenderer.invoke(IPC.SESSION_GET_MANAGED, sessionId) as Promise<ManagedSessionInfo | null>,
     export: (ptyId: string, name: string) =>
       ipcRenderer.invoke(IPC.SESSION_EXPORT, ptyId, name) as Promise<boolean>,
     gracefulShutdown: () =>
@@ -433,6 +443,7 @@ const api = {
     read: () =>
       ipcRenderer.invoke('config:read') as Promise<{
         groups: unknown[]
+        sessionGroups?: unknown[]
         projects: unknown[]
         sessions: unknown[]
         editors?: unknown[]
@@ -444,8 +455,15 @@ const api = {
         panes?: Record<string, unknown>
         canvas?: Record<string, unknown>
         claudeGui?: Record<string, unknown>
+        customThemes?: Record<string, unknown>
+        launches?: unknown[]
       }>,
     write: (key: string, value: unknown) => ipcRenderer.invoke('config:write', key, value),
+    onChanged: (callback: (event: ConfigChangedEvent) => void) => {
+      const handler = (_: unknown, event: ConfigChangedEvent) => callback(event)
+      ipcRenderer.on(IPC.CONFIG_CHANGED, handler)
+      return () => ipcRenderer.removeListener(IPC.CONFIG_CHANGED, handler)
+    },
   },
 
   overlay: {

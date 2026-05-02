@@ -1,4 +1,4 @@
-import { ChevronDown, Columns2, Copy, ExternalLink, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
+import { ChevronDown, Columns2, Copy, ExternalLink, FolderOpen, GitBranch, Globe2, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
@@ -12,7 +12,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { MusicPlayer } from './MusicPlayer'
 import { TitleBarSearch } from './TitleBarSearch'
-import type { ExternalIdeOption } from '@shared/types'
+import type { ExternalIdeOption, WebUiInfo } from '@shared/types'
 import { setCurrentSessionFullscreen, toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 
 type TitleMenuId = 'file' | 'edit' | 'view' | 'help'
@@ -142,6 +142,11 @@ export function TitleBar(): JSX.Element | null {
   const activeSession = activeTabId && !activeTabId.startsWith('editor-')
     ? sessions.find((session) => session.id === activeTabId)
     : undefined
+  const webUiRuntimeFlag = (window.api as typeof window.api & {
+    webUi?: { isWebRuntime?: boolean }
+  }).webUi?.isWebRuntime
+  const isBrowserPage = window.location.protocol === 'http:' || window.location.protocol === 'https:'
+  const isWebUiRuntime = webUiRuntimeFlag === true || (webUiRuntimeFlag !== false && isBrowserPage)
   const titleProject = activeSession
     ? projects.find((project) => project.id === activeSession.projectId) ?? selectedProject
     : selectedProject
@@ -233,6 +238,59 @@ export function TitleBar(): JSX.Element | null {
       })
     }
   }, [addToast])
+
+  const getWebUiInfo = useCallback(async (): Promise<WebUiInfo> => {
+    return window.api.webUi.getInfo()
+  }, [])
+
+  const handleOpenWebUi = useCallback(async () => {
+    try {
+      const { url } = await getWebUiInfo()
+      if (!url) {
+        addToast({
+          type: 'error',
+          title: 'Web UI 未启动',
+          body: '请重启 FastAgents 或查看启动日志。',
+        })
+        return
+      }
+      await window.api.shell.openExternal(url)
+      addToast({
+        type: 'success',
+        title: '已打开 Web UI',
+        body: '浏览器会通过登录地址连接本机 FastAgents。',
+      })
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: '打开 Web UI 失败',
+        body: error instanceof Error ? error.message : '无法打开浏览器。',
+      })
+    }
+  }, [addToast, getWebUiInfo])
+
+  const handleCopyWebUiUrl = useCallback(async () => {
+    try {
+      const info = await getWebUiInfo()
+      const urls = [info.url, ...info.lanUrls].filter((url): url is string => Boolean(url))
+      const value = urls.join('\n')
+      if (!value) {
+        addToast({
+          type: 'error',
+          title: 'Web UI 未启动',
+          body: '请重启 FastAgents 或查看启动日志。',
+        })
+        return
+      }
+      await handleCopyText(value, '已复制 Web UI 地址')
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: '复制 Web UI 地址失败',
+        body: error instanceof Error ? error.message : '无法读取 Web UI 地址。',
+      })
+    }
+  }, [addToast, getWebUiInfo, handleCopyText])
 
   const handleShowShortcuts = useCallback(() => {
     addToast({
@@ -340,6 +398,16 @@ export function TitleBar(): JSX.Element | null {
             onSelect: () => activateDockPanel('todo'),
           },
           {
+            icon: Globe2,
+            label: '打开 Web UI',
+            onSelect: handleOpenWebUi,
+          },
+          {
+            icon: Copy,
+            label: '复制 Web UI 地址',
+            onSelect: handleCopyWebUiUrl,
+          },
+          {
             icon: Square,
             label: windowFullscreen ? '退出全屏' : '全屏',
             onSelect: () => void toggleCurrentSessionFullscreen(),
@@ -383,9 +451,11 @@ export function TitleBar(): JSX.Element | null {
     defaultSessionType,
     fullscreenPaneId,
     windowFullscreen,
+    handleCopyWebUiUrl,
     handleCopyText,
     handleCreateDefaultSession,
     handleOpenInIde,
+    handleOpenWebUi,
     handleShowAbout,
     handleShowShortcuts,
     openSettings,
@@ -406,7 +476,7 @@ export function TitleBar(): JSX.Element | null {
   const ideMenuRect = ideMenuButtonRef.current?.getBoundingClientRect() ?? null
 
   // Only show custom titlebar on Windows/Linux
-  if (window.api.platform === 'darwin') return null
+  if (!isWebUiRuntime && window.api.platform === 'darwin') return null
 
   return (
     <div className="titlebar-fixed drag-region relative flex h-10 shrink-0 items-center justify-between bg-[var(--color-titlebar-bg)]">
@@ -494,6 +564,21 @@ export function TitleBar(): JSX.Element | null {
       </div>
 
       <div className="no-drag flex h-full items-center">
+        {!isWebUiRuntime && (
+          <button
+            type="button"
+            onClick={() => void handleOpenWebUi()}
+            className={cn(
+              'mr-2 flex h-7.5 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-2.5 text-[var(--ui-font-xs)] font-medium',
+              'text-[var(--color-text-secondary)] transition-colors duration-100',
+              'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+            )}
+            title="打开 Web UI"
+          >
+            <Globe2 size={13} />
+            <span>Web UI</span>
+          </button>
+        )}
         <button
           type="button"
           role="switch"
@@ -639,36 +724,40 @@ export function TitleBar(): JSX.Element | null {
         >
           <Settings size={14} />
         </button>
-        <button
-          onClick={handleMinimize}
-          className={cn(
-            'flex h-full w-11 items-center justify-center',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
-            'transition-colors duration-100',
-          )}
-        >
-          <Minus size={14} />
-        </button>
-        <button
-          onClick={handleMaximize}
-          className={cn(
-            'flex h-full w-11 items-center justify-center',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
-            'transition-colors duration-100',
-          )}
-        >
-          <Square size={maximized ? 10 : 11} />
-        </button>
-        <button
-          onClick={handleClose}
-          className={cn(
-            'flex h-full w-11 items-center justify-center',
-            'text-[var(--color-text-secondary)] hover:bg-[var(--color-error)] hover:text-white',
-            'transition-colors duration-100',
-          )}
-        >
-          <X size={14} />
-        </button>
+        {!isWebUiRuntime && (
+          <>
+            <button
+              onClick={handleMinimize}
+              className={cn(
+                'flex h-full w-11 items-center justify-center',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+                'transition-colors duration-100',
+              )}
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              onClick={handleMaximize}
+              className={cn(
+                'flex h-full w-11 items-center justify-center',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+                'transition-colors duration-100',
+              )}
+            >
+              <Square size={maximized ? 10 : 11} />
+            </button>
+            <button
+              onClick={handleClose}
+              className={cn(
+                'flex h-full w-11 items-center justify-center',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-error)] hover:text-white',
+                'transition-colors duration-100',
+              )}
+            >
+              <X size={14} />
+            </button>
+          </>
+        )}
       </div>
 
       {activeMenuDefinition && activeMenuRect && createPortal(

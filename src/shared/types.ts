@@ -271,6 +271,14 @@ export interface SessionReplayPayload {
   seq: number
 }
 
+export interface ManagedSessionInfo {
+  ptyId: string
+  sessionId: string
+  cwd: string
+  type: SessionType
+  startedAt: number
+}
+
 export interface SessionSubmitOptions {
   input: string
   submit?: boolean
@@ -469,6 +477,37 @@ export interface AppInfo {
     url: string
   }
   updateFeed: string
+}
+
+export interface WebUiInfo {
+  url: string | null
+  lanUrls: string[]
+  port: number | null
+  host: string | null
+}
+
+export type ConfigSyncKey =
+  | 'groups'
+  | 'sessionGroups'
+  | 'projects'
+  | 'sessions'
+  | 'editors'
+  | 'worktrees'
+  | 'templates'
+  | 'activeTasks'
+  | 'infiniteTasks'
+  | 'ui'
+  | 'panes'
+  | 'canvas'
+  | 'claudeGui'
+  | 'customThemes'
+  | 'launches'
+
+export interface ConfigChangedEvent {
+  key: ConfigSyncKey
+  value: unknown
+  version: number
+  updatedAt: number
 }
 
 export interface ClaudeCodeContext {
@@ -910,6 +949,7 @@ export const IPC = {
   SESSION_RESIZE: 'session:resize',
   SESSION_KILL: 'session:kill',
   SESSION_ACTIVITY: 'session:activity',
+  SESSION_GET_MANAGED: 'session:get-managed',
   SESSION_EXPORT: 'session:export',
   SESSION_REPLAY: 'session:replay',
   SESSION_DATA: 'session:data',
@@ -976,6 +1016,8 @@ export const IPC = {
   UPDATER_INSTALL: 'updater:install',
   UPDATER_EVENT: 'updater:event',
   APP_INFO: 'app:info',
+  WEB_UI_GET_INFO: 'web-ui:get-info',
+  CONFIG_CHANGED: 'config:changed',
   CLAUDE_PROMPT_OPTIMIZE: 'claude-prompt:optimize',
   CLAUDE_DIFF_REVIEW: 'claude-diff:review',
 } as const

@@ -111,6 +111,7 @@ interface SessionsState {
   closedStack: Session[]
   _loaded: boolean
   _loadFromConfig: (raw: unknown[]) => void
+  _syncFromConfig: (raw: unknown[]) => void
   upsertSessions: (sessions: Session[]) => void
 
   addSession: (projectId: string, type: SessionType, worktreeId?: string, nameOverride?: string, options?: AddSessionOptions) => string
@@ -150,6 +151,36 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // Auto-activate the first session on startup
     const activeSessionId = sessions.length > 0 ? sessions[0].id : null
     set({ sessions, activeSessionId, _loaded: true })
+  },
+
+  _syncFromConfig: (raw) => {
+    const incoming = (Array.isArray(raw) ? raw : [])
+      .map(sanitizeSession)
+      .filter((s): s is Session => s !== null)
+    set((state) => {
+      const runtimeById = new Map(state.sessions.map((session) => [session.id, session]))
+      const sessions = incoming.map((session) => {
+        const current = runtimeById.get(session.id)
+        if (!current) return session
+        return {
+          ...session,
+          ptyId: current.ptyId,
+          status: current.status,
+          updatedAt: current.updatedAt,
+        }
+      })
+      const nextIds = new Set(sessions.map((session) => session.id))
+      const activeSessionId = state.activeSessionId && nextIds.has(state.activeSessionId)
+        ? state.activeSessionId
+        : null
+      const outputStates = Object.fromEntries(
+        Object.entries(state.outputStates).filter(([id]) => nextIds.has(id)),
+      )
+      const activityStates = Object.fromEntries(
+        Object.entries(state.activityStates).filter(([id]) => nextIds.has(id)),
+      )
+      return { sessions, activeSessionId, outputStates, activityStates, _loaded: true }
+    })
   },
 
   upsertSessions: (incomingSessions) =>

@@ -454,6 +454,14 @@ async function searchFiles(rootPath: string, query: string, options: SearchQuery
   }
 }
 
+export async function findInFiles(rootPath: string, query: string, rawOptions?: SearchQueryOptions | number): Promise<ProjectSearchMatch[]> {
+  return await searchInProject(rootPath, query, normalizeSearchOptions(rawOptions, DEFAULT_TEXT_LIMIT))
+}
+
+export async function findFiles(rootPath: string, query: string, rawOptions?: SearchQueryOptions | number): Promise<FileSearchResult[]> {
+  return await searchFiles(rootPath, query, normalizeSearchOptions(rawOptions, DEFAULT_FILE_LIMIT))
+}
+
 function normalizeSearchOptions(
   rawOptions: SearchQueryOptions | number | undefined,
   defaultLimit: number,
@@ -474,10 +482,10 @@ function normalizeSearchOptions(
 
 export function registerSearchHandlers(): void {
   ipcMain.handle('search:find-in-files', async (_event, rootPath: string, query: string, rawOptions?: SearchQueryOptions | number) => {
-    return await searchInProject(rootPath, query, normalizeSearchOptions(rawOptions, DEFAULT_TEXT_LIMIT))
+    return await findInFiles(rootPath, query, rawOptions)
   })
 
   ipcMain.handle('search:find-files', async (_event, rootPath: string, query: string, rawOptions?: SearchQueryOptions | number) => {
-    return await searchFiles(rootPath, query, normalizeSearchOptions(rawOptions, DEFAULT_FILE_LIMIT))
+    return await findFiles(rootPath, query, rawOptions)
   })
 }

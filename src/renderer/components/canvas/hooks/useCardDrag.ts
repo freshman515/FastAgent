@@ -130,7 +130,7 @@ export function useCardDrag({
       liveFrameIdsRef.current = applyLiveFrameAutoLayoutForMovement(ids, cards, dx, dy, liveFrameIdsRef.current)
     }
 
-    const getDraggedScreenBounds = (): { left: number; right: number; top: number; bottom: number } | null => {
+    const getDraggedViewportBounds = (): { left: number; right: number; top: number; bottom: number } | null => {
       const ids = new Set(draggedIdsRef.current)
       if (ids.size === 0) return null
       const { dx, dy } = liveDeltaRef.current
@@ -160,16 +160,16 @@ export function useCardDrag({
     const getEdgePanVelocity = (): { x: number; y: number } => {
       const viewportEl = viewportElRef.current
       if (!viewportEl || !dragStartedRef.current) return { x: 0, y: 0 }
-      const bounds = getDraggedScreenBounds()
+      const bounds = getDraggedViewportBounds()
       if (!bounds) return { x: 0, y: 0 }
 
       const rect = viewportEl.getBoundingClientRect()
       let x = 0
       let y = 0
-      const leftDistance = bounds.left - rect.left
-      const rightDistance = rect.right - bounds.right
-      const topDistance = bounds.top - rect.top
-      const bottomDistance = rect.bottom - bounds.bottom
+      const leftDistance = bounds.left
+      const rightDistance = rect.width - bounds.right
+      const topDistance = bounds.top
+      const bottomDistance = rect.height - bounds.bottom
 
       if (leftDistance < EDGE_PAN_MARGIN_PX) {
         x = getEdgePanSpeed(leftDistance)

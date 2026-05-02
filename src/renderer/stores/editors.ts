@@ -45,6 +45,7 @@ interface EditorsState {
   lastFocusedTabId: string | null
   navigationTargets: Record<string, EditorNavigationTarget>
   _loadFromConfig: (raw: unknown[]) => void
+  _syncFromConfig: (raw: unknown[]) => void
   upsertTabs: (tabs: EditorTab[]) => void
   openFile: (filePath: string, context?: { projectId?: string | null; worktreeId?: string | null }) => string
   openFileAtLocation: (
@@ -194,6 +195,33 @@ export const useEditorsStore = create<EditorsState>((set, get) => ({
       ? raw.map((tab) => sanitizeEditorTab(tab)).filter((tab): tab is EditorTab => tab !== null)
       : []
     set({ tabs, navigationTargets: {} })
+  },
+
+  _syncFromConfig: (raw) => {
+    const incoming = Array.isArray(raw)
+      ? raw.map((tab) => sanitizeEditorTab(tab)).filter((tab): tab is EditorTab => tab !== null)
+      : []
+    set((state) => {
+      const incomingIds = new Set(incoming.map((tab) => tab.id))
+      const modifiedLocalTabs = state.tabs.filter((tab) => tab.modified && !incomingIds.has(tab.id))
+      const tabs = [
+        ...incoming.map((tab) => {
+          const current = state.tabs.find((item) => item.id === tab.id)
+          return current?.modified ? { ...tab, modified: true } : tab
+        }),
+        ...modifiedLocalTabs,
+      ]
+      const tabIds = new Set(tabs.map((tab) => tab.id))
+      return {
+        tabs,
+        navigationTargets: Object.fromEntries(
+          Object.entries(state.navigationTargets).filter(([id]) => tabIds.has(id)),
+        ),
+        lastFocusedTabId: state.lastFocusedTabId && tabIds.has(state.lastFocusedTabId)
+          ? state.lastFocusedTabId
+          : null,
+      }
+    })
   },
 
   upsertTabs: (incomingTabs) => set((state) => {

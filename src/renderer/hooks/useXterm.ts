@@ -855,17 +855,17 @@ export function useXterm(
       }
     })
 
-    const restoreFromSnapshot = async (): Promise<void> => {
-      if (!existingPtyId || currentSession.status !== 'running') return
-
-      ptyId = existingPtyId
+    const restoreFromSnapshot = async (targetPtyId: string): Promise<void> => {
+      restoreReady = false
+      restoredSnapshotSeq = 0
+      pendingRestoreEvents.length = 0
+      ptyId = targetPtyId
 
       try {
         const dimensions = await waitForInitialTerminalFit(terminal, fitAddon, container, () => destroyed)
         if (destroyed) return
-        requestPtyResize(existingPtyId, dimensions.cols, dimensions.rows, 0)
 
-        const replay = await window.api.session.getReplay(existingPtyId)
+        const replay = await window.api.session.getReplay(targetPtyId)
         if (destroyed) return
 
         restoredSnapshotSeq = replay.seq
@@ -874,6 +874,12 @@ export function useXterm(
             terminal.write(replay.data, resolve)
           })
         }
+        terminal.scrollToBottom()
+        if (terminal.rows > 0) {
+          terminal.refresh(0, terminal.rows - 1)
+        }
+
+        requestPtyResize(targetPtyId, dimensions.cols, dimensions.rows, 0)
       } finally {
         restoreReady = true
 
@@ -894,11 +900,24 @@ export function useXterm(
     if (existingPtyId && currentSession.status === 'running') {
       // Reuse existing PTY — restore a serialized terminal snapshot, then
       // append only live chunks that arrived after the snapshot sequence.
-      void restoreFromSnapshot()
+      void restoreFromSnapshot(existingPtyId)
     } else {
       const createPty = async (): Promise<void> => {
         const dimensions = await waitForInitialTerminalFit(terminal, fitAddon, container, () => destroyed)
         if (destroyed) return
+
+        const managed = await window.api.session.getManaged(sessionId).catch(() => null)
+        if (destroyed) return
+        if (managed) {
+          useSessionsStore.getState().updateSession(sessionId, {
+            ptyId: managed.ptyId,
+            status: 'running',
+            initialized: true,
+          })
+          addTimelineEvent(sessionId, 'start', `Session reconnected (${sessionType})`)
+          await restoreFromSnapshot(managed.ptyId)
+          return
+        }
 
         const result = await window.api.session.create({
           cwd: cwd!,

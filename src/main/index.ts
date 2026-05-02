@@ -14,6 +14,7 @@ import { opencodeService } from './services/OpencodeService'
 import { claudeGuiService } from './services/ClaudeGuiService'
 import { updaterService } from './services/UpdaterService'
 import { orchestratorService } from './services/OrchestratorService'
+import { webUiService } from './services/WebUiService'
 import { installBundledSkills } from './services/SkillInstaller'
 import { isCodexType, type SessionType } from '@shared/types'
 import { configureAppPaths, shouldRegisterGlobalAgentConfig } from './services/AppPaths'
@@ -218,6 +219,12 @@ app.whenReady().then(async () => {
     await orchestratorService.init()
   } catch (err) {
     console.error('[orchestrator] failed to start MCP bridge HTTP server:', err)
+  }
+
+  try {
+    await webUiService.init()
+  } catch (err) {
+    console.error('[web-ui] failed to start Web UI server:', err)
   }
 
   createWindow()
@@ -543,6 +550,7 @@ app.on('before-quit', async (e) => {
   hookServer.stop()
   ptyManager.setHookPort(null)
   orchestratorService.dispose()
+  webUiService.dispose()
   if (shouldRegisterGlobalAgentConfig()) {
     unregisterHooks()
   }

@@ -37,6 +37,10 @@ export function registerSessionHandlers(): void {
     return activityMonitor.isActive(ptyId)
   })
 
+  ipcMain.handle(IPC.SESSION_GET_MANAGED, (_event, sessionId: string) => {
+    return ptyManager.getManagedSession(sessionId)
+  })
+
   // Export terminal output to file
   ipcMain.handle(IPC.SESSION_EXPORT, async (event, ptyId: string, sessionName: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)

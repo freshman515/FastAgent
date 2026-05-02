@@ -1659,6 +1659,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     ) {
       settings.defaultCustomSessionId = null
     }
+    settings.notificationSoundVolume = Math.max(0, Math.min(1, settings.notificationSoundVolume))
     set({ settings })
     persistUI({
       settings,

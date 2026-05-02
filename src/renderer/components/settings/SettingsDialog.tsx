@@ -1226,6 +1226,10 @@ function WorkspacePage({ settings, onUpdate }: { settings: AppSettings; onUpdate
 }
 
 function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const handlePreviewTaskCompleteSound = useCallback(() => {
+    playTaskCompleteSound(useUIStore.getState().settings.notificationSoundVolume)
+  }, [])
+
   return (
     <div className={PAGE_STACK}>
       <PageIntro title="通知设置" description="控制 Agent 完成任务时是否弹出提醒和播放声音。" />
@@ -1239,7 +1243,7 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
             onChange={(v) => onUpdate('notificationSoundVolume', v)}
             trailing={(
               <button
-                onClick={() => playTaskCompleteSound(settings.notificationSoundVolume)}
+                onClick={handlePreviewTaskCompleteSound}
                 className={cn(
                   'flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-0.5',
                   'text-[var(--ui-font-2xs)] text-[var(--color-text-secondary)]',

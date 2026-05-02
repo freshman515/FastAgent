@@ -65,6 +65,8 @@ interface PanesState {
   setWorkspaceMode: (mode: WorkspaceMode) => void
   initPane: (sessionIds: string[], activeSessionId: string | null) => void
   loadFromConfig: (raw: Record<string, unknown>) => void
+  syncFromConfig: (raw: Record<string, unknown>) => void
+  syncSessionIds: (sessionIds: string[]) => void
   splitPane: (paneId: string, position: SplitPosition, sessionId: string) => void
   splitPaneWithSessions: (paneId: string, position: SplitPosition, sessionIds: string[]) => void
   applyPaneGroups: (groups: string[][], activeSessionId?: string | null) => void
@@ -263,6 +265,30 @@ function seedPaneRecentSessions(
       ),
     ]),
   )
+}
+
+function resolveSyncedActivePaneId(root: PaneNode, currentActivePaneId: string): string {
+  return hasLeaf(root, currentActivePaneId) ? currentActivePaneId : getFirstLeafId(root)
+}
+
+function resolveSyncedPaneActiveSessions(
+  paneSessions: Record<string, string[]>,
+  localPaneActiveSession: Record<string, string | null>,
+  syncedPaneActiveSession: Record<string, string | null>,
+): Record<string, string | null> {
+  const nextPaneActiveSession: Record<string, string | null> = {}
+
+  for (const [paneId, sessionIds] of Object.entries(paneSessions)) {
+    const localActive = localPaneActiveSession[paneId]
+    const syncedActive = syncedPaneActiveSession[paneId]
+    nextPaneActiveSession[paneId] = localActive && sessionIds.includes(localActive)
+      ? localActive
+      : syncedActive && sessionIds.includes(syncedActive)
+        ? syncedActive
+        : (sessionIds[0] ?? null)
+  }
+
+  return nextPaneActiveSession
 }
 
 // Registry of pane DOM elements for screen-position-based navigation
@@ -649,6 +675,90 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         workspaceMode,
       })
     }
+  },
+
+  syncFromConfig: (raw: Record<string, unknown>) => {
+    if (!raw || typeof raw !== 'object') return
+    if (raw.root && raw.paneSessions) {
+      const root = raw.root as PaneNode
+      const paneSessions = raw.paneSessions as Record<string, string[]>
+      const syncedPaneActiveSession = (raw.paneActiveSession as Record<string, string | null>) ?? {}
+      const paneRecentSessions = raw.paneRecentSessions && typeof raw.paneRecentSessions === 'object'
+        ? raw.paneRecentSessions as Record<string, string[]>
+        : undefined
+      const rawMode = raw.workspaceMode
+      const workspaceMode: WorkspaceMode = rawMode === 'sessions' ? 'sessions' : 'project'
+
+      suppressNextPersist = true
+      set((state) => {
+        const activePaneId = resolveSyncedActivePaneId(root, state.activePaneId)
+        const paneActiveSession = resolveSyncedPaneActiveSessions(
+          paneSessions,
+          state.paneActiveSession,
+          syncedPaneActiveSession,
+        )
+
+        return {
+          root,
+          activePaneId,
+          fullscreenPaneId: sanitizeFullscreenPaneId(root, paneSessions, state.fullscreenPaneId),
+          paneSessions,
+          paneActiveSession,
+          paneRecentSessions: seedPaneRecentSessions(paneSessions, paneActiveSession, paneRecentSessions),
+          currentProjectId: (raw.currentProjectId as string) ?? null,
+          projectLayouts: (raw.projectLayouts ?? {}) as PanesState['projectLayouts'],
+          workspaceMode,
+        }
+      })
+    }
+  },
+
+  syncSessionIds: (sessionIds: string[]) => {
+    const state = get()
+    const validSessionIds = new Set(sessionIds)
+    const assignedSessionIds = new Set<string>()
+    const paneSessions: Record<string, string[]> = {}
+    let changed = false
+
+    for (const [paneId, currentIds] of Object.entries(state.paneSessions)) {
+      const nextIds = currentIds.filter((id) => {
+        if (id.startsWith('editor-')) return true
+        if (!validSessionIds.has(id)) {
+          changed = true
+          return false
+        }
+        assignedSessionIds.add(id)
+        return true
+      })
+      if (nextIds.length !== currentIds.length) changed = true
+      paneSessions[paneId] = nextIds
+    }
+
+    const activePaneId = hasLeaf(state.root, state.activePaneId) ? state.activePaneId : getFirstLeafId(state.root)
+    const missingSessionIds = sessionIds.filter((id) => !assignedSessionIds.has(id))
+    if (missingSessionIds.length > 0) {
+      paneSessions[activePaneId] = [...(paneSessions[activePaneId] ?? []), ...missingSessionIds]
+      changed = true
+    }
+
+    if (!changed) return
+
+    const paneActiveSession: Record<string, string | null> = {}
+    const paneRecentSessions: Record<string, string[]> = {}
+    for (const [paneId, ids] of Object.entries(paneSessions)) {
+      const currentActive = state.paneActiveSession[paneId]
+      const nextActive = currentActive && ids.includes(currentActive) ? currentActive : (ids[0] ?? null)
+      paneActiveSession[paneId] = nextActive
+      paneRecentSessions[paneId] = buildPaneRecentSessions(ids, nextActive, state.paneRecentSessions[paneId] ?? [])
+    }
+
+    suppressNextPersist = true
+    set({
+      fullscreenPaneId: sanitizeFullscreenPaneId(state.root, paneSessions, state.fullscreenPaneId),
+      paneSessions,
+      paneActiveSession,
+      paneRecentSessions,
+    })
   },
 
   splitPane: (paneId, position, sessionId) => {
@@ -1179,9 +1289,19 @@ export const usePanesStore = create<PanesState>((set, get) => ({
 
 // Auto-persist on state change (debounced)
 let persistTimer: ReturnType<typeof setTimeout> | null = null
+let suppressNextPersist = false
+
 usePanesStore.subscribe((state) => {
-  if (persistTimer) clearTimeout(persistTimer)
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  if (suppressNextPersist) {
+    suppressNextPersist = false
+    return
+  }
   persistTimer = setTimeout(() => {
+    persistTimer = null
     persistPanes(state)
   }, 500)
 })
