@@ -195,13 +195,10 @@ async function main() {
   data.fastagents_hook_source = 'codex';
 
   const postData = JSON.stringify(data);
-  let delivered = false;
-  let deliveredPort = null;
+  const deliveredPorts = [];
   for (const port of PORTS) {
     if (await postToPort(port, postData)) {
-      delivered = true;
-      deliveredPort = port;
-      break;
+      deliveredPorts.push(port);
     }
   }
   log({
@@ -209,8 +206,10 @@ async function main() {
     cwd: data.cwd || null,
     fa_session_id: data.fa_session_id,
     fastagents_session_type: data.fastagents_session_type,
-    delivered,
-    delivered_port: deliveredPort,
+    delivered: deliveredPorts.length > 0,
+    delivered_port: deliveredPorts[0] || null,
+    delivered_ports: deliveredPorts,
+    ports: PORTS,
   });
 }
 

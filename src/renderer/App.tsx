@@ -844,7 +844,6 @@ function MainApp(): JSX.Element {
       const session = event.sessionId
         ? useSessionsStore.getState().sessions.find((s) => s.id === event.sessionId)
         : undefined
-      if (!session) return
       const name = session?.name ?? 'Agent'
       const project = session
         ? useProjectsStore.getState().projects.find((p) => p.id === session.projectId)

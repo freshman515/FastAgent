@@ -165,6 +165,7 @@ export class HookServer {
         const faSessionId = typeof data.fa_session_id === 'string' && data.fa_session_id
           ? data.fa_session_id
           : null
+        const cwd = typeof data.cwd === 'string' ? data.cwd : ''
         const managedSession = faSessionId ? ptyManager.getManagedSession(faSessionId) : null
         const sessionType = typeof data.fastagents_session_type === 'string' && data.fastagents_session_type
           ? data.fastagents_session_type
@@ -173,9 +174,11 @@ export class HookServer {
           ? data.fastagents_hook_source
           : ''
         const isCodex = sessionType === 'codex' || sessionType === 'codex-yolo' || sessionType === 'codex-wsl' || sessionType === 'codex-yolo-wsl' || hookSource === 'codex'
-        const resolvedSessionId = faSessionId && managedSession
-          ? faSessionId
-          : null
+        const resolvedSessionId = managedSession?.sessionId
+          ?? (cwd && isCodex ? ptyManager.findCodexSessionByCwd(cwd) : null)
+          ?? (cwd && !isCodex ? ptyManager.findClaudeSessionByCwd(cwd) : null)
+          ?? (cwd ? ptyManager.findAgentSessionByCwd(cwd) : null)
+          ?? faSessionId
 
         if (!resolvedSessionId) return
 

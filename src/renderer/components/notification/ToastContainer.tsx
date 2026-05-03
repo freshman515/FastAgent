@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowRight, CheckCircle, AlertTriangle, Info, XCircle, X } from 'lucide-react'
 import { useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import type { ToastNotification } from '@shared/types'
 import { cn } from '@/lib/utils'
@@ -57,7 +58,7 @@ export function ToastContainer(): JSX.Element {
     [removeToast],
   )
 
-  return (
+  return createPortal(
     <div className="pointer-events-none fixed bottom-4 right-4 z-[9999] flex flex-col-reverse gap-2">
       <AnimatePresence mode="popLayout">
         {toasts.map((toast) => {
@@ -121,6 +122,7 @@ export function ToastContainer(): JSX.Element {
           )
         })}
       </AnimatePresence>
-    </div>
+    </div>,
+    document.body,
   )
 }

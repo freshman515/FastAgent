@@ -12,13 +12,19 @@ import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/a
 
 // ─── Global terminal registry for preview snapshots ───
 const terminalRegistry = new Map<string, Terminal>()
-const terminalQuestionMarkers = new Map<string, Set<IMarker>>()
+const terminalQuestionMarkers = new Map<string, Set<TerminalQuestionMarker>>()
+const terminalQuestionTexts = new Map<string, Set<string>>()
 const terminalQuestionAnchors = new Map<string, number>()
 const terminalQuestionHighlights = new Map<string, {
   decoration: IDecoration
   marker: IMarker
   timeoutId: number
 }>()
+
+interface TerminalQuestionMarker {
+  marker: IMarker
+  text: string
+}
 
 export interface TerminalQuestionNavigation {
   previousLine: number | null
@@ -33,21 +39,36 @@ function isTerminalAtBottom(terminal: Terminal): boolean {
   return buffer.viewportY >= buffer.baseY
 }
 
-function getQuestionMarkerSet(sessionId: string): Set<IMarker> {
+function getQuestionMarkerSet(sessionId: string): Set<TerminalQuestionMarker> {
   let markers = terminalQuestionMarkers.get(sessionId)
   if (!markers) {
-    markers = new Set<IMarker>()
+    markers = new Set<TerminalQuestionMarker>()
     terminalQuestionMarkers.set(sessionId, markers)
   }
   return markers
 }
 
+function normalizeQuestionText(text: string): string {
+  return text
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function stripQuestionPromptPrefix(text: string): string {
+  return normalizeQuestionText(text)
+    .replace(/^(?:›|❯|>)\s+/, '')
+    .replace(/^(?:User|Human|You|用户|我)[:：]\s+/i, '')
+    .trim()
+}
+
 function looksLikeUserQuestionLine(text: string): boolean {
-  const trimmed = text.trim()
+  const trimmed = normalizeQuestionText(text)
   if (!trimmed) return false
   return /^(?:›|❯)\s+\S/.test(trimmed)
     || /^(?:User|Human|You|用户|我)[:：]\s+\S/i.test(trimmed)
-    || /^╭.*(?:User|Human|You|用户)/i.test(trimmed)
 }
 
 function looksLikeAgentToolActivityLine(text: string): boolean {
@@ -68,7 +89,42 @@ function isNearAgentToolActivityLine(terminal: Terminal, line: number): boolean 
   return false
 }
 
-function markTerminalQuestionLine(sessionId: string, terminal: Terminal, line: number): void {
+function markerStillMatchesSubmittedQuestion(terminal: Terminal, entry: TerminalQuestionMarker): boolean {
+  const line = entry.marker.line
+  if (line < 0) return false
+
+  const bufferLine = terminal.buffer.active.getLine(line)
+  if (!bufferLine) return false
+
+  const lineText = stripQuestionPromptPrefix(bufferLine.translateToString(true))
+  const submittedText = normalizeQuestionText(entry.text)
+  if (!lineText || !submittedText) return false
+
+  return questionLineMatchesSubmittedText(lineText, submittedText)
+}
+
+function questionLineMatchesSubmittedText(lineText: string, submittedText: string): boolean {
+  if (!lineText || !submittedText) return false
+  if (lineText === submittedText) return true
+  if (lineText.length >= 12 && submittedText.startsWith(lineText)) return true
+  if (submittedText.length >= 12 && lineText.startsWith(submittedText)) return true
+  return false
+}
+
+function getQuestionTextSet(sessionId: string): Set<string> {
+  let texts = terminalQuestionTexts.get(sessionId)
+  if (!texts) {
+    texts = new Set<string>()
+    terminalQuestionTexts.set(sessionId, texts)
+  }
+  return texts
+}
+
+function markTerminalQuestionLine(sessionId: string, terminal: Terminal, line: number, text: string): void {
+  const submittedText = normalizeQuestionText(text)
+  if (!submittedText) return
+  getQuestionTextSet(sessionId).add(submittedText)
+
   const buffer = terminal.buffer.active
   const maxLine = buffer.baseY + Math.max(0, terminal.rows - 1)
   const boundedLine = Math.max(0, Math.min(line, maxLine))
@@ -77,8 +133,9 @@ function markTerminalQuestionLine(sessionId: string, terminal: Terminal, line: n
   if (!marker) return
 
   const markers = getQuestionMarkerSet(sessionId)
-  markers.add(marker)
-  marker.onDispose(() => markers.delete(marker))
+  const entry: TerminalQuestionMarker = { marker, text: submittedText }
+  markers.add(entry)
+  marker.onDispose(() => markers.delete(entry))
 }
 
 function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number[] {
@@ -86,8 +143,9 @@ function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number
   const lines = new Set<number>()
   const endLine = buffer.baseY + terminal.rows
 
-  for (const marker of getQuestionMarkerSet(sessionId)) {
-    const line = marker.line
+  for (const entry of getQuestionMarkerSet(sessionId)) {
+    if (!markerStillMatchesSubmittedQuestion(terminal, entry)) continue
+    const line = entry.marker.line
     if (line < 0) continue
     if (line >= 0 && line < endLine && buffer.getLine(line) && !isNearAgentToolActivityLine(terminal, line)) {
       lines.add(line)
@@ -97,7 +155,8 @@ function getTerminalQuestionLines(sessionId: string, terminal: Terminal): number
   for (let lineIndex = 0; lineIndex < endLine; lineIndex += 1) {
     const line = buffer.getLine(lineIndex)
     if (!line) continue
-    if (looksLikeUserQuestionLine(line.translateToString(true))) {
+    const text = line.translateToString(true)
+    if (looksLikeUserQuestionLine(text) && !looksLikeAgentToolActivityLine(text)) {
       lines.add(lineIndex)
     }
   }
@@ -952,6 +1011,7 @@ export function useXterm(
     // Each entry is a "chunk" that was added in one action (paste = one chunk, keystroke = one char).
     let undoStack: string[] = []
     let pendingQuestionStartLine: number | null = null
+    let pendingQuestionText = ''
 
     const getCursorBufferLine = (): number => terminal.buffer.active.baseY + terminal.buffer.active.cursorY
 
@@ -967,10 +1027,20 @@ export function useXterm(
       if (hasPrintable && pendingQuestionStartLine === null) {
         pendingQuestionStartLine = getCursorBufferLine()
       }
+      if (hasPrintable) {
+        pendingQuestionText += [...plainData].filter((ch) => {
+          const code = ch.charCodeAt(0)
+          return code >= 32 && code !== 127
+        }).join('')
+      }
+      if (/[\b\x7f]/.test(plainData) && pendingQuestionText) {
+        pendingQuestionText = [...pendingQuestionText].slice(0, -1).join('')
+      }
 
       if (/[\r\n]/.test(plainData) && pendingQuestionStartLine !== null) {
-        markTerminalQuestionLine(sessionId, terminal, pendingQuestionStartLine)
+        markTerminalQuestionLine(sessionId, terminal, pendingQuestionStartLine, pendingQuestionText)
         pendingQuestionStartLine = null
+        pendingQuestionText = ''
       }
     }
 
@@ -1212,7 +1282,7 @@ export function useXterm(
       clearTerminalQuestionHighlight(sessionId)
       terminalRegistry.delete(sessionId)
       terminalQuestionAnchors.delete(sessionId)
-      terminalQuestionMarkers.get(sessionId)?.forEach((marker) => marker.dispose())
+      terminalQuestionMarkers.get(sessionId)?.forEach((entry) => entry.marker.dispose())
       terminalQuestionMarkers.delete(sessionId)
       terminalRef.current = null
       fitAddonRef.current = null
