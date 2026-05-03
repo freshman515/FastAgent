@@ -1,4 +1,4 @@
-import { GitBranch, List, Maximize2, Minimize2, Minus, MoreHorizontal, Plus, Square, X } from 'lucide-react'
+import { GitBranch, Maximize2, Minimize2, Minus, MoreHorizontal, Plus, Square, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { LayoutGroup, motion } from 'framer-motion'
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -619,6 +619,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const paneUiMode = useUIStore((s) => s.settings.paneUiMode)
   const tabUiMode = useUIStore((s) => s.settings.tabUiMode)
   const paneDensityMode = useUIStore((s) => s.settings.paneDensityMode)
+  const hideTitleBar = useUIStore((s) => s.hideTitleBar)
+  const windowFullscreen = useUIStore((s) => s.windowFullscreen)
+  const useTabBarAsWindowChrome = hideTitleBar && !isDetached && !windowFullscreen
 
   // Get full session objects for this pane, in pane order
   const sessions = useMemo(() => {
@@ -658,12 +661,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     }
     return keys
   }, [orderedTabs])
-  const groupedTabs = useMemo(() => {
-    return PANE_TAB_GROUP_ORDER.map((group) => ({
-      group,
-      tabs: orderedTabs.filter((tab) => getPaneTabGroup(tab) === group),
-    })).filter((item) => item.tabs.length > 0)
-  }, [orderedTabs])
   const showDetachedWindowControls = isDetached && paneId === getTopRightLeafId(root)
 
   const [showNewMenu, setShowNewMenu] = useState(false)
@@ -675,12 +672,10 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const termAreaRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const paneMenuButtonRef = useRef<HTMLButtonElement>(null)
-  const tabListButtonRef = useRef<HTMLButtonElement>(null)
   const windowDragRef = useRef<WindowDragState | null>(null)
   const liveTabPlacementRef = useRef<LiveTabPlacement | null>(null)
   const currentWindowId = isDetached ? window.api.detach.getWindowId() : 'main'
   const [paneActionMenu, setPaneActionMenu] = useState<{ x: number; y: number } | null>(null)
-  const [tabListMenu, setTabListMenu] = useState<{ x: number; y: number } | null>(null)
 
   const closeMenuTimerRef = useRef<number | null>(null)
 
@@ -785,7 +780,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     if (ids.length === 0 || ids.length >= paneSessions.length) return
     usePanesStore.getState().splitPaneWithSessions(paneId, 'right', ids)
     setPaneActionMenu(null)
-    setTabListMenu(null)
   }, [getSameTypeTabIds, paneId, paneSessions.length])
 
   const moveDraggedTabToEnd = useCallback((draggedId: string) => {
@@ -871,7 +865,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     })
     usePanesStore.getState().setPaneSessionOrder(paneId, nextOrder)
     setPaneActionMenu(null)
-    setTabListMenu(null)
   }, [paneId, paneSessions, tabGroupById])
 
   const smartSplitByType = useCallback(() => {
@@ -917,23 +910,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     if (groups.length === 0) return
     usePanesStore.getState().applyPaneGroups(groups, activeTabIdForMenu)
     setPaneActionMenu(null)
-    setTabListMenu(null)
   }, [activeTabIdForMenu, allEditorTabs, allSessions])
-
-  const openTabListMenu = useCallback(() => {
-    const rect = tabListButtonRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setTabListMenu((current) => current ? null : { x: Math.max(8, rect.right - 284), y: rect.bottom + 4 })
-  }, [])
-
-  const selectTabFromMenu = useCallback((tab: PaneTabItem) => {
-    usePanesStore.getState().setActivePaneId(paneId)
-    usePanesStore.getState().setPaneActiveSession(paneId, tab.id)
-    if (tab.kind === 'session') {
-      useSessionsStore.getState().setActive(tab.session.id)
-    }
-    setTabListMenu(null)
-  }, [paneId])
 
   const openPaneActionMenuAt = useCallback((x: number, y: number) => {
     setPaneActionMenu({ x: Math.max(4, x), y: Math.max(4, y) })
@@ -1010,6 +987,12 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     void window.api.detach.maximize()
   }, [stopWindowDrag])
 
+  const isPaneHeaderBlankTarget = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement
+    if (target === e.currentTarget) return true
+    return !target.closest('[data-pane-tab-id], button, input, textarea, select, a, [role="button"], .no-drag')
+  }, [])
+
   const handleTopBarBlankMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return
     handleWindowDragMouseDown(e)
@@ -1017,19 +1000,41 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
 
   const handleTopBarBlankDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return
+    if (useTabBarAsWindowChrome) {
+      e.preventDefault()
+      e.stopPropagation()
+      void window.api.window.maximize()
+      return
+    }
     handleWindowDragDoubleClick(e)
-  }, [handleWindowDragDoubleClick])
+  }, [handleWindowDragDoubleClick, useTabBarAsWindowChrome])
 
   const handlePaneHeaderDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement
+    if (target.closest('[data-pane-tab-id]') && !target.closest('button, input, textarea, select, a, [role="button"]')) {
+      e.preventDefault()
+      e.stopPropagation()
+      togglePaneFullscreen(paneId)
+      return
+    }
+
+    if (!isPaneHeaderBlankTarget(e)) return
+
+    if (useTabBarAsWindowChrome) {
+      e.preventDefault()
+      e.stopPropagation()
+      void window.api.window.maximize()
+      return
+    }
+
     if (isDetached) {
-      if (e.target !== e.currentTarget) return
       handleWindowDragDoubleClick(e)
       return
     }
 
     e.preventDefault()
     togglePaneFullscreen(paneId)
-  }, [handleWindowDragDoubleClick, paneId, togglePaneFullscreen])
+  }, [handleWindowDragDoubleClick, isPaneHeaderBlankTarget, paneId, togglePaneFullscreen, useTabBarAsWindowChrome])
 
   const attachDraggedTab = useCallback((dragToken: string, zone?: DropZone | null) => {
     const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId) as DetachedTabDragPayload | null
@@ -1234,6 +1239,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
         className={cn(
           'tab-bar relative flex shrink-0 items-end bg-[var(--color-bg-secondary)]',
           tabUiMode === 'square' ? 'tab-style-square' : 'tab-style-rounded',
+          useTabBarAsWindowChrome && 'drag-region',
           dropHighlight && 'shadow-[inset_0_-1px_0_var(--color-accent-muted)] bg-[color-mix(in_srgb,var(--color-accent)_5%,var(--color-bg-secondary))]',
         )}
         style={{ height: paneDensityMode === 'compact' ? 32 : 38 }}
@@ -1279,6 +1285,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           className={cn(
             'flex min-w-0 flex-1 items-end gap-0 overflow-x-auto scrollbar-none',
             paneDensityMode === 'compact' ? 'px-1' : 'px-2',
+            useTabBarAsWindowChrome && 'drag-region',
           )}
           style={{ position: 'relative', zIndex: 1 }}
           onDragOver={(e) => {
@@ -1458,30 +1465,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
           )}
         </div>
 
-        {orderedTabs.length > 0 && (
-          <button
-            ref={tabListButtonRef}
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              openTabListMenu()
-            }}
-            onDoubleClick={(event) => event.stopPropagation()}
-            className={cn(
-              'no-drag mr-1 flex shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)]',
-              paneDensityMode === 'compact' ? 'h-[26px] px-1.5' : 'h-7.5 px-2',
-              'text-[var(--color-text-tertiary)] transition-all duration-200',
-              'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-              'active:scale-95',
-            )}
-            title="标签列表"
-            aria-label="标签列表"
-          >
-            <List size={13} strokeWidth={2.5} />
-            <span className="text-[10px] font-bold tabular-nums">{orderedTabs.length}</span>
-          </button>
-        )}
-
         {isMultiPane && (
           <div className="no-drag flex h-full shrink-0 items-center gap-0.5 pr-1.5">
             <button
@@ -1553,87 +1536,6 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
             onMouseEnter={cancelCloseMenu}
             onMouseLeave={scheduleCloseMenu}
           />
-        )}
-
-        {tabListMenu && createPortal(
-          <>
-            <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setTabListMenu(null)} />
-            <div
-              style={{ top: tabListMenu.y, left: tabListMenu.x, zIndex: 9999 }}
-              className="fixed max-h-[min(520px,calc(100vh-24px))] w-72 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-xl shadow-black/35"
-            >
-              <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
-                <span className="text-[var(--ui-font-xs)] font-semibold text-[var(--color-text-primary)]">当前 pane 标签</span>
-                <span className="text-[10px] font-bold tabular-nums text-[var(--color-text-tertiary)]">{orderedTabs.length}</span>
-              </div>
-              <button
-                type="button"
-                className={PANE_ACTION_MENU_ITEM}
-                onClick={organizePaneTabsByType}
-              >
-                按类型整理当前 pane
-              </button>
-              <button
-                type="button"
-                className={PANE_ACTION_MENU_ITEM}
-                onClick={smartSplitByType}
-              >
-                智能按类型分屏
-              </button>
-              <div className="max-h-[440px] overflow-y-auto py-1">
-                {groupedTabs.map(({ group, tabs }) => (
-                  <div key={group} className="py-1">
-                    <div className="flex items-center justify-between px-3 pb-1 pt-1.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-                        {PANE_TAB_GROUP_LABEL[group]} · {tabs.length}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={tabs.length >= paneSessions.length}
-                        className={cn(
-                          'text-[10px] font-medium transition-colors',
-                          tabs.length < paneSessions.length
-                            ? 'text-[var(--color-accent)] hover:text-[var(--color-text-primary)]'
-                            : 'cursor-not-allowed text-[var(--color-text-tertiary)] opacity-40',
-                        )}
-                        onClick={() => splitSameTypeToNewPane(tabs[0].id)}
-                      >
-                        移到新 pane
-                      </button>
-                    </div>
-                    {tabs.map((tab) => {
-                      const isCurrent = tab.id === paneActiveSessionId
-                      const title = tab.kind === 'session' ? tab.session.name : tab.tab.fileName
-                      const subtitle = tab.kind === 'session' ? tab.session.type : tab.tab.language
-                      return (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          className={cn(
-                            'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
-                            isCurrent
-                              ? 'bg-[var(--color-accent)]/12 text-[var(--color-text-primary)]'
-                              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
-                          )}
-                          onClick={() => selectTabFromMenu(tab)}
-                        >
-                          <span className={cn(
-                            'h-1.5 w-1.5 shrink-0 rounded-full',
-                            isCurrent ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-text-tertiary)]/45',
-                          )} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[var(--ui-font-xs)] font-medium">{title}</span>
-                            <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">{subtitle}</span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>,
-          document.body,
         )}
 
         {paneActionMenu && createPortal(

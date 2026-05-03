@@ -1,4 +1,4 @@
-import { ChevronDown, Columns2, Copy, ExternalLink, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
+import { ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
@@ -41,6 +41,7 @@ export function TitleBar(): JSX.Element | null {
   const [ideMenuOpen, setIdeMenuOpen] = useState(false)
   const [activeMenu, setActiveMenu] = useState<TitleMenuId | null>(null)
   const [menuAreaHovered, setMenuAreaHovered] = useState(false)
+  const [titleBarRevealHovered, setTitleBarRevealHovered] = useState(false)
   const [availableIdes, setAvailableIdes] = useState<ExternalIdeOption[]>([])
   const ideMenuRef = useRef<HTMLDivElement>(null)
   const titleMenuRef = useRef<HTMLDivElement>(null)
@@ -121,12 +122,62 @@ export function TitleBar(): JSX.Element | null {
   const openSettings = useUIStore((s) => s.openSettings)
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
   const activateDockPanel = useUIStore((s) => s.activateDockPanel)
+  const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
+  const hideRightPanel = useUIStore((s) => s.hideRightPanel)
+  const hideStatusBar = useUIStore((s) => s.hideStatusBar)
+  const hideTitleBar = useUIStore((s) => s.hideTitleBar)
+  const toggleHideLeftPanel = useUIStore((s) => s.toggleHideLeftPanel)
+  const toggleHideRightPanel = useUIStore((s) => s.toggleHideRightPanel)
+  const toggleHideStatusBar = useUIStore((s) => s.toggleHideStatusBar)
+  const toggleHideTitleBar = useUIStore((s) => s.toggleHideTitleBar)
   const addToast = useUIStore((s) => s.addToast)
   const isDarkTheme = useIsDarkTheme()
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
   const sessions = useSessionsStore((s) => s.sessions)
+
+  useEffect(() => {
+    if (!hideTitleBar) {
+      setTitleBarRevealHovered(false)
+      return
+    }
+
+    let disposed = false
+    let checking = false
+
+    const syncCursorState = async () => {
+      if (checking) return
+      checking = true
+      try {
+        const cursorState = await window.api.window.getTitleBarCursorState()
+        if (disposed) return
+
+        if (cursorState.inRevealZone || (titleBarRevealHovered && cursorState.inTitleBarZone)) {
+          setTitleBarRevealHovered(true)
+        } else if (activeMenu === null && !ideMenuOpen) {
+          setTitleBarRevealHovered(false)
+        }
+      } finally {
+        checking = false
+      }
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.clientY <= 2) {
+        setTitleBarRevealHovered(true)
+      }
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    void syncCursorState()
+    const intervalId = window.setInterval(syncCursorState, 80)
+    return () => {
+      disposed = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('pointermove', handlePointerMove)
+    }
+  }, [activeMenu, hideTitleBar, ideMenuOpen, titleBarRevealHovered])
 
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const projects = useProjectsStore((s) => s.projects)
@@ -139,6 +190,7 @@ export function TitleBar(): JSX.Element | null {
   )
   const activeProjectPath = selectedWorktree?.path ?? selectedProject?.path ?? null
   const menuVisible = titleBarMenuVisibility === 'always' || menuAreaHovered || activeMenu !== null
+  const titleBarRevealed = !hideTitleBar || titleBarRevealHovered || activeMenu !== null || ideMenuOpen
   const activeSession = activeTabId && !activeTabId.startsWith('editor-')
     ? sessions.find((session) => session.id === activeTabId)
     : undefined
@@ -216,6 +268,14 @@ export function TitleBar(): JSX.Element | null {
       body: next === 'canvas' ? '滚轮缩放，空格 + 拖拽平移' : '经典标签与分屏布局已恢复',
     })
   }, [addToast, updateSettings, workspaceLayout])
+
+  const handleToggleHideTitleBar = useCallback(() => {
+    setTitleBarRevealHovered(false)
+    setMenuAreaHovered(false)
+    setIdeMenuOpen(false)
+    setActiveMenu(null)
+    toggleHideTitleBar()
+  }, [toggleHideTitleBar])
 
   const handleCopyText = useCallback(async (value: string, title: string) => {
     try {
@@ -330,6 +390,26 @@ export function TitleBar(): JSX.Element | null {
             onSelect: () => toggleDockPanel('right'),
           },
           {
+            icon: hideLeftPanel ? Eye : EyeOff,
+            label: hideLeftPanel ? '显示左侧栏' : '隐藏左侧栏',
+            onSelect: toggleHideLeftPanel,
+          },
+          {
+            icon: hideRightPanel ? Eye : EyeOff,
+            label: hideRightPanel ? '显示右侧栏' : '隐藏右侧栏',
+            onSelect: toggleHideRightPanel,
+          },
+          {
+            icon: hideStatusBar ? Eye : EyeOff,
+            label: hideStatusBar ? '显示任务栏' : '隐藏任务栏',
+            onSelect: toggleHideStatusBar,
+          },
+          {
+            icon: hideTitleBar ? Eye : EyeOff,
+            label: hideTitleBar ? '显示标题栏' : '隐藏标题栏',
+            onSelect: handleToggleHideTitleBar,
+          },
+          {
             icon: Search,
             label: '打开搜索面板',
             onSelect: () => activateDockPanel('search'),
@@ -382,18 +462,26 @@ export function TitleBar(): JSX.Element | null {
     defaultCustomSession,
     defaultSessionType,
     fullscreenPaneId,
+    hideLeftPanel,
+    hideRightPanel,
+    hideStatusBar,
+    hideTitleBar,
     windowFullscreen,
     handleCopyText,
     handleCreateDefaultSession,
     handleOpenInIde,
     handleShowAbout,
     handleShowShortcuts,
+    handleToggleHideTitleBar,
     openSettings,
     selectedProject?.name,
     selectedProjectId,
     selectedWorktree?.branch,
     showTitleBarSearch,
     toggleDockPanel,
+    toggleHideLeftPanel,
+    toggleHideRightPanel,
+    toggleHideStatusBar,
     updateSettings,
   ])
 
@@ -409,7 +497,24 @@ export function TitleBar(): JSX.Element | null {
   if (window.api.platform === 'darwin') return null
 
   return (
-    <div className="titlebar-fixed drag-region relative flex h-10 shrink-0 items-center justify-between bg-[var(--color-titlebar-bg)]">
+    <>
+    {hideTitleBar && (
+      <div
+        className="no-drag fixed inset-x-0 top-0 z-[119] h-2"
+        onMouseEnter={() => setTitleBarRevealHovered(true)}
+      />
+    )}
+    <div
+      className={cn(
+        'titlebar-fixed drag-region flex h-10 shrink-0 items-center justify-between bg-[var(--color-titlebar-bg)] transition-[transform,box-shadow] duration-200 ease-out',
+        hideTitleBar
+          ? 'fixed inset-x-0 top-0 z-[120] shadow-xl shadow-black/25'
+          : 'relative',
+        hideTitleBar && (titleBarRevealed ? 'translate-y-0' : '-translate-y-full shadow-none'),
+      )}
+      onMouseEnter={() => setTitleBarRevealHovered(true)}
+      onMouseLeave={() => setTitleBarRevealHovered(false)}
+    >
       <div
         ref={titleMenuRef}
         className="no-drag flex items-center pl-3"
@@ -736,5 +841,6 @@ export function TitleBar(): JSX.Element | null {
         document.body,
       )}
     </div>
+    </>
   )
 }

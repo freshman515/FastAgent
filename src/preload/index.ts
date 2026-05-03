@@ -73,6 +73,8 @@ const api = {
     isMaximized: () => ipcRenderer.invoke(IPC.WINDOW_IS_MAXIMIZED) as Promise<boolean>,
     setFullscreen: (fullscreen: boolean) => ipcRenderer.invoke(IPC.WINDOW_SET_FULLSCREEN, fullscreen) as Promise<boolean>,
     isFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_IS_FULLSCREEN) as Promise<boolean>,
+    getTitleBarCursorState: () =>
+      ipcRenderer.invoke(IPC.WINDOW_TITLE_BAR_CURSOR_STATE) as Promise<{ inRevealZone: boolean; inTitleBarZone: boolean }>,
     startVoiceInput: () =>
       ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
     manageVoiceLocalAsrService: (options: VoiceLocalAsrServiceRequest) =>

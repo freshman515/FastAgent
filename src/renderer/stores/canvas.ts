@@ -1202,7 +1202,6 @@ interface CanvasState {
 
   // viewport
   setViewport: (viewport: Partial<CanvasViewport>) => void
-  resetViewport: () => void
   clearFocusReturn: () => void
   toggleMaximizedCard: (cardId: string) => void
   setMaximizedCard: (cardId: string | null) => void
@@ -1392,11 +1391,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         },
       }
     })
-  },
-
-  resetViewport: () => {
-    set({ focusReturn: null })
-    get().setViewport({ scale: 1, offsetX: 0, offsetY: 0 })
   },
 
   clearFocusReturn: () => set({ focusReturn: null }),

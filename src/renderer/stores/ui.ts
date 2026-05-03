@@ -20,6 +20,7 @@ export type AppChromeStyle = 'floating' | 'joined'
 export type PaneUiMode = 'separated' | 'classic'
 export type TabUiMode = 'rounded' | 'square'
 export type PaneDensityMode = 'comfortable' | 'compact'
+export type CanvasSessionListDirection = 'vertical' | 'horizontal'
 
 export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
@@ -345,6 +346,8 @@ export interface AppSettings {
   canvasOverlapMode: 'free' | 'avoid'
   /** Current visible canvas arrangement mode. */
   canvasArrangeMode: CanvasArrangeMode
+  /** Canvas session list direction: vertical sidebar or horizontal top bar */
+  canvasSessionListDirection: CanvasSessionListDirection
   /** Show the minimap overlay on the canvas */
   canvasShowMinimap: boolean
   /** Prevent accidental canvas layout edits such as dragging, resizing, deleting, or nudging cards */
@@ -450,7 +453,8 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   canvasGridEnabled: true,
   canvasSnapEnabled: true,
   canvasOverlapMode: 'free',
-  canvasArrangeMode: 'free',
+  canvasArrangeMode: 'grid',
+  canvasSessionListDirection: 'vertical',
   canvasShowMinimap: true,
   canvasLayoutLocked: false,
   canvasSessionCardWidth: 1040,
@@ -481,6 +485,15 @@ interface UIState {
     position?: 'before' | 'after',
   ) => void
   resetDockPanels: () => void
+
+  hideLeftPanel: boolean
+  hideRightPanel: boolean
+  hideStatusBar: boolean
+  hideTitleBar: boolean
+  toggleHideLeftPanel: () => void
+  toggleHideRightPanel: () => void
+  toggleHideStatusBar: () => void
+  toggleHideTitleBar: () => void
 
   settingsOpen: boolean
   settingsPage: string
@@ -513,13 +526,19 @@ export interface SessionNamePromptRequest {
   onCancel: () => void
 }
 
+type UIVisibilityState = Pick<
+  UIState,
+  'hideLeftPanel' | 'hideRightPanel' | 'hideStatusBar' | 'hideTitleBar'
+>
+
 type UIPersistedState = Pick<
   UIState,
   'settings' | 'dockPanelOrder' | 'dockPanelActiveTab' | 'dockPanelCollapsed' | 'dockPanelWidth'
->
+> & Partial<UIVisibilityState>
 
 function persistUI(state: UIPersistedState): void {
   if (window.api.detach.isDetached) return
+  const current = useUIStore.getState()
   // Save customThemes to its own top-level key — isolated from ui settings
   // so that HMR store resets or any ui overwrite cannot wipe user themes.
   void window.api.config.write('customThemes', state.settings.customThemes)
@@ -529,6 +548,10 @@ function persistUI(state: UIPersistedState): void {
     dockPanelActiveTab: state.dockPanelActiveTab,
     dockPanelCollapsed: state.dockPanelCollapsed,
     dockPanelWidth: state.dockPanelWidth,
+    hideLeftPanel: state.hideLeftPanel ?? current.hideLeftPanel,
+    hideRightPanel: state.hideRightPanel ?? current.hideRightPanel,
+    hideStatusBar: state.hideStatusBar ?? current.hideStatusBar,
+    hideTitleBar: state.hideTitleBar ?? current.hideTitleBar,
   })
 }
 
@@ -1173,6 +1196,10 @@ function persistNextUI(state: UIPersistedState, overrides: Partial<UIPersistedSt
     dockPanelActiveTab: overrides.dockPanelActiveTab ?? state.dockPanelActiveTab,
     dockPanelCollapsed: overrides.dockPanelCollapsed ?? state.dockPanelCollapsed,
     dockPanelWidth: overrides.dockPanelWidth ?? state.dockPanelWidth,
+    hideLeftPanel: overrides.hideLeftPanel ?? state.hideLeftPanel,
+    hideRightPanel: overrides.hideRightPanel ?? state.hideRightPanel,
+    hideStatusBar: overrides.hideStatusBar ?? state.hideStatusBar,
+    hideTitleBar: overrides.hideTitleBar ?? state.hideTitleBar,
   })
 }
 
@@ -1369,6 +1396,35 @@ export const useUIStore = create<UIState>((set, get) => ({
       const dockPanels = getDefaultDockPanelsState()
       persistNextUI(state, dockPanels)
       return dockPanels
+    }),
+
+  hideLeftPanel: false,
+  hideRightPanel: false,
+  hideStatusBar: false,
+  hideTitleBar: false,
+  toggleHideLeftPanel: () =>
+    set((state) => {
+      const next = { hideLeftPanel: !state.hideLeftPanel }
+      persistNextUI(state, next)
+      return next
+    }),
+  toggleHideRightPanel: () =>
+    set((state) => {
+      const next = { hideRightPanel: !state.hideRightPanel }
+      persistNextUI(state, next)
+      return next
+    }),
+  toggleHideStatusBar: () =>
+    set((state) => {
+      const next = { hideStatusBar: !state.hideStatusBar }
+      persistNextUI(state, next)
+      return next
+    }),
+  toggleHideTitleBar: () =>
+    set((state) => {
+      const next = { hideTitleBar: !state.hideTitleBar }
+      persistNextUI(state, next)
+      return next
     }),
 
   settingsOpen: false,
@@ -1609,6 +1665,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.canvasArrangeMode === 'free' || raw.canvasArrangeMode === 'grid' || raw.canvasArrangeMode === 'rowFlow' || raw.canvasArrangeMode === 'colFlow') {
         s.canvasArrangeMode = raw.canvasArrangeMode
       }
+      if (raw.canvasSessionListDirection === 'vertical' || raw.canvasSessionListDirection === 'horizontal') {
+        s.canvasSessionListDirection = raw.canvasSessionListDirection
+      }
       if (typeof raw.canvasShowMinimap === 'boolean') s.canvasShowMinimap = raw.canvasShowMinimap
       if (typeof raw.canvasLayoutLocked === 'boolean') s.canvasLayoutLocked = raw.canvasLayoutLocked
       if (typeof raw.canvasSessionCardWidth === 'number') s.canvasSessionCardWidth = clampCanvasSessionCardWidth(raw.canvasSessionCardWidth)
@@ -1630,9 +1689,19 @@ export const useUIStore = create<UIState>((set, get) => ({
         dockPanelActiveTab: normalizedDockPanelActiveTab.active,
         dockPanelCollapsed: normalizedDockPanelCollapsed.collapsed,
         dockPanelWidth: normalizedDockPanelWidth.width,
+        hideLeftPanel: typeof raw.hideLeftPanel === 'boolean' ? raw.hideLeftPanel : false,
+        hideRightPanel: typeof raw.hideRightPanel === 'boolean' ? raw.hideRightPanel : false,
+        hideStatusBar: typeof raw.hideStatusBar === 'boolean' ? raw.hideStatusBar : false,
+        hideTitleBar: typeof raw.hideTitleBar === 'boolean' ? raw.hideTitleBar : false,
       })
     } else {
-      set(getDefaultDockPanelsState())
+      set({
+        ...getDefaultDockPanelsState(),
+        hideLeftPanel: false,
+        hideRightPanel: false,
+        hideStatusBar: false,
+        hideTitleBar: false,
+      })
     }
     set({ settings: s })
     applyUIFont(s)

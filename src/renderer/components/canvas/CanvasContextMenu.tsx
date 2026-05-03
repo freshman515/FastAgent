@@ -272,22 +272,6 @@ function buildCanvasItems(
 
   return [
     {
-      kind: 'item',
-      label: '在此处新建便签',
-      onClick: () => addCard({
-        kind: 'note',
-        x: state.worldX - noteSize.width / 2,
-        y: state.worldY - noteSize.height / 2,
-        noteBody: '',
-        noteColor: 'yellow',
-      }),
-    },
-    {
-      kind: 'item',
-      label: '在此处新建分组框',
-      onClick: () => addFrameAroundCards([], { x: state.worldX, y: state.worldY }),
-    },
-    {
       kind: 'submenu',
       label: !projectId
         ? '新建会话（未选择项目）'
@@ -305,7 +289,23 @@ function buildCanvasItems(
       })),
     },
     { kind: 'separator' },
-    { kind: 'item', label: '自由排列', onClick: () => setArrangeMode('free') },
+    {
+      kind: 'item',
+      label: '在此处新建便签',
+      onClick: () => addCard({
+        kind: 'note',
+        x: state.worldX - noteSize.width / 2,
+        y: state.worldY - noteSize.height / 2,
+        noteBody: '',
+        noteColor: 'yellow',
+      }),
+    },
+    {
+      kind: 'item',
+      label: '在此处新建分组框',
+      onClick: () => addFrameAroundCards([], { x: state.worldX, y: state.worldY }),
+    },
+    { kind: 'separator' },
     { kind: 'item', label: '网格排列', onClick: () => setArrangeMode('grid') },
     { kind: 'item', label: '横向排列', onClick: () => setArrangeMode('rowFlow') },
     { kind: 'item', label: '纵向排列', onClick: () => setArrangeMode('colFlow') },
@@ -331,7 +331,6 @@ function buildCanvasItems(
         if (rect) fitAll(rect.width, rect.height)
       },
     },
-    { kind: 'item', label: '重置视图', onClick: () => useCanvasStore.getState().resetViewport() },
     ...(hiddenCount > 0 ? [{ kind: 'item' as const, label: `显示全部内容 (${hiddenCount})`, onClick: () => useCanvasStore.getState().showAllCards() }] : []),
   ]
 }

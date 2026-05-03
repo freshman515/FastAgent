@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type WheelEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, ChevronRight, Star } from 'lucide-react'
-import { SESSION_TYPE_CONFIG, type CanvasCard, type Session } from '@shared/types'
+import { ChevronDown, ChevronLeft, ChevronRight, Star, ListFilter, AlignJustify } from 'lucide-react'
+import { type CanvasCard, type Session } from '@shared/types'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { cn } from '@/lib/utils'
 import { getSessionIcon } from '@/lib/sessionIcon'
@@ -9,6 +9,7 @@ import { SessionIconView } from '@/components/session/SessionIconView'
 import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUIStore } from '@/stores/ui'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from './CanvasMenu'
 
@@ -21,6 +22,10 @@ export function CanvasSessionList(): JSX.Element | null {
   const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
   const sessions = useSessionsStore((state) => state.sessions)
   const isDarkTheme = useIsDarkTheme()
+  const direction = useUIStore((state) => state.settings.canvasSessionListDirection)
+  const updateSettings = useUIStore((state) => state.updateSettings)
+  const isVertical = direction === 'vertical'
+  const CollapseIcon = collapsed ? ChevronRight : (isVertical ? ChevronDown : ChevronLeft)
 
   const sessionById = new Map(sessions.map((session) => [session.id, session]))
   const items = cards
@@ -110,36 +115,66 @@ export function CanvasSessionList(): JSX.Element | null {
     focusCard(items[nextIndex].card.id)
   }
 
+  const toggleDirection = (): void => {
+    updateSettings({
+      canvasSessionListDirection: isVertical ? 'horizontal' : 'vertical',
+    })
+  }
+
   return (
     <aside
       className={cn(
-        'absolute left-3 top-3 z-20 flex w-56 flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/92 shadow-xl backdrop-blur transition-[height,box-shadow] duration-150',
-        collapsed ? 'h-9' : 'bottom-20',
+        'absolute z-20 flex overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/92 shadow-xl backdrop-blur transition-all duration-150',
+        isVertical
+          ? cn('left-3 top-3 w-56 flex-col', collapsed ? 'h-9' : 'bottom-20')
+          : collapsed
+            ? 'left-3 top-3 h-9 w-44 flex-row'
+            : 'left-3 top-3 h-12 w-[calc(100%_-_1.5rem)] flex-row',
       )}
     >
-      <button
-        data-canvas-session-list-toggle
-        type="button"
-        onClick={() => setCollapsed((value) => !value)}
-        className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
-        title={collapsed ? '展开画布会话' : '折叠画布会话'}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          {collapsed ? <ChevronRight size={13} className="shrink-0 text-[var(--color-text-tertiary)]" /> : <ChevronDown size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />}
-          <span className="truncate text-[var(--ui-font-xs)] font-semibold text-[var(--color-text-secondary)]">画布会话</span>
-        </span>
-        <span className="rounded-full bg-[var(--color-bg-surface)] px-2 py-0.5 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-          {items.length}
-        </span>
-      </button>
       <div
-        className={cn('min-h-0 flex-1 overflow-y-auto p-1.5', collapsed && 'hidden')}
+        className={cn(
+          'flex shrink-0 items-center border-[var(--color-border)]',
+          isVertical ? 'h-9 w-full border-b' : cn('h-full', collapsed && 'w-full', !collapsed && 'border-r'),
+        )}
+      >
+        <button
+          data-canvas-session-list-toggle
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          className="flex h-full min-w-0 flex-1 items-center justify-between px-3 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+          title={collapsed ? '展开画布会话' : '折叠画布会话'}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <CollapseIcon size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
+            <span className="truncate text-[var(--ui-font-xs)] font-semibold text-[var(--color-text-secondary)]">画布会话</span>
+          </span>
+          <span className="ml-2 rounded-full bg-[var(--color-bg-surface)] px-2 py-0.5 text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+            {items.length}
+          </span>
+        </button>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={toggleDirection}
+            className="flex h-full w-9 shrink-0 items-center justify-center border-l border-[var(--color-border)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+            title={isVertical ? '切换为横向排列' : '切换为竖向排列'}
+          >
+            {isVertical ? <AlignJustify size={13} /> : <ListFilter size={13} />}
+          </button>
+        )}
+      </div>
+      <div
+        className={cn(
+          'min-h-0 flex-1 gap-1.5 p-1.5',
+          collapsed && 'hidden',
+          isVertical ? 'flex flex-col overflow-y-auto' : 'flex flex-row items-stretch overflow-x-auto',
+        )}
         onWheel={handleWheel}
       >
         {items.map(({ card, session }) => {
           const selected = selectedCardIds.includes(card.id)
           const hidden = isCanvasCardHidden(card)
-          const config = SESSION_TYPE_CONFIG[session.type]
           const icon = getSessionIcon(session.type, isDarkTheme)
           const displayName = formatSessionCardTitle(session.name, card.sessionRemark)
           return (
@@ -158,7 +193,8 @@ export function CanvasSessionList(): JSX.Element | null {
                 setMenu({ x: event.clientX, y: event.clientY, cardId: card.id })
               }}
               className={cn(
-                'group relative flex w-full items-start gap-2 overflow-hidden rounded-[var(--radius-md)] px-2.5 py-2 text-left transition-all duration-150',
+                'group relative flex gap-2 overflow-hidden rounded-[var(--radius-md)] px-2.5 py-2 text-left transition-all duration-150',
+                isVertical ? 'w-full shrink-0 items-start' : 'h-full w-44 shrink-0 items-center',
                 selected
                   ? 'bg-[var(--color-accent-muted)] text-[var(--color-text-primary)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_30%,transparent)]'
                   : 'text-[var(--color-text-secondary)] hover:bg-[color-mix(in_srgb,var(--color-accent)_16%,var(--color-bg-hover))] hover:text-[var(--color-text-primary)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_22%,transparent),0_8px_20px_rgba(0,0,0,0.18)]',
@@ -168,7 +204,10 @@ export function CanvasSessionList(): JSX.Element | null {
             >
               <span
                 className={cn(
-                  'absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] transition-all duration-150',
+                  'absolute rounded-full bg-[var(--color-accent)] transition-all duration-150',
+                  isVertical
+                    ? 'left-0 top-2 bottom-2 w-0.5'
+                    : 'left-0 top-2 bottom-2 w-0.5',
                   selected
                     ? 'opacity-100 shadow-[0_0_10px_var(--color-accent)]'
                     : 'scale-y-50 opacity-0 group-hover:scale-y-100 group-hover:opacity-100 group-hover:shadow-[0_0_10px_var(--color-accent)]',
@@ -182,9 +221,6 @@ export function CanvasSessionList(): JSX.Element | null {
                 {card.favorite && (
                   <Star size={11} className="absolute right-2 top-2.5 fill-[var(--color-accent)] text-[var(--color-accent)]" />
                 )}
-                <span className="block truncate text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
-                  {config.label} · {hidden ? '已隐藏' : getStatusLabel(session.status)}
-                </span>
               </span>
             </button>
           )
@@ -256,11 +292,4 @@ function CanvasSessionListMenu({
       <CanvasMenuItem label={isHidden ? '显示' : '隐藏'} onClick={() => onToggleHidden(item.card.id)} />
     </CanvasMenuPanel>
   )
-}
-
-function getStatusLabel(status: string): string {
-  if (status === 'running') return '运行中'
-  if (status === 'waiting-input') return '等待输入'
-  if (status === 'stopped') return '已停止'
-  return '空闲'
 }

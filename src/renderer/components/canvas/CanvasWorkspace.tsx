@@ -258,6 +258,13 @@ export function CanvasWorkspace(): JSX.Element {
     closeMenu()
   }
 
+  const onViewportDoubleClick = (event: React.MouseEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return
+    const container = document.querySelector('[data-canvas-viewport]') as HTMLDivElement | null
+    const rect = container?.getBoundingClientRect()
+    if (rect) useCanvasStore.getState().fitAll(rect.width, rect.height)
+  }
+
   const onContextMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
     // Only trigger on canvas empty space.
     const target = event.target as HTMLElement
@@ -303,6 +310,7 @@ export function CanvasWorkspace(): JSX.Element {
         role="region"
         aria-label={`Canvas workspace, ${cards.length} cards`}
         onPointerDown={onViewportPointerDown}
+        onDoubleClick={onViewportDoubleClick}
         onContextMenu={onContextMenu}
       >
         {gridEnabled && <CanvasGrid />}

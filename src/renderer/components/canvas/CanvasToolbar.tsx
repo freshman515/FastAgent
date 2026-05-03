@@ -19,7 +19,7 @@ import {
   PanelsTopLeft,
   Pencil,
   RefreshCw,
-  RotateCcw,
+
   Search,
   SquareEqual,
   StickyNote,
@@ -65,7 +65,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
   const alignCards = useCanvasStore((state) => state.alignCards)
   const distributeCards = useCanvasStore((state) => state.distributeCards)
   const removeCards = useCanvasStore((state) => state.removeCards)
-  const resetViewport = useCanvasStore((state) => state.resetViewport)
+
   const fitAll = useCanvasStore((state) => state.fitAll)
   const normalizeCardsToFocusArea = useCanvasStore((state) => state.normalizeCardsToFocusArea)
   const normalizeCardsToDefaultSessionSize = useCanvasStore((state) => state.normalizeCardsToDefaultSessionSize)
@@ -555,9 +555,6 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
           </div>
         )}
       </div>
-      <button type="button" onClick={resetViewport} className={btn(false)} title="重置视图 (100%)">
-        <RotateCcw size={16} />
-      </button>
       <button
         type="button"
         onClick={() => updateSettings({ canvasLayoutLocked: !layoutLocked })}

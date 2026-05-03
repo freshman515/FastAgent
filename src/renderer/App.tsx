@@ -1252,6 +1252,10 @@ function MainApp(): JSX.Element {
   }, [])
 
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
+  const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
+  const hideRightPanel = useUIStore((s) => s.hideRightPanel)
+  const hideStatusBar = useUIStore((s) => s.hideStatusBar)
+  const hideTitleBar = useUIStore((s) => s.hideTitleBar)
 
   if (!ready) {
     return (
@@ -1278,8 +1282,9 @@ function MainApp(): JSX.Element {
       <div className={cn(
         'app-content-shell flex flex-1 overflow-hidden',
         !hideChrome && 'gap-[var(--layout-gap)] p-[var(--layout-gap)]',
+        !hideChrome && hideTitleBar && 'pt-[var(--layout-gap)]',
       )}>
-        {!hideChrome && <LeftPanel />}
+        {!hideChrome && !hideLeftPanel && <LeftPanel />}
 
         {/* Main panel */}
         <div className={cn(
@@ -1290,11 +1295,11 @@ function MainApp(): JSX.Element {
         </div>
 
         {/* Right panel */}
-        {!hideChrome && <RightPanel />}
+        {!hideChrome && !hideRightPanel && <RightPanel />}
       </div>
 
       {/* Status bar */}
-      {!hideChrome && (
+      {!hideChrome && !hideStatusBar && (
         <div className="app-status-shell px-[var(--layout-gap)] pb-[var(--layout-gap)]">
           <StatusBar />
         </div>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, type WebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, type WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import WebSocket, { type RawData } from 'ws'
@@ -14,6 +14,7 @@ import {
   type VoiceStreamStopRequest,
   type VoiceStreamWarmupRequest,
   type VoiceStreamWarmupResult,
+  type TitleBarCursorState,
   type VoiceTranscribeRequest,
   type VoiceTranscribeResult,
 } from '@shared/types'
@@ -23,6 +24,8 @@ const FUNASR_CHUNK_SIZE = [8, 8, 4] as const
 const FUNASR_CHUNK_INTERVAL = 10
 const FUNASR_FINAL_IDLE_MS = 1200
 const FUNASR_STREAM_CLOSE_DELAY_MS = 2200
+const TITLE_BAR_REVEAL_ZONE_PX = 2
+const TITLE_BAR_HEIGHT_PX = 40
 
 interface ActiveVoiceStream {
   id: string
@@ -751,6 +754,22 @@ export function registerWindowHandlers(): void {
 
   ipcMain.handle(IPC.WINDOW_IS_FULLSCREEN, (event) => {
     return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
+  })
+
+  ipcMain.handle(IPC.WINDOW_TITLE_BAR_CURSOR_STATE, (event): TitleBarCursorState => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { inRevealZone: false, inTitleBarZone: false }
+
+    const cursor = screen.getCursorScreenPoint()
+    const bounds = win.getBounds()
+    const relativeY = cursor.y - bounds.y
+    const withinX = cursor.x >= bounds.x && cursor.x <= bounds.x + bounds.width
+    const nearWindowTop = relativeY >= -2
+
+    return {
+      inRevealZone: withinX && nearWindowTop && relativeY <= TITLE_BAR_REVEAL_ZONE_PX,
+      inTitleBarZone: withinX && nearWindowTop && relativeY <= TITLE_BAR_HEIGHT_PX,
+    }
   })
 
   ipcMain.handle(IPC.WINDOW_START_VOICE_INPUT, async (event) => {

@@ -91,6 +91,43 @@ interface PanesState {
 }
 
 const DEFAULT_PANE_ID = 'pane-root'
+const MIN_SPLIT_RATIO = 0.15
+const MAX_SPLIT_RATIO = 0.85
+
+function clampSplitRatio(ratio: number): number {
+  return Math.max(MIN_SPLIT_RATIO, Math.min(MAX_SPLIT_RATIO, ratio))
+}
+
+function preserveSameAxisInnerBoundaries(
+  node: PaneSplit,
+  nextRatio: number,
+  first: PaneNode,
+  second: PaneNode,
+): { first: PaneNode; second: PaneNode } {
+  let nextFirst = first
+  let nextSecond = second
+
+  if (first.type === 'split' && first.direction === node.direction) {
+    const fixedBoundary = node.ratio * first.ratio
+    const childRatio = nextRatio > 0 ? clampSplitRatio(fixedBoundary / nextRatio) : first.ratio
+    if (childRatio !== first.ratio) {
+      nextFirst = { ...first, ratio: childRatio }
+    }
+  }
+
+  if (second.type === 'split' && second.direction === node.direction) {
+    const fixedBoundary = node.ratio + (1 - node.ratio) * second.ratio
+    const nextSecondSpan = 1 - nextRatio
+    const childRatio = nextSecondSpan > 0
+      ? clampSplitRatio((fixedBoundary - nextRatio) / nextSecondSpan)
+      : second.ratio
+    if (childRatio !== second.ratio) {
+      nextSecond = { ...second, ratio: childRatio }
+    }
+  }
+
+  return { first: nextFirst, second: nextSecond }
+}
 
 function findNode(root: PaneNode, id: string): PaneNode | null {
   if (root.id === id) return root
@@ -175,7 +212,7 @@ function getPaneResizeTarget(
 
   const step = 0.05
   const delta = direction === 'left' || direction === 'up' ? -step : step
-  const ratio = Math.max(0.15, Math.min(0.85, target.split.ratio + delta))
+  const ratio = clampSplitRatio(target.split.ratio + delta)
   if (ratio === target.split.ratio) return null
   return { splitId: target.split.id, ratio }
 }
@@ -982,7 +1019,7 @@ export const usePanesStore = create<PanesState>((set, get) => ({
 
   resizeSplit: (splitId, ratio) =>
     set((state) => {
-      const clamped = Math.max(0.15, Math.min(0.85, ratio))
+      const clamped = clampSplitRatio(ratio)
       const update = (node: PaneNode): PaneNode => {
         if (node.type !== 'split') {
           return node
@@ -992,10 +1029,11 @@ export const usePanesStore = create<PanesState>((set, get) => ({
         const nextSecond = update(node.second)
 
         if (node.id === splitId) {
-          if (nextFirst === node.first && nextSecond === node.second && node.ratio === clamped) {
+          const adjusted = preserveSameAxisInnerBoundaries(node, clamped, nextFirst, nextSecond)
+          if (adjusted.first === node.first && adjusted.second === node.second && node.ratio === clamped) {
             return node
           }
-          return { ...node, ratio: clamped, first: nextFirst, second: nextSecond }
+          return { ...node, ratio: clamped, first: adjusted.first, second: adjusted.second }
         }
 
         if (nextFirst === node.first && nextSecond === node.second) {

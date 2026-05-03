@@ -901,6 +901,11 @@ export type VoiceStreamEvent =
   | { streamId: string; type: 'error'; error: string }
   | { streamId: string; type: 'closed' }
 
+export interface TitleBarCursorState {
+  inRevealZone: boolean
+  inTitleBarZone: boolean
+}
+
 // ─── IPC Channels ───
 
 export const IPC = {
@@ -943,6 +948,7 @@ export const IPC = {
   WINDOW_IS_MAXIMIZED: 'window:is-maximized',
   WINDOW_SET_FULLSCREEN: 'window:set-fullscreen',
   WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
+  WINDOW_TITLE_BAR_CURSOR_STATE: 'window:title-bar-cursor-state',
   WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
   VOICE_LOCAL_ASR_SERVICE: 'voice:local-asr-service',
   VOICE_TRANSCRIBE: 'voice:transcribe',

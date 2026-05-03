@@ -320,11 +320,6 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
       }
 
       // Zoom
-      if ((event.ctrlKey || event.metaKey) && event.key === '0') {
-        event.preventDefault()
-        store.resetViewport()
-        return
-      }
       if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '=')) {
         event.preventDefault()
         const { scale, offsetX, offsetY } = store.getViewport()
