@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronRight, Clock, Eye, FolderPlus, List, MoreHorizontal, Palette, Trash2, Edit3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, Eye, FolderPlus, List, MoreHorizontal, Palette, Trash2, Edit3, CornerUpLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Group } from '@shared/types'
+import type { Group, GroupItemOrderEntry, Project } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { GROUP_COLOR_PRESETS, normalizeGroupColor, parseGroupColor, useGroupsStore } from '@/stores/groups'
 import { useProjectsStore } from '@/stores/projects'
@@ -11,16 +11,62 @@ interface GroupItemProps {
   group: Group
   searchQuery?: string
   onOpenProject?: (projectId: string) => void
+  depth?: number
 }
 
-export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemProps): JSX.Element {
+function getOrderedChildGroups(group: Group, groups: Group[]): Group[] {
+  const byId = new Map(groups.map((item) => [item.id, item]))
+  const ordered = (group.childGroupIds ?? [])
+    .map((id) => byId.get(id))
+    .filter((item): item is Group => Boolean(item))
+  const orderedIds = new Set(ordered.map((item) => item.id))
+  const remaining = groups.filter((item) => item.parentId === group.id && !orderedIds.has(item.id))
+  return [...ordered, ...remaining]
+}
+
+function groupSubtreeMatches(group: Group, groups: Group[], projectNamesByGroup: Map<string, string[]>, query: string): boolean {
+  if (!query) return true
+  if (group.name.toLowerCase().includes(query)) return true
+  if ((projectNamesByGroup.get(group.id) ?? []).some((name) => name.includes(query))) return true
+  return getOrderedChildGroups(group, groups).some((child) => groupSubtreeMatches(child, groups, projectNamesByGroup, query))
+}
+
+function groupContainsGroup(group: Group, groups: Group[], targetGroupId: string): boolean {
+  if (group.id === targetGroupId) return true
+  return getOrderedChildGroups(group, groups).some((child) => groupContainsGroup(child, groups, targetGroupId))
+}
+
+function nextOrderEntryAfter(
+  order: GroupItemOrderEntry[] | undefined,
+  target: GroupItemOrderEntry,
+): GroupItemOrderEntry | null {
+  const index = (order ?? []).findIndex((entry) => entry.type === target.type && entry.id === target.id)
+  return index >= 0 ? order?.[index + 1] ?? null : null
+}
+
+function getRootGroupBeforeAfter(groups: Group[], targetGroupId: string): GroupItemOrderEntry | null {
+  const rootGroups = groups.filter((item) => !item.parentId)
+  const index = rootGroups.findIndex((item) => item.id === targetGroupId)
+  const next = index >= 0 ? rootGroups[index + 1] : null
+  return next ? { type: 'group', id: next.id } : null
+}
+
+type GroupContentEntry =
+  | { type: 'group'; group: Group }
+  | { type: 'project'; project: Project }
+
+export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }: GroupItemProps): JSX.Element {
   const toggleCollapse = useGroupsStore((s) => s.toggleCollapse)
   const removeGroup = useGroupsStore((s) => s.removeGroup)
   const updateGroup = useGroupsStore((s) => s.updateGroup)
+  const addGroup = useGroupsStore((s) => s.addGroup)
+  const moveGroupToParent = useGroupsStore((s) => s.moveGroupToParent)
   const allProjects = useProjectsStore((s) => s.projects)
+  const allGroups = useGroupsStore((s) => s.groups)
   const visibleGroupId = useUIStore((s) => s.settings.visibleGroupId)
   const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
   const updateSettings = useUIStore((s) => s.updateSettings)
+  const normalizedQuery = searchQuery.trim().toLowerCase()
   const projects = useMemo(() => {
     const ids = group.projectIds ?? []
     const map = new Map(allProjects.map((p) => [p.id, p]))
@@ -31,27 +77,47 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
       return result.filter((p) => p.id === visibleProjectId)
     }
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      result = result.filter((p) => p.name.toLowerCase().includes(q))
+    if (normalizedQuery) {
+      result = result.filter((p) => p.name.toLowerCase().includes(normalizedQuery))
     }
     return result
-  }, [allProjects, group.id, group.projectIds, searchQuery, visibleProjectId])
+  }, [allProjects, group.id, group.projectIds, normalizedQuery, visibleProjectId])
+  const projectNamesByGroup = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const project of allProjects) {
+      map.set(project.groupId, [...(map.get(project.groupId) ?? []), project.name.toLowerCase()])
+    }
+    return map
+  }, [allProjects])
+  const childGroups = useMemo(() => {
+    let result = getOrderedChildGroups(group, allGroups)
+    if (visibleProjectId) {
+      const visibleProject = allProjects.find((project) => project.id === visibleProjectId)
+      if (!visibleProject) return []
+      result = result.filter((child) => groupContainsGroup(child, allGroups, visibleProject.groupId))
+    } else if (normalizedQuery) {
+      result = result.filter((child) => groupSubtreeMatches(child, allGroups, projectNamesByGroup, normalizedQuery))
+    }
+    return result
+  }, [allGroups, allProjects, group, normalizedQuery, projectNamesByGroup, visibleProjectId])
 
   const addProject = useProjectsStore((s) => s.addProject)
   const addProjectToGroup = useGroupsStore((s) => s.addProjectToGroup)
   const removeProjectFromGroup = useGroupsStore((s) => s.removeProjectFromGroup)
+  const moveProjectToGroupBefore = useGroupsStore((s) => s.moveProjectToGroupBefore)
 
   const moveProject = useProjectsStore((s) => s.moveProject)
 
   const reorderGroupById = useGroupsStore((s) => s.reorderGroupById)
-  const reorderProjectInGroup = useGroupsStore((s) => s.reorderProjectInGroup)
+  const moveGroupToParentAt = useGroupsStore((s) => s.moveGroupToParentAt)
 
   const [showMenu, setShowMenu] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(group.name)
+  const [addingChild, setAddingChild] = useState(false)
+  const [childName, setChildName] = useState('')
   const [customColorDraft, setCustomColorDraft] = useState(normalizeGroupColor(group.color))
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -75,7 +141,30 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
   const handleDelete = useCallback(() => {
     removeGroup(group.id)
     setShowMenu(false)
+    setContextMenu(null)
   }, [group.id, removeGroup])
+
+  const handleAddChild = useCallback(() => {
+    const name = childName.trim()
+    if (name) {
+      addGroup(name, group.id)
+      setChildName('')
+      setAddingChild(false)
+      if (group.collapsed) toggleCollapse(group.id)
+    }
+  }, [addGroup, childName, group.collapsed, group.id, toggleCollapse])
+
+  const startAddingChild = useCallback(() => {
+    setContextMenu(null)
+    setChildName('')
+    setAddingChild(true)
+    if (group.collapsed) toggleCollapse(group.id)
+  }, [group.collapsed, group.id, toggleCollapse])
+
+  const moveToRoot = useCallback(() => {
+    moveGroupToParent(group.id, null)
+    setContextMenu(null)
+  }, [group.id, moveGroupToParent])
 
   const commitCustomColor = useCallback((rawColor: string) => {
     const color = parseGroupColor(rawColor)
@@ -88,9 +177,45 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
       updateGroup(group.id, { color })
     }
   }, [group.color, group.id, updateGroup])
+  const showContents = !group.collapsed || Boolean(visibleProjectId) || Boolean(normalizedQuery)
+  const contentCount = projects.length + childGroups.length
+  const orderedContents = useMemo(() => {
+    const childGroupById = new Map(childGroups.map((item) => [item.id, item]))
+    const projectById = new Map(projects.map((item) => [item.id, item]))
+    const used = new Set<string>()
+    const entries: GroupContentEntry[] = []
+
+    for (const item of group.itemOrder ?? []) {
+      if (item.type === 'group') {
+        const childGroup = childGroupById.get(item.id)
+        if (!childGroup) continue
+        entries.push({ type: 'group', group: childGroup })
+        used.add(`group:${item.id}`)
+      } else {
+        const project = projectById.get(item.id)
+        if (!project) continue
+        entries.push({ type: 'project', project })
+        used.add(`project:${item.id}`)
+      }
+    }
+
+    for (const childGroup of childGroups) {
+      if (used.has(`group:${childGroup.id}`)) continue
+      entries.push({ type: 'group', group: childGroup })
+    }
+    for (const project of projects) {
+      if (used.has(`project:${project.id}`)) continue
+      entries.push({ type: 'project', project })
+    }
+
+    return entries
+  }, [childGroups, group.itemOrder, projects])
 
   return (
-    <div className="relative">
+    <div className="relative" style={{ marginLeft: depth > 0 ? 14 : 0 }}>
+      {depth > 0 && (
+        <div className="pointer-events-none absolute bottom-2 left-0 top-0 w-px bg-[var(--color-border)]/35" />
+      )}
       {/* Group header */}
       <div
         draggable
@@ -99,8 +224,9 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
           e.dataTransfer.effectAllowed = 'move'
         }}
         className={cn(
-          'group relative flex h-8.5 cursor-pointer items-center gap-2.5 px-3 mt-1.5 mb-0.5',
-          'transition-all duration-200 hover:bg-[var(--color-bg-surface)]/40 rounded-[var(--radius-sm)] mx-1',
+          'group relative mx-1 mb-0.5 mt-1.5 flex h-8 cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] px-2',
+          'text-[var(--color-text-secondary)] transition-all duration-200 hover:bg-[var(--color-bg-surface)]/45 hover:text-[var(--color-text-primary)]',
+          depth > 0 && 'ml-2',
           dragOver && 'bg-[var(--color-accent-muted)] ring-1 ring-inset ring-[var(--color-accent)]',
         )}
         onClick={handleToggle}
@@ -118,34 +244,61 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
+          e.stopPropagation()
           setDragOver(false)
+          const rect = e.currentTarget.getBoundingClientRect()
+          const relativeY = (e.clientY - rect.top) / rect.height
+          const dropBeforeTarget = relativeY < 1 / 3
+          const dropAfterTarget = relativeY > 2 / 3
+          const targetEntry: GroupItemOrderEntry = { type: 'group', id: group.id }
+          const parentGroup = group.parentId ? allGroups.find((item) => item.id === group.parentId) ?? null : null
+          const beforeSibling = dropBeforeTarget
+            ? targetEntry
+            : dropAfterTarget
+              ? group.parentId
+                ? nextOrderEntryAfter(parentGroup?.itemOrder, targetEntry)
+                : getRootGroupBeforeAfter(allGroups, group.id)
+              : null
           // Project dropped onto group
           const projId = e.dataTransfer.getData('project-id')
           const sourceGroup = e.dataTransfer.getData('source-group')
           if (projId && sourceGroup) {
-            if (sourceGroup !== group.id) {
+            const parentId = group.parentId
+            if ((dropBeforeTarget || dropAfterTarget) && parentId) {
+              moveProjectToGroupBefore(projId, sourceGroup, parentId, beforeSibling)
+              moveProject(projId, parentId)
+            } else if (sourceGroup !== group.id) {
               removeProjectFromGroup(sourceGroup, projId)
               addProjectToGroup(group.id, projId)
               moveProject(projId, group.id)
               if (group.collapsed) toggleCollapse(group.id)
+            } else {
+              moveProjectToGroupBefore(projId, sourceGroup, group.id, beforeSibling)
             }
             return
           }
-          // Group dropped onto group (reorder)
+          // Group dropped onto group: treat groups as folders and move inside.
           const draggedGroupId = e.dataTransfer.getData('group-id')
           if (draggedGroupId && draggedGroupId !== group.id) {
-            reorderGroupById(draggedGroupId, group.id)
+            const draggedGroup = allGroups.find((item) => item.id === draggedGroupId)
+            if ((dropBeforeTarget || dropAfterTarget) && draggedGroup?.parentId === group.parentId && dropBeforeTarget) {
+              reorderGroupById(draggedGroupId, group.id)
+            } else if (dropBeforeTarget || dropAfterTarget) {
+              moveGroupToParentAt(draggedGroupId, group.parentId, beforeSibling)
+            } else {
+              moveGroupToParent(draggedGroupId, group.id)
+              if (group.collapsed) toggleCollapse(group.id)
+            }
           }
         }}
       >
-        {/* Brand mark — subtle vertical pill with glow */}
-        <div
-          className="h-3.5 w-1 rounded-full transition-all duration-300 group-hover:h-4.5"
-          style={{
-            backgroundColor: group.color,
-            boxShadow: `0 0 8px ${group.color}44`,
-          }}
-        />
+        <div className="flex h-5 w-4 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
+          {group.collapsed ? (
+            <ChevronRight size={12} strokeWidth={2.5} className="transition-transform duration-200" />
+          ) : (
+            <ChevronDown size={12} strokeWidth={2.5} className="transition-transform duration-200" />
+          )}
+        </div>
 
         {/* Name */}
         {editing ? (
@@ -167,7 +320,7 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
           />
         ) : (
           <span
-            className="flex-1 truncate text-[var(--ui-font-sm)] font-medium tracking-tight transition-colors duration-200 group-hover:text-[var(--color-text-primary)]"
+            className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] font-medium tracking-tight transition-colors duration-200"
             style={{ color: group.color }}
           >
             {group.name}
@@ -175,27 +328,18 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
         )}
 
         {/* Project count — pill style */}
-        {!editing && projects.length > 0 && (
+        {!editing && contentCount > 0 && (
           <span
-            className="flex h-4.5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-200"
+            className="flex h-4.5 min-w-[20px] shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-200"
             style={{
               backgroundColor: `${group.color}18`,
               color: group.color,
               border: `1px solid ${group.color}22`,
             }}
           >
-            {projects.length}
+            {contentCount}
           </span>
         )}
-
-        {/* Collapse chevron — moved to end for cleaner left alignment */}
-        <div className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-all duration-200 hover:text-[var(--color-text-secondary)]">
-          {group.collapsed ? (
-            <ChevronRight size={12} strokeWidth={2.5} className="transition-transform duration-200" />
-          ) : (
-            <ChevronDown size={12} strokeWidth={2.5} className="transition-transform duration-200" />
-          )}
-        </div>
       </div>
 
       {/* Context menu */}
@@ -245,6 +389,14 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
             <div className="px-3 py-1.5 mb-1 border-b border-white/[0.05]">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">分组操作</span>
             </div>
+
+            <button
+              onClick={startAddingChild}
+              className="group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200 text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white"
+            >
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <FolderPlus size={14} /> <span className="flex-1">新建子分组</span>
+            </button>
             
             <button
               onClick={async () => {
@@ -326,6 +478,15 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
               <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
               <Edit3 size={14} /> <span className="flex-1">重命名</span>
             </button>
+            {group.parentId && (
+              <button
+                onClick={moveToRoot}
+                className="group/menuitem relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] transition-all duration-200 text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white"
+              >
+                <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+                <CornerUpLeft size={14} /> <span className="flex-1">移到顶层</span>
+              </button>
+            )}
             {/* Color picker */}
             <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
             <div className="px-3 py-1.5">
@@ -389,16 +550,44 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
       )}
 
       {/* Projects list */}
-      {(!group.collapsed || visibleProjectId) && (
+      {showContents && (
         <div className="flex flex-col pb-1">
-          {projects.map((project) => (
-            <ProjectItem key={project.id} project={project} groupColor={group.color} onOpenProject={onOpenProject} />
+          {addingChild && (
+            <div className="mx-2 my-1 flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-bg-primary)]/35 px-2 py-1">
+              <FolderPlus size={12} className="shrink-0" style={{ color: group.color }} />
+              <input
+                autoFocus
+                value={childName}
+                onChange={(event) => setChildName(event.target.value)}
+                onBlur={handleAddChild}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleAddChild()
+                  if (event.key === 'Escape') {
+                    setChildName('')
+                    setAddingChild(false)
+                  }
+                }}
+                placeholder="子分组名称..."
+                className="h-6 min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none"
+              />
+            </div>
+          )}
+          {orderedContents.map((entry) => entry.type === 'group' ? (
+            <GroupItem
+              key={`group-${entry.group.id}`}
+              group={entry.group}
+              searchQuery={searchQuery}
+              onOpenProject={onOpenProject}
+              depth={depth + 1}
+            />
+          ) : (
+            <ProjectItem key={`project-${entry.project.id}`} project={entry.project} groupColor={group.color} onOpenProject={onOpenProject} />
           ))}
         </div>
       )}
 
       {/* Group separator */}
-      <div className="mx-3 border-b border-[var(--color-border)]/40" />
+      <div className={cn('mx-3 border-b border-[var(--color-border)]/40', depth > 0 && 'opacity-25')} />
     </div>
   )
 }

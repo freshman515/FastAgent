@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { Group, Project } from '@shared/types'
 import { useGroupsStore } from '@/stores/groups'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
@@ -10,6 +11,23 @@ interface GroupListProps {
   onOpenProject?: (projectId: string) => void
 }
 
+function getOrderedChildGroups(group: Group, groups: Group[]): Group[] {
+  const byId = new Map(groups.map((item) => [item.id, item]))
+  const ordered = (group.childGroupIds ?? [])
+    .map((id) => byId.get(id))
+    .filter((item): item is Group => Boolean(item))
+  const orderedIds = new Set(ordered.map((item) => item.id))
+  const remaining = groups.filter((item) => item.parentId === group.id && !orderedIds.has(item.id))
+  return [...ordered, ...remaining]
+}
+
+function groupSubtreeMatches(group: Group, groups: Group[], projects: Project[], query: string): boolean {
+  if (!query) return true
+  if (group.name.toLowerCase().includes(query)) return true
+  if (projects.some((project) => project.groupId === group.id && project.name.toLowerCase().includes(query))) return true
+  return getOrderedChildGroups(group, groups).some((child) => groupSubtreeMatches(child, groups, projects, query))
+}
+
 export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): JSX.Element {
   const groups = useGroupsStore((s) => s.groups)
   const projects = useProjectsStore((s) => s.projects)
@@ -18,19 +36,17 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
   const normalizedQuery = searchQuery.trim().toLowerCase()
 
   const filteredGroups = useMemo(() => {
+    const validGroupIds = new Set(groups.map((group) => group.id))
+    const rootGroups = groups.filter((group) => !group.parentId || !validGroupIds.has(group.parentId))
+
     if (visibleProjectId) {
       const visibleProject = projects.find((project) => project.id === visibleProjectId)
       return visibleProject ? groups.filter((group) => group.id === visibleProject.groupId) : []
     }
 
-    let result = visibleGroupId ? groups.filter((g) => g.id === visibleGroupId) : groups
+    let result = visibleGroupId ? groups.filter((g) => g.id === visibleGroupId) : rootGroups
     if (normalizedQuery) {
-      result = result.filter((g) => {
-        // Match group name
-        if (g.name.toLowerCase().includes(normalizedQuery)) return true
-        // Match any project in this group
-        return projects.some((p) => p.groupId === g.id && p.name.toLowerCase().includes(normalizedQuery))
-      })
+      result = result.filter((g) => groupSubtreeMatches(g, groups, projects, normalizedQuery))
     }
     return result
   }, [groups, normalizedQuery, projects, visibleGroupId, visibleProjectId])

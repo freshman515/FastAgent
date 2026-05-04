@@ -1,7 +1,7 @@
 import { ArrowRightLeft, ChevronRight, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { Group, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
+import type { Group, GroupItemOrderEntry, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { cn } from '@/lib/utils'
@@ -527,6 +527,14 @@ interface ProjectItemProps {
   onOpenProject?: (projectId: string) => void
 }
 
+function nextOrderEntryAfter(
+  order: GroupItemOrderEntry[] | undefined,
+  target: GroupItemOrderEntry,
+): GroupItemOrderEntry | null {
+  const index = (order ?? []).findIndex((entry) => entry.type === target.type && entry.id === target.id)
+  return index >= 0 ? order?.[index + 1] ?? null : null
+}
+
 export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemProps): JSX.Element {
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectProject = useProjectsStore((s) => s.selectProject)
@@ -540,8 +548,8 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const addProjectToGroup = useGroupsStore((s) => s.addProjectToGroup)
   const removeProjectFromGroupFn = useGroupsStore((s) => s.removeProjectFromGroup)
   const moveProject = useProjectsStore((s) => s.moveProject)
-  const reorderProjectInGroup = useGroupsStore((s) => s.reorderProjectInGroup)
-  const moveProjectToGroupAt = useGroupsStore((s) => s.moveProjectToGroupAt)
+  const moveProjectToGroupBefore = useGroupsStore((s) => s.moveProjectToGroupBefore)
+  const moveGroupToParentAt = useGroupsStore((s) => s.moveGroupToParentAt)
   const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
   const updateSettings = useUIStore((s) => s.updateSettings)
 
@@ -628,6 +636,10 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const runningSessionCount = useMemo(() => sessions.filter((s) => s.status === 'running').length, [sessions])
   const otherGroups = useMemo(
     () => allGroups.filter((g) => g.id !== project.groupId),
+    [allGroups, project.groupId],
+  )
+  const currentGroup = useMemo(
+    () => allGroups.find((group) => group.id === project.groupId) ?? null,
     [allGroups, project.groupId],
   )
   const effectiveGroupColor = useMemo(() => {
@@ -743,8 +755,8 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
         className={cn(
           'group relative flex h-8.5 cursor-pointer items-center gap-2.5 px-3 mx-1 rounded-[var(--radius-sm)] transition-all duration-200',
           isMainWtActive
-            ? 'bg-[var(--project-selected-bg)] text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--project-selected-border)] shadow-[inset_0_0_12px_var(--project-selected-glow)]'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--project-hover-bg)] hover:text-[var(--color-text-primary)] hover:ring-1 hover:ring-inset hover:ring-[var(--project-hover-border)] hover:shadow-[inset_0_0_12px_var(--project-hover-glow)]',
+            ? 'bg-[var(--project-selected-bg)] text-[var(--color-text-primary)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--project-hover-bg)] hover:text-[var(--color-text-primary)]',
           projDragOver && 'ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-secondary)]',
         )}
         style={projectHoverStyle}
@@ -758,7 +770,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
           setContextMenu({ x: e.clientX, y: e.clientY })
         }}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('project-id')) {
+          if (e.dataTransfer.types.includes('project-id') || e.dataTransfer.types.includes('group-id')) {
             e.preventDefault()
             e.dataTransfer.dropEffect = 'move'
             setProjDragOver(true)
@@ -769,17 +781,25 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
         }}
         onDrop={(e) => {
           e.stopPropagation(); setProjDragOver(false)
+          const rect = e.currentTarget.getBoundingClientRect()
+          const dropAfterTarget = e.clientY >= rect.top + rect.height / 2
+          const targetEntry: GroupItemOrderEntry = { type: 'project', id: project.id }
+          const beforeEntry = dropAfterTarget
+            ? nextOrderEntryAfter(currentGroup?.itemOrder, targetEntry)
+            : targetEntry
           const did = e.dataTransfer.getData('project-id'), sg = e.dataTransfer.getData('source-group')
-          if (!did || did === project.id) return
-          if (sg === project.groupId) { reorderProjectInGroup(project.groupId, did, project.id) }
-          else { moveProjectToGroupAt(did, sg, project.groupId, project.id); moveProject(did, project.groupId) }
+          if (did) {
+            if (did === project.id) return
+            moveProjectToGroupBefore(did, sg, project.groupId, beforeEntry)
+            if (sg !== project.groupId) moveProject(did, project.groupId)
+            return
+          }
+          const draggedGroupId = e.dataTransfer.getData('group-id')
+          if (draggedGroupId) {
+            moveGroupToParentAt(draggedGroupId, project.groupId, beforeEntry)
+          }
         }}
       >
-        {/* Left vertical indicator for active project */}
-        {isMainWtActive && (
-          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--project-selected-color)] shadow-[0_0_8px_var(--project-selected-color)]" />
-        )}
-
         <div className="flex h-4 w-7 shrink-0 items-center gap-1">
           {hasWorktreeChildren ? (
             <button onClick={handleToggleExpand} className="flex h-full w-3 shrink-0 items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">

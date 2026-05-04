@@ -1,11 +1,19 @@
 // ─── Data Models ───
 
+export interface GroupItemOrderEntry {
+  type: 'group' | 'project'
+  id: string
+}
+
 export interface Group {
   id: string
   name: string
   color: string
   collapsed: boolean
+  parentId: string | null
+  childGroupIds: string[]
   projectIds: string[]
+  itemOrder: GroupItemOrderEntry[]
 }
 
 export interface SessionGroup {
