@@ -292,13 +292,13 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
           }
         }}
       >
-        <div className="flex h-5 w-4 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
-          {group.collapsed ? (
-            <ChevronRight size={12} strokeWidth={2.5} className="transition-transform duration-200" />
-          ) : (
-            <ChevronDown size={12} strokeWidth={2.5} className="transition-transform duration-200" />
-          )}
-        </div>
+        <div
+          className="h-3.5 w-1 shrink-0 rounded-full transition-all duration-200 group-hover:h-4"
+          style={{
+            backgroundColor: group.color,
+            boxShadow: `0 0 8px ${group.color}44`,
+          }}
+        />
 
         {/* Name */}
         {editing ? (
@@ -340,6 +340,14 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
             {contentCount}
           </span>
         )}
+
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
+          {group.collapsed ? (
+            <ChevronRight size={12} strokeWidth={2.5} className="transition-transform duration-200" />
+          ) : (
+            <ChevronDown size={12} strokeWidth={2.5} className="transition-transform duration-200" />
+          )}
+        </div>
       </div>
 
       {/* Context menu */}

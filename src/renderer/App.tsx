@@ -1187,8 +1187,8 @@ function MainApp(): JSX.Element {
         return
       }
 
-      // Ctrl+Shift+M — toggle workspace layout (panes ⇄ canvas)
-      if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
+      // Ctrl+M — toggle workspace layout (panes ⇄ canvas)
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && (e.key === 'M' || e.key === 'm')) {
         e.preventDefault()
         const ui = useUIStore.getState()
         const next = ui.settings.workspaceLayout === 'canvas' ? 'panes' : 'canvas'
@@ -1241,8 +1241,8 @@ function MainApp(): JSX.Element {
       }
     }
 
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
   }, [])
 
   useEffect(() => {

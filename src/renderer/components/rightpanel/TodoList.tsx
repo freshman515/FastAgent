@@ -1,4 +1,4 @@
-import { ArrowUpDown, Check, CheckCheck, ListTodo, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react'
+import { Check, CheckCheck, ListTodo, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { cn, generateId } from '@/lib/utils'
 import { type TodoItem, type TodoPriority, useUIStore } from '@/stores/ui'
@@ -7,9 +7,9 @@ type TodoFilter = 'all' | 'active' | 'completed'
 type TodoSort = 'priority' | 'recent' | 'oldest'
 
 const INPUT =
-  'h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-colors focus:border-[var(--color-accent)]'
+  'h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-colors'
 const TOOL_BUTTON =
-  'flex h-8 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40'
+  'flex h-7 items-center justify-center gap-1 rounded-[var(--radius-sm)] px-2 text-[10px] font-medium text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40'
 
 const PRIORITY_OPTIONS: Array<{ id: TodoPriority; label: string }> = [
   { id: 'high', label: '高优先级' },
@@ -180,127 +180,142 @@ export function TodoList(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-secondary)]">
-      <div className="shrink-0 border-b border-[var(--color-border)] px-3 py-3">
+      <div className="shrink-0 space-y-3 border-b border-[var(--color-border)] px-3 py-3">
+        {/* 输入行：优先级小圆点 + 输入框 + 添加按钮 */}
         <form
-          className="space-y-2.5"
+          className="flex items-center gap-1.5"
           onSubmit={(e) => {
             e.preventDefault()
             handleAdd()
           }}
         >
-          <div className="flex gap-2">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="添加待办事项..."
-              className={INPUT}
-            />
-            <button
-              type="submit"
-              disabled={!draft.trim()}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent)] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-              title="添加待办"
-            >
-              <Plus size={15} />
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex shrink-0 items-center gap-1">
             {PRIORITY_OPTIONS.map((option) => (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => setPriority(option.id)}
                 className={cn(
-                  'rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors',
+                  'flex h-5 w-5 items-center justify-center rounded-full border transition-all',
                   priority === option.id
-                    ? PRIORITY_BADGE_STYLES[option.id]
-                    : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
+                    ? option.id === 'high'
+                      ? 'border-[var(--color-error)] bg-[var(--color-error)]/20'
+                      : option.id === 'medium'
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)]'
+                        : 'border-[var(--color-border-hover)] bg-[var(--color-bg-tertiary)]'
+                    : 'border-[var(--color-border)] bg-transparent hover:border-[var(--color-border-hover)]',
                 )}
+                title={option.label}
               >
-                {option.label}
+                <span className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  priority === option.id
+                    ? option.id === 'high'
+                      ? 'bg-[var(--color-error)]'
+                      : option.id === 'medium'
+                        ? 'bg-[var(--color-accent)]'
+                        : 'bg-[var(--color-text-tertiary)]'
+                    : 'bg-[var(--color-text-tertiary)]/50',
+                )} />
               </button>
             ))}
           </div>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="添加待办事项..."
+            className={cn(INPUT, 'h-8 flex-1')}
+          />
+          <button
+            type="submit"
+            disabled={!draft.trim()}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            title="添加待办"
+          >
+            <Plus size={14} />
+          </button>
         </form>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        {/* 筛选标签栏 */}
+        <div className="flex items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] p-0.5">
           {FILTER_OPTIONS.map((option) => (
             <button
               key={option.id}
               type="button"
               onClick={() => setFilter(option.id)}
               className={cn(
-                'rounded-[var(--radius-md)] border px-2.5 py-2 text-left transition-colors',
+                'flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] py-1.5 text-[11px] font-medium transition-all',
                 filter === option.id
-                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)]'
-                  : 'border-[var(--color-border)] bg-[var(--color-bg-primary)] hover:border-[var(--color-border-hover)]',
+                  ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] shadow-sm'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]',
               )}
             >
-              <div className="text-[10px] text-[var(--color-text-tertiary)]">{option.label}</div>
-              <div className="mt-1 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+              <span>{option.label}</span>
+              <span className={cn(
+                'text-[10px] tabular-nums',
+                filter === option.id ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]',
+              )}>
                 {counts[option.id]}
-              </div>
+              </span>
             </button>
           ))}
         </div>
 
-        <div className="mt-3 flex gap-2">
+        {/* 搜索 + 排序 */}
+        <div className="flex gap-1.5">
           <label className="relative flex-1">
-            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+            <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索待办..."
-              className={cn(INPUT, 'pl-8')}
+              placeholder="搜索..."
+              className={cn(INPUT, 'h-8 pl-7 text-[10px]')}
             />
           </label>
-
-          <label className="relative w-[108px]">
-            <ArrowUpDown size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as TodoSort)}
-              className={cn(INPUT, 'appearance-none pl-8 pr-2')}
-            >
-              <option value="priority">优先级</option>
-              <option value="recent">最近更新</option>
-              <option value="oldest">最早创建</option>
-            </select>
-          </label>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as TodoSort)}
+            className={cn(INPUT, 'h-8 w-auto appearance-none px-2 pr-5 text-[10px]')}
+          >
+            <option value="priority">优先级</option>
+            <option value="recent">最近更新</option>
+            <option value="oldest">最早创建</option>
+          </select>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
+        {/* 操作按钮 */}
+        <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-2">
           <button
             type="button"
             onClick={handleToggleAll}
             disabled={todoItems.length === 0}
-            className={TOOL_BUTTON}
+            className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {activeCount > 0 ? <CheckCheck size={13} /> : <RotateCcw size={13} />}
+            {activeCount > 0 ? <CheckCheck size={11} /> : <RotateCcw size={11} />}
             {activeCount > 0 ? '全部完成' : '全部恢复'}
           </button>
+          <span className="text-[var(--color-border)]">·</span>
           <button
             type="button"
             onClick={handleClearCompleted}
             disabled={completedCount === 0}
-            className={TOOL_BUTTON}
+            className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-error)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Trash2 size={13} />
+            <Trash2 size={11} />
             清空已完成
           </button>
+          <span className="ml-auto text-[10px] tabular-nums text-[var(--color-text-tertiary)]">
+            {activeCount} 待办 / {completedCount} 已完成
+          </span>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
         {visibleItems.length === 0 ? (
-          <div className="flex h-full min-h-48 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-primary)] px-4 text-center">
-            <ListTodo size={20} className="mb-2 text-[var(--color-text-tertiary)]" />
-            <div className="text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
+          <div className="flex h-full min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-primary)]/50 px-4 text-center">
+            <ListTodo size={18} className="mb-1.5 text-[var(--color-text-tertiary)]" />
+            <div className="text-[11px] text-[var(--color-text-secondary)]">
               {getEmptyMessage(filter, query, todoItems.length)}
-            </div>
-            <div className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
-              用优先级、搜索和筛选把临时事项管起来，不用只做一份纯文本列表。
             </div>
             {(filter !== 'all' || query.trim()) && (
               <button
@@ -309,24 +324,24 @@ export function TodoList(): JSX.Element {
                   setFilter('all')
                   setQuery('')
                 }}
-                className="mt-3 rounded-full bg-[var(--color-bg-tertiary)] px-3 py-1 text-[10px] text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]"
+                className="mt-2 text-[10px] text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]"
               >
                 查看全部
               </button>
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             {visibleItems.map((item) => {
               const isEditing = editingId === item.id
               return (
                 <div
                   key={item.id}
                   className={cn(
-                    'rounded-[var(--radius-md)] border bg-[var(--color-bg-primary)] p-2.5 transition-colors',
+                    'group rounded-[var(--radius-sm)] bg-[var(--color-bg-primary)] px-2.5 py-2 transition-colors',
                     item.completed
-                      ? 'border-[var(--color-border)]'
-                      : 'border-[var(--color-border)] hover:border-[var(--color-accent)]/35',
+                      ? 'opacity-60'
+                      : 'hover:bg-[var(--color-bg-tertiary)]/50',
                   )}
                 >
                   <div className="flex items-start gap-2">
@@ -334,14 +349,14 @@ export function TodoList(): JSX.Element {
                       type="button"
                       onClick={() => handleToggle(item.id)}
                       className={cn(
-                        'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
+                        'mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded border transition-colors',
                         item.completed
                           ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-white'
                           : 'border-[var(--color-border)] text-transparent hover:border-[var(--color-accent)]',
                       )}
                       title={item.completed ? '标记为未完成' : '标记为已完成'}
                     >
-                      <Check size={12} />
+                      <Check size={10} />
                     </button>
 
                     <div className="min-w-0 flex-1">
@@ -359,7 +374,7 @@ export function TodoList(): JSX.Element {
                               handleCancelEdit()
                             }
                           }}
-                          className={cn(INPUT, 'h-8')}
+                          className={cn(INPUT, 'h-7 text-[11px]')}
                           autoFocus
                         />
                       ) : (
@@ -375,17 +390,17 @@ export function TodoList(): JSX.Element {
                         </div>
                       )}
 
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-                        <span className={cn('rounded-full px-2 py-0.5 font-medium', PRIORITY_BADGE_STYLES[item.priority])}>
+                      <div className="mt-1 flex items-center gap-1.5 text-[9px]">
+                        <span className={cn('rounded px-1 py-px font-medium', PRIORITY_BADGE_STYLES[item.priority])}>
                           {PRIORITY_OPTIONS.find((option) => option.id === item.priority)?.label}
                         </span>
                         <span className="text-[var(--color-text-tertiary)]">
-                          更新于 {formatRelativeTime(item.updatedAt)}
+                          {formatRelativeTime(item.updatedAt)}
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                       {isEditing ? (
                         <>
                           <button
@@ -401,7 +416,7 @@ export function TodoList(): JSX.Element {
                             onClick={handleCancelEdit}
                             className={TOOL_BUTTON}
                           >
-                            <X size={13} />
+                            <X size={12} />
                           </button>
                         </>
                       ) : (
@@ -409,18 +424,18 @@ export function TodoList(): JSX.Element {
                           <button
                             type="button"
                             onClick={() => handleStartEdit(item)}
-                            className={cn(TOOL_BUTTON, 'w-8 px-0')}
+                            className={cn(TOOL_BUTTON, 'px-1.5')}
                             title="编辑"
                           >
-                            <Pencil size={13} />
+                            <Pencil size={11} />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(item.id)}
-                            className={cn(TOOL_BUTTON, 'w-8 px-0 hover:text-[var(--color-error)]')}
+                            className={cn(TOOL_BUTTON, 'px-1.5 hover:text-[var(--color-error)]')}
                             title="删除"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={11} />
                           </button>
                         </>
                       )}
