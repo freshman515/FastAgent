@@ -128,7 +128,7 @@ export function ProjectSearch(): JSX.Element {
               }
             }}
             placeholder="Search text in project..."
-            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]"
+            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
             autoFocus
           />
           <button

@@ -316,7 +316,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
                 onChange={(event) => setRemarkValue(event.target.value)}
                 placeholder="备注"
                 spellCheck={false}
-                className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-all placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]/70 focus:shadow-[0_0_0_3px_var(--color-accent-muted)]"
+                className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-all placeholder:text-[var(--color-text-tertiary)]"
               />
             </label>
             <div className="flex justify-end gap-2">

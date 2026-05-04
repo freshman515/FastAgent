@@ -31,7 +31,7 @@ type BoardSessionType = AgentBoardItem['sessionType']
 type BoardScope = 'current' | 'all'
 
 const INPUT =
-  'w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/80 bg-[var(--color-bg-primary)]/40 px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-all focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-primary)] focus:shadow-[0_0_0_2px_var(--color-accent-muted)]'
+  'w-full rounded-[var(--radius-md)] border border-[var(--color-border)]/80 bg-[var(--color-bg-primary)]/40 px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-all focus:bg-[var(--color-bg-primary)]'
 const BUTTON =
   'inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[10px] font-bold text-[var(--color-text-secondary)] transition-all hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40'
 

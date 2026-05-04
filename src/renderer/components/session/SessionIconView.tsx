@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 function normalizeIconSource(icon: string): string {
@@ -30,13 +31,27 @@ export function SessionIconView({
   const src = resolvedIcon && isImageIcon(resolvedIcon)
     ? normalizeIconSource(resolvedIcon)
     : fallbackSrc
+  const [imageFailed, setImageFailed] = useState(false)
+  const showImage = Boolean(src) && !imageFailed
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [src])
 
   return (
     <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center', className)}>
-      {src ? (
-        <img src={src} alt="" className={cn('h-4.5 w-4.5 shrink-0', imageClassName)} draggable={false} />
+      {showImage ? (
+        <img
+          src={src}
+          alt=""
+          className={cn('h-4.5 w-4.5 shrink-0', imageClassName)}
+          draggable={false}
+          onError={() => setImageFailed(true)}
+        />
       ) : (
-        <span className={cn('text-[15px] leading-none', imageClassName)}>{resolvedIcon || '⚙'}</span>
+        <span className={cn('text-[15px] leading-none', imageClassName)}>
+          {resolvedIcon && !isImageIcon(resolvedIcon) ? resolvedIcon : '⚙'}
+        </span>
       )}
     </div>
   )

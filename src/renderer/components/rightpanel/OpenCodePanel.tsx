@@ -896,7 +896,7 @@ export function OpenCodePanel(): JSX.Element {
           <select
             value={sessionId ?? ''}
             onChange={(event) => { void handleSessionSwitch(event.target.value) }}
-            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none"
           >
             {sessions.map((session) => (
               <option key={session.id} value={session.id}>
@@ -932,7 +932,7 @@ export function OpenCodePanel(): JSX.Element {
           <select
             value={selectedModel}
             onChange={(event) => handleModelChange(event.target.value)}
-            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+            className="min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none"
             title="选择 OpenCode 模型"
           >
             <option value="">OpenCode 默认模型</option>
@@ -1114,7 +1114,7 @@ export function OpenCodePanel(): JSX.Element {
             onKeyDown={handleKeyDown}
             placeholder="输入你的需求... (Enter 发送, Shift+Enter 换行)"
             rows={3}
-            className="min-h-[72px] flex-1 resize-none rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]"
+            className="min-h-[72px] flex-1 resize-none rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
           />
           <button
             onClick={() => { void handleSend() }}

@@ -565,8 +565,14 @@ export function TitleBar(): JSX.Element | null {
         </div>
       </div>
 
-      <div className="absolute inset-x-0 flex justify-center pointer-events-none">
-        <div className="pointer-events-auto">
+      <div
+        className={cn(
+          showTitleBarSearch
+            ? 'flex min-w-0 flex-1 justify-center px-3 pointer-events-none'
+            : 'absolute inset-x-0 flex justify-center pointer-events-none',
+        )}
+      >
+        <div className={cn('pointer-events-auto', showTitleBarSearch && 'w-full min-w-0 max-w-[520px]')}>
           {showTitleBarSearch ? (
             <TitleBarSearch />
           ) : showMusicPlayer ? (

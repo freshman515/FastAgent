@@ -203,6 +203,7 @@ export function TitleBarSearch(): JSX.Element {
   const searchRunRef = useRef(0)
 
   const scope = useUIStore((state) => state.settings.titleBarSearchScope)
+  const updateSettings = useUIStore((state) => state.updateSettings)
   const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
   const projects = useProjectsStore((state) => state.projects)
   const sessions = useSessionsStore((state) => state.sessions)
@@ -325,7 +326,7 @@ export function TitleBarSearch(): JSX.Element {
   }
 
   return (
-    <div ref={containerRef} className="no-drag relative w-[min(58vw,720px)] max-w-[calc(100vw-260px)] min-w-[320px]">
+    <div ref={containerRef} className="no-drag relative w-full min-w-0">
       <div className="flex items-center gap-2">
         <input
           ref={inputRef}
@@ -370,15 +371,20 @@ export function TitleBarSearch(): JSX.Element {
           placeholder={canSearch ? 'Search files and sessions...' : 'Select a project to search...'}
           disabled={!canSearch}
           className={cn(
-            'h-[30px] min-w-0 flex-1 rounded-[calc(var(--radius-md)+2px)] border bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none transition-colors placeholder:text-[var(--color-text-tertiary)] disabled:cursor-not-allowed disabled:opacity-60',
+            'h-[30px] min-w-0 flex-1 rounded-[calc(var(--radius-md)+2px)] border bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none focus:outline-none focus-visible:outline-none transition-colors placeholder:text-[var(--color-text-tertiary)] disabled:cursor-not-allowed disabled:opacity-60',
             open
-              ? 'border-[var(--color-accent)]'
+              ? 'border-[var(--color-border-hover)]'
               : 'border-[var(--color-border)] hover:border-[var(--color-border-hover)]',
           )}
         />
-        <span className="flex h-[30px] items-center rounded-[calc(var(--radius-md)+2px)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)]">
+        <button
+          type="button"
+          onClick={() => updateSettings({ titleBarSearchScope: scope === 'project' ? 'all-projects' : 'project' })}
+          className="flex h-[30px] cursor-pointer items-center rounded-[calc(var(--radius-md)+2px)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+          title={scope === 'project' ? '当前搜索范围：当前项目，点击切换为全部项目' : '当前搜索范围：全部项目，点击切换为当前项目'}
+        >
           {scope === 'all-projects' ? 'All Projects' : 'Project'}
-        </span>
+        </button>
         {loading && <LoaderCircle size={13} className="shrink-0 animate-spin text-[var(--color-accent)]" />}
       </div>
 

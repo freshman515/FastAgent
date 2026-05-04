@@ -150,7 +150,7 @@ export function QuickCommands(): JSX.Element {
     ? commands.find((command) => command.id === contextMenu.commandId) ?? null
     : null
 
-  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none focus:border-[var(--color-accent)]'
+  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none'
   const SELECT = cn(INPUT, 'h-7 py-0')
 
   return (

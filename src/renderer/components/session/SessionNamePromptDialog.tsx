@@ -118,8 +118,6 @@ export function SessionNamePromptDialog(): JSX.Element | null {
                 'group relative flex items-center rounded-[var(--radius-md)]',
                 'border border-[var(--color-border)] bg-[var(--color-bg-primary)]',
                 'transition-all duration-100',
-                'focus-within:border-[var(--color-accent)]/70',
-                'focus-within:shadow-[0_0_0_3px_var(--color-accent-muted)]',
               )}
             >
               <input

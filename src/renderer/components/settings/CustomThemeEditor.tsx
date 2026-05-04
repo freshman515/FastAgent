@@ -325,7 +325,7 @@ function ColorRow({ field, theme, onChange }: {
         className={cn(
           'w-24 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]',
           'px-2 py-1.5 text-center font-mono text-[var(--ui-font-xs)] text-[var(--color-text-primary)]',
-          'outline-none focus:border-[var(--color-accent)] transition-colors',
+          'outline-none transition-colors',
         )}
       />
     </div>
@@ -420,7 +420,7 @@ export function CustomThemeEditor({
           className={cn(
             'rounded-[var(--radius-md)] border bg-[var(--color-bg-secondary)]',
             'px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
-            'outline-none focus:border-[var(--color-accent)]',
+            'outline-none',
             nameError ? 'border-[var(--color-error)]' : 'border-[var(--color-border)]',
             isEditing && 'opacity-50 cursor-not-allowed',
           )}

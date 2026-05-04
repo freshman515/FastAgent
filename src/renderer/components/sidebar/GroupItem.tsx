@@ -373,7 +373,7 @@ export function GroupItem({ group, searchQuery = '', onOpenProject }: GroupItemP
                   className={cn(
                     'h-7 min-w-0 flex-1 rounded-[var(--radius-sm)] border border-white/[0.1] bg-black/20 px-2',
                     'font-mono text-[11px] text-[var(--color-text-secondary)] outline-none transition-colors',
-                    'focus:border-[var(--color-accent)] focus:text-[var(--color-text-primary)]',
+                    ' focus:text-[var(--color-text-primary)]',
                   )}
                 />
               </div>

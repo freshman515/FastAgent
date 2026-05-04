@@ -20,7 +20,7 @@ import { buildNewSessionOptions, type NewSessionOption } from '@/components/sess
 import { SessionIconView } from '@/components/session/SessionIconView'
 const MENU_ITEM = 'group/menuitem relative flex w-full h-8.5 items-center gap-3 px-3 rounded-[var(--radius-md)] text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/15 hover:text-white transition-all duration-200'
 const SECTION_HEADER = 'text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60'
-const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none focus:border-[var(--color-accent)] focus:bg-black/40 transition-all duration-200'
+const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none focus:bg-black/40 transition-all duration-200'
 const OVERLAY_PANEL = 'fixed left-1/2 top-1/3 z-50 -translate-x-1/2 rounded-[var(--radius-lg)] border border-white/[0.08] bg-[var(--color-bg-secondary)]/95 backdrop-blur-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.05)] animate-in fade-in zoom-in-95 duration-200'
 const WT_ROW = 'group/wt relative flex h-7.5 w-full cursor-pointer items-center gap-2 pl-8 pr-3 text-[12px] transition-all duration-200'
 

@@ -564,6 +564,18 @@ body.fastagents-tab-dragging * {
   outline: none;
 }
 
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):focus,
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible,
+[contenteditable='true']:focus,
+[contenteditable='true']:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .canvas-search-input:focus,
 .canvas-search-input:focus-visible {
   outline: none !important;

@@ -1150,7 +1150,7 @@ export function GitChanges(): JSX.Element {
             onChange={(e) => setCommitMsg(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && commitMsg.trim()) handleCommit() }}
             placeholder={`消息 (Ctrl+Enter 在"${branch}"提交)`}
-            className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none focus:border-[var(--color-accent)] mb-1.5"
+            className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none mb-1.5"
           />
           <button
             onClick={handleCommit}

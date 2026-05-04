@@ -415,7 +415,7 @@ function CanvasFrameRenameDialog({ frameId, onClose }: { frameId: string; onClos
             className={cn(
               'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
               'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
-              'outline-none transition-colors focus:border-[var(--color-accent)]/70',
+              'outline-none transition-colors',
             )}
           />
         </label>

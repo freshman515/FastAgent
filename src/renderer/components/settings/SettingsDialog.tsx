@@ -1,5 +1,5 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
@@ -215,7 +215,7 @@ function PixelNumberField({ label, value, min, max, step = 20, onChange }: {
             'text-[12px] font-mono font-medium text-white placeholder:text-[var(--color-text-tertiary)]',
             'outline-none transition-all duration-200',
             'hover:bg-black/40 hover:border-white/[0.15]',
-            'focus:border-[var(--color-accent)]/60 focus:bg-black/60 focus:shadow-[0_0_0_3px_var(--color-accent-muted)]'
+            'focus:bg-black/60'
           )}
         />
         <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-[var(--color-text-tertiary)]">px</span>
@@ -508,6 +508,7 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
     args: '',
   })
   const [error, setError] = useState('')
+  const iconFileInputRef = useRef<HTMLInputElement | null>(null)
   const editing = editingId !== null
 
   const startCreate = useCallback(() => {
@@ -525,6 +526,36 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
   const cancelEdit = useCallback(() => {
     setEditingId(null)
     setError('')
+  }, [])
+
+  const selectIconFile = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    const lowerName = file.name.toLowerCase()
+    const isSupportedIcon = file.type === 'image/svg+xml'
+      || file.type === 'image/png'
+      || lowerName.endsWith('.svg')
+      || lowerName.endsWith('.png')
+    if (!isSupportedIcon) {
+      setError('请选择 SVG 或 PNG 图标文件')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onerror = () => setError('无法读取所选图标文件')
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string' || !result.startsWith('data:image/')) {
+        setError('无法解析所选图标文件')
+        return
+      }
+
+      setDraft((current) => ({ ...current, icon: result }))
+      setError('')
+    }
+    reader.readAsDataURL(file)
   }, [])
 
   const saveDefinition = useCallback(() => {
@@ -819,22 +850,31 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
               {editingId ? '编辑自定义会话' : '新增自定义会话'}
             </div>
             <div className="grid grid-cols-[80px_1fr] gap-3">
-              <label className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5">
                 <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">图标</span>
                 <input
-                  value={draft.icon}
-                  onChange={(event) => setDraft((current) => ({ ...current, icon: event.target.value }))}
-                  placeholder="⚙"
-                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 text-center text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                  ref={iconFileInputRef}
+                  type="file"
+                  accept=".svg,.png,image/svg+xml,image/png"
+                  onChange={selectIconFile}
+                  className="hidden"
                 />
-              </label>
+                <button
+                  type="button"
+                  onClick={() => iconFileInputRef.current?.click()}
+                  className="flex h-8 w-full items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors hover:border-[var(--color-border-hover)] hover:bg-white/[0.04]"
+                  title="选择 SVG 或 PNG 图标"
+                >
+                  <SessionIconView icon={draft.icon} className="h-4.5 w-4.5" imageClassName="h-4.5 w-4.5 object-contain" />
+                </button>
+              </div>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">名称</span>
                 <input
                   value={draft.name}
                   onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
                   placeholder="My Agent"
-                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none"
                 />
               </label>
             </div>
@@ -845,7 +885,7 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
                   value={draft.command}
                   onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))}
                   placeholder="my-agent"
-                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none"
                 />
               </label>
               <label className="flex flex-col gap-1.5">
@@ -854,7 +894,7 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
                   value={draft.args}
                   onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))}
                   placeholder="--model xxx --yolo"
-                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none"
                 />
                 <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
                   参数会按空格拆分，支持单引号和双引号。当前解析：{parsedArgs.length > 0 ? parsedArgs.map((arg) => `"${arg}"`).join(' ') : '无'}
@@ -1007,7 +1047,7 @@ function ExtensionsPage({ settings }: { settings: AppSettings }): JSX.Element {
           onChange={(event) => setManifestText(event.target.value)}
           spellCheck={false}
           placeholder={exampleManifest}
-          className="min-h-56 resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]/70"
+          className="min-h-56 resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
         />
         {error && <div className="text-[var(--ui-font-xs)] text-[var(--color-error)]">{error}</div>}
       </SettingsSection>
@@ -1052,12 +1092,12 @@ function WslPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: 
   const inputClass = cn(
     'h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
     'font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
-    'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
+    'placeholder:text-[var(--color-text-tertiary)]',
   )
   const textareaClass = cn(
     'min-h-[88px] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-2',
     'font-mono text-[var(--ui-font-sm)] leading-relaxed text-[var(--color-text-primary)] outline-none transition-colors',
-    'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
+    'placeholder:text-[var(--color-text-tertiary)]',
   )
 
   return (
@@ -1517,7 +1557,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
           className={cn(
             'rounded-[var(--radius-md)] border bg-[var(--color-bg-secondary)]',
             'px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none',
-            importError && !importText ? 'border-[var(--color-error)]' : 'border-[var(--color-border)] focus:border-[var(--color-accent)]',
+            importError && !importText ? 'border-[var(--color-error)]' : 'border-[var(--color-border)]',
           )}
         />
         <textarea
@@ -1528,7 +1568,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
           className={cn(
             'rounded-[var(--radius-md)] border bg-[var(--color-bg-secondary)] font-mono resize-none',
             'px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none',
-            importError && importText ? 'border-[var(--color-error)]' : 'border-[var(--color-border)] focus:border-[var(--color-accent)]',
+            importError && importText ? 'border-[var(--color-error)]' : 'border-[var(--color-border)]',
           )}
         />
         {importError && (
@@ -1717,7 +1757,7 @@ function TerminalPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
   const inputClass = cn(
     'h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
     'font-mono text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
-    'placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]',
+    'placeholder:text-[var(--color-text-tertiary)]',
   )
   const voiceEndpointIsWebSocket = isVoiceWebSocketEndpoint(settings.voiceApiUrl)
   const handleShellModeChange = useCallback((value: TerminalShellMode) => {
@@ -2219,7 +2259,7 @@ function AiSettingsPage({ settings, onUpdate }: { settings: AppSettings; onUpdat
     setTesting(false)
   }
 
-  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none focus:border-[var(--color-accent)]'
+  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none'
 
   return (
     <div className={PAGE_STACK}>
@@ -2385,7 +2425,7 @@ function ClaudeGuiSettingsPage(): JSX.Element {
     }
   }, [conversations, updateConversationPreferences, updatePreferences])
 
-  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
+  const INPUT = 'w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none'
 
   return (
     <div className={PAGE_STACK}>

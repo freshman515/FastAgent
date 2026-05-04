@@ -419,7 +419,7 @@ export function QuickSwitcher(): JSX.Element | null {
               className={cn(
                 'w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2.5',
                 'text-[var(--ui-font-base)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-                'outline-none transition-colors focus:border-[var(--color-accent)] focus-visible:outline-none',
+                'outline-none transition-colors focus-visible:outline-none',
               )}
               autoFocus
             />

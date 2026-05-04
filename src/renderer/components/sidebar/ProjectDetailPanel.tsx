@@ -37,7 +37,7 @@ interface BranchView {
 
 const TREE_ROW = 'group/tree relative flex min-h-7 w-full items-center gap-2 overflow-hidden rounded-[var(--radius-sm)] pr-2 text-left transition-colors'
 const ACTIVE_TAB_ROW = 'bg-[var(--color-accent)]/10 text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-accent)]/20 shadow-[inset_0_0_12px_var(--color-accent-muted)]'
-const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none transition-all duration-200 focus:border-[var(--color-accent)] focus:bg-black/40'
+const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none transition-all duration-200 focus:bg-black/40'
 const MODAL_PANEL = 'fixed left-1/2 top-1/3 z-[210] -translate-x-1/2 rounded-[var(--radius-lg)] border border-white/[0.08] bg-[var(--color-bg-secondary)]/95 p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.05)] backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-200'
 
 const SESSION_CREATE_OPTIONS: Array<{ type: SessionType; label: string; title: string }> = [
@@ -689,7 +689,7 @@ export function ProjectDetailPanel({ projectId, onBack }: ProjectDetailPanelProp
               className={cn(
                 'flex h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5',
                 'text-left text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none transition-colors',
-                'hover:border-[var(--color-border-hover)] focus:border-[var(--color-accent)]',
+                'hover:border-[var(--color-border-hover)]',
               )}
             >
               <GitBranch size={13} className="shrink-0 text-[var(--color-accent)]" />

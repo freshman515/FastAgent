@@ -111,7 +111,7 @@ const LANGUAGE_OPTIONS: Array<{ value: NonNullable<ClaudeGuiPreferences['languag
 ]
 
 const INPUT =
-  'h-8 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-accent)]'
+  'h-8 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none transition-colors'
 const MAX_REFERENCED_FILES = 6
 const MAX_REFERENCED_FILE_CHARS = 8_000
 const PROMPT_PRESETS = [
@@ -3123,7 +3123,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
               }
             }}
             placeholder="Type your message to Claude Code... 输入 / 打开命令与技能联想，输入 @ 联想文件，也可以直接把文件拖进来。"
-            className="min-h-24 w-full resize-none rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none transition-colors placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)]"
+            className="min-h-24 w-full resize-none rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] outline-none transition-colors placeholder:text-[var(--color-text-tertiary)]"
           />
 
           {slashContext && !mentionMatch && (

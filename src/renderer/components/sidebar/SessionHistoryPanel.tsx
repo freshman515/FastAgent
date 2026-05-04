@@ -785,8 +785,7 @@ export function SessionHistoryPanel(): JSX.Element {
               'text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
               'outline-none transition-all duration-200',
               'hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-primary)]/60',
-              'focus:border-[var(--color-accent)]/60 focus:bg-[var(--color-bg-primary)]',
-              'focus:shadow-[0_0_0_3px_var(--color-accent-muted)]',
+              'focus:bg-[var(--color-bg-primary)]',
             )}
           />
           {searchQuery && (
@@ -1061,7 +1060,7 @@ export function SessionHistoryPanel(): JSX.Element {
                 className={cn(
                   'h-6 w-full rounded-[var(--radius-sm)] bg-[var(--color-bg-surface)] px-2 text-[var(--ui-font-sm)]',
                   'text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]',
-                  'border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none',
+                  'border border-[var(--color-border)] focus:outline-none',
                 )}
               />
             </div>
