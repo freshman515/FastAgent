@@ -2,7 +2,7 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import * as monaco from 'monaco-editor'
-import { Code2, Columns2, Eye } from 'lucide-react'
+import { Code2, Columns2, Eye, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
 import { type EditorCursorInfo, useEditorsStore } from '@/stores/editors'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -66,8 +66,34 @@ type PreviewTextPoint = {
   offset: number
 }
 type PreviewTextIndexEntry = PreviewTextPoint | null
+interface ImagePreviewData {
+  dataUrl: string
+  mimeType: string
+  size: number
+  width: number | null
+  height: number | null
+}
 
 const MARKDOWN_PREVIEW_SELECTION_OVERLAY = 'markdown-preview-selection-overlay'
+const IMAGE_ZOOM_MIN = 0.1
+const IMAGE_ZOOM_MAX = 8
+
+function clampImageZoom(value: number): number {
+  return Math.max(IMAGE_ZOOM_MIN, Math.min(IMAGE_ZOOM_MAX, value))
+}
+
+function formatByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`
+}
 
 function buildEditorOptions(settings: EditorDisplaySettings): monaco.editor.IStandaloneEditorConstructionOptions {
   return {
@@ -514,6 +540,128 @@ function EditorMenuDivider(): JSX.Element {
   return <div className="my-1 h-px bg-[var(--color-border)]" />
 }
 
+interface ImagePreviewProps {
+  image: ImagePreviewData | null
+  fileName: string
+  fitToView: boolean
+  zoom: number
+  onImageLoad: (width: number, height: number) => void
+  onFitToViewChange: (fitToView: boolean) => void
+  onZoomChange: (zoom: number) => void
+}
+
+interface ImageZoomAnchor {
+  clientX: number
+  clientY: number
+  ratioX: number
+  ratioY: number
+}
+
+function ImagePreview({
+  image,
+  fileName,
+  fitToView,
+  zoom,
+  onImageLoad,
+  onFitToViewChange,
+  onZoomChange,
+}: ImagePreviewProps): JSX.Element {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const pendingZoomAnchorRef = useRef<ImageZoomAnchor | null>(null)
+
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (!scroller || !image) return
+
+    const handleWheel = (event: WheelEvent): void => {
+      if (!event.ctrlKey) return
+      const target = imageRef.current
+      if (!target) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const rect = target.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+
+      const naturalWidth = image.width || target.naturalWidth || rect.width
+      const currentZoom = fitToView ? rect.width / naturalWidth : zoom
+      const factor = Math.exp(-event.deltaY * 0.002)
+      const nextZoom = clampImageZoom(currentZoom * factor)
+      if (Math.abs(nextZoom - currentZoom) < 0.001) return
+
+      pendingZoomAnchorRef.current = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        ratioX: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+        ratioY: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+      }
+      onFitToViewChange(false)
+      onZoomChange(nextZoom)
+    }
+
+    scroller.addEventListener('wheel', handleWheel, { passive: false })
+    return () => scroller.removeEventListener('wheel', handleWheel)
+  }, [fitToView, image, onFitToViewChange, onZoomChange, zoom])
+
+  useEffect(() => {
+    const anchor = pendingZoomAnchorRef.current
+    if (!anchor) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const scroller = scrollRef.current
+      const target = imageRef.current
+      if (!scroller || !target) return
+
+      const rect = target.getBoundingClientRect()
+      const nextClientX = rect.left + rect.width * anchor.ratioX
+      const nextClientY = rect.top + rect.height * anchor.ratioY
+      scroller.scrollLeft += nextClientX - anchor.clientX
+      scroller.scrollTop += nextClientY - anchor.clientY
+      pendingZoomAnchorRef.current = null
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [fitToView, zoom, image?.dataUrl])
+
+  if (!image) {
+    return <div className="h-full w-full bg-[var(--color-bg-primary)]" />
+  }
+
+  const explicitSize = image.width && image.width > 0
+    ? { width: `${image.width * zoom}px`, height: 'auto', maxWidth: 'none', maxHeight: 'none' }
+    : { width: `${zoom * 100}%`, height: 'auto', maxWidth: 'none', maxHeight: 'none' }
+
+  return (
+    <div
+      ref={scrollRef}
+      className="h-full w-full overflow-auto bg-[var(--color-bg-primary)]"
+    >
+      <div className={cn(
+        'flex min-h-full min-w-full items-center justify-center p-6',
+        !fitToView && 'items-start',
+      )}>
+        <img
+          ref={imageRef}
+          src={image.dataUrl}
+          alt={fileName}
+          draggable={false}
+          onLoad={(event) => {
+            const target = event.currentTarget
+            onImageLoad(target.naturalWidth, target.naturalHeight)
+          }}
+          className={cn(
+            'select-none rounded-[var(--radius-sm)] shadow-[0_18px_42px_rgba(0,0,0,0.28)]',
+            fitToView && 'max-h-full max-w-full object-contain',
+          )}
+          style={fitToView ? undefined : explicitSize}
+        />
+      </div>
+    </div>
+  )
+}
+
 interface EditorBinding {
   getContent: () => string
   applyGeneratedCode: (code: string, selection: EditorCursorInfo['selection']) => Promise<void>
@@ -574,6 +722,9 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const [markdownMode, setMarkdownMode] = useState<MarkdownEditorMode>('source')
   const [markdownSource, setMarkdownSource] = useState('')
   const [markdownSelectionText, setMarkdownSelectionText] = useState('')
+  const [imagePreview, setImagePreview] = useState<ImagePreviewData | null>(null)
+  const [imageZoom, setImageZoom] = useState(1)
+  const [imageFitToView, setImageFitToView] = useState(true)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -593,6 +744,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     [editorFontFamily, editorFontLigatures, editorFontSize, editorLineNumbers, editorMinimap, editorStickyScroll, editorWordWrap],
   )
   const isMarkdownEditor = tab?.language === 'markdown' && !tab.isDiff
+  const isImageEditor = tab?.language === 'image' && !tab.isDiff
   const renderedMarkdown = useMemo(
     () => (isMarkdownEditor ? renderMarkdown(markdownSource) : ''),
     [isMarkdownEditor, markdownSource],
@@ -600,11 +752,15 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
   useEffect(() => {
     const container = containerRef.current
-    if (!container || !tab) return
+    if (!tab) return
 
     let disposed = false
     let fileSavedListener: ((event: Event) => void) | null = null
     ensureTheme(useUIStore.getState().settings.terminalTheme)
+    setLoading(true)
+    setError(null)
+    setImagePreview(null)
+    savedContentRef.current = ''
 
     const persistEditorValue = async (nextContent: string): Promise<void> => {
       await window.api.fs.writeFile(tab.filePath, nextContent)
@@ -619,7 +775,43 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       normalizeEditorFilePath(filePath) === normalizeEditorFilePath(tab.filePath)
     )
 
-    if (tab.isDiff) {
+    if (tab.language === 'image' && !tab.isDiff) {
+      const loadImagePreview = (): void => {
+        void window.api.fs.readFileDataUrl(tab.filePath).then((payload) => {
+          if (disposed) return
+          if (payload.dataUrl === savedContentRef.current) {
+            setLoading(false)
+            return
+          }
+          savedContentRef.current = payload.dataUrl
+          setImagePreview({
+            ...payload,
+            width: null,
+            height: null,
+          })
+          setModified(editorTabId, false)
+          setCursorInfo(null)
+          setLoading(false)
+        }).catch((err) => {
+          if (!disposed) setError(String(err))
+        })
+      }
+
+      loadImagePreview()
+
+      watchTimerRef.current = setInterval(() => {
+        if (disposed) return
+        loadImagePreview()
+      }, 3000)
+
+      fileSavedListener = (event: Event) => {
+        const filePath = (event as CustomEvent<{ filePath?: string }>).detail?.filePath
+        if (!filePath || !isCurrentTabFile(filePath)) return
+        loadImagePreview()
+      }
+      window.addEventListener('fastagents:file-saved', fileSavedListener as EventListener)
+    } else if (tab.isDiff) {
+      if (!container) return
       // ── Diff editor ──
       window.api.fs.readFile(tab.filePath).catch(() => '').then((modifiedContent) => {
         if (disposed) return
@@ -739,6 +931,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
         setLoading(false)
       }).catch((err) => { if (!disposed) setError(String(err)) })
     } else {
+      if (!container) return
       // ── Normal editor ──
       window.api.fs.readFile(tab.filePath).then((content) => {
         if (disposed) return
@@ -876,6 +1069,12 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   }, [isMarkdownEditor])
 
   useEffect(() => {
+    if (!isImageEditor) return
+    setImageZoom(1)
+    setImageFitToView(true)
+  }, [editorTabId, isImageEditor])
+
+  useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
 
@@ -981,8 +1180,13 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
   // Focus editor when becoming active
   useEffect(() => {
-    if (!isActive || !editorRef.current) return
+    if (!isActive) return
     setLastFocusedTabId(editorTabId)
+    if (isImageEditor) {
+      setCursorInfo(null)
+      return
+    }
+    if (!editorRef.current) return
     if (isMarkdownEditor && markdownMode === 'preview') {
       setCursorInfo(null)
       return
@@ -993,7 +1197,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     } else {
       (ed as monaco.editor.IStandaloneCodeEditor).focus()
     }
-  }, [editorTabId, isActive, isMarkdownEditor, markdownMode, setCursorInfo, setLastFocusedTabId])
+  }, [editorTabId, isActive, isImageEditor, isMarkdownEditor, markdownMode, setCursorInfo, setLastFocusedTabId])
 
   // Get running sessions for picker — only current project, deduplicated
   const allSessions = useSessionsStore((s) => s.sessions)
@@ -1095,11 +1299,92 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     useUIStore.getState().activateDockPanel('search')
   }
 
+  const imageDimensions = imagePreview?.width && imagePreview.height
+    ? `${imagePreview.width} x ${imagePreview.height}`
+    : ''
+  const imageMeta = [imageDimensions, imagePreview ? formatByteSize(imagePreview.size) : '']
+    .filter(Boolean)
+    .join(' | ')
+
   return (
     <div className="h-full w-full relative flex flex-col bg-[var(--color-bg-primary)]">
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Loading...</span>
+        </div>
+      )}
+      {isImageEditor && (
+        <div className="relative flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/70 px-2">
+          <div className="min-w-0 flex-1 pr-3">
+            <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">
+              {imageMeta}
+            </span>
+          </div>
+          <div className="pointer-events-none absolute inset-x-36 top-0 flex h-full items-center justify-center">
+            <span className="truncate text-sm font-medium text-[var(--color-text-secondary)]">
+              {tab.fileName}
+            </span>
+          </div>
+          <div className="inline-flex shrink-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+            <button
+              type="button"
+              onClick={() => {
+                setImageFitToView(false)
+                setImageZoom((value) => clampImageZoom(value / 1.25))
+              }}
+              aria-label="缩小"
+              title="缩小"
+              className="flex h-6 w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            >
+              <ZoomOut size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImageFitToView(false)
+                setImageZoom(1)
+              }}
+              aria-label="原始大小"
+              title="原始大小"
+              className={cn(
+                'flex h-6 min-w-12 items-center justify-center border-l border-[var(--color-border)] px-2 text-[11px] font-medium transition-colors',
+                !imageFitToView && imageZoom === 1
+                  ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              {Math.round(imageZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImageFitToView(false)
+                setImageZoom((value) => clampImageZoom(value * 1.25))
+              }}
+              aria-label="放大"
+              title="放大"
+              className="flex h-6 w-8 items-center justify-center border-l border-[var(--color-border)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            >
+              <ZoomIn size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImageFitToView(true)
+                setImageZoom(1)
+              }}
+              aria-label="适应窗口"
+              title="适应窗口"
+              className={cn(
+                'flex h-6 w-8 items-center justify-center border-l border-[var(--color-border)] transition-colors',
+                imageFitToView
+                  ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              <Maximize2 size={13} strokeWidth={2.2} />
+            </button>
+          </div>
         </div>
       )}
       {isMarkdownEditor && (
@@ -1158,42 +1443,58 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           </div>
         </div>
       )}
-      <div className={cn('min-h-0 w-full flex-1', isMarkdownEditor && markdownMode === 'split' ? 'flex' : 'relative')}>
-        <div
-          ref={containerRef}
-          aria-hidden={isMarkdownEditor && markdownMode === 'preview'}
-          className={cn(
-            'min-h-0 min-w-0',
-            !isMarkdownEditor && 'h-full w-full',
-            isMarkdownEditor && markdownMode === 'source' && 'h-full w-full',
-            isMarkdownEditor && markdownMode === 'split' && 'h-full w-1/2 border-r border-[var(--color-border)]',
-            isMarkdownEditor && markdownMode === 'preview' && 'pointer-events-none absolute inset-0 h-full w-full opacity-0',
-          )}
-        />
-        {isMarkdownEditor && markdownMode !== 'source' && (
-          <div
-            ref={markdownPreviewRef}
-            tabIndex={0}
-            className={cn(
-              'markdown-preview-content ai-summary-content select-text relative h-full min-w-0 overflow-auto bg-[var(--color-bg-primary)] px-8 py-7 text-[13px] leading-6 text-[var(--color-text-secondary)] outline-none',
-              markdownMode === 'split' ? 'w-1/2' : 'w-full',
-            )}
-            onContextMenu={(event) => {
-              event.preventDefault()
-              setMarkdownPreviewContextMenu({ x: event.clientX, y: event.clientY })
+      {isImageEditor ? (
+        <div className="min-h-0 w-full flex-1">
+          <ImagePreview
+            image={imagePreview}
+            fileName={tab.fileName}
+            fitToView={imageFitToView}
+            zoom={imageZoom}
+            onImageLoad={(width, height) => {
+              setImagePreview((current) => current ? { ...current, width, height } : current)
             }}
-            onKeyDown={(event) => {
-              if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-                const selectedText = getSelectionTextWithinElement(markdownPreviewRef.current)
-                if (!selectedText) return
-                event.preventDefault()
-                void navigator.clipboard.writeText(selectedText)
-              }
-            }}
-            dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
+            onFitToViewChange={setImageFitToView}
+            onZoomChange={setImageZoom}
           />
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className={cn('min-h-0 w-full flex-1', isMarkdownEditor && markdownMode === 'split' ? 'flex' : 'relative')}>
+          <div
+            ref={containerRef}
+            aria-hidden={isMarkdownEditor && markdownMode === 'preview'}
+            className={cn(
+              'min-h-0 min-w-0',
+              !isMarkdownEditor && 'h-full w-full',
+              isMarkdownEditor && markdownMode === 'source' && 'h-full w-full',
+              isMarkdownEditor && markdownMode === 'split' && 'h-full w-1/2 border-r border-[var(--color-border)]',
+              isMarkdownEditor && markdownMode === 'preview' && 'pointer-events-none absolute inset-0 h-full w-full opacity-0',
+            )}
+          />
+          {isMarkdownEditor && markdownMode !== 'source' && (
+            <div
+              ref={markdownPreviewRef}
+              tabIndex={0}
+              className={cn(
+                'markdown-preview-content ai-summary-content select-text relative h-full min-w-0 overflow-auto bg-[var(--color-bg-primary)] px-8 py-7 text-[13px] leading-6 text-[var(--color-text-secondary)] outline-none',
+                markdownMode === 'split' ? 'w-1/2' : 'w-full',
+              )}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setMarkdownPreviewContextMenu({ x: event.clientX, y: event.clientY })
+              }}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+                  const selectedText = getSelectionTextWithinElement(markdownPreviewRef.current)
+                  if (!selectedText) return
+                  event.preventDefault()
+                  void navigator.clipboard.writeText(selectedText)
+                }
+              }}
+              dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
+            />
+          )}
+        </div>
+      )}
 
       {markdownPreviewContextMenu && createPortal(
         <>

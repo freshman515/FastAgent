@@ -55,6 +55,26 @@ type GroupContentEntry =
   | { type: 'group'; group: Group }
   | { type: 'project'; project: Project }
 
+function fitFixedMenuToViewport(element: HTMLElement, position: { x: number; y: number }): void {
+  const margin = 8
+  const maxHeight = Math.max(160, window.innerHeight - margin * 2)
+  element.style.maxHeight = `${maxHeight}px`
+  element.style.overflowY = 'auto'
+
+  const rect = element.getBoundingClientRect()
+  const boundedTop = Math.min(
+    Math.max(margin, position.y),
+    Math.max(margin, window.innerHeight - Math.min(rect.height, maxHeight) - margin),
+  )
+  const boundedLeft = Math.min(
+    Math.max(margin, position.x),
+    Math.max(margin, window.innerWidth - rect.width - margin),
+  )
+
+  element.style.top = `${boundedTop}px`
+  element.style.left = `${boundedLeft}px`
+}
+
 export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }: GroupItemProps): JSX.Element {
   const toggleCollapse = useGroupsStore((s) => s.toggleCollapse)
   const removeGroup = useGroupsStore((s) => s.removeGroup)
@@ -388,11 +408,14 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
         <>
           <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
           <div
+            ref={(element) => {
+              if (element) fitFixedMenuToViewport(element, contextMenu)
+            }}
             style={{ top: contextMenu.y, left: contextMenu.x }}
             className={cn(
               'fixed z-50 min-w-[200px] overflow-visible rounded-[var(--radius-lg)] border border-white/[0.08]',
               'bg-[var(--color-bg-secondary)]/90 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] py-1.5 p-1',
-              'animate-in fade-in zoom-in-95 duration-150',
+              'animate-in fade-in zoom-in-95 duration-150 scrollbar-none',
             )}>
             <div className="px-3 py-1.5 mb-1 border-b border-white/[0.05]">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">分组操作</span>

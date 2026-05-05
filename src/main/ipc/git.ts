@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { getImageMimeType } from '@shared/fileTypes'
 import { gitService } from '../services/GitService'
 
 function execGit(cwd: string, args: string[], maxBuffer = 1024 * 1024): Promise<string> {
@@ -197,6 +198,17 @@ export function registerGitHandlers(): void {
   // Filesystem: read file content
   ipcMain.handle('fs:read-file', async (_event, filePath: string) => {
     return readFile(filePath, 'utf-8')
+  })
+
+  // Filesystem: read a browser-renderable image as a data URL
+  ipcMain.handle('fs:read-file-data-url', async (_event, filePath: string) => {
+    const buffer = await readFile(filePath)
+    const mimeType = getImageMimeType(filePath) ?? 'application/octet-stream'
+    return {
+      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+      mimeType,
+      size: buffer.byteLength,
+    }
   })
 
   // Filesystem: write file content

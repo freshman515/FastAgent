@@ -376,6 +376,8 @@ const api = {
     stat: (path: string) =>
       ipcRenderer.invoke('fs:stat', path) as Promise<{ exists: boolean; isDir: boolean; isFile: boolean }>,
     readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path) as Promise<string>,
+    readFileDataUrl: (path: string) =>
+      ipcRenderer.invoke('fs:read-file-data-url', path) as Promise<{ dataUrl: string; mimeType: string; size: number }>,
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:write-file', path, content) as Promise<void>,
     createFile: (path: string) => ipcRenderer.invoke('fs:create-file', path) as Promise<void>,
     createDir: (path: string) => ipcRenderer.invoke('fs:create-dir', path) as Promise<void>,
