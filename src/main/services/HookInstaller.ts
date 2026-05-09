@@ -335,7 +335,7 @@ function ensureCodexHooksFeatureEnabled(): void {
 
   const current = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : ''
   const lines = current ? current.split(/\r?\n/) : []
-  const featureLine = 'codex_hooks = true'
+  const featureLine = 'hooks = true'
   const featuresIndex = lines.findIndex((line) => line.trim() === '[features]')
 
   if (featuresIndex === -1) {
@@ -353,14 +353,24 @@ function ensureCodexHooksFeatureEnabled(): void {
     : featuresIndex + 1 + nextSectionOffset
   const existingIndex = lines
     .slice(featuresIndex + 1, sectionEnd)
-    .findIndex((line) => /^\s*codex_hooks\s*=/.test(line))
+    .findIndex((line) => /^\s*hooks\s*=/.test(line))
 
   if (existingIndex >= 0) {
     const absoluteIndex = featuresIndex + 1 + existingIndex
-    if (lines[absoluteIndex].trim() === featureLine) return
     lines[absoluteIndex] = featureLine
   } else {
     lines.splice(featuresIndex + 1, 0, featureLine)
+  }
+
+  const refreshedNextSectionOffset = lines
+    .slice(featuresIndex + 1)
+    .findIndex((line) => /^\s*\[[^\]]+\]\s*$/.test(line))
+  const refreshedSectionEnd = refreshedNextSectionOffset === -1
+    ? lines.length
+    : featuresIndex + 1 + refreshedNextSectionOffset
+
+  for (let i = refreshedSectionEnd - 1; i > featuresIndex; i -= 1) {
+    if (/^\s*codex_hooks\s*=/.test(lines[i])) lines.splice(i, 1)
   }
 
   writeFileSync(configPath, `${lines.join('\n').replace(/\n+$/, '')}\n`, 'utf-8')
