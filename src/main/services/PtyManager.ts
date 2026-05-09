@@ -4,7 +4,7 @@ import headlessPkg from '@xterm/headless'
 import serializePkg from '@xterm/addon-serialize'
 import { execFileSync } from 'node:child_process'
 import { delimiter, dirname, join, resolve } from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { BrowserWindow } from 'electron'
 import { IPC, isClaudeCodeType, isCodexType, isTerminalSessionType, isWslSessionType } from '@shared/types'
 import type { SessionCreateOptions, SessionCreateResult, SessionReplayPayload } from '@shared/types'
@@ -317,6 +317,21 @@ function normalizeCwd(cwd: string): string {
   return cwd.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
 }
 
+function assertValidCwd(cwd: string, sessionType: SessionCreateOptions['type']): void {
+  if (!cwd || typeof cwd !== 'string') {
+    throw new Error(`Cannot create ${sessionType} session: working directory is empty`)
+  }
+
+  try {
+    if (!statSync(cwd).isDirectory()) {
+      throw new Error(`working directory is not a directory: ${cwd}`)
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`Cannot create ${sessionType} session: invalid working directory "${cwd}" (${detail})`)
+  }
+}
+
 function mergeWslEnv(existing: string | undefined): string {
   const values = new Set((existing ?? '').split(':').map((item) => item.trim()).filter(Boolean))
   for (const name of WSL_ENV_NAMES) values.add(name)
@@ -577,6 +592,8 @@ export class PtyManager {
     if (options.type === 'browser' || options.type === 'claude-gui') {
       throw new Error(`${options.type} sessions do not use a PTY`)
     }
+
+    assertValidCwd(options.cwd, options.type)
 
     const id = `pty-${++this.idCounter}-${Date.now()}`
     const shell = detectShell({

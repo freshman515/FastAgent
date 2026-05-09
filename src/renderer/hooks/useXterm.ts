@@ -959,28 +959,43 @@ export function useXterm(
         const dimensions = await waitForInitialTerminalFit(terminal, fitAddon, container, () => destroyed)
         if (destroyed) return
 
-        const result = await window.api.session.create({
-          cwd: cwd!,
-          type: sessionType,
-          sessionId,
-          resume: shouldResume,
-          resumeUUID,
-          codexResumeId,
-          geminiResumeId,
-          command: currentSession.customSessionCommand,
-          args: currentSession.customSessionArgs,
-          terminalShellMode: settings.terminalShellMode,
-          terminalShellCommand: settings.terminalShellMode === 'custom' ? settings.terminalShellCommand : undefined,
-          terminalShellArgs: settings.terminalShellMode === 'custom' ? parseCustomSessionArgs(settings.terminalShellArgs) : undefined,
-          wslDistroName: isWslSession ? settings.wslDistroName : undefined,
-          wslShell: isWslSession ? settings.wslShell : undefined,
-          wslUseLoginShell: isWslSession ? settings.wslUseLoginShell : undefined,
-          wslPathPrefix: isWslSession ? settings.wslPathPrefix : undefined,
-          wslInitScript: isWslSession ? settings.wslInitScript : undefined,
-          wslEnvVars: isWslSession ? settings.wslEnvVars : undefined,
-          cols: dimensions.cols,
-          rows: dimensions.rows,
-        })
+        let result
+        try {
+          result = await window.api.session.create({
+            cwd: cwd!,
+            type: sessionType,
+            sessionId,
+            resume: shouldResume,
+            resumeUUID,
+            codexResumeId,
+            geminiResumeId,
+            command: currentSession.customSessionCommand,
+            args: currentSession.customSessionArgs,
+            terminalShellMode: settings.terminalShellMode,
+            terminalShellCommand: settings.terminalShellMode === 'custom' ? settings.terminalShellCommand : undefined,
+            terminalShellArgs: settings.terminalShellMode === 'custom' ? parseCustomSessionArgs(settings.terminalShellArgs) : undefined,
+            wslDistroName: isWslSession ? settings.wslDistroName : undefined,
+            wslShell: isWslSession ? settings.wslShell : undefined,
+            wslUseLoginShell: isWslSession ? settings.wslUseLoginShell : undefined,
+            wslPathPrefix: isWslSession ? settings.wslPathPrefix : undefined,
+            wslInitScript: isWslSession ? settings.wslInitScript : undefined,
+            wslEnvVars: isWslSession ? settings.wslEnvVars : undefined,
+            cols: dimensions.cols,
+            rows: dimensions.rows,
+          })
+        } catch (error) {
+          if (destroyed) return
+
+          const message = error instanceof Error ? error.message : String(error)
+          terminal.write(
+            `\r\n\x1b[31m[Failed to start session]\x1b[0m ${message}\r\n`,
+            updateBottomState,
+          )
+          useSessionsStore.getState().updateStatus(sessionId, 'stopped')
+          addTimelineEvent(sessionId, 'stop', `Failed to start: ${message}`)
+          scheduleRepaint(false)
+          return
+        }
         if (destroyed) {
           window.api.session.kill(result.ptyId)
           return

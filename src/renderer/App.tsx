@@ -468,12 +468,23 @@ function MainApp(): JSX.Element {
         !(project && typeof project === 'object' && (project as { id?: unknown }).id === LEGACY_ANONYMOUS_PROJECT_ID),
       )
       const removedLegacyAnonymousProjects = sanitizedProjects.length !== rawProjects.length
+      const validProjectIds = new Set(
+        sanitizedProjects
+          .map((project) => (project && typeof project === 'object' && typeof (project as { id?: unknown }).id === 'string')
+            ? (project as { id: string }).id
+            : null)
+          .filter((id): id is string => id !== null),
+      )
 
       const allRawWorktrees = (data as Record<string, unknown>).worktrees as unknown[] ?? []
       const rawWorktrees = (Array.isArray(allRawWorktrees) ? allRawWorktrees : []).filter((worktree) =>
-        !(worktree && typeof worktree === 'object' && (worktree as { projectId?: unknown }).projectId === LEGACY_ANONYMOUS_PROJECT_ID),
+        worktree
+        && typeof worktree === 'object'
+        && (worktree as { projectId?: unknown }).projectId !== LEGACY_ANONYMOUS_PROJECT_ID
+        && typeof (worktree as { projectId?: unknown }).projectId === 'string'
+        && validProjectIds.has((worktree as { projectId: string }).projectId),
       )
-      const removedLegacyAnonymousWorktrees = rawWorktrees.length !== (Array.isArray(allRawWorktrees) ? allRawWorktrees.length : 0)
+      const removedInvalidWorktrees = rawWorktrees.length !== (Array.isArray(allRawWorktrees) ? allRawWorktrees.length : 0)
       const validWorktreeIds = new Set(
         (Array.isArray(rawWorktrees) ? rawWorktrees : [])
           .map((worktree) => (worktree && typeof worktree === 'object' && typeof (worktree as { id?: unknown }).id === 'string')
@@ -485,7 +496,9 @@ function MainApp(): JSX.Element {
       const rawSessions = Array.isArray(data.sessions) ? data.sessions : []
       const sanitizedSessions = rawSessions.filter((session) => {
         if (!session || typeof session !== 'object') return true
-        if ((session as { projectId?: unknown }).projectId === LEGACY_ANONYMOUS_PROJECT_ID) return false
+        const projectId = (session as { projectId?: unknown }).projectId
+        if (projectId === LEGACY_ANONYMOUS_PROJECT_ID) return false
+        if (typeof projectId !== 'string' || !validProjectIds.has(projectId)) return false
         const worktreeId = (session as { worktreeId?: unknown }).worktreeId
         return typeof worktreeId !== 'string' || validWorktreeIds.has(worktreeId)
       })
@@ -541,7 +554,7 @@ function MainApp(): JSX.Element {
       if (removedLegacyAnonymousProjects) {
         window.api.config.write('projects', sanitizedProjects)
       }
-      if (removedLegacyAnonymousWorktrees) {
+      if (removedInvalidWorktrees) {
         window.api.config.write('worktrees', rawWorktrees)
       }
 
