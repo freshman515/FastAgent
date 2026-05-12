@@ -665,12 +665,33 @@ function ImagePreview({
 interface EditorBinding {
   getContent: () => string
   applyGeneratedCode: (code: string, selection: EditorCursorInfo['selection']) => Promise<void>
+  focus: () => void
 }
 
 const editorBindings = new Map<string, EditorBinding>()
 
 export function getOpenEditorContent(editorTabId: string): string | null {
   return editorBindings.get(editorTabId)?.getContent() ?? null
+}
+
+export function focusOpenEditor(editorTabId: string): boolean {
+  const binding = editorBindings.get(editorTabId)
+  if (!binding) return false
+  binding.focus()
+  return true
+}
+
+export function focusOpenEditorSoon(editorTabId: string): void {
+  let attempts = 0
+  const run = (): void => {
+    attempts += 1
+    if (focusOpenEditor(editorTabId)) return
+    if (attempts >= 16) return
+    window.setTimeout(run, 80)
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run)
+  })
 }
 
 export async function applyGeneratedCodeToEditor(
@@ -885,6 +906,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
         editorBindings.set(editorTabId, {
           getContent: () => modEditor.getValue(),
+          focus: () => modEditor.focus(),
           applyGeneratedCode: async (code, selection) => {
             if (selection && !selection.isEmpty) {
               modEditor.executeEdits('fastagents-ai-apply', [{
@@ -997,6 +1019,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
         editorBindings.set(editorTabId, {
           getContent: () => editor.getValue(),
+          focus: () => editor.focus(),
           applyGeneratedCode: async (code, selection) => {
             if (selection && !selection.isEmpty) {
               editor.executeEdits('fastagents-ai-apply', [{

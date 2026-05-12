@@ -17,6 +17,8 @@ import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
+import { focusOpenEditorSoon } from '@/components/session/EditorView'
+import { focusTerminalInputSoon, toggleTerminalScrollEdge } from '@/hooks/useXterm'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
@@ -73,15 +75,16 @@ const PANE_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'n', label: '新建会话' },
   { key: 'w', label: '关闭会话' },
   { key: 'p', label: '切换项目' },
+  { key: 'Tab', label: '上一个项目' },
   { key: '[/]', label: '最近项目' },
   { key: ':', label: '输入命令' },
-  { key: 'q', label: '返回' },
   { key: '?', label: '帮助' },
   { key: 'r', label: '重命名' },
   { key: 'd', label: '弹出窗口' },
   { key: 'f', label: '切换标签' },
   { key: 'b', label: '返回' },
   { key: 'g', label: '跳转' },
+  { key: 'u', label: '顶部/底部' },
   { key: 'Shift+hjkl', label: '移动标签' },
   { key: 'o', label: '只保留当前 pane' },
   { key: 'c', label: '复制路径' },
@@ -194,7 +197,7 @@ function PaneCommandOverlay({
             {editing ? 'Edit Mode' : 'Pane Mode'}
           </span>
           <span className="text-[11px] text-[var(--color-text-secondary)]">
-            {editing ? 'Esc 返回命令模式' : 'p 项目 · f 标签 · g 跳转 · : 命令 · ? 帮助 · Esc 退出'}
+            {editing ? 'Esc 返回命令模式' : 'p 项目 · Tab 上个项目 · u 顶/底 · f 标签 · g 跳转 · : 命令 · ? 帮助 · Esc 退出'}
           </span>
         </div>
       </div>
@@ -289,14 +292,7 @@ function usePaneCommandSearchPanelKeyboardCapture({
       if (!panel) return
 
       const targetInsidePanel = event.target instanceof Node && panel.contains(event.target)
-      const isPlainBackKey = event.key.length === 1
-        && event.key.toLowerCase() === 'q'
-        && !event.ctrlKey
-        && !event.metaKey
-        && !event.altKey
-        && !event.shiftKey
-        && query.trim() === ''
-      if (targetInsidePanel && isPlainTextEditingTarget(event.target) && !isPlainBackKey) return
+      if (targetInsidePanel && isPlainTextEditingTarget(event.target)) return
       if (targetInsidePanel && ['Escape', 'ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return
 
       const shouldHandleText = event.key === 'Backspace'
@@ -309,10 +305,6 @@ function usePaneCommandSearchPanelKeyboardCapture({
       inputRef.current?.focus({ preventScroll: true })
 
       if (event.key === 'Escape') {
-        onBack()
-        return
-      }
-      if (isPlainBackKey) {
         onBack()
         return
       }
@@ -437,13 +429,7 @@ function PaneCommandInputDialog({
         ref={panelRef}
         className="w-[min(560px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
         onKeyDown={(event) => {
-          const plainQBack = event.key.toLowerCase() === 'q'
-            && query.trim() === ''
-            && !event.ctrlKey
-            && !event.metaKey
-            && !event.altKey
-            && !event.shiftKey
-          if (event.key === 'Escape' || plainQBack) {
+          if (event.key === 'Escape') {
             event.preventDefault()
             event.stopPropagation()
             onBack()
@@ -471,7 +457,7 @@ function PaneCommandInputDialog({
         <div className="border-b border-[var(--color-border)] px-4 py-3">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">命令</div>
-            <div className="text-[10px] text-[var(--color-text-tertiary)]">q / Esc 返回 Pane Mode</div>
+            <div className="text-[10px] text-[var(--color-text-tertiary)]">Esc 返回 Pane Mode</div>
           </div>
           <div className="flex h-10 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3">
             <span className="mr-2 font-mono text-[var(--ui-font-sm)] font-bold text-[var(--color-accent)]">:</span>
@@ -768,6 +754,17 @@ function PaneCommandProjectSwitcher({
     [selectedProjectId, selectedWorktreeId, worktrees],
   )
   const effectiveSelectedWorktreeId = selectedWorktree?.isMain ? null : (selectedWorktreeId ?? null)
+  const currentContextKey = selectedProjectId
+    ? getPaneCommandProjectContextKey(selectedProjectId, effectiveSelectedWorktreeId)
+    : null
+  const previousContextKey = currentContextKey
+    ? (recentKeys.find((key) => key !== currentContextKey) ?? null)
+    : null
+  const scoreProjectSwitchItem = useCallback((key: string, isCurrent: boolean): number => {
+    if (previousContextKey && key === previousContextKey) return 2000
+    const rank = recentRank.get(key)
+    return (isCurrent ? 1000 : 0) + (rank !== undefined ? 500 - rank * 10 : 0)
+  }, [previousContextKey, recentRank])
   const items = useMemo<PaneCommandProjectSwitchItem[]>(() => {
     const result: PaneCommandProjectSwitchItem[] = []
 
@@ -775,7 +772,6 @@ function PaneCommandProjectSwitcher({
       const groupName = groupNameById.get(project.groupId) ?? ''
       const groupColor = groupColorById.get(project.groupId) ?? null
       const mainKey = getPaneCommandProjectContextKey(project.id, null)
-      const mainRank = recentRank.get(mainKey)
       const isCurrentMain = selectedProjectId === project.id && !effectiveSelectedWorktreeId
 
       result.push({
@@ -788,14 +784,13 @@ function PaneCommandProjectSwitcher({
         groupName: groupName || null,
         groupColor,
         searchText: [project.name, project.path, groupName, 'main'].filter(Boolean).join(' '),
-        priority: (isCurrentMain ? 1000 : 0) + (mainRank !== undefined ? 500 - mainRank * 10 : 0),
+        priority: scoreProjectSwitchItem(mainKey, isCurrentMain),
         isCurrent: isCurrentMain,
         badge: 'Project',
       })
 
       for (const worktree of worktrees.filter((item) => item.projectId === project.id && !item.isMain)) {
         const key = getPaneCommandProjectContextKey(project.id, worktree.id)
-        const rank = recentRank.get(key)
         const isCurrent = selectedProjectId === project.id && effectiveSelectedWorktreeId === worktree.id
         result.push({
           id: key,
@@ -807,7 +802,7 @@ function PaneCommandProjectSwitcher({
           groupName: groupName || null,
           groupColor,
           searchText: [project.name, project.path, groupName, worktree.branch, worktree.path].filter(Boolean).join(' '),
-          priority: (isCurrent ? 1000 : 0) + (rank !== undefined ? 500 - rank * 10 : 0),
+          priority: scoreProjectSwitchItem(key, isCurrent),
           isCurrent,
           badge: 'Worktree',
         })
@@ -815,7 +810,7 @@ function PaneCommandProjectSwitcher({
     }
 
     return result.sort((a, b) => b.priority - a.priority || a.title.localeCompare(b.title))
-  }, [effectiveSelectedWorktreeId, groupColorById, groupNameById, projects, recentRank, selectedProjectId, worktrees])
+  }, [effectiveSelectedWorktreeId, groupColorById, groupNameById, projects, scoreProjectSwitchItem, selectedProjectId, worktrees])
 
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalizePaneCommandQuery(query)
@@ -872,21 +867,14 @@ function PaneCommandProjectSwitcher({
     const handleWindowKeyDown = (event: KeyboardEvent): void => {
       const panel = panelRef.current
       if (!panel) return
-      const isPlainBackKey = event.key.length === 1
-        && event.key.toLowerCase() === 'q'
-        && !event.ctrlKey
-        && !event.metaKey
-        && !event.altKey
-        && !event.shiftKey
-        && query.trim() === ''
-      if (event.target instanceof Node && panel.contains(event.target) && !isPlainBackKey) return
+      if (event.target instanceof Node && panel.contains(event.target)) return
 
       event.preventDefault()
       event.stopPropagation()
       event.stopImmediatePropagation()
       focusInput()
 
-      if (event.key === 'Escape' || isPlainBackKey) {
+      if (event.key === 'Escape') {
         onBack()
         return
       }
@@ -929,13 +917,7 @@ function PaneCommandProjectSwitcher({
           'border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45',
         )}
         onKeyDown={(event) => {
-          const plainQBack = event.key.toLowerCase() === 'q'
-            && query.trim() === ''
-            && !event.ctrlKey
-            && !event.metaKey
-            && !event.altKey
-            && !event.shiftKey
-          if (event.key === 'Escape' || plainQBack) {
+          if (event.key === 'Escape') {
             event.preventDefault()
             event.stopPropagation()
             onBack()
@@ -1779,7 +1761,6 @@ function MainApp(): JSX.Element {
   const paneCommandModeRef = useRef(false)
   const paneCommandProjectSwitcherOpenRef = useRef(false)
   const paneCommandFocusRef = useRef<HTMLDivElement | null>(null)
-  const paneCommandRestoreFocusRef = useRef<HTMLElement | null>(null)
   const paneCommandPanelOpeningUntilRef = useRef(0)
   const appChromeStyle = useUIStore((s) => s.settings.appChromeStyle)
   const selectedProjectIdForPaneCommand = useProjectsStore((s) => s.selectedProjectId)
@@ -1810,19 +1791,23 @@ function MainApp(): JSX.Element {
   useEffect(() => {
     paneCommandProjectSwitcherOpenRef.current = paneCommandProjectSwitcherOpen
   }, [paneCommandProjectSwitcherOpen])
-  const restorePaneCommandFocus = useCallback((clear = false) => {
-    const target = paneCommandRestoreFocusRef.current
-    if (clear) paneCommandRestoreFocusRef.current = null
-    if (!target) return
-    window.requestAnimationFrame(() => {
-      if (target.isConnected) target.focus({ preventScroll: true })
-    })
+  const focusPaneCommandActiveTarget = useCallback(() => {
+    const { paneId, tabId } = getPaneCommandActiveTab()
+    if (!tabId) return
+    const paneStore = usePanesStore.getState()
+    paneStore.setActivePaneId(paneId)
+    paneStore.setPaneActiveSession(paneId, tabId)
+    if (tabId.startsWith('editor-')) {
+      focusOpenEditorSoon(tabId)
+      return
+    }
+    const sessionStore = useSessionsStore.getState()
+    if (!sessionStore.sessions.some((item) => item.id === tabId)) return
+    sessionStore.setActive(tabId)
+    sessionStore.markAsRead(tabId)
+    focusTerminalInputSoon(tabId)
   }, [])
   const enterPaneCommandMode = useCallback(() => {
-    const activeElement = document.activeElement
-    if (activeElement instanceof HTMLElement && activeElement !== paneCommandFocusRef.current) {
-      paneCommandRestoreFocusRef.current = activeElement
-    }
     paneCommandModeRef.current = true
     setPaneCommandEditing(false)
     setPaneCommandMode(true)
@@ -1841,12 +1826,12 @@ function MainApp(): JSX.Element {
     setPaneCommandJumpOpen(false)
     setPaneCommandInputOpen(false)
     setPaneCommandCloseTarget(null)
-    restorePaneCommandFocus(true)
-  }, [restorePaneCommandFocus])
+    focusPaneCommandActiveTarget()
+  }, [focusPaneCommandActiveTarget])
   const enterPaneCommandEditing = useCallback(() => {
     setPaneCommandEditing(true)
-    restorePaneCommandFocus()
-  }, [restorePaneCommandFocus])
+    focusPaneCommandActiveTarget()
+  }, [focusPaneCommandActiveTarget])
   const exitPaneCommandEditing = useCallback(() => {
     setPaneCommandEditing(false)
     focusPaneCommandSink()
@@ -1907,6 +1892,19 @@ function MainApp(): JSX.Element {
       (baseIndex + offset + paneCommandRecentProjectKeys.length) % paneCommandRecentProjectKeys.length
     ]
     const context = parsePaneCommandProjectContextKey(nextKey)
+    if (context) switchPaneCommandProjectContext(context)
+  }, [
+    paneCommandRecentProjectKeys,
+    effectiveSelectedWorktreeIdForPaneCommand,
+    selectedProjectIdForPaneCommand,
+    switchPaneCommandProjectContext,
+  ])
+  const switchPreviousPaneCommandProject = useCallback(() => {
+    if (!selectedProjectIdForPaneCommand) return
+    const currentKey = getPaneCommandProjectContextKey(selectedProjectIdForPaneCommand, effectiveSelectedWorktreeIdForPaneCommand)
+    const previousKey = paneCommandRecentProjectKeys.find((key) => key !== currentKey)
+    if (!previousKey) return
+    const context = parsePaneCommandProjectContextKey(previousKey)
     if (context) switchPaneCommandProjectContext(context)
   }, [
     paneCommandRecentProjectKeys,
@@ -2026,6 +2024,11 @@ function MainApp(): JSX.Element {
     void navigator.clipboard.writeText(value)
     useUIStore.getState().addToast({ title: '已复制路径', body: value, type: 'success', duration: 1800 })
   }, [effectiveSelectedWorktreeIdForPaneCommand, selectedProjectIdForPaneCommand])
+  const toggleActivePaneCommandTerminalScroll = useCallback(() => {
+    const { tabId } = getPaneCommandActiveTab()
+    if (!tabId || tabId.startsWith('editor-')) return
+    toggleTerminalScrollEdge(tabId)
+  }, [])
   const selectPaneCommandJumpItem = useCallback((item: PaneCommandJumpItem) => {
     if (item.kind === 'project' || item.kind === 'worktree') {
       switchProjectContext(item.projectId, null, item.worktreeId)
@@ -2090,7 +2093,7 @@ function MainApp(): JSX.Element {
     const paneStore = usePanesStore.getState()
     const normalized = key.length === 1 ? key.toLowerCase() : key
 
-    if (normalized === 'Escape' || normalized === 'Enter' || normalized === 'q') {
+    if (normalized === 'Escape' || normalized === 'Enter') {
       exitPaneCommandMode()
       return true
     }
@@ -2165,8 +2168,18 @@ function MainApp(): JSX.Element {
       return true
     }
 
+    if (normalized === 'u') {
+      toggleActivePaneCommandTerminalScroll()
+      return true
+    }
+
     if (normalized === 'p') {
       openPaneCommandProjectSwitcher()
+      return true
+    }
+
+    if (normalized === 'Tab') {
+      switchPreviousPaneCommandProject()
       return true
     }
 
@@ -2260,7 +2273,9 @@ function MainApp(): JSX.Element {
     refreshAfterPaneCommandLayout,
     requestPaneCommandCloseSession,
     switchPaneCommandBack,
+    switchPreviousPaneCommandProject,
     switchRecentPaneCommandProject,
+    toggleActivePaneCommandTerminalScroll,
   ])
   const runPaneCommandFromInput = useCallback((key: string) => {
     setPaneCommandInputOpen(false)
@@ -2444,7 +2459,7 @@ function MainApp(): JSX.Element {
       id: 'return-pane-mode',
       label: '返回 Pane Mode',
       detail: '关闭命令输入框，保留命令模式',
-      aliases: ['q', 'return', 'back to pane mode', '返回命令模式'],
+      aliases: ['return', 'back to pane mode', '返回命令模式'],
       run: closePaneCommandInput,
     },
     {
@@ -3085,7 +3100,7 @@ function MainApp(): JSX.Element {
         e.stopPropagation()
         if (e.key === 'Enter') {
           confirmPaneCommandCloseSession()
-        } else if (e.key === 'Escape' || e.key.toLowerCase() === 'q') {
+        } else if (e.key === 'Escape') {
           cancelPaneCommandCloseSession()
         }
         return
@@ -3094,7 +3109,7 @@ function MainApp(): JSX.Element {
       if (paneCommandHelpOpen) {
         e.preventDefault()
         e.stopPropagation()
-        if (e.key === 'Escape' || e.key === '?' || e.key.toLowerCase() === 'q') closePaneCommandHelp()
+        if (e.key === 'Escape' || e.key === '?') closePaneCommandHelp()
         return
       }
 

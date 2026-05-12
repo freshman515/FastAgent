@@ -12,6 +12,7 @@ import { trackSessionInput, trackSessionOutput } from '@/components/rightpanel/a
 
 // ─── Global terminal registry for preview snapshots ───
 const terminalRegistry = new Map<string, Terminal>()
+const terminalScrollEdgeTargets = new Map<string, 'top' | 'bottom'>()
 const terminalQuestionMarkers = new Map<string, Set<TerminalQuestionMarker>>()
 const terminalQuestionTexts = new Map<string, Set<string>>()
 const terminalQuestionAnchors = new Map<string, number>()
@@ -200,8 +201,47 @@ export function scrollTerminalToLatest(sessionId: string): boolean {
   if (!terminal) return false
   clearTerminalQuestionHighlight(sessionId)
   terminalQuestionAnchors.delete(sessionId)
+  terminalScrollEdgeTargets.set(sessionId, 'bottom')
   terminal.scrollToBottom()
   return true
+}
+
+export function scrollTerminalToTop(sessionId: string): boolean {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return false
+  clearTerminalQuestionHighlight(sessionId)
+  terminalQuestionAnchors.delete(sessionId)
+  terminalScrollEdgeTargets.set(sessionId, 'top')
+  terminal.scrollToLine(0)
+  return true
+}
+
+export function toggleTerminalScrollEdge(sessionId: string): boolean {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return false
+  const nextTarget = terminalScrollEdgeTargets.get(sessionId) === 'bottom' ? 'top' : 'bottom'
+  if (nextTarget === 'top') return scrollTerminalToTop(sessionId)
+  return scrollTerminalToLatest(sessionId)
+}
+
+export function focusTerminalInput(sessionId: string): boolean {
+  const terminal = terminalRegistry.get(sessionId)
+  if (!terminal) return false
+  terminal.focus()
+  return true
+}
+
+export function focusTerminalInputSoon(sessionId: string): void {
+  let attempts = 0
+  const run = (): void => {
+    attempts += 1
+    if (focusTerminalInput(sessionId)) return
+    if (attempts >= 16) return
+    window.setTimeout(run, 80)
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run)
+  })
 }
 
 function clearTerminalQuestionHighlight(sessionId: string): void {
@@ -1296,6 +1336,7 @@ export function useXterm(
       destroyed = true
       clearTerminalQuestionHighlight(sessionId)
       terminalRegistry.delete(sessionId)
+      terminalScrollEdgeTargets.delete(sessionId)
       terminalQuestionAnchors.delete(sessionId)
       terminalQuestionMarkers.get(sessionId)?.forEach((entry) => entry.marker.dispose())
       terminalQuestionMarkers.delete(sessionId)
