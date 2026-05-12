@@ -21,6 +21,9 @@ export type PaneUiMode = 'separated' | 'classic'
 export type TabUiMode = 'rounded' | 'square'
 export type PaneDensityMode = 'comfortable' | 'compact'
 export type CanvasSessionListDirection = 'vertical' | 'horizontal'
+export type CanvasInputMode = 'auto' | 'mouse' | 'trackpad'
+export type CanvasWheelBehavior = 'zoom' | 'pan'
+export type CanvasWheelZoomModifier = 'primary' | 'ctrl' | 'alt'
 
 export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
@@ -76,6 +79,22 @@ function normalizeVoiceInputMode(raw: unknown): VoiceInputMode {
 
 function normalizeVoiceApiBodyMode(raw: unknown): VoiceApiBodyMode {
   return raw === 'multipart' || raw === 'raw' ? raw : DEFAULT_SETTINGS.voiceApiBodyMode
+}
+
+function normalizeCanvasInputMode(raw: unknown): CanvasInputMode {
+  return raw === 'auto' || raw === 'mouse' || raw === 'trackpad'
+    ? raw
+    : DEFAULT_SETTINGS.canvasInputMode
+}
+
+function normalizeCanvasWheelBehavior(raw: unknown): CanvasWheelBehavior {
+  return raw === 'zoom' || raw === 'pan' ? raw : DEFAULT_SETTINGS.canvasWheelBehavior
+}
+
+function normalizeCanvasWheelZoomModifier(raw: unknown): CanvasWheelZoomModifier {
+  return raw === 'primary' || raw === 'ctrl' || raw === 'alt'
+    ? raw
+    : DEFAULT_SETTINGS.canvasWheelZoomModifier
 }
 
 function normalizeVoiceLocalAsrServiceAction(raw: unknown): VoiceLocalAsrStartupAction {
@@ -340,6 +359,16 @@ export interface AppSettings {
   paneDensityMode: PaneDensityMode
   /** Show the grid background on the canvas */
   canvasGridEnabled: boolean
+  /** Input device behavior for canvas wheel gestures. */
+  canvasInputMode: CanvasInputMode
+  /** Mouse wheel behavior on the canvas surface. Trackpads keep two-finger pan and pinch zoom. */
+  canvasWheelBehavior: CanvasWheelBehavior
+  /** Modifier that turns wheel pan into zoom when canvasWheelBehavior is 'pan'. */
+  canvasWheelZoomModifier: CanvasWheelZoomModifier
+  /** Single-click a canvas card to focus/read it. */
+  canvasFocusOnClick: boolean
+  /** Pan the canvas automatically while dragging/resizing near viewport edges. */
+  canvasAutoPanOnDrag: boolean
   /** Snap card movement to the grid / sibling edges */
   canvasSnapEnabled: boolean
   /** 'free' = cards may overlap, 'avoid' = cards push each other away while dragging */
@@ -451,6 +480,11 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   tabUiMode: 'rounded',
   paneDensityMode: 'comfortable',
   canvasGridEnabled: true,
+  canvasInputMode: 'auto',
+  canvasWheelBehavior: 'zoom',
+  canvasWheelZoomModifier: 'primary',
+  canvasFocusOnClick: true,
+  canvasAutoPanOnDrag: false,
   canvasSnapEnabled: true,
   canvasOverlapMode: 'free',
   canvasArrangeMode: 'grid',
@@ -467,6 +501,8 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
 interface UIState {
   windowFullscreen: boolean
   setWindowFullscreen: (fullscreen: boolean) => void
+  focusMode: boolean
+  setFocusMode: (enabled: boolean) => void
   projectDetailOpenProjectId: string | null
   setProjectDetailOpenProjectId: (projectId: string | null) => void
 
@@ -1268,6 +1304,8 @@ function moveDockPanelLayout(
 export const useUIStore = create<UIState>((set, get) => ({
   windowFullscreen: false,
   setWindowFullscreen: (fullscreen) => set({ windowFullscreen: fullscreen }),
+  focusMode: false,
+  setFocusMode: (enabled) => set({ focusMode: enabled }),
   projectDetailOpenProjectId: null,
   setProjectDetailOpenProjectId: (projectId) => set({ projectDetailOpenProjectId: projectId }),
 
@@ -1660,6 +1698,11 @@ export const useUIStore = create<UIState>((set, get) => ({
         s.paneDensityMode = raw.paneDensityMode
       }
       if (typeof raw.canvasGridEnabled === 'boolean') s.canvasGridEnabled = raw.canvasGridEnabled
+      s.canvasInputMode = normalizeCanvasInputMode(raw.canvasInputMode)
+      s.canvasWheelBehavior = normalizeCanvasWheelBehavior(raw.canvasWheelBehavior)
+      s.canvasWheelZoomModifier = normalizeCanvasWheelZoomModifier(raw.canvasWheelZoomModifier)
+      if (typeof raw.canvasFocusOnClick === 'boolean') s.canvasFocusOnClick = raw.canvasFocusOnClick
+      if (typeof raw.canvasAutoPanOnDrag === 'boolean') s.canvasAutoPanOnDrag = raw.canvasAutoPanOnDrag
       if (typeof raw.canvasSnapEnabled === 'boolean') s.canvasSnapEnabled = raw.canvasSnapEnabled
       if (raw.canvasOverlapMode === 'free' || raw.canvasOverlapMode === 'avoid') s.canvasOverlapMode = raw.canvasOverlapMode
       if (raw.canvasArrangeMode === 'free' || raw.canvasArrangeMode === 'grid' || raw.canvasArrangeMode === 'rowFlow' || raw.canvasArrangeMode === 'colFlow') {
@@ -1732,6 +1775,9 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.voiceApiAuthorization = settings.voiceApiAuthorization.trim()
     settings.voiceLocalAsrDockerContainer = settings.voiceLocalAsrDockerContainer.trim() || DEFAULT_SETTINGS.voiceLocalAsrDockerContainer
     settings.voiceLocalAsrStartupAction = normalizeVoiceLocalAsrServiceAction(settings.voiceLocalAsrStartupAction)
+    settings.canvasInputMode = normalizeCanvasInputMode(settings.canvasInputMode)
+    settings.canvasWheelBehavior = normalizeCanvasWheelBehavior(settings.canvasWheelBehavior)
+    settings.canvasWheelZoomModifier = normalizeCanvasWheelZoomModifier(settings.canvasWheelZoomModifier)
     settings.notificationToastDurationMs = normalizeNotificationToastDurationMs(settings.notificationToastDurationMs)
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))

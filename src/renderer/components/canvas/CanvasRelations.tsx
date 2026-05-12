@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
+import type { CanvasCard } from '@shared/types'
 import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 
-export function CanvasRelations(): JSX.Element | null {
-  const cards = useCanvasStore((state) => state.getLayout().cards)
+export function CanvasRelations({ cards: scopedCards }: { cards?: CanvasCard[] }): JSX.Element | null {
+  const allCards = useCanvasStore((state) => state.getLayout().cards)
+  const cards = scopedCards ?? allCards
   const relations = useCanvasStore((state) => state.getLayout().relations)
   const viewport = useCanvasStore((state) => state.getLayout().viewport)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)

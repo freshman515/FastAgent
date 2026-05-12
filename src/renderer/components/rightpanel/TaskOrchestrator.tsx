@@ -14,6 +14,10 @@ import { useWorktreesStore } from '@/stores/worktrees'
 const INPUT = 'w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none'
 const BUTTON = 'inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 py-1.5 text-[10px] font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40'
 
+const PLANNING_TEMPLATE_IDS = new Set(['task-planner', 'workflow-designer', 'readonly-explorer', 'acceptance-worker'])
+const IMPLEMENTATION_TEMPLATE_IDS = new Set(['code-worker', 'task-node-worker', 'test-worker', 'workflow-verifier'])
+const REVIEW_TEMPLATE_IDS = new Set(['review-worker'])
+
 interface DraftNode {
   template: WorkerTemplate
   enabled: boolean
@@ -86,7 +90,7 @@ export function TaskOrchestrator(): JSX.Element {
   const [draftNodes, setDraftNodes] = useState<DraftNode[]>(() =>
     BUILT_IN_WORKER_TEMPLATES.map((template) => ({
       template,
-      enabled: template.id === 'code-worker' || template.id === 'review-worker',
+      enabled: template.id === 'task-planner' || template.id === 'code-worker' || template.id === 'review-worker',
       ownership: template.ownershipHint ?? '',
       isolatedWorktree: template.isolatedWorktree,
     })),
@@ -151,12 +155,29 @@ export function TaskOrchestrator(): JSX.Element {
       }
     })
 
-    const normalized = graphNodes.map((node) => ({
-      ...node,
-      dependsOn: node.templateId === 'review-worker'
-        ? graphNodes.filter((candidate) => candidate.id !== node.id && candidate.templateId !== 'readonly-explorer').map((candidate) => candidate.id)
-        : [],
-    }))
+    const planningNodeIds = graphNodes
+      .filter((node) => node.templateId && PLANNING_TEMPLATE_IDS.has(node.templateId))
+      .map((node) => node.id)
+    const implementationNodeIds = graphNodes
+      .filter((node) => node.templateId && IMPLEMENTATION_TEMPLATE_IDS.has(node.templateId))
+      .map((node) => node.id)
+    const verificationBaseIds = implementationNodeIds.length > 0 ? implementationNodeIds : planningNodeIds
+
+    const normalized = graphNodes.map((node) => {
+      if (node.templateId && REVIEW_TEMPLATE_IDS.has(node.templateId)) {
+        return {
+          ...node,
+          dependsOn: verificationBaseIds.filter((id) => id !== node.id),
+        }
+      }
+      if (node.templateId && IMPLEMENTATION_TEMPLATE_IDS.has(node.templateId)) {
+        return {
+          ...node,
+          dependsOn: planningNodeIds.filter((id) => id !== node.id),
+        }
+      }
+      return node
+    })
 
     startGraphTask(selectedProject.id, description.trim(), normalized)
     setDescription('')

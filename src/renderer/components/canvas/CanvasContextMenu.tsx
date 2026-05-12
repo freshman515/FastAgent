@@ -9,9 +9,11 @@ import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
+import { useCanvasUiStore } from '@/stores/canvasUi'
 import { buildNewSessionOptions } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { FRAME_COLORS } from './cards/FrameCard'
+import { addCanvasCardToActiveSpace, addCanvasCardToSpace } from './canvasSpaceMembership'
 
 const SUBMENU_WIDTH = 220
 const MENU_MARGIN = 8
@@ -292,18 +294,24 @@ function buildCanvasItems(
     {
       kind: 'item',
       label: '在此处新建便签',
-      onClick: () => addCard({
-        kind: 'note',
-        x: state.worldX - noteSize.width / 2,
-        y: state.worldY - noteSize.height / 2,
-        noteBody: '',
-        noteColor: 'yellow',
-      }),
+      onClick: () => {
+        const cardId = addCard({
+          kind: 'note',
+          x: state.worldX - noteSize.width / 2,
+          y: state.worldY - noteSize.height / 2,
+          noteBody: '',
+          noteColor: 'yellow',
+        })
+        addCanvasCardToActiveSpace(cardId)
+      },
     },
     {
       kind: 'item',
-      label: '在此处新建分组框',
-      onClick: () => addFrameAroundCards([], { x: state.worldX, y: state.worldY }),
+      label: '在此处新建空间',
+      onClick: () => {
+        const spaceId = addFrameAroundCards([], { x: state.worldX, y: state.worldY })
+        if (spaceId) useCanvasUiStore.getState().setActiveSpaceId(spaceId)
+      },
     },
     { kind: 'separator' },
     { kind: 'item', label: '网格排列', onClick: () => setArrangeMode('grid') },
@@ -335,7 +343,14 @@ function buildCanvasItems(
   ]
 }
 
-function createCanvasSession(projectId: string, type: SessionType | undefined, worldX: number, worldY: number, customSessionDefinitionId?: string): void {
+function createCanvasSession(
+  projectId: string,
+  type: SessionType | undefined,
+  worldX: number,
+  worldY: number,
+  customSessionDefinitionId?: string,
+  targetSpaceId?: string,
+): void {
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
   const cardKind = type === 'terminal' || type === 'terminal-wsl' || customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
@@ -350,8 +365,20 @@ function createCanvasSession(projectId: string, type: SessionType | undefined, w
       x: worldX - cardSize.width / 2,
       y: worldY - cardSize.height / 2,
     })
+    addCanvasCardToSpace(cardId, targetSpaceId ?? useCanvasUiStore.getState().activeSpaceId)
     requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
   })
+}
+
+function getWorldPointFromScreen(screenX: number, screenY: number): { x: number; y: number } {
+  const viewportEl = document.querySelector('[data-canvas-viewport]') as HTMLDivElement | null
+  const rect = viewportEl?.getBoundingClientRect()
+  const viewport = useCanvasStore.getState().getViewport()
+  if (!rect) return { x: 0, y: 0 }
+  return {
+    x: (screenX - rect.left - viewport.offsetX) / viewport.scale,
+    y: (screenY - rect.top - viewport.offsetY) / viewport.scale,
+  }
 }
 
 function buildCardItems(
@@ -423,22 +450,64 @@ function buildCardItems(
       .map((id) => store.getCard(id))
       .filter((candidate): candidate is CanvasCard => Boolean(candidate))
     const visibleMemberCount = memberCards.filter((member) => !member.hidden).length
-    const frameTitle = card.frameTitle?.trim() || '分组'
+    const frameTitle = card.frameTitle?.trim() || '空间'
     const frameSnapshots = card.frameSnapshots ?? []
+    const projectId = useProjectsStore.getState().selectedProjectId
+    const settings = useUIStore.getState().settings
+    const newSessionOptions = projectId
+      ? buildNewSessionOptions(settings.customSessionDefinitions, settings.hiddenNewSessionOptionIds, settings.newSessionOptionOrder)
+      : []
+    const world = getWorldPointFromScreen(state.screenX, state.screenY)
+    const noteSize = getDefaultCanvasCardSize('note')
     items.push({
       kind: 'item',
-      label: '聚焦分组',
-      onClick: () => store.focusFrameWorkspace(card.id),
+      label: '进入空间',
+      onClick: () => {
+        useCanvasUiStore.getState().setActiveSpaceId(card.id)
+        store.focusFrameWorkspace(card.id)
+      },
+    })
+    items.push({
+      kind: 'submenu',
+      label: !projectId
+        ? '在空间内新建会话（未选择项目）'
+        : newSessionOptions.length > 0 ? '在空间内新建会话' : '在空间内新建会话（无可显示项）',
+      disabled: !projectId || newSessionOptions.length === 0,
+      items: newSessionOptions.map((option) => ({
+        kind: 'item' as const,
+        label: option.label,
+        icon: option.icon,
+        customIcon: Boolean(option.customSessionDefinitionId),
+        onClick: () => {
+          if (!projectId) return
+          createCanvasSession(projectId, option.type, world.x, world.y, option.customSessionDefinitionId, card.id)
+        },
+      })),
     })
     items.push({
       kind: 'item',
-      label: '搜索组内',
+      label: '在空间内新建便签',
+      onClick: () => {
+        const cardId = store.addCard({
+          kind: 'note',
+          x: world.x - noteSize.width / 2,
+          y: world.y - noteSize.height / 2,
+          noteBody: '',
+          noteColor: 'yellow',
+        })
+        addCanvasCardToSpace(cardId, card.id)
+      },
+    })
+    items.push({ kind: 'separator' })
+    items.push({
+      kind: 'item',
+      label: '搜索空间内',
       disabled: memberIds.length === 0,
       onClick: () => onSearchFrame?.(card.id),
     })
     items.push({
       kind: 'submenu',
-      label: '整理组内卡片',
+      label: '整理空间内卡片',
       disabled: memberIds.length === 0,
       items: [
         { kind: 'item' as const, label: '网格排列', onClick: () => store.arrange('grid', memberIds) },
@@ -449,29 +518,32 @@ function buildCardItems(
     })
     items.push({
       kind: 'item',
-      label: '隐藏其他分组',
-      onClick: () => store.hideAllExceptFrame(card.id),
+      label: '聚焦此空间',
+      onClick: () => {
+        useCanvasUiStore.getState().setActiveSpaceId(card.id)
+        store.focusFrameWorkspace(card.id)
+      },
     })
     items.push({
       kind: 'item',
-      label: visibleMemberCount > 0 ? '隐藏组内卡片' : '显示组内卡片',
+      label: visibleMemberCount > 0 ? '隐藏空间内卡片' : '显示空间内卡片',
       disabled: memberIds.length === 0,
       onClick: () => store.setFrameMembersHidden(card.id, visibleMemberCount > 0),
     })
     items.push({
       kind: 'item',
-      label: '保存分组书签',
+      label: '保存空间书签',
       onClick: () => store.addBookmarkForCard(card.id, frameTitle),
     })
     items.push({
       kind: 'item',
-      label: '保存分组快照',
+      label: '保存空间快照',
       onClick: () => store.addFrameSnapshot(card.id, `${frameTitle} 快照`),
     })
     if (frameSnapshots.length > 0) {
       items.push({
         kind: 'submenu',
-        label: '恢复分组快照',
+        label: '恢复空间快照',
         items: frameSnapshots.slice(-8).reverse().map((snapshot) => ({
           kind: 'item' as const,
           label: snapshot.name,
@@ -481,7 +553,7 @@ function buildCardItems(
     }
     items.push({
       kind: 'submenu',
-      label: '分组颜色',
+      label: '空间颜色',
       items: Object.entries(FRAME_COLORS).map(([key, value]) => ({
         kind: 'item' as const,
         label: value.label,
@@ -491,12 +563,12 @@ function buildCardItems(
     })
     items.push({
       kind: 'item',
-      label: '重命名分组',
+      label: '重命名空间',
       onClick: () => onRenameFrame?.(card.id),
     })
     items.push({
       kind: 'item',
-      label: card.collapsed ? '展开分组' : '折叠分组',
+      label: card.collapsed ? '展开空间' : '折叠空间',
       disabled: (card.frameMemberIds?.length ?? 0) === 0,
       onClick: () => store.toggleFrameCollapsed(card.id),
     })
@@ -507,13 +579,23 @@ function buildCardItems(
     if (targetIds.length === 2) {
       items.push({ kind: 'item', label: '连接选中卡片', onClick: () => store.addRelation(targetIds[0], targetIds[1]) })
     }
-    items.push({ kind: 'item', label: '快速分组', onClick: () => store.addFrameAroundCards(targetIds) })
     items.push({
       kind: 'item',
-      label: '快速分组并折叠',
+      label: '创建空间',
+      onClick: () => {
+        const spaceId = store.addFrameAroundCards(targetIds)
+        if (spaceId) useCanvasUiStore.getState().setActiveSpaceId(spaceId)
+      },
+    })
+    items.push({
+      kind: 'item',
+      label: '创建空间并折叠',
       onClick: () => {
         const frameId = store.addFrameAroundCards(targetIds)
-        if (frameId) useCanvasStore.getState().toggleFrameCollapsed(frameId)
+        if (frameId) {
+          useCanvasUiStore.getState().setActiveSpaceId(frameId)
+          useCanvasStore.getState().toggleFrameCollapsed(frameId)
+        }
       },
     })
     if (relationsForTargets.length > 0) {
@@ -570,7 +652,7 @@ function buildCardItems(
   if (removableFrames.length > 0) {
     items.push({
       kind: 'item',
-      label: multiSelected ? `删除选中分组 (${removableFrames.length})` : '删除分组',
+      label: multiSelected ? `删除选中空间 (${removableFrames.length})` : '删除空间',
       shortcut: 'Del',
       danger: true,
       onClick: () => store.removeCards(removableFrames),
@@ -665,7 +747,7 @@ function getCardSizeLabel(card: CanvasCard): string {
     return session?.name ?? (card.kind === 'terminal' ? 'Terminal' : 'Session')
   }
   if (card.kind === 'frame') {
-    return card.frameTitle?.trim() || '分组'
+    return card.frameTitle?.trim() || '空间'
   }
   const noteText = card.noteBody?.trim().replace(/\s+/g, ' ')
   return noteText ? `便签 · ${noteText.slice(0, 14)}` : '便签'

@@ -771,6 +771,70 @@ body.canvas-layout-animating [data-card-id] {
     box-shadow 140ms ease;
 }
 
+.canvas-space-switcher {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  z-index: 30;
+  display: flex;
+  max-width: min(720px, calc(100vw - 120px));
+  max-height: 96px;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow: auto;
+  padding: 2px;
+  pointer-events: auto;
+}
+
+.canvas-space-switcher__item {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 220px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--canvas-space-accent, var(--color-border)) 28%, var(--color-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-primary) 78%, transparent);
+  color: var(--color-text-secondary);
+  padding: 6px 13px;
+  font-size: var(--ui-font-sm);
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(12px);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.canvas-space-switcher__item:hover,
+.canvas-space-switcher__item--active {
+  border-color: color-mix(in srgb, var(--canvas-space-accent, var(--color-accent)) 72%, var(--color-border));
+  background: color-mix(in srgb, var(--canvas-space-accent, var(--color-accent)) 12%, var(--color-bg-primary));
+  color: var(--color-text-primary);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.22),
+    0 0 0 1px color-mix(in srgb, var(--canvas-space-accent, var(--color-accent)) 16%, transparent);
+}
+
+.canvas-space-switcher__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--canvas-space-accent, var(--color-accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--canvas-space-accent, var(--color-accent)) 40%, transparent);
+}
+
+.canvas-space-switcher__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-frame-card::before {
   content: '';
   pointer-events: none;

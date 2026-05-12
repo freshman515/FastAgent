@@ -27,6 +27,13 @@ export interface AvoidanceState {
   affectedIds: Set<string>
 }
 
+export interface AvoidanceGeometry {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 interface UseCardDragOptions {
   cardId: string
   /** Ref to the card outer element — pointer events dispatched from its drag handle start the drag. */
@@ -127,7 +134,14 @@ export function useCardDrag({
       }
 
       applyLiveCardMovement(ids, cards, dx, dy, viewport.scale, viewport)
-      liveFrameIdsRef.current = applyLiveFrameAutoLayoutForMovement(ids, cards, dx, dy, liveFrameIdsRef.current)
+      liveFrameIdsRef.current = applyLiveFrameAutoLayoutForMovement(
+        ids,
+        cards,
+        dx,
+        dy,
+        liveFrameIdsRef.current,
+        avoidanceRef.current.positions,
+      )
     }
 
     const getDraggedScreenBounds = (): { left: number; right: number; top: number; bottom: number } | null => {
@@ -158,6 +172,7 @@ export function useCardDrag({
     }
 
     const getEdgePanVelocity = (): { x: number; y: number } => {
+      if (!useUIStore.getState().settings.canvasAutoPanOnDrag) return { x: 0, y: 0 }
       const viewportEl = viewportElRef.current
       if (!viewportEl || !dragStartedRef.current) return { x: 0, y: 0 }
       const bounds = getDraggedScreenBounds()
@@ -401,6 +416,7 @@ export function applyLiveFrameAutoLayoutForMovement(
   dx: number,
   dy: number,
   previousFrameIds: Set<string>,
+  displacedPositions: Map<string, { x: number; y: number }> = new Map(),
 ): Set<string> {
   const movingIds = new Set(ids)
   if (cards.some((card) => movingIds.has(card.id) && card.kind === 'frame')) {
@@ -418,8 +434,40 @@ export function applyLiveFrameAutoLayoutForMovement(
       height: card.height,
     })
   }
+  for (const [id, position] of displacedPositions) {
+    const card = cards.find((candidate) => candidate.id === id)
+    if (!card || card.kind === 'frame' || movingIds.has(id)) continue
+    geometry.set(id, {
+      x: position.x,
+      y: position.y,
+      width: card.width,
+      height: card.height,
+    })
+  }
 
-  const frameGeometry = computeFrameAutoLayoutPreview(cards, geometry)
+  return applyLiveFrameAutoLayoutForGeometry(cards, geometry, previousFrameIds, displacedPositions)
+}
+
+export function applyLiveFrameAutoLayoutForGeometry(
+  cards: CanvasCard[],
+  geometry: Map<string, AvoidanceGeometry>,
+  previousFrameIds: Set<string>,
+  displacedPositions: Map<string, { x: number; y: number }> = new Map(),
+): Set<string> {
+  const nextGeometry = new Map<string, AvoidanceGeometry>(geometry)
+  for (const [id, position] of displacedPositions) {
+    if (nextGeometry.has(id)) continue
+    const card = cards.find((candidate) => candidate.id === id)
+    if (!card || card.kind === 'frame') continue
+    nextGeometry.set(id, {
+      x: position.x,
+      y: position.y,
+      width: card.width,
+      height: card.height,
+    })
+  }
+
+  const frameGeometry = computeFrameAutoLayoutPreview(cards, nextGeometry)
   const affectedFrameIds = new Set([...previousFrameIds, ...frameGeometry.keys()])
   for (const frameId of affectedFrameIds) {
     const frame = cards.find((card) => card.id === frameId && card.kind === 'frame')
@@ -477,6 +525,7 @@ export function resolveAvoidOverlap(
   draggedIds: string[],
   dx: number,
   dy: number,
+  geometry: Map<string, AvoidanceGeometry> = new Map(),
 ): AvoidanceState {
   const dragged = new Set(draggedIds)
   const collisionCards = cards.filter((card) => card.kind !== 'frame')
@@ -484,12 +533,13 @@ export function resolveAvoidOverlap(
   const moved = new Set<string>()
 
   for (const card of collisionCards) {
+    const rect = geometry.get(card.id)
     rects.set(card.id, {
       id: card.id,
-      x: card.x + (dragged.has(card.id) ? dx : 0),
-      y: card.y + (dragged.has(card.id) ? dy : 0),
-      width: card.width,
-      height: card.height,
+      x: rect?.x ?? (card.x + (dragged.has(card.id) ? dx : 0)),
+      y: rect?.y ?? (card.y + (dragged.has(card.id) ? dy : 0)),
+      width: rect?.width ?? card.width,
+      height: rect?.height ?? card.height,
       zIndex: card.zIndex,
     })
   }

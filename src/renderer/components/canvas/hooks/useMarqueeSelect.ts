@@ -2,6 +2,18 @@ import { useEffect } from 'react'
 import { useCanvasStore } from '@/stores/canvas'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { screenToWorld } from './useCanvasViewport'
+import type { CanvasCard } from '@shared/types'
+
+function getSelectableCardsForActiveSpace(): CanvasCard[] {
+  const canvas = useCanvasStore.getState()
+  const cards = canvas.getCards()
+  const activeSpaceId = useCanvasUiStore.getState().activeSpaceId
+  if (!activeSpaceId) return cards
+  const activeSpace = cards.find((card) => card.id === activeSpaceId && card.kind === 'frame')
+  if (!activeSpace) return cards
+  const visibleIds = new Set([activeSpace.id, ...(activeSpace.frameMemberIds ?? [])])
+  return cards.filter((card) => visibleIds.has(card.id))
+}
 
 /**
  * Drag-to-select on the canvas viewport. Must attach to the same element
@@ -49,7 +61,7 @@ export function useMarqueeSelect(viewportEl: HTMLDivElement | null): void {
       useCanvasUiStore.getState().setMarquee(marquee)
 
       // Live selection update.
-      const cards = useCanvasStore.getState().getCards()
+      const cards = getSelectableCardsForActiveSpace()
       const intersects = cards
         .filter((card) => {
           const right = card.x + card.width

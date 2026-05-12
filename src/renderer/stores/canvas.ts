@@ -419,7 +419,7 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
 }
 
 function getCanvasCardLabel(card: CanvasCard): string {
-  if (card.kind === 'frame') return card.frameTitle?.trim() || '分组'
+  if (card.kind === 'frame') return card.frameTitle?.trim() || '空间'
   if (card.kind === 'note') return card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签'
   return card.sessionRemark?.trim() || '会话'
 }
@@ -1212,7 +1212,7 @@ interface CanvasState {
    * the card's transformed text is outside the readable font-size range.
    */
   focusOnCard: (cardId: string) => void
-  /** Fit a frame/group as a workspace in the readable focus area. */
+  /** Fit a space as a workspace in the readable focus area. */
   focusFrameWorkspace: (frameId: string) => void
   /** Preview a card from search by moving the viewport without activating the session. */
   previewCardInViewport: (cardId: string) => void
@@ -1599,7 +1599,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         height: Math.max(DEFAULT_CARD_SIZE.frame.height, bounds.maxY - bounds.minY + padding * 2),
         zIndex: Number.isFinite(minTargetZ) ? minTargetZ - 1 : maxZ + 1,
         collapsed: false,
-        frameTitle: '分组',
+        frameTitle: '空间',
         frameColor: 'violet',
         frameMemberIds: targets.map((target) => target.id),
         createdAt: now,
@@ -2523,7 +2523,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (!frame || frame.kind !== 'frame') return null
     const id = `frame-snapshot-${generateId()}`
     const now = Date.now()
-    const frameName = frame.frameTitle?.trim() || '分组'
+    const frameName = frame.frameTitle?.trim() || '空间'
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
       const currentFrame = layout.cards.find((card) => card.id === frameId && card.kind === 'frame')

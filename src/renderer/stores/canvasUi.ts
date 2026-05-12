@@ -26,18 +26,21 @@ interface CanvasUiState {
   marquee: MarqueeRect | null
   guides: SnapGuide[]
   pendingSessionFocusId: string | null
+  activeSpaceId: string | null
 
   setMarquee: (rect: MarqueeRect | null) => void
   setGuides: (guides: SnapGuide[]) => void
   clearGuides: () => void
   requestSessionFocus: (sessionId: string) => void
   clearPendingSessionFocus: (sessionId?: string) => void
+  setActiveSpaceId: (spaceId: string | null) => void
 }
 
 export const useCanvasUiStore = create<CanvasUiState>((set) => ({
   marquee: null,
   guides: [],
   pendingSessionFocusId: null,
+  activeSpaceId: null,
 
   setMarquee: (rect) => set({ marquee: rect }),
   setGuides: (guides) => set({ guides }),
@@ -47,4 +50,5 @@ export const useCanvasUiStore = create<CanvasUiState>((set) => ({
     if (sessionId && state.pendingSessionFocusId !== sessionId) return state
     return { pendingSessionFocusId: null }
   }),
+  setActiveSpaceId: (spaceId) => set({ activeSpaceId: spaceId }),
 }))

@@ -5,13 +5,20 @@ import { StatusBar } from '@/components/layout/StatusBar'
 import { RightPanel } from '@/components/layout/RightPanel'
 import { ToastContainer } from '@/components/notification/ToastContainer'
 import { SessionNamePromptDialog } from '@/components/session/SessionNamePromptDialog'
+import {
+  buildNewSessionOptions,
+  type NewSessionOption,
+} from '@/components/session/NewSessionMenu'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { UpdateDialog } from '@/components/update/UpdateDialog'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
-import { switchProjectContext } from '@/lib/project-context'
+import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
+import { createSessionWithPrompt } from '@/lib/createSession'
 import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
 import { useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
@@ -29,8 +36,8 @@ import { useClaudeGuiStore } from '@/stores/claudeGui'
 import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { useMcpBridge } from '@/hooks/useMcpBridge'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
-import { useCallback, useEffect, useState } from 'react'
-import { isClaudeCodeType, type ClaudeGuiEvent } from '@shared/types'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { isClaudeCodeType, SESSION_TYPE_CONFIG, type ClaudeGuiEvent, type Session } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { cn } from '@/lib/utils'
@@ -41,21 +48,49 @@ interface EditorPathContext {
   path: string
 }
 
+interface PaneCommandCloseTarget {
+  paneId: string
+  sessionId: string
+  sessionName: string
+  ptyId?: string
+}
+
+interface PaneCommandProjectContext {
+  projectId: string
+  worktreeId: string | null
+}
+
 type PaneCommandTabGroup = 'terminal' | 'claude' | 'codex' | 'gemini' | 'opencode' | 'browser' | 'file' | 'other'
 
 const LEGACY_ANONYMOUS_PROJECT_ID = '__anonymous_project__'
 
 const PANE_COMMAND_GROUP_ORDER: PaneCommandTabGroup[] = ['terminal', 'claude', 'codex', 'gemini', 'opencode', 'browser', 'file', 'other']
-
 const PANE_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'h/j/k/l', label: '切换 pane' },
   { key: 'Alt+h/l/←/→', label: '切换标签' },
   { key: 'Ctrl+hjkl/方向', label: '调整大小' },
+  { key: 'i', label: '编辑输入' },
+  { key: 'n', label: '新建会话' },
+  { key: 'w', label: '关闭会话' },
+  { key: 'p', label: '切换项目' },
+  { key: '[/]', label: '最近项目' },
+  { key: ':', label: '输入命令' },
+  { key: 'q', label: '返回' },
+  { key: '?', label: '帮助' },
+  { key: 'r', label: '重命名' },
+  { key: 'd', label: '弹出窗口' },
+  { key: 'f', label: '切换标签' },
+  { key: 'b', label: '返回' },
+  { key: 'g', label: '跳转' },
+  { key: 'Shift+hjkl', label: '移动标签' },
+  { key: 'o', label: '只保留当前 pane' },
+  { key: 'c', label: '复制路径' },
   { key: '1-9', label: '跳到 pane' },
   { key: 'z', label: '放大/恢复' },
   { key: 'e', label: '等分' },
   { key: 't', label: '按类型分屏' },
-  { key: 'v/s', label: '右/下分屏' },
+  { key: 'v', label: '垂直分屏' },
+  { key: 's', label: '水平分屏' },
   { key: 'x', label: '关闭 pane' },
   { key: 'm', label: '合并全部' },
 ]
@@ -142,21 +177,25 @@ function isPlainTextEditingTarget(target: EventTarget | null): boolean {
   return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable
 }
 
-function PaneCommandOverlay({ rects, activePaneId }: { rects: PaneElementRect[]; activePaneId: string }): JSX.Element {
+function PaneCommandOverlay({
+  rects,
+  activePaneId,
+  editing,
+}: {
+  rects: PaneElementRect[]
+  activePaneId: string
+  editing: boolean
+}): JSX.Element {
   return (
     <div className="pointer-events-none fixed inset-0 z-[9400]">
-      <div className="absolute left-1/2 top-1 z-20 h-8 w-[min(780px,calc(100vw-48px))] -translate-x-1/2 rounded-[var(--radius-lg)] border border-[var(--color-accent)]/30 bg-[var(--color-bg-tertiary)]/70 px-3 shadow-2xl shadow-black/35 backdrop-blur-md">
+      <div className="absolute left-1/2 top-1 z-20 h-8 w-max max-w-[calc(100vw-40px)] -translate-x-1/2 rounded-[var(--radius-lg)] border border-[var(--color-accent)]/25 bg-[var(--color-bg-tertiary)]/70 px-3 shadow-2xl shadow-black/35 backdrop-blur-md">
         <div className="flex h-full items-center gap-x-3 overflow-hidden whitespace-nowrap">
           <span className="rounded-[var(--radius-sm)] bg-[var(--color-accent)]/16 px-2 py-1 text-[11px] font-bold text-[var(--color-accent)]">
-            Pane Mode
+            {editing ? 'Edit Mode' : 'Pane Mode'}
           </span>
-          <span className="text-[11px] text-[var(--color-text-secondary)]">Esc/q 退出</span>
-          {PANE_COMMAND_SHORTCUTS.map((item) => (
-            <span key={item.key} className="text-[11px] text-[var(--color-text-secondary)]">
-              <span className="font-mono font-bold text-[var(--color-text-primary)]">{item.key}</span>
-              <span className="ml-1">{item.label}</span>
-            </span>
-          ))}
+          <span className="text-[11px] text-[var(--color-text-secondary)]">
+            {editing ? 'Esc 返回命令模式' : 'p 项目 · f 标签 · g 跳转 · : 命令 · ? 帮助 · Esc 退出'}
+          </span>
         </div>
       </div>
 
@@ -166,9 +205,9 @@ function PaneCommandOverlay({ rects, activePaneId }: { rects: PaneElementRect[];
           <div
             key={rect.paneId}
             className={cn(
-              'fixed z-10 rounded-[var(--radius-md)] border-2',
+              'fixed z-10 rounded-[var(--radius-md)] border',
               active
-                ? 'border-transparent bg-[var(--color-accent)]/6 shadow-2xl shadow-black/45'
+                ? 'border-[var(--color-accent)]/40 bg-transparent shadow-[0_0_0_1px_var(--color-accent-muted),0_0_22px_rgba(168,85,247,0.22)]'
                 : 'border-transparent bg-transparent shadow-none',
             )}
             style={{
@@ -189,6 +228,1284 @@ function PaneCommandOverlay({ rects, activePaneId }: { rects: PaneElementRect[];
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function normalizePaneCommandQuery(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, '')
+}
+
+function scoreNewSessionOption(option: NewSessionOption, query: string): number {
+  if (!query) return 1
+  const fields = [
+    option.label,
+    option.id,
+    option.type ?? '',
+    option.customSessionDefinitionId ?? '',
+  ].map(normalizePaneCommandQuery).filter(Boolean)
+
+  if (fields.some((field) => field === query)) return 100
+  if (fields.some((field) => field.startsWith(query))) return 80
+  if (fields.some((field) => field.includes(query))) return 40
+  return 0
+}
+
+function getPaneCommandProjectContextKey(projectId: string, worktreeId?: string | null): string {
+  return `${projectId}::${worktreeId ?? 'main'}`
+}
+
+function parsePaneCommandProjectContextKey(key: string): PaneCommandProjectContext | null {
+  const [projectId, worktreePart] = key.split('::')
+  if (!projectId) return null
+  return {
+    projectId,
+    worktreeId: worktreePart && worktreePart !== 'main' ? worktreePart : null,
+  }
+}
+
+function usePaneCommandSearchPanelKeyboardCapture({
+  panelRef,
+  inputRef,
+  query,
+  onBack,
+  onArrowDown,
+  onArrowUp,
+  onEnter,
+  setQuery,
+}: {
+  panelRef: { current: HTMLDivElement | null }
+  inputRef: { current: HTMLInputElement | null }
+  query: string
+  onBack: () => void
+  onArrowDown: () => void
+  onArrowUp: () => void
+  onEnter: () => void
+  setQuery: Dispatch<SetStateAction<string>>
+}): void {
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent): void => {
+      const panel = panelRef.current
+      if (!panel) return
+
+      const targetInsidePanel = event.target instanceof Node && panel.contains(event.target)
+      const isPlainBackKey = event.key.length === 1
+        && event.key.toLowerCase() === 'q'
+        && !event.ctrlKey
+        && !event.metaKey
+        && !event.altKey
+        && !event.shiftKey
+        && query.trim() === ''
+      if (targetInsidePanel && isPlainTextEditingTarget(event.target) && !isPlainBackKey) return
+      if (targetInsidePanel && ['Escape', 'ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return
+
+      const shouldHandleText = event.key === 'Backspace'
+        || (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)
+      if (targetInsidePanel && !shouldHandleText) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      inputRef.current?.focus({ preventScroll: true })
+
+      if (event.key === 'Escape') {
+        onBack()
+        return
+      }
+      if (isPlainBackKey) {
+        onBack()
+        return
+      }
+      if (event.key === 'ArrowDown') {
+        onArrowDown()
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        onArrowUp()
+        return
+      }
+      if (event.key === 'Enter') {
+        onEnter()
+        return
+      }
+      if (event.key === 'Backspace') {
+        setQuery((current) => current.slice(0, -1))
+        return
+      }
+      if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return
+      setQuery((current) => current + event.key)
+    }
+
+    window.addEventListener('keydown', handleWindowKeyDown, true)
+    return () => window.removeEventListener('keydown', handleWindowKeyDown, true)
+  }, [inputRef, onArrowDown, onArrowUp, onBack, onEnter, panelRef, query, setQuery])
+}
+
+interface PaneCommandInputCommand {
+  id: string
+  label: string
+  detail: string
+  aliases: string[]
+  run: () => void
+}
+
+function scorePaneCommandInputCommand(command: PaneCommandInputCommand, query: string): number {
+  if (!query) return 1
+  const fields = [command.label, command.detail, command.id, ...command.aliases]
+    .map(normalizePaneCommandQuery)
+    .filter(Boolean)
+
+  if (fields.some((field) => field === query)) return 100
+  if (fields.some((field) => field.startsWith(query))) return 80
+  if (fields.some((field) => field.includes(query))) return 40
+  return 0
+}
+
+function PaneCommandInputDialog({
+  commands,
+  onBack,
+}: {
+  commands: PaneCommandInputCommand[]
+  onBack: () => void
+}): JSX.Element {
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const visibleCommands = useMemo(() => {
+    const normalizedQuery = normalizePaneCommandQuery(query)
+    return commands
+      .map((command, index) => ({
+        command,
+        index,
+        score: scorePaneCommandInputCommand(command, normalizedQuery),
+      }))
+      .filter((item) => !normalizedQuery || item.score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map((item) => item.command)
+      .slice(0, 12)
+  }, [commands, query])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
+  }, [])
+
+  useEffect(() => {
+    if (selectedIndex >= visibleCommands.length) {
+      setSelectedIndex(Math.max(0, visibleCommands.length - 1))
+    }
+  }, [selectedIndex, visibleCommands.length])
+
+  const selectPrevious = useCallback(() => {
+    setSelectedIndex((current) => Math.max(0, current - 1))
+  }, [])
+  const selectNext = useCallback(() => {
+    setSelectedIndex((current) => Math.min(current + 1, Math.max(0, visibleCommands.length - 1)))
+  }, [visibleCommands.length])
+  const runCommand = useCallback((command: PaneCommandInputCommand | null) => {
+    if (!command) return
+    command.run()
+  }, [])
+  const confirmSelected = useCallback(() => {
+    runCommand(visibleCommands[selectedIndex] ?? null)
+  }, [runCommand, selectedIndex, visibleCommands])
+
+  usePaneCommandSearchPanelKeyboardCapture({
+    panelRef,
+    inputRef,
+    query,
+    onBack,
+    onArrowDown: selectNext,
+    onArrowUp: selectPrevious,
+    onEnter: confirmSelected,
+    setQuery,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-16 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="w-[min(560px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
+        onKeyDown={(event) => {
+          const plainQBack = event.key.toLowerCase() === 'q'
+            && query.trim() === ''
+            && !event.ctrlKey
+            && !event.metaKey
+            && !event.altKey
+            && !event.shiftKey
+          if (event.key === 'Escape' || plainQBack) {
+            event.preventDefault()
+            event.stopPropagation()
+            onBack()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectNext()
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectPrevious()
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            confirmSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">命令</div>
+            <div className="text-[10px] text-[var(--color-text-tertiary)]">q / Esc 返回 Pane Mode</div>
+          </div>
+          <div className="flex h-10 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3">
+            <span className="mr-2 font-mono text-[var(--ui-font-sm)] font-bold text-[var(--color-accent)]">:</span>
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              spellCheck={false}
+              placeholder="输入命令，例如 project、tab、rename"
+              className="h-full min-w-0 flex-1 bg-transparent text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+            />
+          </div>
+        </div>
+        <div className="max-h-[420px] overflow-y-auto p-1.5">
+          {visibleCommands.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              没有匹配的命令
+            </div>
+          ) : visibleCommands.map((command, index) => (
+            <button
+              key={command.id}
+              type="button"
+              onClick={() => runCommand(command)}
+              className={cn(
+                'flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors',
+                index === selectedIndex
+                  ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+              )}
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] font-mono text-[10px] font-bold text-[var(--color-text-secondary)]">
+                :
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[var(--ui-font-sm)] font-medium">{command.label}</span>
+                <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{command.detail}</span>
+              </span>
+              {index === selectedIndex && (
+                <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">Enter</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PaneCommandNewSessionDialog({
+  onClose,
+  onAfterNamePromptClose,
+}: {
+  onClose: () => void
+  onAfterNamePromptClose: () => void
+}): JSX.Element {
+  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
+  const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
+  const hiddenNewSessionOptionIds = useUIStore((s) => s.settings.hiddenNewSessionOptionIds)
+  const newSessionOptionOrder = useUIStore((s) => s.settings.newSessionOptionOrder)
+  const setSessionNamePrompt = useUIStore((s) => s.setSessionNamePrompt)
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const options = useMemo(
+    () => buildNewSessionOptions(customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder),
+    [customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder],
+  )
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = normalizePaneCommandQuery(query)
+    return options
+      .map((option, index) => ({ option, index, score: scoreNewSessionOption(option, normalizedQuery) }))
+      .filter((item) => !normalizedQuery || item.score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map((item) => item.option)
+  }, [options, query])
+  const selectedOption = filteredOptions[selectedIndex] ?? null
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
+  }, [])
+
+  const openNamePrompt = useCallback((option: NewSessionOption) => {
+    if (!selectedProjectId) return
+    const projectId = selectedProjectId
+    const paneId = usePanesStore.getState().activePaneId
+    const worktreeId = getDefaultWorktreeIdForProject(projectId)
+    const defaultName = option.customSessionDefinitionId
+      ? useSessionsStore.getState().generateDefaultSessionName(projectId, 'terminal', option.label)
+      : useSessionsStore.getState().generateDefaultSessionName(projectId, option.type ?? 'terminal')
+    const createInActivePane = (name: string): void => {
+      createSessionWithPrompt({
+        projectId,
+        type: option.type,
+        customSessionDefinitionId: option.customSessionDefinitionId,
+        worktreeId,
+        forceName: name,
+      }, (sessionId) => {
+        const paneStore = usePanesStore.getState()
+        paneStore.addSessionToPane(paneId, sessionId)
+        paneStore.setActivePaneId(paneId)
+        useSessionsStore.getState().setActive(sessionId)
+      })
+    }
+
+    onClose()
+    setSessionNamePrompt({
+      defaultName,
+      title: `新建 ${option.label}`,
+      description: '输入会话名称，回车后在当前 pane 创建。',
+      sessionType: option.type,
+      onSubmit: (name) => {
+        createInActivePane(name)
+        onAfterNamePromptClose()
+      },
+      onUseDefault: () => {
+        createInActivePane(defaultName)
+        onAfterNamePromptClose()
+      },
+      onCancel: onAfterNamePromptClose,
+    })
+  }, [onAfterNamePromptClose, onClose, selectedProjectId, setSessionNamePrompt])
+
+  const selectPrevious = useCallback(() => {
+    setSelectedIndex((current) => Math.max(0, current - 1))
+  }, [])
+  const selectNext = useCallback(() => {
+    setSelectedIndex((current) => Math.min(current + 1, Math.max(0, filteredOptions.length - 1)))
+  }, [filteredOptions.length])
+  const confirmSelected = useCallback(() => {
+    if (selectedOption) openNamePrompt(selectedOption)
+  }, [openNamePrompt, selectedOption])
+
+  usePaneCommandSearchPanelKeyboardCapture({
+    panelRef,
+    inputRef,
+    query,
+    onBack: onClose,
+    onArrowDown: selectNext,
+    onArrowUp: selectPrevious,
+    onEnter: confirmSelected,
+    setQuery,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={panelRef}
+        className={cn(
+          'w-[min(520px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)]',
+          'border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45',
+        )}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            selectNext()
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            selectPrevious()
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            confirmSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+            新建会话
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
+            placeholder="输入类型，例如 co、claude、t"
+            className={cn(
+              'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
+              'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'placeholder:text-[var(--color-text-tertiary)] outline-none',
+              'focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20',
+            )}
+          />
+        </div>
+        <div className="max-h-[360px] overflow-y-auto p-1.5">
+          {!selectedProjectId ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              请先选择一个项目
+            </div>
+          ) : filteredOptions.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              没有匹配的会话类型
+            </div>
+          ) : filteredOptions.map((option, index) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => openNamePrompt(option)}
+              className={cn(
+                'flex h-10 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 text-left transition-colors',
+                index === selectedIndex
+                  ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              )}
+            >
+              <SessionIconView
+                icon={option.customSessionDefinitionId ? option.icon : undefined}
+                fallbackSrc={option.customSessionDefinitionId ? undefined : option.icon}
+                className="h-5 w-5 shrink-0"
+                imageClassName="h-4 w-4 object-contain"
+              />
+              <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] font-medium">
+                {option.label}
+              </span>
+              {index === selectedIndex && (
+                <span className="text-[10px] text-[var(--color-text-tertiary)]">Enter</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface PaneCommandProjectSwitchItem {
+  id: string
+  projectId: string
+  worktreeId: string | null
+  kind: 'project' | 'worktree'
+  title: string
+  subtitle: string
+  groupName: string | null
+  groupColor: string | null
+  searchText: string
+  priority: number
+  isCurrent: boolean
+  badge: string
+}
+
+function PaneCommandProjectSwitcher({
+  recentKeys,
+  onBack,
+  onSelect,
+}: {
+  recentKeys: string[]
+  onBack: () => void
+  onSelect: (context: PaneCommandProjectContext) => void
+}): JSX.Element {
+  const projects = useProjectsStore((s) => s.projects)
+  const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
+  const groups = useGroupsStore((s) => s.groups)
+  const worktrees = useWorktreesStore((s) => s.worktrees)
+  const selectedWorktreeId = useWorktreesStore((s) => s.selectedWorktreeId)
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const visibleItemsRef = useRef<PaneCommandProjectSwitchItem[]>([])
+  const selectedIndexRef = useRef(0)
+
+  const groupNameById = useMemo(
+    () => new Map(groups.map((group) => [group.id, group.name])),
+    [groups],
+  )
+  const groupColorById = useMemo(
+    () => new Map(groups.map((group) => [group.id, group.color])),
+    [groups],
+  )
+  const recentRank = useMemo(
+    () => new Map(recentKeys.map((key, index) => [key, index])),
+    [recentKeys],
+  )
+  const selectedWorktree = useMemo(
+    () => worktrees.find((item) => item.id === selectedWorktreeId && item.projectId === selectedProjectId),
+    [selectedProjectId, selectedWorktreeId, worktrees],
+  )
+  const effectiveSelectedWorktreeId = selectedWorktree?.isMain ? null : (selectedWorktreeId ?? null)
+  const items = useMemo<PaneCommandProjectSwitchItem[]>(() => {
+    const result: PaneCommandProjectSwitchItem[] = []
+
+    for (const project of projects) {
+      const groupName = groupNameById.get(project.groupId) ?? ''
+      const groupColor = groupColorById.get(project.groupId) ?? null
+      const mainKey = getPaneCommandProjectContextKey(project.id, null)
+      const mainRank = recentRank.get(mainKey)
+      const isCurrentMain = selectedProjectId === project.id && !effectiveSelectedWorktreeId
+
+      result.push({
+        id: mainKey,
+        projectId: project.id,
+        worktreeId: null,
+        kind: 'project',
+        title: project.name,
+        subtitle: project.path,
+        groupName: groupName || null,
+        groupColor,
+        searchText: [project.name, project.path, groupName, 'main'].filter(Boolean).join(' '),
+        priority: (isCurrentMain ? 1000 : 0) + (mainRank !== undefined ? 500 - mainRank * 10 : 0),
+        isCurrent: isCurrentMain,
+        badge: 'Project',
+      })
+
+      for (const worktree of worktrees.filter((item) => item.projectId === project.id && !item.isMain)) {
+        const key = getPaneCommandProjectContextKey(project.id, worktree.id)
+        const rank = recentRank.get(key)
+        const isCurrent = selectedProjectId === project.id && effectiveSelectedWorktreeId === worktree.id
+        result.push({
+          id: key,
+          projectId: project.id,
+          worktreeId: worktree.id,
+          kind: 'worktree',
+          title: `${project.name} / ${worktree.branch}`,
+          subtitle: worktree.path,
+          groupName: groupName || null,
+          groupColor,
+          searchText: [project.name, project.path, groupName, worktree.branch, worktree.path].filter(Boolean).join(' '),
+          priority: (isCurrent ? 1000 : 0) + (rank !== undefined ? 500 - rank * 10 : 0),
+          isCurrent,
+          badge: 'Worktree',
+        })
+      }
+    }
+
+    return result.sort((a, b) => b.priority - a.priority || a.title.localeCompare(b.title))
+  }, [effectiveSelectedWorktreeId, groupColorById, groupNameById, projects, recentRank, selectedProjectId, worktrees])
+
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = normalizePaneCommandQuery(query)
+    if (!normalizedQuery) return items
+    return items.filter((item) => normalizePaneCommandQuery(item.searchText).includes(normalizedQuery))
+  }, [items, query])
+  visibleItemsRef.current = visibleItems
+  selectedIndexRef.current = selectedIndex
+
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  const scheduleInputFocus = useCallback(() => {
+    window.requestAnimationFrame(focusInput)
+    window.setTimeout(focusInput, 40)
+    window.setTimeout(focusInput, 160)
+  }, [focusInput])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    scheduleInputFocus()
+  }, [scheduleInputFocus])
+
+  useEffect(() => {
+    scheduleInputFocus()
+  }, [effectiveSelectedWorktreeId, scheduleInputFocus, selectedProjectId])
+
+  useEffect(() => {
+    if (visibleItems.length === 0 && selectedIndex !== 0) {
+      setSelectedIndex(0)
+      return
+    }
+    if (selectedIndex >= visibleItems.length) {
+      setSelectedIndex(Math.max(0, visibleItems.length - 1))
+    }
+  }, [selectedIndex, visibleItems.length])
+
+  const activateItem = useCallback((item: PaneCommandProjectSwitchItem) => {
+    if (!item) return
+    onSelect({ projectId: item.projectId, worktreeId: item.worktreeId })
+  }, [onSelect])
+
+  const activateSelected = useCallback(() => {
+    const item = visibleItemsRef.current[selectedIndexRef.current]
+    if (!item) return
+    activateItem(item)
+  }, [activateItem])
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent): void => {
+      const panel = panelRef.current
+      if (!panel) return
+      const isPlainBackKey = event.key.length === 1
+        && event.key.toLowerCase() === 'q'
+        && !event.ctrlKey
+        && !event.metaKey
+        && !event.altKey
+        && !event.shiftKey
+        && query.trim() === ''
+      if (event.target instanceof Node && panel.contains(event.target) && !isPlainBackKey) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      focusInput()
+
+      if (event.key === 'Escape' || isPlainBackKey) {
+        onBack()
+        return
+      }
+      if (event.key === 'ArrowDown') {
+        setSelectedIndex((current) => Math.min(current + 1, Math.max(0, visibleItemsRef.current.length - 1)))
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        setSelectedIndex((current) => Math.max(0, current - 1))
+        return
+      }
+      if (event.key === 'Enter') {
+        activateSelected()
+        return
+      }
+      if (event.key === 'Backspace') {
+        setQuery((current) => current.slice(0, -1))
+        return
+      }
+      if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return
+      setQuery((current) => current + event.key)
+    }
+
+    window.addEventListener('keydown', handleWindowKeyDown, true)
+    return () => window.removeEventListener('keydown', handleWindowKeyDown, true)
+  }, [activateSelected, focusInput, onBack, query])
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <div
+        ref={panelRef}
+        data-pane-command-project-switcher
+        className={cn(
+          'w-[min(620px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)]',
+          'border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45',
+        )}
+        onKeyDown={(event) => {
+          const plainQBack = event.key.toLowerCase() === 'q'
+            && query.trim() === ''
+            && !event.ctrlKey
+            && !event.metaKey
+            && !event.altKey
+            && !event.shiftKey
+          if (event.key === 'Escape' || plainQBack) {
+            event.preventDefault()
+            event.stopPropagation()
+            onBack()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            event.stopPropagation()
+            setSelectedIndex((current) => Math.min(current + 1, Math.max(0, visibleItems.length - 1)))
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            event.stopPropagation()
+            setSelectedIndex((current) => Math.max(0, current - 1))
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            activateSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+              切换项目
+            </div>
+            <div className="text-[10px] text-[var(--color-text-tertiary)]">
+              Esc 返回 Pane Mode
+            </div>
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
+            placeholder="搜索项目、路径、分组或 worktree 分支"
+            className={cn(
+              'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
+              'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'placeholder:text-[var(--color-text-tertiary)] outline-none',
+            )}
+          />
+        </div>
+        <div className="max-h-[420px] overflow-y-auto p-1.5">
+          {visibleItems.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              没有匹配的项目或 worktree
+            </div>
+          ) : visibleItems.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => activateItem(item)}
+              className={cn(
+                'flex min-h-12 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors',
+                index === selectedIndex
+                  ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]/70',
+              )}
+            >
+              <div className={cn(
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] border text-[11px] font-bold',
+                item.kind === 'worktree'
+                  ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
+                  : 'border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)]',
+              )}>
+                {item.kind === 'worktree' ? 'WT' : 'P'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-[var(--ui-font-sm)] font-medium">{item.title}</span>
+                  {item.isCurrent && (
+                    <span className="shrink-0 rounded-full bg-[var(--color-accent)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
+                      当前
+                    </span>
+                  )}
+                  {item.kind === 'worktree' && (
+                    <span className="shrink-0 rounded-full bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+                      {item.badge}
+                    </span>
+                  )}
+                  {item.groupName && (
+                    <span
+                      className="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium"
+                      style={item.groupColor ? {
+                        borderColor: `${item.groupColor}55`,
+                        backgroundColor: `${item.groupColor}1f`,
+                        color: item.groupColor,
+                      } : undefined}
+                    >
+                      {item.groupName}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">
+                  {item.subtitle}
+                </div>
+              </div>
+              {index === selectedIndex && (
+                <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">Enter</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PaneCommandHelpPanel({ onClose }: { onClose: () => void }): JSX.Element {
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-16 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="w-[min(680px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+          <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">Pane Mode 快捷键</div>
+          <div className="text-[10px] text-[var(--color-text-tertiary)]">? / Esc 关闭</div>
+        </div>
+        <div className="grid max-h-[520px] grid-cols-1 gap-1 overflow-y-auto p-2 sm:grid-cols-2">
+          {PANE_COMMAND_SHORTCUTS.map((item) => (
+            <div key={`${item.key}-${item.label}`} className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2">
+              <span className="min-w-24 rounded-[var(--radius-sm)] bg-[var(--color-bg-tertiary)] px-2 py-1 text-center font-mono text-[11px] font-bold text-[var(--color-text-primary)]">
+                {item.key}
+              </span>
+              <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function getPaneCommandActiveTab(): { paneId: string; tabId: string | null; tabIds: string[] } {
+  const paneStore = usePanesStore.getState()
+  const paneId = paneStore.activePaneId
+  const tabIds = paneStore.paneSessions[paneId] ?? []
+  const tabId = paneStore.paneActiveSession[paneId] && tabIds.includes(paneStore.paneActiveSession[paneId]!)
+    ? paneStore.paneActiveSession[paneId]
+    : (tabIds[0] ?? null)
+  return { paneId, tabId, tabIds }
+}
+
+function getPaneCommandTabLabel(tabId: string): string {
+  if (tabId.startsWith('editor-')) {
+    return useEditorsStore.getState().tabs.find((tab) => tab.id === tabId)?.fileName ?? '文件'
+  }
+  return useSessionsStore.getState().sessions.find((session) => session.id === tabId)?.name ?? 'Session'
+}
+
+function getPaneCommandTabDetail(tabId: string): string {
+  if (tabId.startsWith('editor-')) {
+    const tab = useEditorsStore.getState().tabs.find((item) => item.id === tabId)
+    return tab?.filePath ?? 'Editor'
+  }
+  const session = useSessionsStore.getState().sessions.find((item) => item.id === tabId)
+  return session ? SESSION_TYPE_CONFIG[session.type].label : 'Session'
+}
+
+function PaneCommandRenameDialog({
+  tabId,
+  onBack,
+  onRenamed,
+}: {
+  tabId: string
+  onBack: () => void
+  onRenamed: () => void
+}): JSX.Element {
+  const session = useSessionsStore((s) => s.sessions.find((item) => item.id === tabId))
+  const updateSession = useSessionsStore((s) => s.updateSession)
+  const [value, setValue] = useState(session?.name ?? '')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => inputRef.current?.select())
+  }, [])
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <div className="w-[min(460px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45">
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">重命名当前会话</div>
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            spellCheck={false}
+            disabled={!session}
+            className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                onBack()
+                return
+              }
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                const trimmed = value.trim()
+                if (session && trimmed) updateSession(session.id, { name: trimmed })
+                onRenamed()
+              }
+            }}
+          />
+        </div>
+        {!session && (
+          <div className="px-4 py-3 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">当前 tab 不是会话，不能重命名。</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface PaneCommandTabSwitchItem {
+  id: string
+  title: string
+  detail: string
+  searchText: string
+  isCurrent: boolean
+}
+
+function PaneCommandTabSwitcher({
+  onBack,
+  onSelect,
+}: {
+  onBack: () => void
+  onSelect: (tabId: string) => void
+}): JSX.Element {
+  const activePaneId = usePanesStore((s) => s.activePaneId)
+  const paneSessions = usePanesStore((s) => s.paneSessions[activePaneId] ?? [])
+  const activeTabId = usePanesStore((s) => s.paneActiveSession[activePaneId] ?? null)
+  const sessions = useSessionsStore((s) => s.sessions)
+  const editors = useEditorsStore((s) => s.tabs)
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const items = useMemo<PaneCommandTabSwitchItem[]>(() => paneSessions.map((id) => {
+    if (id.startsWith('editor-')) {
+      const tab = editors.find((item) => item.id === id)
+      return {
+        id,
+        title: tab?.fileName ?? '文件',
+        detail: tab?.filePath ?? 'Editor',
+        searchText: [tab?.fileName, tab?.filePath, tab?.language].filter(Boolean).join(' '),
+        isCurrent: id === activeTabId,
+      }
+    }
+    const session = sessions.find((item) => item.id === id)
+    return {
+      id,
+      title: session?.name ?? 'Session',
+      detail: session ? SESSION_TYPE_CONFIG[session.type].label : 'Session',
+      searchText: [session?.name, session?.type, session?.label].filter(Boolean).join(' '),
+      isCurrent: id === activeTabId,
+    }
+  }), [activeTabId, editors, paneSessions, sessions])
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = normalizePaneCommandQuery(query)
+    if (!normalizedQuery) return items
+    return items.filter((item) => normalizePaneCommandQuery(item.searchText).includes(normalizedQuery))
+  }, [items, query])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+  useEffect(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
+  }, [])
+
+  const select = useCallback((index: number) => {
+    const item = visibleItems[index]
+    if (item) onSelect(item.id)
+  }, [onSelect, visibleItems])
+  const selectPrevious = useCallback(() => {
+    setSelectedIndex((current) => Math.max(0, current - 1))
+  }, [])
+  const selectNext = useCallback(() => {
+    setSelectedIndex((current) => Math.min(current + 1, Math.max(0, visibleItems.length - 1)))
+  }, [visibleItems.length])
+  const confirmSelected = useCallback(() => {
+    select(selectedIndex)
+  }, [select, selectedIndex])
+
+  usePaneCommandSearchPanelKeyboardCapture({
+    panelRef,
+    inputRef,
+    query,
+    onBack,
+    onArrowDown: selectNext,
+    onArrowUp: selectPrevious,
+    onEnter: confirmSelected,
+    setQuery,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="w-[min(520px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            onBack()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectNext()
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectPrevious()
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            confirmSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">当前 pane 标签</div>
+            <div className="text-[10px] text-[var(--color-text-tertiary)]">Esc 返回 Pane Mode</div>
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索当前 pane 内标签"
+            className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+          />
+        </div>
+        <div className="max-h-[360px] overflow-y-auto p-1.5">
+          {visibleItems.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => select(index)}
+              className={cn(
+                'flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors',
+                index === selectedIndex ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+              )}
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[10px] font-bold">
+                {item.id.startsWith('editor-') ? 'F' : 'S'}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[var(--ui-font-sm)] font-medium">{item.title}</span>
+                <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{item.detail}</span>
+              </span>
+              {item.isCurrent && <span className="text-[10px] text-[var(--color-accent)]">当前</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type PaneCommandJumpKind = 'project' | 'worktree' | 'session' | 'file'
+
+interface PaneCommandJumpItem {
+  id: string
+  kind: PaneCommandJumpKind
+  title: string
+  detail: string
+  searchText: string
+  projectId: string
+  worktreeId: string | null
+  tabId?: string
+  filePath?: string
+}
+
+function PaneCommandJumpMenu({
+  onBack,
+  onSelect,
+}: {
+  onBack: () => void
+  onSelect: (item: PaneCommandJumpItem) => void
+}): JSX.Element {
+  const projects = useProjectsStore((s) => s.projects)
+  const worktrees = useWorktreesStore((s) => s.worktrees)
+  const sessions = useSessionsStore((s) => s.sessions)
+  const editors = useEditorsStore((s) => s.tabs)
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const projectNameById = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects])
+  const items = useMemo<PaneCommandJumpItem[]>(() => {
+    const projectItems = projects.map((project) => ({
+      id: `project:${project.id}`,
+      kind: 'project' as const,
+      title: project.name,
+      detail: project.path,
+      searchText: [project.name, project.path].join(' '),
+      projectId: project.id,
+      worktreeId: null,
+    }))
+    const worktreeItems = worktrees.filter((worktree) => !worktree.isMain).map((worktree) => {
+      const projectName = projectNameById.get(worktree.projectId) ?? 'Project'
+      return {
+        id: `worktree:${worktree.id}`,
+        kind: 'worktree' as const,
+        title: `${projectName} / ${worktree.branch}`,
+        detail: worktree.path,
+        searchText: [projectName, worktree.branch, worktree.path].join(' '),
+        projectId: worktree.projectId,
+        worktreeId: worktree.id,
+      }
+    })
+    const sessionItems = sessions.map((session) => ({
+      id: `session:${session.id}`,
+      kind: 'session' as const,
+      title: session.name,
+      detail: `${projectNameById.get(session.projectId) ?? 'Project'} · ${SESSION_TYPE_CONFIG[session.type].label}`,
+      searchText: [session.name, session.type, session.label, projectNameById.get(session.projectId)].filter(Boolean).join(' '),
+      projectId: session.projectId,
+      worktreeId: session.worktreeId ?? null,
+      tabId: session.id,
+    }))
+    const fileItems = editors.map((tab) => ({
+      id: `file:${tab.id}`,
+      kind: 'file' as const,
+      title: tab.fileName,
+      detail: tab.filePath,
+      searchText: [tab.fileName, tab.filePath, tab.language, projectNameById.get(tab.projectId)].filter(Boolean).join(' '),
+      projectId: tab.projectId,
+      worktreeId: tab.worktreeId ?? null,
+      tabId: tab.id,
+      filePath: tab.filePath,
+    }))
+    return [...projectItems, ...worktreeItems, ...sessionItems, ...fileItems]
+  }, [editors, projectNameById, projects, sessions, worktrees])
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = normalizePaneCommandQuery(query)
+    const filtered = normalizedQuery
+      ? items.filter((item) => normalizePaneCommandQuery(item.searchText).includes(normalizedQuery))
+      : items
+    return filtered.slice(0, 80)
+  }, [items, query])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+  useEffect(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
+  }, [])
+
+  const select = useCallback((index: number) => {
+    const item = visibleItems[index]
+    if (item) onSelect(item)
+  }, [onSelect, visibleItems])
+  const selectPrevious = useCallback(() => {
+    setSelectedIndex((current) => Math.max(0, current - 1))
+  }, [])
+  const selectNext = useCallback(() => {
+    setSelectedIndex((current) => Math.min(current + 1, Math.max(0, visibleItems.length - 1)))
+  }, [visibleItems.length])
+  const confirmSelected = useCallback(() => {
+    select(selectedIndex)
+  }, [select, selectedIndex])
+
+  usePaneCommandSearchPanelKeyboardCapture({
+    panelRef,
+    inputRef,
+    query,
+    onBack,
+    onArrowDown: selectNext,
+    onArrowUp: selectPrevious,
+    onEnter: confirmSelected,
+    setQuery,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="w-[min(640px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            onBack()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectNext()
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectPrevious()
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            confirmSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">跳转</div>
+            <div className="text-[10px] text-[var(--color-text-tertiary)]">项目 / worktree / 会话 / 已打开文件</div>
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索并跳转"
+            className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+          />
+        </div>
+        <div className="max-h-[420px] overflow-y-auto p-1.5">
+          {visibleItems.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => select(index)}
+              className={cn(
+                'flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors',
+                index === selectedIndex ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+              )}
+            >
+              <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-1 text-[9px] font-bold uppercase">
+                {item.kind === 'project' ? 'P' : item.kind === 'worktree' ? 'WT' : item.kind === 'session' ? 'S' : 'F'}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[var(--ui-font-sm)] font-medium">{item.title}</span>
+                <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{item.detail}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -448,14 +1765,706 @@ export function App(): JSX.Element {
 function MainApp(): JSX.Element {
   const [ready, setReady] = useState(false)
   const [paneCommandMode, setPaneCommandMode] = useState(false)
+  const [paneCommandEditing, setPaneCommandEditing] = useState(false)
+  const [paneCommandNewSessionOpen, setPaneCommandNewSessionOpen] = useState(false)
+  const [paneCommandProjectSwitcherOpen, setPaneCommandProjectSwitcherOpen] = useState(false)
+  const [paneCommandHelpOpen, setPaneCommandHelpOpen] = useState(false)
+  const [paneCommandRenameTargetId, setPaneCommandRenameTargetId] = useState<string | null>(null)
+  const [paneCommandTabSwitcherOpen, setPaneCommandTabSwitcherOpen] = useState(false)
+  const [paneCommandJumpOpen, setPaneCommandJumpOpen] = useState(false)
+  const [paneCommandInputOpen, setPaneCommandInputOpen] = useState(false)
+  const [paneCommandRecentProjectKeys, setPaneCommandRecentProjectKeys] = useState<string[]>([])
+  const [paneCommandCloseTarget, setPaneCommandCloseTarget] = useState<PaneCommandCloseTarget | null>(null)
   const [paneCommandRects, setPaneCommandRects] = useState<PaneElementRect[]>([])
+  const paneCommandModeRef = useRef(false)
+  const paneCommandProjectSwitcherOpenRef = useRef(false)
+  const paneCommandFocusRef = useRef<HTMLDivElement | null>(null)
+  const paneCommandRestoreFocusRef = useRef<HTMLElement | null>(null)
+  const paneCommandPanelOpeningUntilRef = useRef(0)
   const appChromeStyle = useUIStore((s) => s.settings.appChromeStyle)
+  const selectedProjectIdForPaneCommand = useProjectsStore((s) => s.selectedProjectId)
+  const selectedWorktreeIdForPaneCommand = useWorktreesStore((s) => s.selectedWorktreeId)
+  const worktreesForPaneCommand = useWorktreesStore((s) => s.worktrees)
   const paneCommandActivePaneId = usePanesStore((s) => s.activePaneId)
   const paneCommandRoot = usePanesStore((s) => s.root)
+  const effectiveSelectedWorktreeIdForPaneCommand = useMemo(() => {
+    const selectedWorktree = worktreesForPaneCommand.find((item) =>
+      item.id === selectedWorktreeIdForPaneCommand && item.projectId === selectedProjectIdForPaneCommand)
+    return selectedWorktree?.isMain ? null : (selectedWorktreeIdForPaneCommand ?? null)
+  }, [selectedProjectIdForPaneCommand, selectedWorktreeIdForPaneCommand, worktreesForPaneCommand])
   const refreshPaneCommandRects = useCallback(() => {
     const paneStore = usePanesStore.getState()
     setPaneCommandRects(getPaneElementRects(getPaneLeafIds(paneStore.root)))
   }, [])
+  const focusPaneCommandSink = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      paneCommandFocusRef.current?.focus({ preventScroll: true })
+    })
+  }, [])
+  const guardPaneCommandPanelOpening = useCallback(() => {
+    paneCommandPanelOpeningUntilRef.current = Date.now() + 180
+  }, [])
+  useEffect(() => {
+    paneCommandModeRef.current = paneCommandMode
+  }, [paneCommandMode])
+  useEffect(() => {
+    paneCommandProjectSwitcherOpenRef.current = paneCommandProjectSwitcherOpen
+  }, [paneCommandProjectSwitcherOpen])
+  const restorePaneCommandFocus = useCallback((clear = false) => {
+    const target = paneCommandRestoreFocusRef.current
+    if (clear) paneCommandRestoreFocusRef.current = null
+    if (!target) return
+    window.requestAnimationFrame(() => {
+      if (target.isConnected) target.focus({ preventScroll: true })
+    })
+  }, [])
+  const enterPaneCommandMode = useCallback(() => {
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement && activeElement !== paneCommandFocusRef.current) {
+      paneCommandRestoreFocusRef.current = activeElement
+    }
+    paneCommandModeRef.current = true
+    setPaneCommandEditing(false)
+    setPaneCommandMode(true)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const exitPaneCommandMode = useCallback(() => {
+    paneCommandModeRef.current = false
+    paneCommandProjectSwitcherOpenRef.current = false
+    setPaneCommandMode(false)
+    setPaneCommandEditing(false)
+    setPaneCommandNewSessionOpen(false)
+    setPaneCommandProjectSwitcherOpen(false)
+    setPaneCommandHelpOpen(false)
+    setPaneCommandRenameTargetId(null)
+    setPaneCommandTabSwitcherOpen(false)
+    setPaneCommandJumpOpen(false)
+    setPaneCommandInputOpen(false)
+    setPaneCommandCloseTarget(null)
+    restorePaneCommandFocus(true)
+  }, [restorePaneCommandFocus])
+  const enterPaneCommandEditing = useCallback(() => {
+    setPaneCommandEditing(true)
+    restorePaneCommandFocus()
+  }, [restorePaneCommandFocus])
+  const exitPaneCommandEditing = useCallback(() => {
+    setPaneCommandEditing(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const closePaneCommandNewSession = useCallback(() => {
+    setPaneCommandNewSessionOpen(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const closePaneCommandProjectSwitcher = useCallback(() => {
+    paneCommandProjectSwitcherOpenRef.current = false
+    setPaneCommandProjectSwitcherOpen(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const openPaneCommandProjectSwitcher = useCallback(() => {
+    guardPaneCommandPanelOpening()
+    paneCommandProjectSwitcherOpenRef.current = true
+    setPaneCommandProjectSwitcherOpen(true)
+  }, [guardPaneCommandPanelOpening])
+  const closePaneCommandHelp = useCallback(() => {
+    setPaneCommandHelpOpen(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const closePaneCommandRename = useCallback(() => {
+    setPaneCommandRenameTargetId(null)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const closePaneCommandTabSwitcher = useCallback(() => {
+    setPaneCommandTabSwitcherOpen(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const closePaneCommandJump = useCallback(() => {
+    setPaneCommandJumpOpen(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const closePaneCommandInput = useCallback(() => {
+    setPaneCommandInputOpen(false)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const openPaneCommandInput = useCallback(() => {
+    guardPaneCommandPanelOpening()
+    setPaneCommandInputOpen(true)
+  }, [guardPaneCommandPanelOpening])
+  const switchPaneCommandProjectContext = useCallback((context: PaneCommandProjectContext) => {
+    paneCommandProjectSwitcherOpenRef.current = false
+    switchProjectContext(context.projectId, null, context.worktreeId)
+    setPaneCommandProjectSwitcherOpen(false)
+    focusPaneCommandSink()
+    window.requestAnimationFrame(refreshPaneCommandRects)
+    window.setTimeout(refreshPaneCommandRects, 120)
+  }, [focusPaneCommandSink, refreshPaneCommandRects])
+
+  const switchRecentPaneCommandProject = useCallback((offset: -1 | 1) => {
+    if (!selectedProjectIdForPaneCommand || paneCommandRecentProjectKeys.length < 2) return
+    const currentKey = getPaneCommandProjectContextKey(selectedProjectIdForPaneCommand, effectiveSelectedWorktreeIdForPaneCommand)
+    const currentIndex = paneCommandRecentProjectKeys.indexOf(currentKey)
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextKey = paneCommandRecentProjectKeys[
+      (baseIndex + offset + paneCommandRecentProjectKeys.length) % paneCommandRecentProjectKeys.length
+    ]
+    const context = parsePaneCommandProjectContextKey(nextKey)
+    if (context) switchPaneCommandProjectContext(context)
+  }, [
+    paneCommandRecentProjectKeys,
+    effectiveSelectedWorktreeIdForPaneCommand,
+    selectedProjectIdForPaneCommand,
+    switchPaneCommandProjectContext,
+  ])
+  const activatePaneCommandTab = useCallback((tabId: string) => {
+    const paneStore = usePanesStore.getState()
+    const paneId = paneStore.findPaneForSession(tabId) ?? paneStore.activePaneId
+    paneStore.setActivePaneId(paneId)
+    paneStore.setPaneActiveSession(paneId, tabId)
+    if (!tabId.startsWith('editor-')) {
+      useSessionsStore.getState().setActive(tabId)
+      useSessionsStore.getState().markAsRead(tabId)
+    }
+    setPaneCommandTabSwitcherOpen(false)
+    setPaneCommandJumpOpen(false)
+    focusPaneCommandSink()
+    window.requestAnimationFrame(refreshPaneCommandRects)
+  }, [focusPaneCommandSink, refreshPaneCommandRects])
+  const switchPaneCommandBack = useCallback(() => {
+    const paneStore = usePanesStore.getState()
+    const { paneId, tabId, tabIds } = getPaneCommandActiveTab()
+    const previousTabId = (paneStore.paneRecentSessions[paneId] ?? [])
+      .find((id) => id !== tabId && tabIds.includes(id))
+    if (previousTabId) {
+      activatePaneCommandTab(previousTabId)
+      return
+    }
+    switchRecentPaneCommandProject(-1)
+  }, [activatePaneCommandTab, switchRecentPaneCommandProject])
+  const moveActivePaneCommandTab = useCallback((direction: 'left' | 'right' | 'up' | 'down') => {
+    const paneStore = usePanesStore.getState()
+    const { paneId, tabId } = getPaneCommandActiveTab()
+    if (!tabId) return
+    paneStore.navigatePane(direction)
+    const targetPaneId = usePanesStore.getState().activePaneId
+    if (targetPaneId === paneId) return
+    usePanesStore.getState().moveSession(paneId, targetPaneId, tabId)
+    if (!tabId.startsWith('editor-')) useSessionsStore.getState().setActive(tabId)
+    window.requestAnimationFrame(refreshPaneCommandRects)
+  }, [refreshPaneCommandRects])
+  const keepOnlyActivePaneCommandPane = useCallback(() => {
+    const paneStore = usePanesStore.getState()
+    const { paneId, tabId } = getPaneCommandActiveTab()
+    const leafIds = getPaneLeafIds(paneStore.root)
+    if (leafIds.length <= 1) return
+    const activePaneTabs = paneStore.paneSessions[paneId] ?? []
+    const otherTabs = leafIds
+      .filter((leafId) => leafId !== paneId)
+      .flatMap((leafId) => paneStore.paneSessions[leafId] ?? [])
+    paneStore.applyPaneGroups([[...activePaneTabs, ...otherTabs]], tabId)
+    window.requestAnimationFrame(refreshPaneCommandRects)
+  }, [refreshPaneCommandRects])
+  const detachActivePaneCommandTab = useCallback(() => {
+    const { paneId, tabId } = getPaneCommandActiveTab()
+    if (!tabId) return
+    const settings = useUIStore.getState().settings
+    const pos = settings.popoutPosition === 'center' ? undefined
+      : { x: window.screenX + window.innerWidth / 2, y: window.screenY + window.innerHeight / 2 }
+    const size = { width: settings.popoutWidth, height: settings.popoutHeight }
+    if (tabId.startsWith('editor-')) {
+      const tab = useEditorsStore.getState().tabs.find((item) => item.id === tabId)
+      if (!tab) return
+      usePanesStore.getState().removeSessionFromPane(paneId, tab.id)
+      window.api.detach.create(
+        [tab.id],
+        tab.fileName,
+        [],
+        [tab],
+        { projectId: tab.projectId, worktreeId: tab.worktreeId ?? null },
+        pos,
+        size,
+      )
+      return
+    }
+    const session = useSessionsStore.getState().sessions.find((item) => item.id === tabId)
+    if (!session || session.pinned) return
+    const project = useProjectsStore.getState().projects.find((item) => item.id === session.projectId)
+    usePanesStore.getState().removeSessionFromPane(paneId, session.id)
+    window.api.detach.create(
+      [session.id],
+      project?.name ?? session.name,
+      [session],
+      [],
+      { projectId: session.projectId, worktreeId: session.worktreeId ?? null },
+      pos,
+      size,
+    )
+  }, [])
+  const copyPaneCommandPath = useCallback(() => {
+    const { tabId } = getPaneCommandActiveTab()
+    const projects = useProjectsStore.getState().projects
+    const worktrees = useWorktreesStore.getState().worktrees
+    let value: string | null = null
+    if (tabId?.startsWith('editor-')) {
+      value = useEditorsStore.getState().tabs.find((tab) => tab.id === tabId)?.filePath ?? null
+    } else if (tabId) {
+      const session = useSessionsStore.getState().sessions.find((item) => item.id === tabId)
+      if (session) {
+        const worktree = session.worktreeId
+          ? worktrees.find((item) => item.id === session.worktreeId && item.projectId === session.projectId)
+          : undefined
+        const project = projects.find((item) => item.id === session.projectId)
+        value = session.cwd ?? worktree?.path ?? project?.path ?? null
+      }
+    }
+    if (!value && selectedProjectIdForPaneCommand) {
+      const worktree = effectiveSelectedWorktreeIdForPaneCommand
+        ? worktrees.find((item) => item.id === effectiveSelectedWorktreeIdForPaneCommand)
+        : undefined
+      const project = projects.find((item) => item.id === selectedProjectIdForPaneCommand)
+      value = worktree?.path ?? project?.path ?? null
+    }
+    if (!value) return
+    void navigator.clipboard.writeText(value)
+    useUIStore.getState().addToast({ title: '已复制路径', body: value, type: 'success', duration: 1800 })
+  }, [effectiveSelectedWorktreeIdForPaneCommand, selectedProjectIdForPaneCommand])
+  const selectPaneCommandJumpItem = useCallback((item: PaneCommandJumpItem) => {
+    if (item.kind === 'project' || item.kind === 'worktree') {
+      switchProjectContext(item.projectId, null, item.worktreeId)
+      setPaneCommandJumpOpen(false)
+      focusPaneCommandSink()
+      return
+    }
+    if (item.kind === 'session' && item.tabId) {
+      switchProjectContext(item.projectId, item.tabId, item.worktreeId)
+      setPaneCommandJumpOpen(false)
+      focusPaneCommandSink()
+      return
+    }
+    if (item.kind === 'file' && item.filePath) {
+      switchProjectContext(item.projectId, null, item.worktreeId)
+      const tabId = useEditorsStore.getState().openFile(item.filePath, {
+        projectId: item.projectId,
+        worktreeId: item.worktreeId,
+      })
+      const paneStore = usePanesStore.getState()
+      paneStore.addSessionToPane(paneStore.activePaneId, tabId)
+      paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
+      setPaneCommandJumpOpen(false)
+      focusPaneCommandSink()
+    }
+  }, [focusPaneCommandSink])
+  const requestPaneCommandCloseSession = useCallback(() => {
+    const paneStore = usePanesStore.getState()
+    const sessionStore = useSessionsStore.getState()
+    const paneId = paneStore.activePaneId
+    const tabIds = paneStore.paneSessions[paneId] ?? []
+    const sessionId = paneStore.paneActiveSession[paneId] && tabIds.includes(paneStore.paneActiveSession[paneId]!)
+      ? paneStore.paneActiveSession[paneId]
+      : (tabIds[0] ?? null)
+    if (!sessionId || sessionId.startsWith('editor-')) return
+    const session = sessionStore.sessions.find((item) => item.id === sessionId)
+    if (!session || session.pinned) return
+    setPaneCommandCloseTarget({
+      paneId,
+      sessionId: session.id,
+      sessionName: session.name,
+      ptyId: session.ptyId ?? undefined,
+    })
+  }, [])
+  const cancelPaneCommandCloseSession = useCallback(() => {
+    setPaneCommandCloseTarget(null)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink])
+  const confirmPaneCommandCloseSession = useCallback(() => {
+    const target = paneCommandCloseTarget
+    if (!target) return
+    if (target.ptyId) void window.api.session.kill(target.ptyId)
+    usePanesStore.getState().removeSessionFromPane(target.paneId, target.sessionId)
+    useSessionsStore.getState().removeSession(target.sessionId)
+    setPaneCommandCloseTarget(null)
+    focusPaneCommandSink()
+  }, [focusPaneCommandSink, paneCommandCloseTarget])
+  const refreshAfterPaneCommandLayout = useCallback(() => {
+    window.requestAnimationFrame(refreshPaneCommandRects)
+  }, [refreshPaneCommandRects])
+  const runPaneCommand = useCallback((key: string): boolean => {
+    const paneStore = usePanesStore.getState()
+    const normalized = key.length === 1 ? key.toLowerCase() : key
+
+    if (normalized === 'Escape' || normalized === 'Enter' || normalized === 'q') {
+      exitPaneCommandMode()
+      return true
+    }
+
+    if (normalized === 'i') {
+      enterPaneCommandEditing()
+      return true
+    }
+
+    if (normalized === 'n') {
+      guardPaneCommandPanelOpening()
+      setPaneCommandNewSessionOpen(true)
+      return true
+    }
+
+    if (normalized === 'w') {
+      requestPaneCommandCloseSession()
+      return true
+    }
+
+    if (normalized === '?') {
+      guardPaneCommandPanelOpening()
+      setPaneCommandHelpOpen((current) => !current)
+      return true
+    }
+
+    if (normalized === ':') {
+      openPaneCommandInput()
+      return true
+    }
+
+    if (normalized === 'r') {
+      const { tabId } = getPaneCommandActiveTab()
+      if (tabId && !tabId.startsWith('editor-')) {
+        guardPaneCommandPanelOpening()
+        setPaneCommandRenameTargetId(tabId)
+      }
+      return true
+    }
+
+    if (normalized === 'd') {
+      detachActivePaneCommandTab()
+      return true
+    }
+
+    if (normalized === 'f') {
+      guardPaneCommandPanelOpening()
+      setPaneCommandTabSwitcherOpen(true)
+      return true
+    }
+
+    if (normalized === 'b') {
+      switchPaneCommandBack()
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 'g') {
+      guardPaneCommandPanelOpening()
+      setPaneCommandJumpOpen(true)
+      return true
+    }
+
+    if (normalized === 'o') {
+      keepOnlyActivePaneCommandPane()
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 'c') {
+      copyPaneCommandPath()
+      return true
+    }
+
+    if (normalized === 'p') {
+      openPaneCommandProjectSwitcher()
+      return true
+    }
+
+    if (normalized === '[' || normalized === ']') {
+      switchRecentPaneCommandProject(normalized === '[' ? -1 : 1)
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized >= '1' && normalized <= '9') {
+      const targetPaneId = getPaneLeafIds(paneStore.root)[Number(normalized) - 1]
+      if (targetPaneId) {
+        activatePaneAndSession(targetPaneId)
+        refreshAfterPaneCommandLayout()
+      }
+      return true
+    }
+
+    const direction = normalized === 'h' || normalized === 'ArrowLeft'
+      ? 'left'
+      : normalized === 'l' || normalized === 'ArrowRight'
+        ? 'right'
+        : normalized === 'k' || normalized === 'ArrowUp'
+          ? 'up'
+          : normalized === 'j' || normalized === 'ArrowDown'
+            ? 'down'
+            : null
+    if (direction) {
+      paneStore.navigatePane(direction)
+      activatePaneAndSession(usePanesStore.getState().activePaneId)
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 'z') {
+      paneStore.togglePaneFullscreen()
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 'e') {
+      paneStore.balanceSplits()
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 't') {
+      const { tabId } = getPaneCommandActiveTab()
+      smartSplitPanesByType(tabId)
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 'm') {
+      paneStore.mergeAllPanes()
+      activatePaneAndSession(usePanesStore.getState().activePaneId)
+      refreshAfterPaneCommandLayout()
+      return true
+    }
+
+    if (normalized === 'x') {
+      const leafIds = getPaneLeafIds(paneStore.root)
+      if (leafIds.length > 1) {
+        paneStore.mergePane(paneStore.activePaneId)
+        activatePaneAndSession(usePanesStore.getState().activePaneId)
+        refreshAfterPaneCommandLayout()
+      }
+      return true
+    }
+
+    if (normalized === 'v' || normalized === 's') {
+      const { paneId, tabId, tabIds } = getPaneCommandActiveTab()
+      if (tabId && tabIds.length > 1) {
+        paneStore.splitPane(paneId, normalized === 'v' ? 'right' : 'down', tabId)
+        activatePaneAndSession(usePanesStore.getState().activePaneId)
+        refreshAfterPaneCommandLayout()
+      }
+      return true
+    }
+
+    return false
+  }, [
+    copyPaneCommandPath,
+    detachActivePaneCommandTab,
+    enterPaneCommandEditing,
+    exitPaneCommandMode,
+    guardPaneCommandPanelOpening,
+    keepOnlyActivePaneCommandPane,
+    openPaneCommandInput,
+    openPaneCommandProjectSwitcher,
+    refreshAfterPaneCommandLayout,
+    requestPaneCommandCloseSession,
+    switchPaneCommandBack,
+    switchRecentPaneCommandProject,
+  ])
+  const runPaneCommandFromInput = useCallback((key: string) => {
+    setPaneCommandInputOpen(false)
+    runPaneCommand(key)
+  }, [runPaneCommand])
+  const paneCommandInputCommands = useMemo<PaneCommandInputCommand[]>(() => [
+    {
+      id: 'project',
+      label: '切换项目',
+      detail: '打开项目 / worktree 切换面板',
+      aliases: ['p', 'project', 'projects', 'switch project', '项目'],
+      run: () => runPaneCommandFromInput('p'),
+    },
+    {
+      id: 'tabs',
+      label: '切换标签',
+      detail: '搜索当前 pane 内的标签',
+      aliases: ['f', 'tab', 'tabs', 'find tab', '标签'],
+      run: () => runPaneCommandFromInput('f'),
+    },
+    {
+      id: 'jump',
+      label: '跳转',
+      detail: '统一搜索项目、worktree、会话和文件',
+      aliases: ['g', 'go', 'jump', 'goto', '跳转'],
+      run: () => runPaneCommandFromInput('g'),
+    },
+    {
+      id: 'new-session',
+      label: '新建会话',
+      detail: '在当前 pane 新建会话',
+      aliases: ['n', 'new', 'session', 'new session', '新建'],
+      run: () => runPaneCommandFromInput('n'),
+    },
+    {
+      id: 'rename',
+      label: '重命名当前会话',
+      detail: '重命名当前 active session',
+      aliases: ['r', 'rename', 'name', '重命名'],
+      run: () => runPaneCommandFromInput('r'),
+    },
+    {
+      id: 'detach',
+      label: '弹出独立窗口',
+      detail: '把当前 tab detach 到独立窗口',
+      aliases: ['d', 'detach', 'popout', 'window', '弹出'],
+      run: () => runPaneCommandFromInput('d'),
+    },
+    {
+      id: 'close-session',
+      label: '关闭当前会话',
+      detail: '请求关闭当前 active session',
+      aliases: ['w', 'close', 'close session', 'kill', '关闭'],
+      run: () => runPaneCommandFromInput('w'),
+    },
+    {
+      id: 'back',
+      label: '返回上一个 tab / 项目',
+      detail: '优先回到上一个 tab，否则切换最近项目',
+      aliases: ['b', 'back', 'previous', 'prev', '返回'],
+      run: () => runPaneCommandFromInput('b'),
+    },
+    {
+      id: 'copy-path',
+      label: '复制路径',
+      detail: '复制当前会话、文件或项目路径',
+      aliases: ['c', 'copy', 'copy path', 'path', '复制'],
+      run: () => runPaneCommandFromInput('c'),
+    },
+    {
+      id: 'only-pane',
+      label: '只保留当前 pane',
+      detail: '合并其他 pane 到当前 pane',
+      aliases: ['o', 'only', 'only pane', 'keep current', '只保留'],
+      run: () => runPaneCommandFromInput('o'),
+    },
+    {
+      id: 'help',
+      label: '快捷键帮助',
+      detail: '打开 Pane Mode 快捷键帮助',
+      aliases: ['?', 'help', 'shortcuts', '帮助'],
+      run: () => runPaneCommandFromInput('?'),
+    },
+    {
+      id: 'edit-input',
+      label: '回到会话输入',
+      detail: '临时把键盘输入交还给当前会话',
+      aliases: ['i', 'input', 'edit', 'terminal', '输入'],
+      run: () => runPaneCommandFromInput('i'),
+    },
+    {
+      id: 'zoom',
+      label: '放大 / 恢复 pane',
+      detail: '切换当前 pane 的 fullscreen 状态',
+      aliases: ['z', 'zoom', 'fullscreen', '放大'],
+      run: () => runPaneCommandFromInput('z'),
+    },
+    {
+      id: 'balance',
+      label: '等分布局',
+      detail: '平衡当前分屏比例',
+      aliases: ['e', 'equal', 'balance', '等分'],
+      run: () => runPaneCommandFromInput('e'),
+    },
+    {
+      id: 'smart-split',
+      label: '按类型整理分屏',
+      detail: '按 tab 类型重新整理 pane',
+      aliases: ['t', 'type', 'smart split', 'layout', '整理'],
+      run: () => runPaneCommandFromInput('t'),
+    },
+    {
+      id: 'merge-all',
+      label: '合并全部 pane',
+      detail: '把所有 pane 合并为一个 pane',
+      aliases: ['m', 'merge', 'merge all', '合并'],
+      run: () => runPaneCommandFromInput('m'),
+    },
+    {
+      id: 'close-pane',
+      label: '关闭当前 pane',
+      detail: '将当前 pane 合并到相邻 pane',
+      aliases: ['x', 'close pane', 'remove pane', '关闭pane'],
+      run: () => runPaneCommandFromInput('x'),
+    },
+    {
+      id: 'split-right',
+      label: '向右分屏',
+      detail: '把当前 tab 拆到右侧 pane',
+      aliases: ['v', 'vertical', 'split right', 'right', '右分屏'],
+      run: () => runPaneCommandFromInput('v'),
+    },
+    {
+      id: 'split-down',
+      label: '向下分屏',
+      detail: '把当前 tab 拆到下方 pane',
+      aliases: ['s', 'horizontal', 'split down', 'down', '下分屏'],
+      run: () => runPaneCommandFromInput('s'),
+    },
+    {
+      id: 'move-tab-left',
+      label: '移动 tab 到左侧 pane',
+      detail: '等同 Shift+H',
+      aliases: ['move left', 'shift h', 'left tab', '左移'],
+      run: () => {
+        setPaneCommandInputOpen(false)
+        moveActivePaneCommandTab('left')
+      },
+    },
+    {
+      id: 'move-tab-right',
+      label: '移动 tab 到右侧 pane',
+      detail: '等同 Shift+L',
+      aliases: ['move right', 'shift l', 'right tab', '右移'],
+      run: () => {
+        setPaneCommandInputOpen(false)
+        moveActivePaneCommandTab('right')
+      },
+    },
+    {
+      id: 'move-tab-up',
+      label: '移动 tab 到上方 pane',
+      detail: '等同 Shift+K',
+      aliases: ['move up', 'shift k', 'up tab', '上移'],
+      run: () => {
+        setPaneCommandInputOpen(false)
+        moveActivePaneCommandTab('up')
+      },
+    },
+    {
+      id: 'move-tab-down',
+      label: '移动 tab 到下方 pane',
+      detail: '等同 Shift+J',
+      aliases: ['move down', 'shift j', 'down tab', '下移'],
+      run: () => {
+        setPaneCommandInputOpen(false)
+        moveActivePaneCommandTab('down')
+      },
+    },
+    {
+      id: 'return-pane-mode',
+      label: '返回 Pane Mode',
+      detail: '关闭命令输入框，保留命令模式',
+      aliases: ['q', 'return', 'back to pane mode', '返回命令模式'],
+      run: closePaneCommandInput,
+    },
+    {
+      id: 'exit-pane-mode',
+      label: '退出命令模式',
+      detail: '关闭 Pane Mode 并恢复原焦点',
+      aliases: ['esc', 'exit', 'quit', '退出'],
+      run: () => runPaneCommandFromInput('Escape'),
+    },
+  ], [
+    closePaneCommandInput,
+    moveActivePaneCommandTab,
+    runPaneCommandFromInput,
+  ])
+
+  useEffect(() => {
+    if (!selectedProjectIdForPaneCommand) return
+    const key = getPaneCommandProjectContextKey(selectedProjectIdForPaneCommand, effectiveSelectedWorktreeIdForPaneCommand)
+    setPaneCommandRecentProjectKeys((current) => [key, ...current.filter((item) => item !== key)].slice(0, 12))
+  }, [effectiveSelectedWorktreeIdForPaneCommand, selectedProjectIdForPaneCommand])
 
   // Load config from file on startup
   useEffect(() => {
@@ -975,13 +2984,44 @@ function MainApp(): JSX.Element {
 
   useEffect(() => {
     if (!paneCommandMode) {
+      setPaneCommandEditing(false)
+      paneCommandProjectSwitcherOpenRef.current = false
+      setPaneCommandProjectSwitcherOpen(false)
+      setPaneCommandHelpOpen(false)
+      setPaneCommandRenameTargetId(null)
+      setPaneCommandTabSwitcherOpen(false)
+      setPaneCommandJumpOpen(false)
+      setPaneCommandInputOpen(false)
       setPaneCommandRects([])
       return
     }
 
-    refreshPaneCommandRects()
-    window.addEventListener('resize', refreshPaneCommandRects)
-    return () => window.removeEventListener('resize', refreshPaneCommandRects)
+    let frame: number | null = null
+    const timeouts: number[] = []
+    const scheduleRefresh = (): void => {
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        refreshPaneCommandRects()
+      })
+    }
+
+    scheduleRefresh()
+    for (const delay of [80, 180, 320]) {
+      timeouts.push(window.setTimeout(scheduleRefresh, delay))
+    }
+
+    const resizeObserver = new ResizeObserver(scheduleRefresh)
+    document.querySelectorAll<HTMLElement>('.app-main-frame, .pane-surface').forEach((element) => {
+      resizeObserver.observe(element)
+    })
+    window.addEventListener('resize', scheduleRefresh)
+    return () => {
+      window.removeEventListener('resize', scheduleRefresh)
+      resizeObserver.disconnect()
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      for (const timeout of timeouts) window.clearTimeout(timeout)
+    }
   }, [paneCommandMode, refreshPaneCommandRects])
 
   useEffect(() => {
@@ -989,6 +3029,10 @@ function MainApp(): JSX.Element {
     const frame = window.requestAnimationFrame(refreshPaneCommandRects)
     return () => window.cancelAnimationFrame(frame)
   }, [paneCommandMode, paneCommandRoot, refreshPaneCommandRects])
+
+  useEffect(() => {
+    if (paneCommandMode && !paneCommandEditing) focusPaneCommandSink()
+  }, [focusPaneCommandSink, paneCommandEditing, paneCommandMode])
 
   // Alt+F enters a tmux-style pane command mode. While active, single keys
   // operate on panes before terminal/editor content can consume them.
@@ -1003,99 +3047,6 @@ function MainApp(): JSX.Element {
       })
     }
 
-    const getActiveTab = (): { paneId: string; tabId: string | null; tabIds: string[] } => {
-      const paneStore = usePanesStore.getState()
-      const paneId = paneStore.activePaneId
-      const tabIds = paneStore.paneSessions[paneId] ?? []
-      const tabId = paneStore.paneActiveSession[paneId] && tabIds.includes(paneStore.paneActiveSession[paneId]!)
-        ? paneStore.paneActiveSession[paneId]
-        : (tabIds[0] ?? null)
-      return { paneId, tabId, tabIds }
-    }
-
-    const runPaneCommand = (key: string): boolean => {
-      const paneStore = usePanesStore.getState()
-      const normalized = key.length === 1 ? key.toLowerCase() : key
-
-      if (normalized === 'Escape' || normalized === 'q') {
-        setPaneCommandMode(false)
-        return true
-      }
-
-      if (normalized >= '1' && normalized <= '9') {
-        const targetPaneId = getPaneLeafIds(paneStore.root)[Number(normalized) - 1]
-        if (targetPaneId) {
-          activatePaneAndSession(targetPaneId)
-          refreshAfterLayout()
-        }
-        return true
-      }
-
-      const direction = normalized === 'h' || normalized === 'ArrowLeft'
-        ? 'left'
-        : normalized === 'l' || normalized === 'ArrowRight'
-          ? 'right'
-          : normalized === 'k' || normalized === 'ArrowUp'
-            ? 'up'
-            : normalized === 'j' || normalized === 'ArrowDown'
-              ? 'down'
-              : null
-      if (direction) {
-        paneStore.navigatePane(direction)
-        activatePaneAndSession(usePanesStore.getState().activePaneId)
-        refreshAfterLayout()
-        return true
-      }
-
-      if (normalized === 'z') {
-        paneStore.togglePaneFullscreen()
-        refreshAfterLayout()
-        return true
-      }
-
-      if (normalized === 'e') {
-        paneStore.balanceSplits()
-        refreshAfterLayout()
-        return true
-      }
-
-      if (normalized === 't') {
-        const { tabId } = getActiveTab()
-        smartSplitPanesByType(tabId)
-        refreshAfterLayout()
-        return true
-      }
-
-      if (normalized === 'm') {
-        paneStore.mergeAllPanes()
-        activatePaneAndSession(usePanesStore.getState().activePaneId)
-        refreshAfterLayout()
-        return true
-      }
-
-      if (normalized === 'x') {
-        const leafIds = getPaneLeafIds(paneStore.root)
-        if (leafIds.length > 1) {
-          paneStore.mergePane(paneStore.activePaneId)
-          activatePaneAndSession(usePanesStore.getState().activePaneId)
-          refreshAfterLayout()
-        }
-        return true
-      }
-
-      if (normalized === 'v' || normalized === 's') {
-        const { paneId, tabId, tabIds } = getActiveTab()
-        if (tabId && tabIds.length > 1) {
-          paneStore.splitPane(paneId, normalized === 'v' ? 'right' : 'down', tabId)
-          activatePaneAndSession(usePanesStore.getState().activePaneId)
-          refreshAfterLayout()
-        }
-        return true
-      }
-
-      return false
-    }
-
     const handlePaneCommandMode = (e: KeyboardEvent): void => {
       const isPrefix = e.altKey
         && !e.ctrlKey
@@ -1108,12 +3059,63 @@ function MainApp(): JSX.Element {
         if (ui.settings.workspaceLayout === 'canvas' || ui.settingsOpen) return
         e.preventDefault()
         e.stopPropagation()
-        setPaneCommandMode((active) => !active)
+        if (paneCommandModeRef.current) {
+          exitPaneCommandMode()
+        } else {
+          enterPaneCommandMode()
+        }
         refreshAfterLayout()
         return
       }
 
-      if (!paneCommandMode) return
+      if (!paneCommandModeRef.current) return
+
+      if (
+        Date.now() < paneCommandPanelOpeningUntilRef.current
+        && e.key === 'Enter'
+        && !isPlainTextEditingTarget(e.target)
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+
+      if (paneCommandCloseTarget) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.key === 'Enter') {
+          confirmPaneCommandCloseSession()
+        } else if (e.key === 'Escape' || e.key.toLowerCase() === 'q') {
+          cancelPaneCommandCloseSession()
+        }
+        return
+      }
+
+      if (paneCommandHelpOpen) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.key === 'Escape' || e.key === '?' || e.key.toLowerCase() === 'q') closePaneCommandHelp()
+        return
+      }
+
+      if (
+        paneCommandNewSessionOpen
+        || paneCommandProjectSwitcherOpenRef.current
+        || paneCommandRenameTargetId
+        || paneCommandTabSwitcherOpen
+        || paneCommandJumpOpen
+        || paneCommandInputOpen
+        || ui.sessionNamePrompt
+      ) return
+
+      if (paneCommandEditing) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          e.stopPropagation()
+          exitPaneCommandEditing()
+        }
+        return
+      }
 
       e.preventDefault()
       e.stopPropagation()
@@ -1131,6 +3133,22 @@ function MainApp(): JSX.Element {
         if (direction) {
           usePanesStore.getState().resizeActivePane(direction)
           refreshAfterLayout()
+          return
+        }
+      }
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+        const direction = key === 'h'
+          ? 'left'
+          : key === 'l'
+            ? 'right'
+            : key === 'k'
+              ? 'up'
+              : key === 'j'
+                ? 'down'
+                : null
+        if (direction) {
+          moveActivePaneCommandTab(direction)
           return
         }
       }
@@ -1154,7 +3172,37 @@ function MainApp(): JSX.Element {
       window.removeEventListener('keydown', handlePaneCommandMode, true)
       if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame)
     }
-  }, [paneCommandMode, refreshPaneCommandRects])
+  }, [
+    cancelPaneCommandCloseSession,
+    closePaneCommandHelp,
+    closePaneCommandProjectSwitcher,
+    copyPaneCommandPath,
+    confirmPaneCommandCloseSession,
+    detachActivePaneCommandTab,
+    enterPaneCommandEditing,
+    enterPaneCommandMode,
+    exitPaneCommandEditing,
+    exitPaneCommandMode,
+    guardPaneCommandPanelOpening,
+    keepOnlyActivePaneCommandPane,
+    moveActivePaneCommandTab,
+    openPaneCommandProjectSwitcher,
+    paneCommandCloseTarget,
+    paneCommandHelpOpen,
+    paneCommandInputOpen,
+    paneCommandJumpOpen,
+    paneCommandNewSessionOpen,
+    paneCommandProjectSwitcherOpen,
+    paneCommandRenameTargetId,
+    paneCommandTabSwitcherOpen,
+    paneCommandEditing,
+    paneCommandMode,
+    requestPaneCommandCloseSession,
+    refreshPaneCommandRects,
+    runPaneCommand,
+    switchPaneCommandBack,
+    switchRecentPaneCommandProject,
+  ])
 
   useEffect(() => {
     const handlePaneTabSwitch = (e: KeyboardEvent): void => {
@@ -1206,12 +3254,6 @@ function MainApp(): JSX.Element {
         const ui = useUIStore.getState()
         const next = ui.settings.workspaceLayout === 'canvas' ? 'panes' : 'canvas'
         ui.updateSettings({ workspaceLayout: next })
-        ui.addToast({
-          title: next === 'canvas' ? '已切换到画布模式' : '已切换到分屏模式',
-          body: next === 'canvas' ? '滚轮缩放，空格 + 拖拽平移' : '分屏布局已恢复',
-          type: 'info',
-          duration: 3000,
-        })
         return
       }
 
@@ -1265,10 +3307,12 @@ function MainApp(): JSX.Element {
   }, [])
 
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
+  const focusMode = useUIStore((s) => s.focusMode)
   const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
   const hideRightPanel = useUIStore((s) => s.hideRightPanel)
   const hideStatusBar = useUIStore((s) => s.hideStatusBar)
   const hideTitleBar = useUIStore((s) => s.hideTitleBar)
+  const settingsOpen = useUIStore((s) => s.settingsOpen)
 
   if (!ready) {
     return (
@@ -1278,11 +3322,12 @@ function MainApp(): JSX.Element {
     )
   }
 
-  // Window fullscreen hides chrome. Pane fullscreen is handled inside
-  // SplitContainer so it only expands within the central workspace.
-  const hideChrome = windowFullscreen
+  // Native fullscreen and focus mode share the same app-chrome hiding path.
+  // Focus mode keeps the OS taskbar visible because it does not enter
+  // Electron fullscreen.
+  const hideChrome = windowFullscreen || focusMode
   const isMac = window.api.platform === 'darwin'
-  const showPaneCommandPaneNumbers = paneCommandMode && getPaneLeafIds(paneCommandRoot).length > 1
+  const showPaneCommandPaneNumbers = paneCommandMode && !settingsOpen && getPaneLeafIds(paneCommandRoot).length > 1
 
   return (
     <div className={cn(
@@ -1291,7 +3336,7 @@ function MainApp(): JSX.Element {
       appChromeStyle === 'joined' ? 'app-shell-joined' : 'app-shell-floating',
       showPaneCommandPaneNumbers && 'pane-command-mode',
     )}>
-      {!hideChrome && <TitleBar />}
+      {!windowFullscreen && <TitleBar />}
       <div className={cn(
         'app-content-shell flex flex-1 overflow-hidden',
         !hideChrome && 'gap-[var(--layout-gap)] p-[var(--layout-gap)]',
@@ -1319,10 +3364,69 @@ function MainApp(): JSX.Element {
       )}
 
       {paneCommandMode && (
-        <PaneCommandOverlay
-          rects={showPaneCommandPaneNumbers ? paneCommandRects : []}
-          activePaneId={paneCommandActivePaneId}
-        />
+        <>
+          <div
+            ref={paneCommandFocusRef}
+            tabIndex={-1}
+            className="fixed left-0 top-0 z-[9399] h-px w-px opacity-0 outline-none"
+          />
+          <PaneCommandOverlay
+            rects={showPaneCommandPaneNumbers ? paneCommandRects : []}
+            activePaneId={paneCommandActivePaneId}
+            editing={paneCommandEditing}
+          />
+          {paneCommandNewSessionOpen && (
+            <PaneCommandNewSessionDialog
+              onClose={closePaneCommandNewSession}
+              onAfterNamePromptClose={focusPaneCommandSink}
+            />
+          )}
+          {paneCommandProjectSwitcherOpen && (
+            <PaneCommandProjectSwitcher
+              recentKeys={paneCommandRecentProjectKeys}
+              onBack={closePaneCommandProjectSwitcher}
+              onSelect={switchPaneCommandProjectContext}
+            />
+          )}
+          {paneCommandHelpOpen && (
+            <PaneCommandHelpPanel onClose={closePaneCommandHelp} />
+          )}
+          {paneCommandRenameTargetId && (
+            <PaneCommandRenameDialog
+              tabId={paneCommandRenameTargetId}
+              onBack={closePaneCommandRename}
+              onRenamed={closePaneCommandRename}
+            />
+          )}
+          {paneCommandTabSwitcherOpen && (
+            <PaneCommandTabSwitcher
+              onBack={closePaneCommandTabSwitcher}
+              onSelect={activatePaneCommandTab}
+            />
+          )}
+          {paneCommandJumpOpen && (
+            <PaneCommandJumpMenu
+              onBack={closePaneCommandJump}
+              onSelect={selectPaneCommandJumpItem}
+            />
+          )}
+          {paneCommandInputOpen && (
+            <PaneCommandInputDialog
+              commands={paneCommandInputCommands}
+              onBack={closePaneCommandInput}
+            />
+          )}
+          {paneCommandCloseTarget && (
+            <ConfirmDialog
+              title="关闭会话"
+              message={`确认关闭 "${paneCommandCloseTarget.sessionName}" 吗？`}
+              confirmLabel="关闭"
+              danger
+              onConfirm={confirmPaneCommandCloseSession}
+              onCancel={cancelPaneCommandCloseSession}
+            />
+          )}
+        </>
       )}
 
       {/* Settings dialog */}

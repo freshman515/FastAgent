@@ -3,6 +3,15 @@ import { cancelViewportAnimation, useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
 import type { CardCoordinateMode } from '../cards/CardFrame'
 import { screenToWorld } from './useCanvasViewport'
+import {
+  applyAvoidanceStyles,
+  applyLiveFrameAutoLayoutForGeometry,
+  cleanupAvoidanceTransitions,
+  resetLiveFrameAutoLayout,
+  resolveAvoidOverlap,
+  type AvoidanceGeometry,
+  type AvoidanceState,
+} from './useCardDrag'
 
 export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
@@ -26,6 +35,8 @@ interface ResizeState {
   liveHeight: number
   liveX: number
   liveY: number
+  avoidance: AvoidanceState
+  liveFrameIds: Set<string>
 }
 
 interface UseCardResizeOptions {
@@ -126,9 +137,30 @@ export function useCardResize({
           cardEl.style.height = `${nextHeight}px`
         }
       }
+
+      const cards = useCanvasStore.getState().getLayout().cards
+      const settings = useUIStore.getState().settings
+      const geometry = new Map<string, AvoidanceGeometry>([
+        [cardId, { x: nextX, y: nextY, width: nextWidth, height: nextHeight }],
+      ])
+      if (settings.canvasOverlapMode === 'avoid') {
+        const avoidance = resolveAvoidOverlap(cards, [cardId], 0, 0, geometry)
+        applyAvoidanceStyles(cards, avoidance, state.avoidance)
+        state.avoidance = avoidance
+      } else if (state.avoidance.affectedIds.size > 0) {
+        applyAvoidanceStyles(cards, { positions: new Map(), affectedIds: new Set() }, state.avoidance)
+        state.avoidance = { positions: new Map(), affectedIds: new Set() }
+      }
+      state.liveFrameIds = applyLiveFrameAutoLayoutForGeometry(
+        cards,
+        geometry,
+        state.liveFrameIds,
+        state.avoidance.positions,
+      )
     }
 
     const getEdgePanVelocity = (state: ResizeState): { x: number; y: number } => {
+      if (!useUIStore.getState().settings.canvasAutoPanOnDrag) return { x: 0, y: 0 }
       const viewportEl = state.viewportEl
       if (!viewportEl) return { x: 0, y: 0 }
 
@@ -227,6 +259,8 @@ export function useCardResize({
         liveHeight: card.height,
         liveX: card.x,
         liveY: card.y,
+        avoidance: { positions: new Map(), affectedIds: new Set() },
+        liveFrameIds: new Set(),
       }
       element.setPointerCapture(event.pointerId)
       useCanvasStore.getState().setSelection([cardId])
@@ -245,9 +279,25 @@ export function useCardResize({
       if (!state) return
       try { element.releasePointerCapture(event.pointerId) } catch { /* noop */ }
       stopAutoPan()
-      const { liveWidth, liveHeight, liveX, liveY } = state
+      const { liveWidth, liveHeight, liveX, liveY, avoidance, liveFrameIds } = state
       stateRef.current = null
-      useCanvasStore.getState().resizeCard(cardId, liveWidth, liveHeight, liveX, liveY)
+      const cards = useCanvasStore.getState().getLayout().cards
+      const geometry = new Map<string, AvoidanceGeometry>([
+        [cardId, { x: liveX, y: liveY, width: liveWidth, height: liveHeight }],
+      ])
+      for (const [id, position] of avoidance.positions) {
+        const card = cards.find((candidate) => candidate.id === id)
+        if (!card || card.kind === 'frame') continue
+        geometry.set(id, {
+          x: position.x,
+          y: position.y,
+          width: card.width,
+          height: card.height,
+        })
+      }
+      useCanvasStore.getState().updateCardsGeometry(geometry)
+      resetLiveFrameAutoLayout(liveFrameIds)
+      cleanupAvoidanceTransitions(avoidance.affectedIds)
       if (event.type === 'pointerup') {
         requestAnimationFrame(() => {
           useCanvasStore.getState().focusOnCard(cardId)

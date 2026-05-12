@@ -55,7 +55,7 @@ export function FrameCard({ card, coordinateMode }: FrameCardProps): JSX.Element
   const title = (
     <span className="flex min-w-0 flex-1 items-center gap-2">
       <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] font-semibold text-[var(--canvas-frame-accent)]">
-        {card.frameTitle?.trim() || '分组'}
+        {card.frameTitle?.trim() || '空间'}
       </span>
       {memberCount > 0 && (
         <span className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--canvas-frame-accent)_15%,transparent)] px-2 py-0.5 text-[var(--ui-font-2xs)] font-semibold text-[var(--canvas-frame-accent)]">
@@ -86,7 +86,7 @@ export function FrameCard({ card, coordinateMode }: FrameCardProps): JSX.Element
                 )}
                 style={{ backgroundColor: value.accent, borderColor: value.accent }}
                 title={value.label}
-                aria-label={`设置分组颜色：${value.label}`}
+                aria-label={`设置空间颜色：${value.label}`}
               />
             ))}
           </div>
@@ -99,7 +99,7 @@ export function FrameCard({ card, coordinateMode }: FrameCardProps): JSX.Element
                 toggleFrameCollapsed(card.id)
               }}
               className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--canvas-frame-accent)]"
-              title={card.collapsed ? '展开分组' : '折叠分组'}
+              title={card.collapsed ? '展开空间' : '折叠空间'}
             >
               {card.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
             </button>
@@ -107,7 +107,7 @@ export function FrameCard({ card, coordinateMode }: FrameCardProps): JSX.Element
         </>
       )}
       onDelete={() => removeCard(card.id)}
-      deleteTitle="删除分组"
+      deleteTitle="删除空间"
       onHeaderClick={focusFrame}
       onHeaderDoubleClick={focusFrameWorkspace}
       minWidth={240}

@@ -1,4 +1,4 @@
-import { ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
+import { ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
@@ -13,7 +13,7 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { MusicPlayer } from './MusicPlayer'
 import { TitleBarSearch } from './TitleBarSearch'
 import type { ExternalIdeOption } from '@shared/types'
-import { setCurrentSessionFullscreen, toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
+import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 
 type TitleMenuId = 'file' | 'edit' | 'view' | 'help'
 
@@ -43,6 +43,7 @@ export function TitleBar(): JSX.Element | null {
   const [menuAreaHovered, setMenuAreaHovered] = useState(false)
   const [titleBarRevealHovered, setTitleBarRevealHovered] = useState(false)
   const [availableIdes, setAvailableIdes] = useState<ExternalIdeOption[]>([])
+  const titleBarRevealHoveredRef = useRef(false)
   const ideMenuRef = useRef<HTMLDivElement>(null)
   const titleMenuRef = useRef<HTMLDivElement>(null)
   const titleMenuPopupRef = useRef<HTMLDivElement>(null)
@@ -126,6 +127,8 @@ export function TitleBar(): JSX.Element | null {
   const hideRightPanel = useUIStore((s) => s.hideRightPanel)
   const hideStatusBar = useUIStore((s) => s.hideStatusBar)
   const hideTitleBar = useUIStore((s) => s.hideTitleBar)
+  const focusMode = useUIStore((s) => s.focusMode)
+  const setFocusMode = useUIStore((s) => s.setFocusMode)
   const toggleHideLeftPanel = useUIStore((s) => s.toggleHideLeftPanel)
   const toggleHideRightPanel = useUIStore((s) => s.toggleHideRightPanel)
   const toggleHideStatusBar = useUIStore((s) => s.toggleHideStatusBar)
@@ -138,7 +141,12 @@ export function TitleBar(): JSX.Element | null {
   const sessions = useSessionsStore((s) => s.sessions)
 
   useEffect(() => {
-    if (!hideTitleBar) {
+    titleBarRevealHoveredRef.current = titleBarRevealHovered
+  }, [titleBarRevealHovered])
+
+  useEffect(() => {
+    const titleBarHidden = hideTitleBar || focusMode
+    if (!titleBarHidden) {
       setTitleBarRevealHovered(false)
       return
     }
@@ -153,7 +161,7 @@ export function TitleBar(): JSX.Element | null {
         const cursorState = await window.api.window.getTitleBarCursorState()
         if (disposed) return
 
-        if (cursorState.inRevealZone || (titleBarRevealHovered && cursorState.inTitleBarZone)) {
+        if (cursorState.inRevealZone || (titleBarRevealHoveredRef.current && cursorState.inTitleBarZone)) {
           setTitleBarRevealHovered(true)
         } else if (activeMenu === null && !ideMenuOpen) {
           setTitleBarRevealHovered(false)
@@ -164,7 +172,7 @@ export function TitleBar(): JSX.Element | null {
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (event.clientY <= 2) {
+      if (event.clientY <= 8) {
         setTitleBarRevealHovered(true)
       }
     }
@@ -177,7 +185,7 @@ export function TitleBar(): JSX.Element | null {
       window.clearInterval(intervalId)
       window.removeEventListener('pointermove', handlePointerMove)
     }
-  }, [activeMenu, hideTitleBar, ideMenuOpen, titleBarRevealHovered])
+  }, [activeMenu, focusMode, hideTitleBar, ideMenuOpen])
 
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const projects = useProjectsStore((s) => s.projects)
@@ -190,7 +198,9 @@ export function TitleBar(): JSX.Element | null {
   )
   const activeProjectPath = selectedWorktree?.path ?? selectedProject?.path ?? null
   const menuVisible = titleBarMenuVisibility === 'always' || menuAreaHovered || activeMenu !== null
-  const titleBarRevealed = !hideTitleBar || titleBarRevealHovered || activeMenu !== null || ideMenuOpen
+  const titleBarHidden = hideTitleBar || focusMode
+  const titleBarRevealed = !titleBarHidden || titleBarRevealHovered || activeMenu !== null || ideMenuOpen
+  const focusModeActive = focusMode
   const activeSession = activeTabId && !activeTabId.startsWith('editor-')
     ? sessions.find((session) => session.id === activeTabId)
     : undefined
@@ -262,12 +272,7 @@ export function TitleBar(): JSX.Element | null {
   const handleToggleWorkspaceLayout = useCallback(() => {
     const next = workspaceLayout === 'canvas' ? 'panes' : 'canvas'
     updateSettings({ workspaceLayout: next })
-    addToast({
-      type: 'info',
-      title: next === 'canvas' ? '已切换到画布模式' : '已切换到经典模式',
-      body: next === 'canvas' ? '滚轮缩放，空格 + 拖拽平移' : '经典标签与分屏布局已恢复',
-    })
-  }, [addToast, updateSettings, workspaceLayout])
+  }, [updateSettings, workspaceLayout])
 
   const handleToggleHideTitleBar = useCallback(() => {
     setTitleBarRevealHovered(false)
@@ -276,6 +281,14 @@ export function TitleBar(): JSX.Element | null {
     setActiveMenu(null)
     toggleHideTitleBar()
   }, [toggleHideTitleBar])
+
+  const handleToggleFocusMode = useCallback(() => {
+    setTitleBarRevealHovered(false)
+    setMenuAreaHovered(false)
+    setIdeMenuOpen(false)
+    setActiveMenu(null)
+    setFocusMode(!focusMode)
+  }, [focusMode, setFocusMode])
 
   const handleCopyText = useCallback(async (value: string, title: string) => {
     try {
@@ -410,6 +423,11 @@ export function TitleBar(): JSX.Element | null {
             onSelect: handleToggleHideTitleBar,
           },
           {
+            icon: Focus,
+            label: focusModeActive ? '退出专注模式' : '进入专注模式',
+            onSelect: handleToggleFocusMode,
+          },
+          {
             icon: Search,
             label: '打开搜索面板',
             onSelect: () => activateDockPanel('search'),
@@ -462,6 +480,7 @@ export function TitleBar(): JSX.Element | null {
     defaultCustomSession,
     defaultSessionType,
     fullscreenPaneId,
+    focusModeActive,
     hideLeftPanel,
     hideRightPanel,
     hideStatusBar,
@@ -473,6 +492,7 @@ export function TitleBar(): JSX.Element | null {
     handleShowAbout,
     handleShowShortcuts,
     handleToggleHideTitleBar,
+    handleToggleFocusMode,
     openSettings,
     selectedProject?.name,
     selectedProjectId,
@@ -498,7 +518,7 @@ export function TitleBar(): JSX.Element | null {
 
   return (
     <>
-    {hideTitleBar && (
+    {titleBarHidden && (
       <div
         className="no-drag fixed inset-x-0 top-0 z-[119] h-2"
         onMouseEnter={() => setTitleBarRevealHovered(true)}
@@ -507,13 +527,12 @@ export function TitleBar(): JSX.Element | null {
     <div
       className={cn(
         'titlebar-fixed drag-region flex h-10 shrink-0 items-center justify-between bg-[var(--color-titlebar-bg)] transition-[transform,box-shadow] duration-200 ease-out',
-        hideTitleBar
+        titleBarHidden
           ? 'fixed inset-x-0 top-0 z-[120] shadow-xl shadow-black/25'
           : 'relative',
-        hideTitleBar && (titleBarRevealed ? 'translate-y-0' : '-translate-y-full shadow-none'),
+        titleBarHidden && (titleBarRevealed ? 'translate-y-0' : '-translate-y-full shadow-none'),
       )}
       onMouseEnter={() => setTitleBarRevealHovered(true)}
-      onMouseLeave={() => setTitleBarRevealHovered(false)}
     >
       <div
         ref={titleMenuRef}
@@ -605,6 +624,22 @@ export function TitleBar(): JSX.Element | null {
       </div>
 
       <div className="no-drag flex h-full items-center">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={focusModeActive}
+          aria-label={focusModeActive ? '退出专注模式' : '进入专注模式'}
+          onClick={handleToggleFocusMode}
+          className={cn(
+            'mr-2 flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] border transition-colors duration-100',
+            focusModeActive
+              ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/18 text-[var(--color-accent)]'
+              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+          )}
+          title={focusModeActive ? '退出专注模式' : '进入专注模式'}
+        >
+          <Focus size={14} />
+        </button>
         <button
           type="button"
           role="switch"

@@ -1686,6 +1686,13 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     scrollToLatest()
   }, [scrollToLatest])
 
+  const handleMiddleMouseScrollToLatest = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 1 || settings.workspaceLayout !== 'panes') return
+    event.preventDefault()
+    event.stopPropagation()
+    scrollToLatest()
+  }, [scrollToLatest, settings.workspaceLayout])
+
   const doJumpToQuestionLine = useCallback((line: number | null) => {
     setContextMenu(null)
     if (line === null) return
@@ -1753,7 +1760,10 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
     : undefined
 
   return (
-    <div className="terminal-view group/terminal-view h-full w-full bg-[var(--color-terminal-bg)]">
+    <div
+      className="terminal-view group/terminal-view h-full w-full bg-[var(--color-terminal-bg)]"
+      onMouseDown={handleMiddleMouseScrollToLatest}
+    >
       <div ref={terminalViewRef} className="relative h-full w-full bg-[var(--color-terminal-bg)]">
       {/* Search bar */}
       {searchOpen && (

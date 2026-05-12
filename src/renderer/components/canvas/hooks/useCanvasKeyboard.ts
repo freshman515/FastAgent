@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { CanvasCard } from '@shared/types'
 import { cancelViewportAnimation, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
+import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useUIStore } from '@/stores/ui'
 
 type CanvasNavigationDirection = 'left' | 'right' | 'up' | 'down'
@@ -178,12 +179,23 @@ function focusCanvasCardInDirection(direction: CanvasNavigationDirection): boole
   const sourceCard = store.getCard(selection[0])
   if (!sourceCard || isCanvasCardHidden(sourceCard)) return false
 
-  const targetCard = findCanvasNavigationTarget(sourceCard, store.getCards(), direction)
+  const targetCard = findCanvasNavigationTarget(sourceCard, getCardsForActiveSpace(), direction)
   if (!targetCard) return false
 
   store.clearFocusReturn()
   store.focusOnCard(targetCard.id)
   return true
+}
+
+function getCardsForActiveSpace(): CanvasCard[] {
+  const store = useCanvasStore.getState()
+  const cards = store.getCards()
+  const activeSpaceId = useCanvasUiStore.getState().activeSpaceId
+  if (!activeSpaceId) return cards
+  const activeSpace = cards.find((card) => card.id === activeSpaceId && card.kind === 'frame')
+  if (!activeSpace) return cards
+  const visibleIds = new Set([activeSpace.id, ...(activeSpace.frameMemberIds ?? [])])
+  return cards.filter((card) => visibleIds.has(card.id))
 }
 
 /**
@@ -272,7 +284,7 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
       // Select all
       if (event.key === 'a' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault()
-        const all = store.getCards().map((c) => c.id)
+        const all = getCardsForActiveSpace().map((c) => c.id)
         store.setSelection(all)
         return
       }

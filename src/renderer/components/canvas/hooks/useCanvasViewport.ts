@@ -1,15 +1,46 @@
 import { useEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import { CANVAS_MAX_SCALE, CANVAS_MIN_SCALE } from '@shared/types'
 import { cancelViewportAnimation, useCanvasStore } from '@/stores/canvas'
+import { useUIStore, type CanvasInputMode, type CanvasWheelZoomModifier } from '@/stores/ui'
+
+type DetectedCanvasInputMode = 'mouse' | 'trackpad'
+type CanvasViewportSnapshot = { scale: number; offsetX: number; offsetY: number }
+
+function getPrimaryWheelZoomModifier(): 'ctrl' | 'meta' {
+  return window.api.platform === 'darwin' ? 'meta' : 'ctrl'
+}
+
+function isWheelZoomModifierPressed(event: WheelEvent, modifier: CanvasWheelZoomModifier): boolean {
+  const resolved = modifier === 'primary' ? getPrimaryWheelZoomModifier() : modifier
+  if (resolved === 'meta') return event.metaKey
+  if (resolved === 'ctrl') return event.ctrlKey
+  return event.altKey
+}
+
+function looksLikeTrackpadWheel(event: WheelEvent): boolean {
+  if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return false
+  const absX = Math.abs(event.deltaX)
+  const absY = Math.abs(event.deltaY)
+  if (absX > 0 && absY > 0) return true
+  if (absX > 0 && absY === 0) return true
+  const primaryDelta = Math.max(absX, absY)
+  if (primaryDelta === 0) return false
+  return primaryDelta < 80 || !Number.isInteger(primaryDelta)
+}
+
+function resolveInputMode(setting: CanvasInputMode, detected: DetectedCanvasInputMode): DetectedCanvasInputMode {
+  return setting === 'auto' ? detected : setting
+}
 
 /**
  * Wire wheel-based zoom (anchored on cursor), wheel-based pan, and
  * space/middle-click drag-to-pan onto the given viewport element.
  *
- * Viewport state lives in `useCanvasStore` and is committed synchronously —
- * high frequency wheel events pass through `setViewport` which only produces
- * a new layout object for the active key. Cards that opt into screen-space
- * projection use that viewport to compute crisp, non-transformed bounds.
+ * Viewport state lives in `useCanvasStore`. Pointer drag-to-pan moves one
+ * shared screen-space layer during the gesture and commits the final viewport
+ * on release, matching the single-viewport movement model used by OpenCove.
+ * Wheel gestures commit directly because zoom needs cursor anchoring.
  */
 export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
   // We intentionally read from the store imperatively inside listeners to avoid
@@ -17,14 +48,55 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
   const isPanningRef = useRef(false)
   const spaceDownRef = useRef(false)
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null)
+  const panStartViewportRef = useRef<CanvasViewportSnapshot | null>(null)
+  const livePanOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const detectedInputModeRef = useRef<DetectedCanvasInputMode>('mouse')
 
   useEffect(() => {
     if (!viewportEl) return
+    const panLayer = viewportEl.querySelector<HTMLElement>('[data-canvas-pan-layer]')
+
+    const resetLivePanLayer = (): void => {
+      if (!panLayer) return
+      panLayer.style.transform = ''
+      panLayer.style.willChange = ''
+    }
+
+    const applyLivePanLayer = (x: number, y: number): void => {
+      if (!panLayer) return
+      panLayer.style.willChange = 'transform'
+      panLayer.style.transform = `translate3d(${x}px, ${y}px, 0)`
+    }
+
+    const commitLivePan = (): void => {
+      const startViewport = panStartViewportRef.current
+      if (!startViewport) {
+        resetLivePanLayer()
+        return
+      }
+
+      const { x, y } = livePanOffsetRef.current
+      if (x === 0 && y === 0) {
+        resetLivePanLayer()
+        return
+      }
+
+      flushSync(() => {
+        useCanvasStore.getState().setViewport({
+          offsetX: startViewport.offsetX + x,
+          offsetY: startViewport.offsetY + y,
+        })
+      })
+      resetLivePanLayer()
+    }
 
     const onWheel = (event: WheelEvent): void => {
+      const settings = useUIStore.getState().settings
       const target = event.target as HTMLElement | null
       const overCardContent = Boolean(target?.closest('[data-card-wheel-content]'))
-      if (overCardContent && !event.ctrlKey && !event.metaKey) {
+      const zoomModifierPressed = isWheelZoomModifierPressed(event, settings.canvasWheelZoomModifier)
+      const pinchZoom = event.ctrlKey && looksLikeTrackpadWheel(event)
+      if (overCardContent && !zoomModifierPressed && !pinchZoom) {
         return
       }
 
@@ -37,18 +109,34 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
       const screenX = event.clientX - rect.left
       const screenY = event.clientY - rect.top
       const { scale, offsetX, offsetY } = useCanvasStore.getState().getViewport()
+      const eventInputMode = looksLikeTrackpadWheel(event) ? 'trackpad' : 'mouse'
+      if (settings.canvasInputMode === 'auto') detectedInputModeRef.current = eventInputMode
+      const inputMode = resolveInputMode(settings.canvasInputMode, detectedInputModeRef.current)
+
+      const panViewport = (deltaX: number, deltaY: number): void => {
+        useCanvasStore.getState().setViewport({
+          offsetX: offsetX - deltaX,
+          offsetY: offsetY - deltaY,
+        })
+      }
 
       // Shift + wheel → horizontal pan (convenience for mouse-wheel users).
-      if (event.shiftKey) {
+      if (event.shiftKey && !zoomModifierPressed && !pinchZoom) {
         const step = event.deltaY || event.deltaX
-        useCanvasStore.getState().setViewport({
-          offsetX: offsetX - step,
-          offsetY,
-        })
+        panViewport(step, 0)
         return
       }
 
-      // Everything else (plain wheel, Ctrl/Meta+wheel, trackpad pinch) → zoom
+      const shouldPan = inputMode === 'trackpad'
+        ? !zoomModifierPressed && !pinchZoom
+        : settings.canvasWheelBehavior === 'pan' && !zoomModifierPressed && !pinchZoom
+
+      if (shouldPan) {
+        panViewport(event.deltaX, event.deltaY)
+        return
+      }
+
+      // Everything else (mouse zoom, modifier+wheel, trackpad pinch) → zoom
       // anchored on the cursor. Trackpad pinch arrives as wheel+ctrlKey with
       // fractional deltaY, which the same math handles smoothly.
       const intensity = event.ctrlKey || event.metaKey ? 1.1 : 1.15
@@ -74,6 +162,9 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
       useCanvasStore.getState().clearFocusReturn()
       isPanningRef.current = true
       lastPointerRef.current = { x: event.clientX, y: event.clientY }
+      panStartViewportRef.current = useCanvasStore.getState().getViewport()
+      livePanOffsetRef.current = { x: 0, y: 0 }
+      applyLivePanLayer(0, 0)
       viewportEl.setPointerCapture(event.pointerId)
       viewportEl.style.cursor = 'grabbing'
       event.preventDefault()
@@ -85,11 +176,12 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
       const dx = event.clientX - lastPointerRef.current.x
       const dy = event.clientY - lastPointerRef.current.y
       lastPointerRef.current = { x: event.clientX, y: event.clientY }
-      const { offsetX, offsetY } = useCanvasStore.getState().getViewport()
-      useCanvasStore.getState().setViewport({
-        offsetX: offsetX + dx,
-        offsetY: offsetY + dy,
-      })
+      const next = {
+        x: livePanOffsetRef.current.x + dx,
+        y: livePanOffsetRef.current.y + dy,
+      }
+      livePanOffsetRef.current = next
+      applyLivePanLayer(next.x, next.y)
     }
 
     const onPointerUp = (event: PointerEvent): void => {
@@ -97,6 +189,9 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
       isPanningRef.current = false
       lastPointerRef.current = null
       try { viewportEl.releasePointerCapture(event.pointerId) } catch { /* noop */ }
+      commitLivePan()
+      panStartViewportRef.current = null
+      livePanOffsetRef.current = { x: 0, y: 0 }
       viewportEl.style.cursor = spaceDownRef.current ? 'grab' : ''
     }
 
@@ -135,6 +230,7 @@ export function useCanvasViewport(viewportEl: HTMLDivElement | null): void {
       viewportEl.removeEventListener('pointercancel', onPointerUp)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      resetLivePanLayer()
     }
   }, [viewportEl])
 }

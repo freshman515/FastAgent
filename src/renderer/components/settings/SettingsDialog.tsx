@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
@@ -15,6 +15,9 @@ import {
   NOTIFICATION_TOAST_DURATION_MS_MIN,
   useUIStore,
   type AppSettings,
+  type CanvasInputMode,
+  type CanvasWheelBehavior,
+  type CanvasWheelZoomModifier,
   type CustomSessionDefinition,
 } from '@/stores/ui'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
@@ -33,14 +36,15 @@ import { SESSION_OPTIONS, getCustomSessionOptionId, orderNewSessionOptions } fro
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 import { isPluginContributionId, parsePluginManifest, preparePluginInstall } from '@/lib/pluginManifest'
 
-type SettingsPage = 'general' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui' | 'about'
+type SettingsPage = 'general' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'canvas' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui' | 'about'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
   { id: 'general', label: '通用', description: '基础偏好与数据清理', icon: Settings },
   { id: 'sessions', label: '会话', description: '默认会话与自定义启动器', icon: Terminal },
   { id: 'extensions', label: '扩展', description: '导入插件清单与贡献项', icon: Plug },
   { id: 'wsl', label: 'WSL', description: 'WSL 会话环境与 PATH', icon: Terminal },
-  { id: 'workspace', label: '工作区', description: '经典分屏与画布模式', icon: SplitSquareHorizontal },
+  { id: 'workspace', label: '工作区', description: '经典分屏与弹出窗口', icon: SplitSquareHorizontal },
+  { id: 'canvas', label: '画布', description: '输入、缩放、网格与聚焦', icon: Grid3x3 },
   { id: 'notifications', label: '通知', description: '完成提醒与声音', icon: Bell },
   { id: 'titlebar', label: '标题栏', description: '顶部搜索与音乐显示', icon: Search },
   { id: 'git', label: 'Git', description: '改动视图与 AI 审查', icon: GitBranch },
@@ -1236,45 +1240,6 @@ function WorkspacePage({ settings, onUpdate }: { settings: AppSettings; onUpdate
         />
       </SettingsSection>
 
-      <SettingsSection icon={SplitSquareHorizontal} title="画布" description="无限画布的默认尺寸、聚焦缩放和网格行为。">
-        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
-          <div className="mb-2 flex flex-col gap-0.5">
-            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建会话卡片默认尺寸</span>
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-              只影响之后新建的终端、Claude Code、Codex 等会话卡片，已有卡片不自动改尺寸。
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <PixelNumberField label="宽度" value={settings.canvasSessionCardWidth} min={CANVAS_SESSION_CARD_WIDTH_MIN} max={CANVAS_SESSION_CARD_WIDTH_MAX} onChange={(v) => onUpdate('canvasSessionCardWidth', v)} />
-            <PixelNumberField label="高度" value={settings.canvasSessionCardHeight} min={CANVAS_SESSION_CARD_HEIGHT_MIN} max={CANVAS_SESSION_CARD_HEIGHT_MAX} onChange={(v) => onUpdate('canvasSessionCardHeight', v)} />
-          </div>
-        </div>
-        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
-          <div className="mb-2 flex flex-col gap-0.5">
-            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">点击聚焦缩放字体</span>
-            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
-              字体显示大小在范围内时只居中；小于或大于范围时缩放到目标字体大小。
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <PixelNumberField label="最小" value={settings.canvasFocusReadableFontMinPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusReadableFontMinPx', v)} />
-            <PixelNumberField label="最大" value={settings.canvasFocusReadableFontMaxPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusReadableFontMaxPx', v)} />
-            <PixelNumberField label="目标" value={settings.canvasFocusTargetFontPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusTargetFontPx', v)} />
-          </div>
-        </div>
-        <ToggleRow label="显示网格" description="在画布上渲染点状背景网格，辅助对齐" checked={settings.canvasGridEnabled} onChange={(v) => onUpdate('canvasGridEnabled', v)} />
-        <ToggleRow label="吸附到网格" description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘" checked={settings.canvasSnapEnabled} onChange={(v) => onUpdate('canvasSnapEnabled', v)} />
-        <SegmentedChoice
-          value={settings.canvasOverlapMode}
-          options={[
-            { id: 'free', label: '允许重叠', desc: '卡片可自由覆盖，保持当前行为' },
-            { id: 'avoid', label: '避免重叠', desc: '拖动时自动推开相邻卡片' },
-          ]}
-          onChange={(v) => onUpdate('canvasOverlapMode', v)}
-        />
-        <ToggleRow label="显示缩略图" description="右下角小地图显示画布全貌和当前视口" checked={settings.canvasShowMinimap} onChange={(v) => onUpdate('canvasShowMinimap', v)} />
-      </SettingsSection>
-
       <SettingsSection icon={ExternalLink} title="弹出窗口" description="标签页拖出为独立窗口时使用的默认尺寸和位置。">
         <div className="flex flex-col gap-1.5">
           <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">弹出窗口默认尺寸</span>
@@ -1293,6 +1258,104 @@ function WorkspacePage({ settings, onUpdate }: { settings: AppSettings; onUpdate
             ]}
             onChange={(v) => onUpdate('popoutPosition', v)}
           />
+        </div>
+      </SettingsSection>
+    </div>
+  )
+}
+
+function CanvasPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  const isMac = window.api.platform === 'darwin'
+  const primaryModifierLabel = isMac ? 'Cmd' : 'Ctrl'
+
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="画布设置" description="单独管理无限画布的输入设备、滚轮手势、聚焦缩放、默认卡片尺寸和辅助显示。" />
+
+      <SettingsSection icon={MousePointer2} title="输入与滚轮" description="移植自 opencove 的画布输入策略，鼠标和触控板可以使用不同手势。">
+        <SegmentedChoice<CanvasInputMode>
+          value={settings.canvasInputMode}
+          options={[
+            { id: 'auto', label: '自动识别', desc: '根据滚轮事件自动区分鼠标和触控板' },
+            { id: 'mouse', label: '鼠标', desc: '按鼠标滚轮处理，适合传统滚轮' },
+            { id: 'trackpad', label: '触控板', desc: '双指平移画布，捏合或修饰键缩放' },
+          ]}
+          onChange={(v) => onUpdate('canvasInputMode', v)}
+        />
+        <SegmentedChoice<CanvasWheelBehavior>
+          value={settings.canvasWheelBehavior}
+          options={[
+            { id: 'zoom', label: '滚轮缩放', desc: '鼠标滚轮默认缩放；触控板仍保留双指平移' },
+            { id: 'pan', label: '滚轮平移', desc: '鼠标滚轮平移画布，配合修饰键缩放' },
+          ]}
+          onChange={(v) => onUpdate('canvasWheelBehavior', v)}
+        />
+        {settings.canvasWheelBehavior === 'pan' && (
+          <SegmentedChoice<CanvasWheelZoomModifier>
+            value={settings.canvasWheelZoomModifier}
+            options={[
+              { id: 'primary', label: primaryModifierLabel, desc: `${primaryModifierLabel} + 滚轮缩放` },
+              ...(isMac ? [{ id: 'ctrl' as const, label: 'Ctrl', desc: 'Ctrl + 滚轮缩放' }] : []),
+              { id: 'alt', label: isMac ? 'Option' : 'Alt', desc: `${isMac ? 'Option' : 'Alt'} + 滚轮缩放` },
+            ]}
+            onChange={(v) => onUpdate('canvasWheelZoomModifier', v)}
+          />
+        )}
+      </SettingsSection>
+
+      <SettingsSection icon={Grid3x3} title="布局与辅助" description="控制画布网格、吸附、避让、小地图和会话列表方向。">
+        <ToggleRow label="显示网格" description="在画布上渲染点状背景网格，辅助对齐。" checked={settings.canvasGridEnabled} onChange={(v) => onUpdate('canvasGridEnabled', v)} />
+        <ToggleRow label="吸附到网格" description="拖动和缩放卡片时自动吸附到网格与相邻卡片边缘。" checked={settings.canvasSnapEnabled} onChange={(v) => onUpdate('canvasSnapEnabled', v)} />
+        <ToggleRow label="拖动时自动移动视图" description="拖动或缩放卡片靠近画布边缘时自动平移视图；默认关闭，避免视图意外漂移。" checked={settings.canvasAutoPanOnDrag} onChange={(v) => onUpdate('canvasAutoPanOnDrag', v)} />
+        <SegmentedChoice
+          value={settings.canvasOverlapMode}
+          options={[
+            { id: 'free', label: '允许重叠', desc: '卡片可自由覆盖，保持手动摆放' },
+            { id: 'avoid', label: '避免重叠', desc: '拖动时自动推开相邻卡片' },
+          ]}
+          onChange={(v) => onUpdate('canvasOverlapMode', v)}
+        />
+        <SegmentedChoice
+          value={settings.canvasSessionListDirection}
+          options={[
+            { id: 'vertical', label: '侧边列表', desc: '会话列表显示在画布左侧' },
+            { id: 'horizontal', label: '顶部列表', desc: '会话列表显示在画布顶部' },
+          ]}
+          onChange={(v) => onUpdate('canvasSessionListDirection', v)}
+        />
+        <ToggleRow label="显示缩略图" description="右下角小地图显示画布全貌和当前视口。" checked={settings.canvasShowMinimap} onChange={(v) => onUpdate('canvasShowMinimap', v)} />
+        <ToggleRow label="锁定布局" description="防止误拖动、误缩放和误删除画布卡片。" checked={settings.canvasLayoutLocked} onChange={(v) => onUpdate('canvasLayoutLocked', v)} />
+      </SettingsSection>
+
+      <SettingsSection icon={SplitSquareHorizontal} title="卡片尺寸" description="新建会话卡片和批量尺寸归一化使用这些默认值。">
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+          <div className="mb-2 flex flex-col gap-0.5">
+            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建会话卡片默认尺寸</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              只影响之后新建的终端、Claude Code、Codex 等会话卡片，已有卡片不自动改尺寸。
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <PixelNumberField label="宽度" value={settings.canvasSessionCardWidth} min={CANVAS_SESSION_CARD_WIDTH_MIN} max={CANVAS_SESSION_CARD_WIDTH_MAX} onChange={(v) => onUpdate('canvasSessionCardWidth', v)} />
+            <PixelNumberField label="高度" value={settings.canvasSessionCardHeight} min={CANVAS_SESSION_CARD_HEIGHT_MIN} max={CANVAS_SESSION_CARD_HEIGHT_MAX} onChange={(v) => onUpdate('canvasSessionCardHeight', v)} />
+          </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection icon={Search} title="聚焦与阅读" description="控制点击卡片时的聚焦方式和自动缩放目标。">
+        <ToggleRow label="单击聚焦卡片" description="开启后单击会话卡片会缩放/居中；关闭后保留双击标题栏聚焦。" checked={settings.canvasFocusOnClick} onChange={(v) => onUpdate('canvasFocusOnClick', v)} />
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+          <div className="mb-2 flex flex-col gap-0.5">
+            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">点击聚焦缩放字体</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              字体显示大小在范围内时只居中；小于或大于范围时缩放到目标字体大小。
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <PixelNumberField label="最小" value={settings.canvasFocusReadableFontMinPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusReadableFontMinPx', v)} />
+            <PixelNumberField label="最大" value={settings.canvasFocusReadableFontMaxPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusReadableFontMaxPx', v)} />
+            <PixelNumberField label="目标" value={settings.canvasFocusTargetFontPx} min={CANVAS_FOCUS_FONT_PX_MIN} max={CANVAS_FOCUS_FONT_PX_MAX} step={1} onChange={(v) => onUpdate('canvasFocusTargetFontPx', v)} />
+          </div>
         </div>
       </SettingsSection>
     </div>
@@ -2849,6 +2912,7 @@ export function SettingsDialog(): JSX.Element | null {
             {page === 'extensions' && <ExtensionsPage settings={settings} />}
             {page === 'wsl' && <WslPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'workspace' && <WorkspacePage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'canvas' && <CanvasPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'notifications' && <NotificationsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'titlebar' && <TitleBarPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'git' && <GitPage settings={settings} onUpdate={handleUpdate} />}

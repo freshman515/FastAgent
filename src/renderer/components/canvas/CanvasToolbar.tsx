@@ -21,6 +21,7 @@ import {
   RefreshCw,
 
   Search,
+  Settings,
   SquareEqual,
   StickyNote,
   Trash2,
@@ -32,9 +33,11 @@ import type { CanvasBookmark, CanvasCard, Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
+import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { addCanvasCardToActiveSpace } from './canvasSpaceMembership'
 
 interface CanvasToolbarProps {
   viewportRef: React.RefObject<HTMLDivElement | null>
@@ -124,7 +127,8 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
     const noteSize = getDefaultCanvasCardSize('note')
     const x = (centerX - offsetX) / s - noteSize.width / 2
     const y = (centerY - offsetY) / s - noteSize.height / 2
-    addCard({ kind: 'note', x, y, noteBody: '', noteColor: 'yellow' })
+    const cardId = addCard({ kind: 'note', x, y, noteBody: '', noteColor: 'yellow' })
+    addCanvasCardToActiveSpace(cardId)
   }
 
   const getViewportCenter = (): { x: number; y: number } | null => {
@@ -139,7 +143,8 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
 
   const createFrame = (): void => {
     const center = getViewportCenter()
-    addFrameAroundCards(selectedCardIds, center ?? undefined)
+    const spaceId = addFrameAroundCards(selectedCardIds, center ?? undefined)
+    if (spaceId) useCanvasUiStore.getState().setActiveSpaceId(spaceId)
   }
 
   const connectSelection = (): void => {
@@ -260,7 +265,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
       <button type="button" onClick={createNoteAtCenter} className={btn(false)} title="新建便签">
         <StickyNote size={16} />
       </button>
-      <button type="button" onClick={createFrame} className={btn(false)} title="新建分组框">
+      <button type="button" onClick={createFrame} className={btn(false)} title="新建空间">
         <Frame size={16} />
       </button>
       <button
@@ -592,6 +597,14 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
       >
         {overlapMode === 'avoid' ? '避让' : '重叠'}
       </button>
+      <button
+        type="button"
+        onClick={() => useUIStore.getState().openSettings('canvas')}
+        className={btn(false)}
+        title="画布设置"
+      >
+        <Settings size={16} />
+      </button>
       <div className="mx-0.5 h-6 w-px bg-[var(--color-border)]" />
       <span
         className="px-2 text-[var(--ui-font-xs)] font-mono text-[var(--color-text-tertiary)]"
@@ -707,7 +720,7 @@ function getBookmarkMeta(bookmark: CanvasBookmark, cardsById: Map<string, Canvas
 }
 
 function getCanvasToolbarCardTitle(card: CanvasCard, sessions: Session[]): string {
-  if (card.kind === 'frame') return card.frameTitle?.trim() || '分组'
+  if (card.kind === 'frame') return card.frameTitle?.trim() || '空间'
   if (card.kind === 'note') {
     return card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签'
   }
@@ -721,7 +734,7 @@ function getCanvasToolbarCardMeta(card: CanvasCard, sessions: Session[]): string
   const hiddenState = isCanvasCardHidden(card) ? '隐藏' : ''
   let meta: string
   if (card.kind === 'frame') {
-    meta = `分组工作区 · ${card.frameMemberIds?.length ?? 0} 张卡片`
+    meta = `空间 · ${card.frameMemberIds?.length ?? 0} 张卡片`
   } else if (card.kind === 'note') {
     meta = '便签'
   } else {

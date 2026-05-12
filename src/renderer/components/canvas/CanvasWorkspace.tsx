@@ -17,6 +17,7 @@ import { CanvasMinimap } from './CanvasMinimap'
 import { CanvasRelations } from './CanvasRelations'
 import { CanvasSearch } from './CanvasSearch'
 import { CanvasSessionList } from './CanvasSessionList'
+import { CanvasSpaceSwitcher } from './CanvasSpaceSwitcher'
 import { CanvasSelectionBounds } from './CanvasSelectionBounds'
 import { CanvasMaximizedSwitcher } from './CanvasMaximizedSwitcher'
 import { FrameCard } from './cards/FrameCard'
@@ -83,6 +84,8 @@ export function CanvasWorkspace(): JSX.Element {
   const activeTabId = usePanesStore((state) => state.paneActiveSession[state.activePaneId] ?? null)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const cards = useCanvasStore((state) => state.getLayout().cards)
+  const activeSpaceId = useCanvasUiStore((state) => state.activeSpaceId)
+  const setActiveSpaceId = useCanvasUiStore((state) => state.setActiveSpaceId)
   const pendingSessionFocusId = useCanvasUiStore((state) => state.pendingSessionFocusId)
   const sessionsLoaded = useSessionsStore((state) => state._loaded)
   const sessionIdsKey = useSessionsStore((state) => state.sessions.map((session) => session.id).join('\x1f'))
@@ -211,6 +214,12 @@ export function CanvasWorkspace(): JSX.Element {
   useCanvasKeyboard(viewportEl)
 
   useEffect(() => {
+    if (!activeSpaceId) return
+    const activeSpaceExists = cards.some((card) => card.id === activeSpaceId && card.kind === 'frame')
+    if (!activeSpaceExists) setActiveSpaceId(null)
+  }, [activeSpaceId, cards, setActiveSpaceId])
+
+  useEffect(() => {
     if (!viewportEl) return
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
@@ -313,14 +322,17 @@ export function CanvasWorkspace(): JSX.Element {
         onDoubleClick={onViewportDoubleClick}
         onContextMenu={onContextMenu}
       >
-        {gridEnabled && <CanvasGrid />}
-        <CanvasRelations />
-        <CanvasProjectedCardLayer cards={cards} viewportEl={viewportEl} />
-        <CanvasGuideLines />
-        <CanvasMarquee />
-        <CanvasSelectionBounds />
+        <div data-canvas-pan-layer className="pointer-events-none absolute inset-0">
+          {gridEnabled && <CanvasGrid />}
+          <CanvasRelations cards={cards} />
+          <CanvasProjectedCardLayer cards={cards} viewportEl={viewportEl} />
+          <CanvasGuideLines />
+          <CanvasMarquee />
+          <CanvasSelectionBounds />
+        </div>
       </div>
 
+      <CanvasSpaceSwitcher />
       <CanvasSessionList />
       <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => openSearch(null)} />
       <CanvasSearch open={searchOpen} scopeFrameId={searchScopeFrameId} onClose={closeSearch} />
@@ -350,7 +362,7 @@ export function CanvasWorkspace(): JSX.Element {
 function CanvasFrameRenameDialog({ frameId, onClose }: { frameId: string; onClose: () => void }): JSX.Element | null {
   const frame = useCanvasStore((state) => state.getCard(frameId))
   const inputRef = useRef<HTMLInputElement>(null)
-  const currentName = frame?.kind === 'frame' ? frame.frameTitle?.trim() || '分组' : '分组'
+  const currentName = frame?.kind === 'frame' ? frame.frameTitle?.trim() || '空间' : '空间'
   const [value, setValue] = useState(currentName)
 
   useEffect(() => {
@@ -401,11 +413,11 @@ function CanvasFrameRenameDialog({ frameId, onClose }: { frameId: string; onClos
         }}
       >
         <h3 id="canvas-frame-rename-title" className="text-[var(--ui-font-md)] font-semibold text-[var(--color-text-primary)]">
-          重命名分组
+          重命名空间
         </h3>
         <label className="mt-4 block">
           <span className="mb-1.5 block text-[var(--ui-font-2xs)] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
-            分组名称
+            空间名称
           </span>
           <input
             ref={inputRef}

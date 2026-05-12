@@ -126,10 +126,10 @@ export function CanvasSessionList(): JSX.Element | null {
       className={cn(
         'absolute z-20 flex overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/92 shadow-xl backdrop-blur transition-all duration-150',
         isVertical
-          ? cn('left-3 top-3 w-56 flex-col', collapsed ? 'h-9' : 'bottom-20')
+          ? cn('left-3 top-16 w-56 flex-col', collapsed ? 'h-9' : 'bottom-20')
           : collapsed
-            ? 'left-3 top-3 h-9 w-44 flex-row'
-            : 'left-3 top-3 h-12 w-[calc(100%_-_1.5rem)] flex-row',
+            ? 'left-3 top-16 h-9 w-44 flex-row'
+            : 'left-3 top-16 h-12 w-[calc(100%_-_1.5rem)] flex-row',
       )}
     >
       <div

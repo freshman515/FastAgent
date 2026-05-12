@@ -134,7 +134,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
   const activeScopeTitle = useMemo(() => {
     if (!scopeFrameId) return null
     const frame = cards.find((card) => card.id === scopeFrameId && card.kind === 'frame')
-    return frame ? frame.frameTitle?.trim() || '分组' : null
+    return frame ? frame.frameTitle?.trim() || '空间' : null
   }, [cards, scopeFrameId])
 
   const results = useMemo(() => {
@@ -160,7 +160,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
     const rows: SearchResult[] = sourceCards.map((card) => {
       const frame = frameByMemberId.get(card.id)
       const frameTitle = frame?.frameTitle?.trim()
-      const frameMeta = frameTitle ? `分组：${frameTitle}` : ''
+      const frameMeta = frameTitle ? `空间：${frameTitle}` : ''
       if (card.kind === 'note') {
         return {
           card,
@@ -172,8 +172,8 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
       if (card.kind === 'frame') {
         return {
           card,
-          title: card.frameTitle?.trim() || '分组',
-          meta: '分组工作区',
+          title: card.frameTitle?.trim() || '空间',
+          meta: '空间',
           haystack: card.frameTitle ?? '',
         }
       }
@@ -277,7 +277,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
               setActiveIndex((index) => Math.max(0, index - 1))
             }
           }}
-          placeholder={activeScopeTitle ? '搜索组内卡片' : '搜索画布'}
+          placeholder={activeScopeTitle ? '搜索空间内卡片' : '搜索画布'}
           className="canvas-search-input min-w-0 flex-1 bg-transparent text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
         />
         <button
@@ -291,7 +291,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
       </div>
       {activeScopeTitle && (
         <div className="border-b border-[var(--color-border)] px-3 py-2 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
-          组内搜索：<span className="text-[var(--color-text-secondary)]">{activeScopeTitle}</span>
+          空间内搜索：<span className="text-[var(--color-text-secondary)]">{activeScopeTitle}</span>
         </div>
       )}
       <div className="max-h-[360px] overflow-y-auto p-1.5">

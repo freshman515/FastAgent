@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCanvasStore } from '@/stores/canvas'
+import { useUIStore } from '@/stores/ui'
 import { useCardDrag } from '../hooks/useCardDrag'
 import { useCardResize, type ResizeHandle } from '../hooks/useCardResize'
 import type { CanvasCard } from '@shared/types'
@@ -98,6 +99,8 @@ export function CardFrame({
   const outerRef = useRef<HTMLDivElement | null>(null)
   const clickStartRef = useRef<{ x: number; y: number } | null>(null)
   const isMaximized = useCanvasStore((state) => state.maximizedCardId === card.id)
+  const canvasFocusOnClick = useUIStore((state) => state.settings.canvasFocusOnClick)
+  const effectiveFocusOnClick = focusOnClick && canvasFocusOnClick
   const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
   const handleHeaderDoubleClick = useCallback(() => {
     if (onHeaderDoubleClick) {
@@ -109,7 +112,7 @@ export function CardFrame({
   useCardDrag({
     cardId: card.id,
     element: hostEl,
-    enableDoubleClickFocus: !focusOnClick,
+    enableDoubleClickFocus: !effectiveFocusOnClick,
     onHandleClick: onHeaderClick,
     onHandleDoubleClick: handleHeaderDoubleClick,
   })
@@ -166,13 +169,13 @@ export function CardFrame({
   }, [])
 
   const handlePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>): void => {
-    clickStartRef.current = focusOnClick && event.button === 0
+    clickStartRef.current = effectiveFocusOnClick && event.button === 0
       ? { x: event.clientX, y: event.clientY }
       : null
   }
 
   const handleClickCapture = (event: React.MouseEvent<HTMLDivElement>): void => {
-    if (!focusOnClick || event.button !== 0) return
+    if (!effectiveFocusOnClick || event.button !== 0) return
     const clickStart = clickStartRef.current
     clickStartRef.current = null
     if (clickStart && Math.hypot(event.clientX - clickStart.x, event.clientY - clickStart.y) > 8) return
