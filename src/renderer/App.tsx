@@ -18,7 +18,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { focusOpenEditorSoon } from '@/components/session/EditorView'
-import { focusTerminalInputSoon, toggleTerminalScrollEdge } from '@/hooks/useXterm'
+import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
@@ -84,7 +84,7 @@ const PANE_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'f', label: '切换标签' },
   { key: 'b', label: '返回' },
   { key: 'g', label: '跳转' },
-  { key: 'u', label: '顶部/底部' },
+  { key: 'u', label: '滚动到底部' },
   { key: 'Shift+hjkl', label: '移动标签' },
   { key: 'o', label: '只保留当前 pane' },
   { key: 'c', label: '复制路径' },
@@ -191,13 +191,13 @@ function PaneCommandOverlay({
 }): JSX.Element {
   return (
     <div className="pointer-events-none fixed inset-0 z-[9400]">
-      <div className="absolute left-1/2 top-1 z-20 h-8 w-max max-w-[calc(100vw-40px)] -translate-x-1/2 rounded-[var(--radius-lg)] border border-[var(--color-accent)]/25 bg-[var(--color-bg-tertiary)]/70 px-3 shadow-2xl shadow-black/35 backdrop-blur-md">
+      <div className="absolute bottom-3 left-1/2 z-20 h-8 w-max max-w-[calc(100vw-40px)] -translate-x-1/2 rounded-[var(--radius-lg)] border border-[var(--color-accent)]/25 bg-[var(--color-bg-tertiary)]/80 px-3 shadow-2xl shadow-black/35 backdrop-blur-md">
         <div className="flex h-full items-center gap-x-3 overflow-hidden whitespace-nowrap">
           <span className="rounded-[var(--radius-sm)] bg-[var(--color-accent)]/16 px-2 py-1 text-[11px] font-bold text-[var(--color-accent)]">
             {editing ? 'Edit Mode' : 'Pane Mode'}
           </span>
           <span className="text-[11px] text-[var(--color-text-secondary)]">
-            {editing ? 'Esc 返回命令模式' : 'p 项目 · Tab 上个项目 · u 顶/底 · f 标签 · g 跳转 · : 命令 · ? 帮助 · Esc 退出'}
+            {editing ? 'Esc 返回命令模式' : 'p 项目 · Tab 上个项目 · u 底部 · f 标签 · g 跳转 · : 命令 · ? 帮助 · Esc 退出'}
           </span>
         </div>
       </div>
@@ -1759,6 +1759,8 @@ function MainApp(): JSX.Element {
   const [paneCommandCloseTarget, setPaneCommandCloseTarget] = useState<PaneCommandCloseTarget | null>(null)
   const [paneCommandRects, setPaneCommandRects] = useState<PaneElementRect[]>([])
   const paneCommandModeRef = useRef(false)
+  const paneCommandEditingRef = useRef(false)
+  const paneCommandInputModeRestorePendingRef = useRef(false)
   const paneCommandProjectSwitcherOpenRef = useRef(false)
   const paneCommandFocusRef = useRef<HTMLDivElement | null>(null)
   const paneCommandPanelOpeningUntilRef = useRef(0)
@@ -1789,6 +1791,9 @@ function MainApp(): JSX.Element {
     paneCommandModeRef.current = paneCommandMode
   }, [paneCommandMode])
   useEffect(() => {
+    paneCommandEditingRef.current = paneCommandEditing
+  }, [paneCommandEditing])
+  useEffect(() => {
     paneCommandProjectSwitcherOpenRef.current = paneCommandProjectSwitcherOpen
   }, [paneCommandProjectSwitcherOpen])
   const focusPaneCommandActiveTarget = useCallback(() => {
@@ -1807,14 +1812,40 @@ function MainApp(): JSX.Element {
     sessionStore.markAsRead(tabId)
     focusTerminalInputSoon(tabId)
   }, [])
+  const restorePaneCommandInputMode = useCallback(() => {
+    if (window.api.platform !== 'win32' || !paneCommandInputModeRestorePendingRef.current) return
+    paneCommandInputModeRestorePendingRef.current = false
+    window.setTimeout(() => {
+      void window.api.window.restoreInputMode().catch(() => {})
+    }, 30)
+  }, [])
+  const ensurePaneCommandEnglishInputMode = useCallback(() => {
+    if (window.api.platform !== 'win32') return
+    paneCommandInputModeRestorePendingRef.current = false
+    window.setTimeout(() => {
+      void window.api.window.ensureEnglishInputMode()
+        .then((result) => {
+          if (!result.switched) return
+          if (paneCommandModeRef.current && !paneCommandEditingRef.current) {
+            paneCommandInputModeRestorePendingRef.current = true
+            return
+          }
+          void window.api.window.restoreInputMode().catch(() => {})
+        })
+        .catch(() => {})
+    }, 30)
+  }, [])
   const enterPaneCommandMode = useCallback(() => {
     paneCommandModeRef.current = true
+    paneCommandEditingRef.current = false
     setPaneCommandEditing(false)
     setPaneCommandMode(true)
     focusPaneCommandSink()
-  }, [focusPaneCommandSink])
+    ensurePaneCommandEnglishInputMode()
+  }, [ensurePaneCommandEnglishInputMode, focusPaneCommandSink])
   const exitPaneCommandMode = useCallback(() => {
     paneCommandModeRef.current = false
+    paneCommandEditingRef.current = false
     paneCommandProjectSwitcherOpenRef.current = false
     setPaneCommandMode(false)
     setPaneCommandEditing(false)
@@ -1827,15 +1858,20 @@ function MainApp(): JSX.Element {
     setPaneCommandInputOpen(false)
     setPaneCommandCloseTarget(null)
     focusPaneCommandActiveTarget()
-  }, [focusPaneCommandActiveTarget])
+    restorePaneCommandInputMode()
+  }, [focusPaneCommandActiveTarget, restorePaneCommandInputMode])
   const enterPaneCommandEditing = useCallback(() => {
+    paneCommandEditingRef.current = true
     setPaneCommandEditing(true)
     focusPaneCommandActiveTarget()
-  }, [focusPaneCommandActiveTarget])
+    restorePaneCommandInputMode()
+  }, [focusPaneCommandActiveTarget, restorePaneCommandInputMode])
   const exitPaneCommandEditing = useCallback(() => {
+    paneCommandEditingRef.current = false
     setPaneCommandEditing(false)
     focusPaneCommandSink()
-  }, [focusPaneCommandSink])
+    ensurePaneCommandEnglishInputMode()
+  }, [ensurePaneCommandEnglishInputMode, focusPaneCommandSink])
   const closePaneCommandNewSession = useCallback(() => {
     setPaneCommandNewSessionOpen(false)
     focusPaneCommandSink()
@@ -2024,10 +2060,10 @@ function MainApp(): JSX.Element {
     void navigator.clipboard.writeText(value)
     useUIStore.getState().addToast({ title: '已复制路径', body: value, type: 'success', duration: 1800 })
   }, [effectiveSelectedWorktreeIdForPaneCommand, selectedProjectIdForPaneCommand])
-  const toggleActivePaneCommandTerminalScroll = useCallback(() => {
+  const scrollActivePaneCommandTerminalToBottom = useCallback(() => {
     const { tabId } = getPaneCommandActiveTab()
     if (!tabId || tabId.startsWith('editor-')) return
-    toggleTerminalScrollEdge(tabId)
+    scrollTerminalToLatest(tabId)
   }, [])
   const selectPaneCommandJumpItem = useCallback((item: PaneCommandJumpItem) => {
     if (item.kind === 'project' || item.kind === 'worktree') {
@@ -2169,7 +2205,7 @@ function MainApp(): JSX.Element {
     }
 
     if (normalized === 'u') {
-      toggleActivePaneCommandTerminalScroll()
+      scrollActivePaneCommandTerminalToBottom()
       return true
     }
 
@@ -2275,7 +2311,7 @@ function MainApp(): JSX.Element {
     switchPaneCommandBack,
     switchPreviousPaneCommandProject,
     switchRecentPaneCommandProject,
-    toggleActivePaneCommandTerminalScroll,
+    scrollActivePaneCommandTerminalToBottom,
   ])
   const runPaneCommandFromInput = useCallback((key: string) => {
     setPaneCommandInputOpen(false)

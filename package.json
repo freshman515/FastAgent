@@ -1,6 +1,6 @@
 {
   "name": "fast-agents",
-  "version": "0.4.26",
+  "version": "0.4.27",
   "description": "Lightweight multi-agent session manager",
   "main": "./out/main/index.js",
   "type": "module",

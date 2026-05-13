@@ -914,6 +914,26 @@ export interface TitleBarCursorState {
   inTitleBarZone: boolean
 }
 
+export interface EnsureEnglishInputModeResult {
+  ok: boolean
+  switched: boolean
+  error?: string
+  reason?: string
+  layoutLangId?: number
+  primaryLangId?: number
+  imeOpen?: boolean
+}
+
+export interface RestoreInputModeResult {
+  ok: boolean
+  restored: boolean
+  error?: string
+  reason?: string
+  layoutLangId?: number
+  primaryLangId?: number
+  imeOpen?: boolean
+}
+
 // ─── IPC Channels ───
 
 export const IPC = {
@@ -958,6 +978,8 @@ export const IPC = {
   WINDOW_IS_FULLSCREEN: 'window:is-fullscreen',
   WINDOW_TITLE_BAR_CURSOR_STATE: 'window:title-bar-cursor-state',
   WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
+  WINDOW_ENSURE_ENGLISH_INPUT_MODE: 'window:ensure-english-input-mode',
+  WINDOW_RESTORE_INPUT_MODE: 'window:restore-input-mode',
   VOICE_LOCAL_ASR_SERVICE: 'voice:local-asr-service',
   VOICE_TRANSCRIBE: 'voice:transcribe',
   VOICE_STREAM_START: 'voice:stream-start',

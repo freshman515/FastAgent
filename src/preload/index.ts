@@ -15,6 +15,7 @@ import type {
   ClaudeUtilization,
   ExternalIdeId,
   ExternalIdeOption,
+  EnsureEnglishInputModeResult,
   FileSearchResult,
   HistoricalSessionDeleteResult,
   HistoricalSessionListResult,
@@ -25,6 +26,7 @@ import type {
   McpSessionInfo,
   OpenIdeResult,
   ProjectSearchMatch,
+  RestoreInputModeResult,
   SearchQueryOptions,
   Session,
   SessionCreateOptions,
@@ -77,6 +79,10 @@ const api = {
       ipcRenderer.invoke(IPC.WINDOW_TITLE_BAR_CURSOR_STATE) as Promise<{ inRevealZone: boolean; inTitleBarZone: boolean }>,
     startVoiceInput: () =>
       ipcRenderer.invoke(IPC.WINDOW_START_VOICE_INPUT) as Promise<{ ok: boolean; error?: string }>,
+    ensureEnglishInputMode: () =>
+      ipcRenderer.invoke(IPC.WINDOW_ENSURE_ENGLISH_INPUT_MODE) as Promise<EnsureEnglishInputModeResult>,
+    restoreInputMode: () =>
+      ipcRenderer.invoke(IPC.WINDOW_RESTORE_INPUT_MODE) as Promise<RestoreInputModeResult>,
     manageVoiceLocalAsrService: (options: VoiceLocalAsrServiceRequest) =>
       ipcRenderer.invoke(IPC.VOICE_LOCAL_ASR_SERVICE, options) as Promise<VoiceLocalAsrServiceResult>,
     transcribeVoiceInput: (options: VoiceTranscribeRequest) =>

@@ -4,6 +4,8 @@ import { promisify } from 'node:util'
 import WebSocket, { type RawData } from 'ws'
 import {
   IPC,
+  type EnsureEnglishInputModeResult,
+  type RestoreInputModeResult,
   type VoiceLocalAsrServiceAction,
   type VoiceLocalAsrServiceRequest,
   type VoiceLocalAsrServiceResult,
@@ -50,6 +52,186 @@ const WINDOWS_VOICE_INPUT_SCRIPT = [
   '[Keyboard]::keybd_event(0x5B, 0, $keyUp, [UIntPtr]::Zero)',
 ].join('; ')
 
+const WINDOWS_ENSURE_ENGLISH_INPUT_MODE_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class NativeInputMode {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint idThread);
+  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("imm32.dll")] public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+  [DllImport("imm32.dll")] public static extern IntPtr ImmGetContext(IntPtr hWnd);
+  [DllImport("imm32.dll")] public static extern bool ImmGetOpenStatus(IntPtr hIMC);
+  [DllImport("imm32.dll")] public static extern bool ImmSetOpenStatus(IntPtr hIMC, bool fOpen);
+  [DllImport("imm32.dll")] public static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+}
+"@
+
+$VK_SHIFT = 0x10
+$VK_MENU = 0x12
+$VK_F = 0x46
+$KEYEVENTF_KEYUP = 0x0002
+$WM_IME_CONTROL = 0x0283
+$IMC_GETOPENSTATUS = 0x0005
+
+$hwnd = [NativeInputMode]::GetForegroundWindow()
+if ($hwnd -eq [IntPtr]::Zero) {
+  [pscustomobject]@{ ok = $false; switched = $false; error = 'No foreground window.' } | ConvertTo-Json -Compress
+  exit 0
+}
+
+[uint32]$processId = 0
+$threadId = [NativeInputMode]::GetWindowThreadProcessId($hwnd, [ref]$processId)
+$hkl = [NativeInputMode]::GetKeyboardLayout($threadId).ToInt64()
+$layoutLangId = [int]($hkl -band 0xffff)
+$primaryLangId = [int]($layoutLangId -band 0x03ff)
+$isEnglishLayout = $primaryLangId -eq 0x09
+
+$imeOpen = $false
+$imeWnd = [NativeInputMode]::ImmGetDefaultIMEWnd($hwnd)
+if ($imeWnd -ne [IntPtr]::Zero) {
+  $imeOpen = [NativeInputMode]::SendMessage($imeWnd, $WM_IME_CONTROL, [IntPtr]$IMC_GETOPENSTATUS, [IntPtr]::Zero).ToInt64() -ne 0
+}
+
+$switched = $false
+if ((-not $isEnglishLayout) -and $imeOpen) {
+  for ($i = 0; $i -lt 20; $i++) {
+    $altDown = ([NativeInputMode]::GetAsyncKeyState($VK_MENU) -band 0x8000) -ne 0
+    $fDown = ([NativeInputMode]::GetAsyncKeyState($VK_F) -band 0x8000) -ne 0
+    if ((-not $altDown) -and (-not $fDown)) { break }
+    Start-Sleep -Milliseconds 10
+  }
+
+  [NativeInputMode]::keybd_event($VK_SHIFT, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 20
+  [NativeInputMode]::keybd_event($VK_SHIFT, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+  $switched = $true
+}
+
+[pscustomobject]@{
+  ok = $true
+  switched = $switched
+  layoutLangId = $layoutLangId
+  primaryLangId = $primaryLangId
+  imeOpen = $imeOpen
+} | ConvertTo-Json -Compress
+`.trim()
+
+const WINDOWS_RESTORE_INPUT_MODE_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class NativeInputModeRestore {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint idThread);
+  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("imm32.dll")] public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+  [DllImport("imm32.dll")] public static extern IntPtr ImmGetContext(IntPtr hWnd);
+  [DllImport("imm32.dll")] public static extern bool ImmGetOpenStatus(IntPtr hIMC);
+  [DllImport("imm32.dll")] public static extern bool ImmSetOpenStatus(IntPtr hIMC, bool fOpen);
+  [DllImport("imm32.dll")] public static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+}
+"@
+
+$VK_SHIFT = 0x10
+$VK_MENU = 0x12
+$VK_F = 0x46
+$VK_I = 0x49
+$VK_ESCAPE = 0x1B
+$VK_RETURN = 0x0D
+$KEYEVENTF_KEYUP = 0x0002
+$WM_IME_CONTROL = 0x0283
+$IMC_GETOPENSTATUS = 0x0005
+
+for ($i = 0; $i -lt 20; $i++) {
+  $keyDown = $false
+  foreach ($vk in @($VK_MENU, $VK_F, $VK_I, $VK_ESCAPE, $VK_RETURN)) {
+    if (([NativeInputModeRestore]::GetAsyncKeyState($vk) -band 0x8000) -ne 0) {
+      $keyDown = $true
+      break
+    }
+  }
+  if (-not $keyDown) { break }
+  Start-Sleep -Milliseconds 10
+}
+
+$hwnd = [NativeInputModeRestore]::GetForegroundWindow()
+if ($hwnd -eq [IntPtr]::Zero) {
+  [pscustomobject]@{ ok = $false; restored = $false; error = 'No foreground window.' } | ConvertTo-Json -Compress
+  exit 0
+}
+
+[uint32]$processId = 0
+$threadId = [NativeInputModeRestore]::GetWindowThreadProcessId($hwnd, [ref]$processId)
+$hkl = [NativeInputModeRestore]::GetKeyboardLayout($threadId).ToInt64()
+$layoutLangId = [int]($hkl -band 0xffff)
+$primaryLangId = [int]($layoutLangId -band 0x03ff)
+$isEnglishLayout = $primaryLangId -eq 0x09
+
+function Get-ImeOpen([IntPtr]$targetHwnd) {
+  $context = [NativeInputModeRestore]::ImmGetContext($targetHwnd)
+  if ($context -ne [IntPtr]::Zero) {
+    try {
+      return [NativeInputModeRestore]::ImmGetOpenStatus($context)
+    } finally {
+      [void][NativeInputModeRestore]::ImmReleaseContext($targetHwnd, $context)
+    }
+  }
+
+  $imeWnd = [NativeInputModeRestore]::ImmGetDefaultIMEWnd($targetHwnd)
+  if ($imeWnd -ne [IntPtr]::Zero) {
+    return [NativeInputModeRestore]::SendMessage($imeWnd, $WM_IME_CONTROL, [IntPtr]$IMC_GETOPENSTATUS, [IntPtr]::Zero).ToInt64() -ne 0
+  }
+
+  return $false
+}
+
+function Set-ImeOpen([IntPtr]$targetHwnd, [bool]$open) {
+  $context = [NativeInputModeRestore]::ImmGetContext($targetHwnd)
+  if ($context -eq [IntPtr]::Zero) { return $false }
+  try {
+    return [NativeInputModeRestore]::ImmSetOpenStatus($context, $open)
+  } finally {
+    [void][NativeInputModeRestore]::ImmReleaseContext($targetHwnd, $context)
+  }
+}
+
+$imeOpen = Get-ImeOpen $hwnd
+$restored = $false
+if ((-not $isEnglishLayout) -and (-not $imeOpen)) {
+  $restored = Set-ImeOpen $hwnd $true
+  Start-Sleep -Milliseconds 30
+  $imeOpen = Get-ImeOpen $hwnd
+  if (-not $imeOpen) {
+    [NativeInputModeRestore]::keybd_event($VK_SHIFT, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 20
+    [NativeInputModeRestore]::keybd_event($VK_SHIFT, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 30
+    $imeOpen = Get-ImeOpen $hwnd
+    $restored = $true
+  }
+}
+
+[pscustomobject]@{
+  ok = $true
+  restored = $restored
+  layoutLangId = $layoutLangId
+  primaryLangId = $primaryLangId
+  imeOpen = $imeOpen
+} | ConvertTo-Json -Compress
+`.trim()
+
 async function startWindowsVoiceInput(): Promise<{ ok: boolean; error?: string }> {
   if (process.platform !== 'win32') {
     return { ok: false, error: 'Windows voice input is only available on Windows.' }
@@ -71,6 +253,74 @@ async function startWindowsVoiceInput(): Promise<{ ok: boolean; error?: string }
     return { ok: true }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+async function ensureWindowsEnglishInputMode(): Promise<EnsureEnglishInputModeResult> {
+  if (process.platform !== 'win32') {
+    return { ok: true, switched: false, reason: 'unsupported-platform' }
+  }
+
+  try {
+    const result = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        WINDOWS_ENSURE_ENGLISH_INPUT_MODE_SCRIPT,
+      ],
+      { timeout: 3000, windowsHide: true },
+    )
+    const raw = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
+    if (!raw) return { ok: false, switched: false, error: 'No input mode result.' }
+    const parsed = JSON.parse(raw) as Partial<EnsureEnglishInputModeResult>
+    return {
+      ok: parsed.ok === true,
+      switched: parsed.switched === true,
+      error: typeof parsed.error === 'string' ? parsed.error : undefined,
+      layoutLangId: typeof parsed.layoutLangId === 'number' ? parsed.layoutLangId : undefined,
+      primaryLangId: typeof parsed.primaryLangId === 'number' ? parsed.primaryLangId : undefined,
+      imeOpen: typeof parsed.imeOpen === 'boolean' ? parsed.imeOpen : undefined,
+    }
+  } catch (error) {
+    return { ok: false, switched: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+async function restoreWindowsInputMode(): Promise<RestoreInputModeResult> {
+  if (process.platform !== 'win32') {
+    return { ok: true, restored: false, reason: 'unsupported-platform' }
+  }
+
+  try {
+    const result = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        WINDOWS_RESTORE_INPUT_MODE_SCRIPT,
+      ],
+      { timeout: 3000, windowsHide: true },
+    )
+    const raw = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
+    if (!raw) return { ok: false, restored: false, error: 'No input mode restore result.' }
+    const parsed = JSON.parse(raw) as Partial<RestoreInputModeResult>
+    return {
+      ok: parsed.ok === true,
+      restored: parsed.restored === true,
+      error: typeof parsed.error === 'string' ? parsed.error : undefined,
+      layoutLangId: typeof parsed.layoutLangId === 'number' ? parsed.layoutLangId : undefined,
+      primaryLangId: typeof parsed.primaryLangId === 'number' ? parsed.primaryLangId : undefined,
+      imeOpen: typeof parsed.imeOpen === 'boolean' ? parsed.imeOpen : undefined,
+    }
+  } catch (error) {
+    return { ok: false, restored: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
@@ -775,6 +1025,16 @@ export function registerWindowHandlers(): void {
   ipcMain.handle(IPC.WINDOW_START_VOICE_INPUT, async (event) => {
     BrowserWindow.fromWebContents(event.sender)?.focus()
     return startWindowsVoiceInput()
+  })
+
+  ipcMain.handle(IPC.WINDOW_ENSURE_ENGLISH_INPUT_MODE, async (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.focus()
+    return ensureWindowsEnglishInputMode()
+  })
+
+  ipcMain.handle(IPC.WINDOW_RESTORE_INPUT_MODE, async (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.focus()
+    return restoreWindowsInputMode()
   })
 
   ipcMain.handle(IPC.VOICE_LOCAL_ASR_SERVICE, async (_event, options: VoiceLocalAsrServiceRequest) => {
