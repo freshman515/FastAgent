@@ -389,7 +389,7 @@ async function fetchClaudeUsage(): Promise<ClaudeUtilization> {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'claude-cli/fastagents',
+        'User-Agent': 'claude-cli/pragma-desk',
         Authorization: `Bearer ${accessToken}`,
         'anthropic-beta': OAUTH_BETA_HEADER,
       },

@@ -9,7 +9,7 @@ directories:
 files:
   - "out/**/*"
   - "src/main/services/mcp-bridge.cjs"
-  - "assets/icons/fastagents-256.png"
+  - "assets/icons/pragma-desk-256.png"
   - "node_modules/**/*"
   - "!node_modules/**/README.md"
   - "!node_modules/**/CHANGELOG.md"
@@ -63,4 +63,4 @@ linux:
 publish:
   - provider: github
     owner: freshman515
-    repo: FastAgent
+    repo: PragmaDesk

@@ -2789,7 +2789,7 @@ function MainApp(): JSX.Element {
 
       const editedFiles = extractClaudeGuiEditedFiles(event, pendingEditedFiles)
       for (const filePath of editedFiles) {
-        window.dispatchEvent(new CustomEvent('fastagents:file-saved', {
+        window.dispatchEvent(new CustomEvent('pragma-desk:file-saved', {
           detail: { filePath },
         }))
       }

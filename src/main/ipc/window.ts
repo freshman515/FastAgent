@@ -574,7 +574,7 @@ async function startFunasrVoiceStream(
       stream.opened = true
       const config = {
         mode: '2pass',
-        wav_name: `fastagents-${Date.now()}`,
+        wav_name: `pragma-desk-${Date.now()}`,
         wav_format: 'pcm',
         is_speaking: true,
         chunk_size: [...FUNASR_CHUNK_SIZE],
@@ -728,7 +728,7 @@ async function warmupFunasrVoiceStream(options: VoiceStreamWarmupRequest): Promi
     ws.once('open', () => {
       const config = {
         mode: '2pass',
-        wav_name: `fastagents-warmup-${Date.now()}`,
+        wav_name: `pragma-desk-warmup-${Date.now()}`,
         wav_format: 'pcm',
         is_speaking: true,
         chunk_size: [...FUNASR_CHUNK_SIZE],
@@ -870,7 +870,7 @@ async function transcribeFunasrWebSocket(
     ws.once('open', () => {
       const config = {
         mode: '2pass',
-        wav_name: `fastagents-${Date.now()}`,
+        wav_name: `pragma-desk-${Date.now()}`,
         wav_format: 'pcm',
         is_speaking: true,
         chunk_size: [...FUNASR_CHUNK_SIZE],

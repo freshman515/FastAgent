@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-const BUNDLED_SKILLS = ['fastagents-orchestration'] as const
+const BUNDLED_SKILLS = ['pragma-desk-orchestration'] as const
 const USER_SKILL_ROOTS = [
   ['.codex', 'skills'],
   ['.claude', 'skills'],

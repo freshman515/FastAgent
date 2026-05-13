@@ -1,7 +1,7 @@
 import * as monaco from 'monaco-editor'
 import { getXtermTheme, isTerminalThemeDark, defaultDarkTheme } from '@/lib/ghosttyTheme'
 
-export const MONACO_THEME_NAME = 'fastagents-theme'
+export const MONACO_THEME_NAME = 'pragma-desk-theme'
 
 export function defineMonacoTheme(terminalThemeName: string): void {
   const xtermTheme = getXtermTheme(terminalThemeName) ?? defaultDarkTheme

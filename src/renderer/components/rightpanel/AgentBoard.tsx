@@ -140,7 +140,7 @@ function waitForPty(sessionId: string, timeoutMs = 15_000): Promise<string> {
 }
 
 function getDragCardId(event: DragEvent): string | null {
-  const value = event.dataTransfer.getData('application/x-fastagents-agent-card')
+  const value = event.dataTransfer.getData('application/x-pragma-desk-agent-card')
     || event.dataTransfer.getData('text/plain')
   return value.startsWith('agent-card:') ? value.slice('agent-card:'.length) : value || null
 }
@@ -338,7 +338,7 @@ export function AgentBoard(): JSX.Element {
   const handleCardDragStart = useCallback((cardId: string, event: DragEvent) => {
     setDraggingCardId(cardId)
     event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('application/x-fastagents-agent-card', `agent-card:${cardId}`)
+    event.dataTransfer.setData('application/x-pragma-desk-agent-card', `agent-card:${cardId}`)
     event.dataTransfer.setData('text/plain', `agent-card:${cardId}`)
   }, [])
 

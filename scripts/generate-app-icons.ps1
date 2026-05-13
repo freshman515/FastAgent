@@ -149,21 +149,21 @@ function Write-PngIco([string]$icoPath, [string[]]$pngPaths) {
 }
 
 foreach ($size in @(16, 32, 64, 128, 256, 512, 1024)) {
-  Save-AppIconPng $size (Join-Path $iconsDir "fastagents-$size.png")
+  Save-AppIconPng $size (Join-Path $iconsDir "pragma-desk-$size.png")
 }
 
-Copy-Item -LiteralPath (Join-Path $iconsDir 'fastagents-512.png') -Destination (Join-Path $buildDir 'icon.png') -Force
-Copy-Item -LiteralPath (Join-Path $iconsDir 'fastagents-64.png') -Destination (Join-Path $root 'src/renderer/assets/icons/pragma-desk.png') -Force
+Copy-Item -LiteralPath (Join-Path $iconsDir 'pragma-desk-512.png') -Destination (Join-Path $buildDir 'icon.png') -Force
+Copy-Item -LiteralPath (Join-Path $iconsDir 'pragma-desk-64.png') -Destination (Join-Path $root 'src/renderer/assets/icons/pragma-desk.png') -Force
 
 $temporary48 = Join-Path $env:TEMP 'pragma-desk-icon-48.png'
 Save-AppIconPng 48 $temporary48
 Write-PngIco (Join-Path $buildDir 'icon.ico') @(
-  (Join-Path $iconsDir 'fastagents-16.png'),
-  (Join-Path $iconsDir 'fastagents-32.png'),
+  (Join-Path $iconsDir 'pragma-desk-16.png'),
+  (Join-Path $iconsDir 'pragma-desk-32.png'),
   $temporary48,
-  (Join-Path $iconsDir 'fastagents-64.png'),
-  (Join-Path $iconsDir 'fastagents-128.png'),
-  (Join-Path $iconsDir 'fastagents-256.png')
+  (Join-Path $iconsDir 'pragma-desk-64.png'),
+  (Join-Path $iconsDir 'pragma-desk-128.png'),
+  (Join-Path $iconsDir 'pragma-desk-256.png')
 )
 Remove-Item -LiteralPath $temporary48 -Force
 

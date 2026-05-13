@@ -7,9 +7,9 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { getAppProfileId, getConfiguredUserDataDir } from './AppPaths'
 
-const CLAUDE_HOOK_SCRIPT_BASE = 'fastagents-hook'
-const CODEX_HOOK_SCRIPT_BASE = 'fastagents-codex-hook'
-const HTTP_HOOK_MARKER_BASE = 'fast-agents' // marker in HTTP hook URLs
+const CLAUDE_HOOK_SCRIPT_BASE = 'pragma-desk-hook'
+const CODEX_HOOK_SCRIPT_BASE = 'pragma-desk-codex-hook'
+const HTTP_HOOK_MARKER_BASE = 'pragma-desk' // marker in HTTP hook URLs
 const DEFAULT_HOOK_PORT = 24680
 const HOOK_PORT_RANGE = 5
 
@@ -98,9 +98,9 @@ async function main() {
     process.exit(0);
   }
 
-  data.fa_session_id = process.env.FASTAGENTS_SESSION_ID || null;
-  data.fastagents_session_type = process.env.FASTAGENTS_SESSION_TYPE || null;
-  data.fastagents_hook_source = 'claude';
+  data.pd_session_id = process.env.PRAGMA_DESK_SESSION_ID || null;
+  data.pragma_desk_session_type = process.env.PRAGMA_DESK_SESSION_TYPE || null;
+  data.pragma_desk_hook_source = 'claude';
   const postData = JSON.stringify(data);
   const req = http.request({
     hostname: '127.0.0.1',
@@ -190,9 +190,9 @@ async function main() {
   }
 
   data.hook_event_name = data.hook_event_name || 'Stop';
-  data.fa_session_id = process.env.FASTAGENTS_SESSION_ID || data.fa_session_id || null;
-  data.fastagents_session_type = process.env.FASTAGENTS_SESSION_TYPE || data.fastagents_session_type || 'codex';
-  data.fastagents_hook_source = 'codex';
+  data.pd_session_id = process.env.PRAGMA_DESK_SESSION_ID || data.pd_session_id || null;
+  data.pragma_desk_session_type = process.env.PRAGMA_DESK_SESSION_TYPE || data.pragma_desk_session_type || 'codex';
+  data.pragma_desk_hook_source = 'codex';
 
   const postData = JSON.stringify(data);
   const deliveredPorts = [];
@@ -204,8 +204,8 @@ async function main() {
   log({
     event: data.hook_event_name,
     cwd: data.cwd || null,
-    fa_session_id: data.fa_session_id,
-    fastagents_session_type: data.fastagents_session_type,
+    pd_session_id: data.pd_session_id,
+    pragma_desk_session_type: data.pragma_desk_session_type,
     delivered: deliveredPorts.length > 0,
     delivered_port: deliveredPorts[0] || null,
     delivered_ports: deliveredPorts,

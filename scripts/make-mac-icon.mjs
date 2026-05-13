@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const source = join(root, 'assets', 'icons', 'fastagents-1024.png')
+const source = join(root, 'assets', 'icons', 'pragma-desk-1024.png')
 const output = join(root, 'build', 'icon.icns')
 const iconset = join(root, 'build', 'icon.iconset')
 

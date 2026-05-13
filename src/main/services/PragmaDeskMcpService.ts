@@ -38,17 +38,17 @@ function readBridgeSource(): string | null {
 function ensureBridgeScript(): string | null {
   const source = readBridgeSource()
   if (!source) {
-    console.warn('[FastAgentsMcp] mcp-bridge.cjs not found')
+    console.warn('[PragmaDeskMcp] mcp-bridge.cjs not found')
     return null
   }
 
-  const target = join(getMcpDir(), 'fastagents-mcp-bridge.cjs')
+  const target = join(getMcpDir(), 'pragma-desk-mcp-bridge.cjs')
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, source, 'utf-8')
   return target
 }
 
-export function ensureFastAgentsMcpBridgePath(target: 'windows' | 'wsl' = 'windows'): string | null {
+export function ensurePragmaDeskMcpBridgePath(target: 'windows' | 'wsl' = 'windows'): string | null {
   const bridgePath = ensureBridgeScript()
   if (!bridgePath) return null
   return target === 'wsl' ? windowsPathToWslPath(bridgePath) : bridgePath
@@ -80,21 +80,21 @@ function writeClaudeJson(data: Record<string, unknown>): void {
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, 'utf-8')
 }
 
-export function createFastAgentsMcpConfig(options: McpConfigOptions): string | null {
+export function createPragmaDeskMcpConfig(options: McpConfigOptions): string | null {
   const target = options.target ?? 'windows'
-  const bridgePath = ensureFastAgentsMcpBridgePath(target)
+  const bridgePath = ensurePragmaDeskMcpBridgePath(target)
   if (!bridgePath) return null
 
-  const configPath = join(getMcpDir(), `fastagents-mcp-${target}-${options.sessionId}.json`)
+  const configPath = join(getMcpDir(), `pragma-desk-mcp-${target}-${options.sessionId}.json`)
   const config = {
     mcpServers: {
-      fastagents: {
+      'pragma-desk': {
         command: 'node',
         args: [bridgePath],
         env: {
-          FASTAGENTS_MCP_PORT: String(options.port),
-          FASTAGENTS_MCP_TOKEN: options.token,
-          FASTAGENTS_SESSION_ID: options.sessionId,
+          PRAGMA_DESK_MCP_PORT: String(options.port),
+          PRAGMA_DESK_MCP_TOKEN: options.token,
+          PRAGMA_DESK_SESSION_ID: options.sessionId,
         },
       },
     },
@@ -113,7 +113,7 @@ export function createFastAgentsMcpConfig(options: McpConfigOptions): string | n
 // Pragma Desk startup with the fresh port/token.
 //
 // We preserve everything else in config.toml (user preferences, project
-// trust levels, tui theme, ...) and only upsert the `fastagents` section.
+// trust levels, tui theme, ...) and only upsert the `pragma-desk` section.
 
 function getCodexConfigPath(): string {
   return join(homedir(), '.codex', 'config.toml')
@@ -190,13 +190,13 @@ function tomlLiteralString(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
-export function registerFastAgentsMcpInCodex(options: Pick<McpConfigOptions, 'port' | 'token'>): void {
+export function registerPragmaDeskMcpInCodex(options: Pick<McpConfigOptions, 'port' | 'token'>): void {
   const bridgePath = ensureBridgeScript()
   if (!bridgePath) return
 
   // Baseline PORT/TOKEN live in config.toml. SESSION_ID is per-session and
-  // is injected at PTY spawn time via `codex -c mcp_servers.fastagents.env.
-  // FASTAGENTS_SESSION_ID="..."` — see PtyManager. We can't put SESSION_ID
+  // is injected at PTY spawn time via `codex -c mcp_servers.pragma-desk.env.
+  // PRAGMA_DESK_SESSION_ID="..."` — see PtyManager. We can't put SESSION_ID
   // here because a global config is shared by every Codex instance; only a
   // CLI override can carry a different value per Codex tab.
   //
@@ -205,24 +205,24 @@ export function registerFastAgentsMcpInCodex(options: Pick<McpConfigOptions, 'po
   // below is required; leaving it out would mean the bridge can't find the
   // orchestrator at all.
   const section = [
-    '[mcp_servers.fastagents]',
+    '[mcp_servers.pragma-desk]',
     'command = "node"',
     `args = [${tomlLiteralString(bridgePath)}]`,
-    `env = { FASTAGENTS_MCP_PORT = "${options.port}", FASTAGENTS_MCP_TOKEN = "${options.token}" }`,
+    `env = { PRAGMA_DESK_MCP_PORT = "${options.port}", PRAGMA_DESK_MCP_TOKEN = "${options.token}" }`,
   ].join('\n')
 
-  // Also sweep any stale [mcp_servers.fastagents.env] sub-table left behind
+  // Also sweep any stale [mcp_servers.pragma-desk.env] sub-table left behind
   // by earlier versions.
   const original = readCodexConfig()
   // First strip any legacy dotted sub-tables (replace with empty), then
   // upsert the main section.
-  const cleaned = removeTomlSection(original, 'mcp_servers.fastagents.env')
-  const updated = upsertTomlSection(cleaned, 'mcp_servers.fastagents', section)
+  const cleaned = removeTomlSection(original, 'mcp_servers.pragma-desk.env')
+  const updated = upsertTomlSection(cleaned, 'mcp_servers.pragma-desk', section)
   if (updated !== original) {
     try {
       writeCodexConfig(updated)
     } catch (err) {
-      console.warn('[FastAgentsMcp] failed to update ~/.codex/config.toml:', err)
+      console.warn('[PragmaDeskMcp] failed to update ~/.codex/config.toml:', err)
     }
   }
 }
@@ -232,7 +232,7 @@ export function registerFastAgentsMcpInCodex(options: Pick<McpConfigOptions, 'po
 // Claude Code and Codex each have their own global instruction file:
 //   ~/.claude/CLAUDE.md    (Claude)
 //   ~/.codex/AGENTS.md     (Codex)
-// The "Meta-Agent" section explaining the fa_* / ft_* toolset must stay
+// The "Meta-Agent" section explaining the pd_* / ft_* toolset must stay
 // identical in both, otherwise Codex drifts out of sync. On every Pragma Desk
 // startup we mirror the section from CLAUDE.md into a managed block of
 // AGENTS.md. Everything else in AGENTS.md (e.g. Git rules) is untouched.
@@ -329,7 +329,7 @@ export function syncMetaAgentToCodexAgentsMd(): void {
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, updated, 'utf-8')
     } catch (err) {
-      console.warn('[FastAgentsMcp] failed to sync ~/.codex/AGENTS.md:', err)
+      console.warn('[PragmaDeskMcp] failed to sync ~/.codex/AGENTS.md:', err)
     }
   }
 }
@@ -447,32 +447,32 @@ function cleanupFastTerminalMcpFromClaude(): boolean {
 export function cleanupLegacyFastTerminalMcpRegistrations(): void {
   try {
     if (cleanupFastTerminalMcpFromCodex()) {
-      console.log('[FastAgentsMcp] removed legacy fastterminal MCP from ~/.codex/config.toml')
+      console.log('[PragmaDeskMcp] removed legacy fastterminal MCP from ~/.codex/config.toml')
     }
   } catch (err) {
-    console.warn('[FastAgentsMcp] failed to clean fastterminal MCP from ~/.codex/config.toml:', err)
+    console.warn('[PragmaDeskMcp] failed to clean fastterminal MCP from ~/.codex/config.toml:', err)
   }
 
   try {
     if (cleanupFastTerminalMcpFromClaude()) {
-      console.log('[FastAgentsMcp] removed legacy fastterminal MCP from ~/.claude.json')
+      console.log('[PragmaDeskMcp] removed legacy fastterminal MCP from ~/.claude.json')
     }
   } catch (err) {
-    console.warn('[FastAgentsMcp] failed to clean fastterminal MCP from ~/.claude.json:', err)
+    console.warn('[PragmaDeskMcp] failed to clean fastterminal MCP from ~/.claude.json:', err)
   }
 }
 
-export function registerFastAgentsMcpInClaudeProjects(options: Pick<McpConfigOptions, 'port' | 'token'>): void {
+export function registerPragmaDeskMcpInClaudeProjects(options: Pick<McpConfigOptions, 'port' | 'token'>): void {
   const bridgePath = ensureBridgeScript()
   if (!bridgePath) return
 
-  const fastagentsServer = {
+  const pragmaDeskServer = {
     type: 'stdio',
     command: 'node',
     args: [bridgePath],
     env: {
-      FASTAGENTS_MCP_PORT: String(options.port),
-      FASTAGENTS_MCP_TOKEN: options.token,
+      PRAGMA_DESK_MCP_PORT: String(options.port),
+      PRAGMA_DESK_MCP_TOKEN: options.token,
     },
   }
 
@@ -508,7 +508,7 @@ export function registerFastAgentsMcpInClaudeProjects(options: Pick<McpConfigOpt
     const mcpServers = entry.mcpServers && typeof entry.mcpServers === 'object' && !Array.isArray(entry.mcpServers)
       ? entry.mcpServers as Record<string, unknown>
       : {}
-    mcpServers.fastagents = fastagentsServer
+    mcpServers['pragma-desk'] = pragmaDeskServer
     entry.mcpServers = mcpServers
     projects[projectPath] = entry
   }

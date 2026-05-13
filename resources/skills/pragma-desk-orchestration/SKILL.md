@@ -1,6 +1,6 @@
 ---
-name: fastagents-orchestration
-description: 通过 fa_* MCP 工具编排多个 Pragma Desk 会话。适用于 Codex 或 Claude Code 需要调度其他运行中的会话、创建 worker agent 或终端、运行后台命令、监控其他 agent、把编码任务拆给多个独立会话、做跨 agent 复核、从已有 Pragma Desk 标签页恢复上下文，或读取 Pragma Desk 编辑器上下文时。
+name: pragma-desk-orchestration
+description: 通过 pd_* MCP 工具编排多个 Pragma Desk 会话。适用于 Codex 或 Claude Code 需要调度其他运行中的会话、创建 worker agent 或终端、运行后台命令、监控其他 agent、把编码任务拆给多个独立会话、做跨 agent 复核、从已有 Pragma Desk 标签页恢复上下文，或读取 Pragma Desk 编辑器上下文时。
 ---
 
 # Pragma Desk 会话编排
@@ -31,20 +31,20 @@ description: 通过 fa_* MCP 工具编排多个 Pragma Desk 会话。适用于 C
 
 按目的选择工具：
 
-- `fa_get_open_file`：用户提到当前打开文件时使用。
-- `fa_get_selection`：用户提到选区、这段代码、当前选择时使用。
-- `fa_get_editor_context`：只有完整编辑器状态有价值时使用。
-- `fa_list_sessions`：需要发现会话 ID、类型、状态、cwd、`[SELF]` 时使用。
-- `fa_create_session`：创建一个 bounded worker agent 或后台终端。
-- `fa_write_session`：向非当前会话发送明确任务或命令。
-- `fa_close_session`：关闭非当前会话的标签页，并终止其仍在运行的进程。
-- `fa_wait_for_idle`：等待 worker 或终端输出稳定。
-- `fa_read_session`：读取 worker 结果、终端输出或已有会话状态。
+- `pd_get_open_file`：用户提到当前打开文件时使用。
+- `pd_get_selection`：用户提到选区、这段代码、当前选择时使用。
+- `pd_get_editor_context`：只有完整编辑器状态有价值时使用。
+- `pd_list_sessions`：需要发现会话 ID、类型、状态、cwd、`[SELF]` 时使用。
+- `pd_create_session`：创建一个 bounded worker agent 或后台终端。
+- `pd_write_session`：向非当前会话发送明确任务或命令。
+- `pd_close_session`：关闭非当前会话的标签页，并终止其仍在运行的进程。
+- `pd_wait_for_idle`：等待 worker 或终端输出稳定。
+- `pd_read_session`：读取 worker 结果、终端输出或已有会话状态。
 
 硬性规则：
 
-- 永远不要对 `[SELF]` 会话调用 `fa_write_session`。
-- 需要关闭别的会话时使用 `fa_close_session`，不要只发送 `/quit` 或 `exit`，否则可能只退出进程但保留标签页。
+- 永远不要对 `[SELF]` 会话调用 `pd_write_session`。
+- 需要关闭别的会话时使用 `pd_close_session`，不要只发送 `/quit` 或 `exit`，否则可能只退出进程但保留标签页。
 - 不要让两个 worker 同时拥有同一批文件的写权限。
 - 告诉 worker：它不是代码库里的唯一会话，不能回滚用户或其他会话的改动。
 - 主控会话负责最终整合，不要让 worker 之间互相协调。
@@ -57,7 +57,7 @@ description: 通过 fa_* MCP 工具编排多个 Pragma Desk 会话。适用于 C
 3. 只把旁路任务委派出去，主控继续做不重叠的工作。
 4. 给每个 worker 明确目标、文件/模块所有权、验证要求和最终汇报格式。
 5. worker 运行期间，主控继续推进本地工作。
-6. 需要某个 worker 结果时，先 `fa_wait_for_idle`，再读取足够输出。
+6. 需要某个 worker 结果时，先 `pd_wait_for_idle`，再读取足够输出。
 7. 主控检查 worker 改动，必要时本地跑验证。
 8. 整合结果时保留用户改动和 worker 改动，除非有明确理由替换。
 9. 最终答复由主控总结，不直接拼接 worker transcript。
@@ -68,10 +68,10 @@ description: 通过 fa_* MCP 工具编排多个 Pragma Desk 会话。适用于 C
 
 - 不要在每个子任务完成后停下来问用户是否继续。
 - 自己读取任务文本或任务文件，拆成可执行队列，并按依赖和风险排序。
-- 自己决定哪些任务由主控完成，哪些任务通过 `fa_create_session` 派发给 worker。
+- 自己决定哪些任务由主控完成，哪些任务通过 `pd_create_session` 派发给 worker。
 - 默认优先使用 Codex / Codex YOLO，除非用户限制了可用会话类型。
-- worker 完成后必须 `fa_read_session` 检查输出和报告，必要时继续读取仓库状态或运行验证。
-- 主控要做二次复核：发现问题时把明确修改意见通过 `fa_write_session` 发回原 worker。
+- worker 完成后必须 `pd_read_session` 检查输出和报告，必要时继续读取仓库状态或运行验证。
+- 主控要做二次复核：发现问题时把明确修改意见通过 `pd_write_session` 发回原 worker。
 - worker 修完后再次复核；直到通过、阻塞明确、或达到主控认为合理的轮次上限。
 - 一个任务结束后自动启动下一个任务，直到队列完成、用户停止、或出现无法自行处理的硬阻塞。
 - 结束时再总结整体状态；中途只更新任务状态，不把“是否继续”交还给用户。
@@ -214,7 +214,7 @@ RESULT:
 
 接手已有会话时：
 
-1. 调用 `fa_list_sessions`。
+1. 调用 `pd_list_sessions`。
 2. 根据 name、type、cwd、status 找目标会话。
 3. 读取目标会话最近输出。
 4. 如果状态不清楚，向该会话发送“请用 RESULT 格式汇报当前状态”。
@@ -246,7 +246,7 @@ RESULT:
 
 如果某个会话不在当前 workspace scope，说明不可访问，然后继续处理可见会话。
 
-如果 `fa_wait_for_idle` 超时，判断会话是在正常运行、等待输入，还是卡住了。只有有进展可能时才继续等待。
+如果 `pd_wait_for_idle` 超时，判断会话是在正常运行、等待输入，还是卡住了。只有有进展可能时才继续等待。
 
 如果 worker 失败，主控需要记录：
 

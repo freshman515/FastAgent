@@ -70,7 +70,7 @@ const GIT_TAB_BUTTON = 'flex h-8 flex-1 items-center justify-center gap-1.5 roun
 const REVIEW_RUNNER_BUTTON = 'inline-flex h-7 min-w-0 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-hover)] hover:text-[var(--color-text-primary)]'
 const CLAUDE_REVIEW_FIX_MODEL = 'claude-opus-4-6'
 const REVIEW_RUNNER_MENU_WIDTH = 220
-const REVIEW_RESULT_PENDING_MARKER = '<!-- FASTAGENTS_REVIEW_PENDING -->'
+const REVIEW_RESULT_PENDING_MARKER = '<!-- PRAGMA_DESK_REVIEW_PENDING -->'
 const REVIEW_RESULT_POLL_INTERVAL_MS = 1500
 const REVIEW_RESULT_TIMEOUT_MS = 30 * 60 * 1000
 const REVIEW_CAPTURE_MAX_CHARS = 120000
@@ -127,8 +127,8 @@ function extractCapturedReviewOutput(output: string): string | null {
       const trimmed = line.trim()
       return trimmed
         && !trimmed.includes('请先完整读取并严格执行这个代码审查任务文件')
-        && !trimmed.includes('fastagents-ai-review-')
-        && !trimmed.includes('fastagents-ai-review-result-')
+        && !trimmed.includes('pragma-desk-ai-review-')
+        && !trimmed.includes('pragma-desk-ai-review-result-')
         && trimmed !== '要求：'
         && !/^\d+\.\s/.test(trimmed)
     })
@@ -432,11 +432,11 @@ export function GitChanges(): JSX.Element {
     const handleFocus = () => { void fetchStatus() }
     const handleFileSaved = () => { void fetchStatus() }
     window.addEventListener('focus', handleFocus)
-    window.addEventListener('fastagents:file-saved', handleFileSaved as EventListener)
+    window.addEventListener('pragma-desk:file-saved', handleFileSaved as EventListener)
     return () => {
       clearInterval(timer)
       window.removeEventListener('focus', handleFocus)
-      window.removeEventListener('fastagents:file-saved', handleFileSaved as EventListener)
+      window.removeEventListener('pragma-desk:file-saved', handleFileSaved as EventListener)
     }
   }, [fetchStatus])
 
@@ -615,7 +615,7 @@ export function GitChanges(): JSX.Element {
         })
 
         const resultFilePath = await window.api.fs.writeTempFile(
-          'fastagents-ai-review-result',
+          'pragma-desk-ai-review-result',
           REVIEW_RESULT_PENDING_MARKER,
           'md',
         )
@@ -626,7 +626,7 @@ export function GitChanges(): JSX.Element {
           resultFilePath,
         })
         const taskFilePath = await window.api.fs.writeTempFile(
-          'fastagents-ai-review',
+          'pragma-desk-ai-review',
           reviewPrompt,
           'md',
         )
@@ -756,7 +756,7 @@ export function GitChanges(): JSX.Element {
           })
 
           const taskFilePath = await window.api.fs.writeTempFile(
-            'fastagents-ai-review-fix',
+            'pragma-desk-ai-review-fix',
             effectiveText,
             'md',
           )

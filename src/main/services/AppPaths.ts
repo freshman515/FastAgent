@@ -19,7 +19,7 @@ function getWorkspaceProfileId(): string {
 }
 
 function getDevProfileDir(): string {
-  const override = process.env.FASTAGENTS_USER_DATA_DIR?.trim()
+  const override = process.env.PRAGMA_DESK_USER_DATA_DIR?.trim()
   if (override) return override
 
   return join(app.getPath('appData'), 'Pragma Desk Dev', getWorkspaceProfileId())
@@ -36,7 +36,7 @@ export function configureAppPaths(): void {
   }
 
   const userDataDir = getDevProfileDir()
-  const sessionDataDir = process.env.FASTAGENTS_SESSION_DATA_DIR?.trim() || join(userDataDir, 'session-data')
+  const sessionDataDir = process.env.PRAGMA_DESK_SESSION_DATA_DIR?.trim() || join(userDataDir, 'session-data')
 
   mkdirSync(userDataDir, { recursive: true })
   mkdirSync(sessionDataDir, { recursive: true })
@@ -69,7 +69,7 @@ export function getConfiguredSessionDataDir(): string {
 }
 
 export function shouldRegisterGlobalAgentConfig(): boolean {
-  const override = process.env.FASTAGENTS_REGISTER_GLOBAL_AGENT_CONFIG?.trim()
+  const override = process.env.PRAGMA_DESK_REGISTER_GLOBAL_AGENT_CONFIG?.trim()
   if (override === '1' || override?.toLowerCase() === 'true') return true
   if (override === '0' || override?.toLowerCase() === 'false') return false
   return app.isPackaged

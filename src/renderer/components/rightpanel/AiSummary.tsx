@@ -144,7 +144,7 @@ async function applyCodeToTarget(target: ApplyTarget, code: string): Promise<voi
     await window.api.fs.writeFile(target.filePath, code)
   }
 
-  window.dispatchEvent(new CustomEvent('fastagents:file-saved', {
+  window.dispatchEvent(new CustomEvent('pragma-desk:file-saved', {
     detail: { filePath: target.filePath },
   }))
 }

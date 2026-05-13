@@ -71,7 +71,7 @@ function collectSessionInfos(): McpSessionInfo[] {
       projectId: s.projectId,
       worktreeId: s.worktreeId ?? null,
       paneId: sessionToPane.get(s.id) ?? null,
-      // Overridden by the orchestrator using the X-FastAgents-Session-Id header.
+      // Overridden by the orchestrator using the X-Pragma-Desk-Session-Id header.
       isSelf: false,
       hasPty: s.ptyId !== null,
     }

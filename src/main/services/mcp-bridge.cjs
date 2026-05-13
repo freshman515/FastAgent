@@ -9,19 +9,19 @@
 // main process. Auth uses a per-launch random Bearer token.
 //
 // Required env (injected by Pragma Desk when it spawns the PTY):
-//   FASTAGENTS_MCP_PORT     – orchestrator HTTP port (loopback)
-//   FASTAGENTS_MCP_TOKEN    – random per-launch Bearer token
+//   PRAGMA_DESK_MCP_PORT     – orchestrator HTTP port (loopback)
+//   PRAGMA_DESK_MCP_TOKEN    – random per-launch Bearer token
 // Optional:
-//   FASTAGENTS_SESSION_ID   – this agent's own session id (set by Pragma Desk
+//   PRAGMA_DESK_SESSION_ID   – this agent's own session id (set by Pragma Desk
 //                             so the bridge can flag `isSelf` and scope
 //                             workspace access).
 
 const http = require('http')
 const readline = require('readline')
 
-const PORT = parseInt(process.env.FASTAGENTS_MCP_PORT || '0', 10)
-const TOKEN = process.env.FASTAGENTS_MCP_TOKEN || ''
-const SELF_SESSION_ID = process.env.FASTAGENTS_SESSION_ID || ''
+const PORT = parseInt(process.env.PRAGMA_DESK_MCP_PORT || '0', 10)
+const TOKEN = process.env.PRAGMA_DESK_MCP_TOKEN || ''
+const SELF_SESSION_ID = process.env.PRAGMA_DESK_SESSION_ID || ''
 const CONNECTED = Boolean(PORT && TOKEN)
 
 // If the bridge is spawned outside a Pragma Desk PTY (no orchestrator env),
@@ -39,7 +39,7 @@ function request(method, path, body) {
       Accept: 'application/json',
     }
     if (SELF_SESSION_ID) {
-      headers['X-FastAgents-Session-Id'] = SELF_SESSION_ID
+      headers['X-Pragma-Desk-Session-Id'] = SELF_SESSION_ID
     }
     if (payload) {
       headers['Content-Type'] = 'application/json'
@@ -76,30 +76,30 @@ function request(method, path, body) {
 const TOOLS = [
   // Editor context (served by Pragma Desk' IdeServer, proxied via orchestrator /state)
   {
-    name: 'fa_get_open_file',
+    name: 'pd_get_open_file',
     description: 'Get the currently open file in the Pragma Desk editor, including its path, language, and cursor position.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'fa_get_selection',
+    name: 'pd_get_selection',
     description: 'Get the currently selected text in the Pragma Desk editor. Returns the selected code/text and the file it belongs to.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'fa_get_editor_context',
+    name: 'pd_get_editor_context',
     description: 'Get full editor context: open file, selection, cursor position, project path, and language.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
 
   // Session orchestration
   {
-    name: 'fa_list_sessions',
+    name: 'pd_list_sessions',
     description:
       'List every Pragma Desk session currently in the workspace scope of this calling agent. Returns id, name, type, status, cwd, pane, and whether the calling agent owns each session. Use this first whenever you need to find a session to read or write to.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'fa_read_session',
+    name: 'pd_read_session',
     description:
       'Read recent terminal output from a Pragma Desk session. ANSI escape sequences are stripped. Use this to inspect what another session (or worker agent) has produced.',
     inputSchema: {
@@ -107,7 +107,7 @@ const TOOLS = [
       properties: {
         session_id: {
           type: 'string',
-          description: 'Renderer session id, exactly as returned by fa_list_sessions.',
+          description: 'Renderer session id, exactly as returned by pd_list_sessions.',
         },
         lines: {
           type: 'integer',
@@ -120,7 +120,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'fa_write_session',
+    name: 'pd_write_session',
     description:
       'Send input to a Pragma Desk session as if the user typed it. By default a trailing Enter is appended. Use this to dispatch a prompt to a worker agent or run a shell command in another terminal. Refuses to write to the calling agent\'s own session.',
     inputSchema: {
@@ -140,7 +140,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'fa_close_session',
+    name: 'pd_close_session',
     description:
       'Close a Pragma Desk session tab and terminate its backing process if it is still running. Refuses to close the calling agent\'s own session.',
     inputSchema: {
@@ -148,14 +148,14 @@ const TOOLS = [
       properties: {
         session_id: {
           type: 'string',
-          description: 'Renderer session id, exactly as returned by fa_list_sessions.',
+          description: 'Renderer session id, exactly as returned by pd_list_sessions.',
         },
       },
       required: ['session_id'],
     },
   },
   {
-    name: 'fa_create_session',
+    name: 'pd_create_session',
     description:
       'Create a new Pragma Desk session in the active pane. Use this to spawn a worker agent (claude-code / codex / gemini / opencode) or a plain terminal for a follow-up task.',
     inputSchema: {
@@ -203,7 +203,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'fa_wait_for_idle',
+    name: 'pd_wait_for_idle',
     description:
       'Block until a Pragma Desk session has produced no output for `idle_ms` milliseconds, or `timeout_ms` elapses. Use this as a synchronization point after dispatching work to a worker agent.',
     inputSchema: {
@@ -232,13 +232,13 @@ const TOOLS = [
 
 async function callTool(name, args) {
   switch (name) {
-    case 'fa_get_open_file': {
+    case 'pd_get_open_file': {
       const state = await request('GET', '/state')
       if (!state || !state.filePath) return 'No file is currently open in the editor.'
       return `File: ${state.filePath}\nLanguage: ${state.language || 'unknown'}\nCursor: line ${state.cursorLine}, column ${state.cursorColumn}`
     }
 
-    case 'fa_get_selection': {
+    case 'pd_get_selection': {
       const state = await request('GET', '/state')
       if (!state || !state.selection) return 'No text is currently selected in the editor.'
       const range = state.selectionRange
@@ -248,13 +248,13 @@ async function callTool(name, args) {
       return `File: ${state.filePath || state.fileName || 'unknown file'}\nLanguage: ${state.language || 'unknown'}\nSelection: ${rangeText}\n\nSelected text:\n\n${state.selection}`
     }
 
-    case 'fa_get_editor_context': {
+    case 'pd_get_editor_context': {
       const state = await request('GET', '/state')
       return JSON.stringify(state, null, 2)
     }
 
-    case 'fa_list_sessions': {
-      const data = await request('GET', '/fa/sessions')
+    case 'pd_list_sessions': {
+      const data = await request('GET', '/pd/sessions')
       const sessions = Array.isArray(data.sessions) ? data.sessions : []
       if (sessions.length === 0) return 'No active sessions.'
       const lines = sessions.map((s) => {
@@ -267,15 +267,15 @@ async function callTool(name, args) {
       return `${sessions.length} session(s):\n${lines.join('\n')}`
     }
 
-    case 'fa_read_session': {
+    case 'pd_read_session': {
       const sessionId = String(args.session_id || '')
       if (!sessionId) throw new Error('session_id is required')
       const lines = args.lines ? `?lines=${encodeURIComponent(args.lines)}` : ''
-      const data = await request('GET', `/fa/sessions/${encodeURIComponent(sessionId)}/output${lines}`)
+      const data = await request('GET', `/pd/sessions/${encodeURIComponent(sessionId)}/output${lines}`)
       return typeof data.output === 'string' ? data.output : ''
     }
 
-    case 'fa_write_session': {
+    case 'pd_write_session': {
       const sessionId = String(args.session_id || '')
       if (!sessionId) throw new Error('session_id is required')
       if (sessionId === SELF_SESSION_ID) {
@@ -286,21 +286,21 @@ async function callTool(name, args) {
       }
       const body = { input: args.input }
       if (typeof args.press_enter === 'boolean') body.press_enter = args.press_enter
-      const data = await request('POST', `/fa/sessions/${encodeURIComponent(sessionId)}/input`, body)
+      const data = await request('POST', `/pd/sessions/${encodeURIComponent(sessionId)}/input`, body)
       return `Wrote ${data.bytesWritten ?? args.input.length} bytes to session ${sessionId}.`
     }
 
-    case 'fa_close_session': {
+    case 'pd_close_session': {
       const sessionId = String(args.session_id || '')
       if (!sessionId) throw new Error('session_id is required')
       if (sessionId === SELF_SESSION_ID) {
         throw new Error('Refusing to close the calling agent\'s own session.')
       }
-      await request('DELETE', `/fa/sessions/${encodeURIComponent(sessionId)}`)
+      await request('DELETE', `/pd/sessions/${encodeURIComponent(sessionId)}`)
       return `Closed session ${sessionId}.`
     }
 
-    case 'fa_create_session': {
+    case 'pd_create_session': {
       const body = {
         type: args.type || 'claude-code',
         cwd: args.cwd || '',
@@ -312,7 +312,7 @@ async function callTool(name, args) {
         activate: args.activate,
         initial_input: args.initial_input,
       }
-      const data = await request('POST', '/fa/sessions', body)
+      const data = await request('POST', '/pd/sessions', body)
       if (!data.ok || !data.session_id) {
         throw new Error(data.error || 'create_session failed')
       }
@@ -322,13 +322,13 @@ async function callTool(name, args) {
       return `Created session ${data.session_id} (type=${body.type}).${fallback}`
     }
 
-    case 'fa_wait_for_idle': {
+    case 'pd_wait_for_idle': {
       const sessionId = String(args.session_id || '')
       if (!sessionId) throw new Error('session_id is required')
       const body = {}
       if (typeof args.idle_ms === 'number') body.idle_ms = args.idle_ms
       if (typeof args.timeout_ms === 'number') body.timeout_ms = args.timeout_ms
-      const data = await request('POST', `/fa/sessions/${encodeURIComponent(sessionId)}/wait_idle`, body)
+      const data = await request('POST', `/pd/sessions/${encodeURIComponent(sessionId)}/wait_idle`, body)
       return data.idle
         ? `Idle after ${data.waitedMs}ms (quiet ${data.quietMs}ms).`
         : `Timed out after ${data.waitedMs}ms (last output ${data.quietMs}ms ago).`
@@ -346,7 +346,7 @@ function send(obj) {
   process.stdout.write(json + '\n')
 }
 
-const DEBUG = process.env.FASTAGENTS_MCP_DEBUG === '1'
+const DEBUG = process.env.PRAGMA_DESK_MCP_DEBUG === '1'
 function debug(...args) {
   if (DEBUG) {
     try { process.stderr.write(`[mcp-bridge] ${args.join(' ')}\n`) } catch { /* ignore */ }
@@ -389,7 +389,7 @@ async function handleMessage(msg) {
       result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'fastagents-meta-agent', version: '1.0.0' },
+        serverInfo: { name: 'pragma-desk-meta-agent', version: '1.0.0' },
       },
     })
     return
@@ -409,7 +409,7 @@ async function handleMessage(msg) {
         result: {
           content: [{
             type: 'text',
-            text: 'Pragma Desk MCP bridge is not attached to a Pragma Desk session. Start the MCP-capable agent from inside a Pragma Desk tab — the bridge needs FASTAGENTS_MCP_PORT / FASTAGENTS_MCP_TOKEN env vars that Pragma Desk injects automatically.',
+            text: 'Pragma Desk MCP bridge is not attached to a Pragma Desk session. Start the MCP-capable agent from inside a Pragma Desk tab — the bridge needs PRAGMA_DESK_MCP_PORT / PRAGMA_DESK_MCP_TOKEN env vars that Pragma Desk injects automatically.',
           }],
           isError: true,
         },

@@ -1,4 +1,4 @@
 interface:
   display_name: "Pragma Desk 会话编排"
-  short_description: "通过 fa_* MCP 工具调度和整合多个 Pragma Desk 会话。"
+  short_description: "通过 pd_* MCP 工具调度和整合多个 Pragma Desk 会话。"
   default_prompt: "使用 Pragma Desk 会话编排来规划、委派、监控并整合多会话 agent 工作。"

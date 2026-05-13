@@ -28,7 +28,7 @@ interface PermissionSuggestion {
 interface PendingPermission {
   id: string
   res: http.ServerResponse
-  faSessionId: string | null
+  pdSessionId: string | null
   toolName: string
   toolInput: Record<string, unknown>
   suggestions: PermissionSuggestion[]
@@ -128,7 +128,7 @@ export class HookServer {
 
     if (req.method === 'GET' && pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, app: 'fast-agents' }))
+      res.end(JSON.stringify({ ok: true, app: 'pragma-desk' }))
       return
     }
 
@@ -162,23 +162,23 @@ export class HookServer {
       try {
         const data = JSON.parse(body)
         const event = data.hook_event_name as string | undefined
-        const faSessionId = typeof data.fa_session_id === 'string' && data.fa_session_id
-          ? data.fa_session_id
+        const pdSessionId = typeof data.pd_session_id === 'string' && data.pd_session_id
+          ? data.pd_session_id
           : null
         const cwd = typeof data.cwd === 'string' ? data.cwd : ''
-        const managedSession = faSessionId ? ptyManager.getManagedSession(faSessionId) : null
-        const sessionType = typeof data.fastagents_session_type === 'string' && data.fastagents_session_type
-          ? data.fastagents_session_type
+        const managedSession = pdSessionId ? ptyManager.getManagedSession(pdSessionId) : null
+        const sessionType = typeof data.pragma_desk_session_type === 'string' && data.pragma_desk_session_type
+          ? data.pragma_desk_session_type
           : managedSession?.type ?? ''
-        const hookSource = typeof data.fastagents_hook_source === 'string'
-          ? data.fastagents_hook_source
+        const hookSource = typeof data.pragma_desk_hook_source === 'string'
+          ? data.pragma_desk_hook_source
           : ''
         const isCodex = sessionType === 'codex' || sessionType === 'codex-yolo' || sessionType === 'codex-wsl' || sessionType === 'codex-yolo-wsl' || hookSource === 'codex'
         const resolvedSessionId = managedSession?.sessionId
           ?? (cwd && isCodex ? ptyManager.findCodexSessionByCwd(cwd) : null)
           ?? (cwd && !isCodex ? ptyManager.findClaudeSessionByCwd(cwd) : null)
           ?? (cwd ? ptyManager.findAgentSessionByCwd(cwd) : null)
-          ?? faSessionId
+          ?? pdSessionId
 
         if (!resolvedSessionId) return
 
@@ -245,15 +245,15 @@ export class HookServer {
         const toolName = typeof data.tool_name === 'string' ? data.tool_name : 'Unknown'
         const toolInput = (data.tool_input && typeof data.tool_input === 'object') ? data.tool_input : {}
         const suggestions: PermissionSuggestion[] = Array.isArray(data.permission_suggestions) ? data.permission_suggestions : []
-        // HTTP hooks don't pass our FASTAGENTS_* env vars. Resolve Claude
+        // HTTP hooks don't pass our PRAGMA_DESK_* env vars. Resolve Claude
         // hooks by Claude's own session id instead of cwd so external shells
         // in the same project directory don't get attached to this app.
         const cwd = typeof data.cwd === 'string' ? data.cwd : ''
         const claudeSessionId = typeof data.session_id === 'string' ? data.session_id : ''
-        const faSessionId = claudeSessionId ? ptyManager.findClaudeSessionByClaudeSessionId(claudeSessionId) : null
-        const conversationId = !faSessionId && cwd ? claudeGuiService.findConversationIdByCwd(cwd) : null
+        const pdSessionId = claudeSessionId ? ptyManager.findClaudeSessionByClaudeSessionId(claudeSessionId) : null
+        const conversationId = !pdSessionId && cwd ? claudeGuiService.findConversationIdByCwd(cwd) : null
 
-        if (!faSessionId && !conversationId) {
+        if (!pdSessionId && !conversationId) {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end('{}')
           return
@@ -276,7 +276,7 @@ export class HookServer {
         }
 
         const id = `perm-${++this.permIdCounter}`
-        const perm: PendingPermission = { id, res, faSessionId, toolName, toolInput, suggestions }
+        const perm: PendingPermission = { id, res, pdSessionId, toolName, toolInput, suggestions }
         this.pending.set(id, perm)
 
         // Clean up if client disconnects
@@ -313,7 +313,7 @@ export class HookServer {
           if (!win.isDestroyed()) {
             win.webContents.send(IPC.PERMISSION_REQUEST, {
               id,
-              sessionId: faSessionId,
+              sessionId: pdSessionId,
               conversationId,
               toolName,
               detail,
@@ -339,14 +339,14 @@ export class HookServer {
       try {
         const data = JSON.parse(body)
         const sessionId = data.session_id as string | undefined
-        const faSessionId = sessionId ? ptyManager.findClaudeSessionByClaudeSessionId(sessionId) : null
-        if (!faSessionId) return
+        const pdSessionId = sessionId ? ptyManager.findClaudeSessionByClaudeSessionId(sessionId) : null
+        if (!pdSessionId) return
 
         // Broadcast to all windows
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) {
             win.webContents.send('agent:status-update', {
-              sessionId: faSessionId,
+              sessionId: pdSessionId,
               claudeSessionId: sessionId,
               model: data.model,
               contextWindow: data.context_window,

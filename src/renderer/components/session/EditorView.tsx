@@ -471,7 +471,7 @@ async function cutEditorText(editor: monaco.editor.IStandaloneCodeEditor): Promi
     const text = model.getValueInRange(selection)
     if (text) await navigator.clipboard.writeText(text)
     editor.pushUndoStop()
-    editor.executeEdits('fastagents-cut', [{ range: selection, text: '' }])
+    editor.executeEdits('pragma-desk-cut', [{ range: selection, text: '' }])
     editor.pushUndoStop()
     return
   }
@@ -486,7 +486,7 @@ async function cutEditorText(editor: monaco.editor.IStandaloneCodeEditor): Promi
   const text = model.getValueInRange(range)
   if (text) await navigator.clipboard.writeText(text)
   editor.pushUndoStop()
-  editor.executeEdits('fastagents-cut-line', [{ range, text: '' }])
+  editor.executeEdits('pragma-desk-cut-line', [{ range, text: '' }])
   editor.pushUndoStop()
 }
 
@@ -496,12 +496,12 @@ async function pasteEditorText(editor: monaco.editor.IStandaloneCodeEditor): Pro
 
   const selections = editor.getSelections() ?? []
   if (selections.length === 0) {
-    editor.trigger('fastagents-menu', 'type', { text })
+    editor.trigger('pragma-desk-menu', 'type', { text })
     return
   }
 
   editor.pushUndoStop()
-  editor.executeEdits('fastagents-paste', selections.map((selection) => ({ range: selection, text })))
+  editor.executeEdits('pragma-desk-paste', selections.map((selection) => ({ range: selection, text })))
   editor.pushUndoStop()
 }
 
@@ -787,7 +787,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       await window.api.fs.writeFile(tab.filePath, nextContent)
       savedContentRef.current = nextContent
       setModified(editorTabId, false)
-      window.dispatchEvent(new CustomEvent('fastagents:file-saved', {
+      window.dispatchEvent(new CustomEvent('pragma-desk:file-saved', {
         detail: { filePath: tab.filePath },
       }))
     }
@@ -830,7 +830,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
         if (!filePath || !isCurrentTabFile(filePath)) return
         loadImagePreview()
       }
-      window.addEventListener('fastagents:file-saved', fileSavedListener as EventListener)
+      window.addEventListener('pragma-desk:file-saved', fileSavedListener as EventListener)
     } else if (tab.isDiff) {
       if (!container) return
       // ── Diff editor ──
@@ -909,7 +909,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           focus: () => modEditor.focus(),
           applyGeneratedCode: async (code, selection) => {
             if (selection && !selection.isEmpty) {
-              modEditor.executeEdits('fastagents-ai-apply', [{
+              modEditor.executeEdits('pragma-desk-ai-apply', [{
                 range: new monaco.Range(
                   selection.startLine,
                   selection.startColumn,
@@ -948,7 +948,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           if (!filePath || !isCurrentTabFile(filePath)) return
           syncModifiedEditorFromDisk()
         }
-        window.addEventListener('fastagents:file-saved', fileSavedListener as EventListener)
+        window.addEventListener('pragma-desk:file-saved', fileSavedListener as EventListener)
 
         setLoading(false)
       }).catch((err) => { if (!disposed) setError(String(err)) })
@@ -1022,7 +1022,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           focus: () => editor.focus(),
           applyGeneratedCode: async (code, selection) => {
             if (selection && !selection.isEmpty) {
-              editor.executeEdits('fastagents-ai-apply', [{
+              editor.executeEdits('pragma-desk-ai-apply', [{
                 range: new monaco.Range(
                   selection.startLine,
                   selection.startColumn,
@@ -1063,7 +1063,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           if (!filePath || !isCurrentTabFile(filePath)) return
           syncEditorFromDisk()
         }
-        window.addEventListener('fastagents:file-saved', fileSavedListener as EventListener)
+        window.addEventListener('pragma-desk:file-saved', fileSavedListener as EventListener)
 
         setLoading(false)
       }).catch((err) => { if (!disposed) setError(String(err)) })
@@ -1075,7 +1075,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     return () => {
       disposed = true
       if (watchTimerRef.current) clearInterval(watchTimerRef.current)
-      if (fileSavedListener) window.removeEventListener('fastagents:file-saved', fileSavedListener as EventListener)
+      if (fileSavedListener) window.removeEventListener('pragma-desk:file-saved', fileSavedListener as EventListener)
       editorBindings.delete(editorTabId)
       editorRef.current?.dispose()
       editorRef.current = null
@@ -1573,7 +1573,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
               label="更改所有匹配项"
               shortcut="Ctrl+F2"
               disabled={!menuHasSelection}
-              onClick={() => runEditorMenuAction((editor) => editor.trigger('fastagents-menu', 'editor.action.changeAll', null))}
+              onClick={() => runEditorMenuAction((editor) => editor.trigger('pragma-desk-menu', 'editor.action.changeAll', null))}
             />
             <EditorMenuDivider />
             <EditorMenuItem label="剪切" shortcut="Ctrl+X" onClick={() => runEditorMenuAction(cutEditorText)} />
@@ -1603,7 +1603,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             <EditorMenuItem
               label="命令面板"
               shortcut="F1"
-              onClick={() => runEditorMenuAction((editor) => editor.trigger('fastagents-menu', 'editor.action.quickCommand', null))}
+              onClick={() => runEditorMenuAction((editor) => editor.trigger('pragma-desk-menu', 'editor.action.quickCommand', null))}
             />
           </div>
         </>,

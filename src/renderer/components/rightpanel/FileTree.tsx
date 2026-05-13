@@ -62,7 +62,7 @@ const ACTION_BUTTON = cn(
   'hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] hover:shadow-sm',
   'active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed'
 )
-const FILE_TREE_DRAG_MIME = 'application/x-fastagents-file-tree-node'
+const FILE_TREE_DRAG_MIME = 'application/x-pragma-desk-file-tree-node'
 
 function joinPath(basePath: string, name: string): string {
   return `${basePath.replace(/[\\/]+$/, '')}/${name.replace(/^[\\/]+/, '')}`

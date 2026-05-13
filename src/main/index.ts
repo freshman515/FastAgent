@@ -159,7 +159,7 @@ function createWindow(): void {
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     ...(isMac ? { trafficLightPosition: { x: 12, y: 12 } } : {}),
     backgroundColor: '#1a1a1e',
-    icon: join(__dirname, '../../assets/icons/fastagents-256.png'),
+    icon: join(__dirname, '../../assets/icons/pragma-desk-256.png'),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
@@ -211,7 +211,7 @@ app.whenReady().then(async () => {
   registerAllHandlers()
 
   // Boot the Pragma Desk MCP bridge HTTP server BEFORE spawning any PTYs, so
-  // the env vars (FASTAGENTS_MCP_PORT / FASTAGENTS_MCP_TOKEN) are in place
+  // the env vars (PRAGMA_DESK_MCP_PORT / PRAGMA_DESK_MCP_TOKEN) are in place
   // when sessions start. If init fails we keep going — the app must still
   // launch even when the bridge can't bind a port.
   try {
@@ -329,7 +329,7 @@ app.whenReady().then(async () => {
       minHeight: 300,
       frame: false,
       titleBarStyle: 'default',
-      icon: join(__dirname, '../../assets/icons/fastagents-256.png'),
+      icon: join(__dirname, '../../assets/icons/pragma-desk-256.png'),
       backgroundColor: '#1a1a1e',
       webPreferences: {
         preload: join(__dirname, '../preload/index.cjs'),

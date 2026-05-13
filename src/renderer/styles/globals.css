@@ -339,8 +339,8 @@ body,
   display: none !important;
 }
 
-body.fastagents-tab-dragging,
-body.fastagents-tab-dragging * {
+body.pragma-desk-tab-dragging,
+body.pragma-desk-tab-dragging * {
   cursor: grabbing !important;
 }
 

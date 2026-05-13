@@ -2257,7 +2257,7 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
               </span>
               {'\n'}
               <span style={{ color: '#45c8c8' }}>const</span> path =
-              <span style={{ color: '#3ecf7b' }}> "D:/pragma/MyProject/FastAgents/src/renderer/components/settings/SettingsDialog.tsx"</span>
+              <span style={{ color: '#3ecf7b' }}> "D:/pragma/MyProject/Pragma Desk/src/renderer/components/settings/SettingsDialog.tsx"</span>
             </pre>
             {settings.editorMinimap && (
               <div className="flex w-14 shrink-0 items-stretch border-l border-white/5 bg-[#17171b] px-2 py-3">
@@ -2698,7 +2698,7 @@ function AboutPage(): JSX.Element {
     void window.api.shell.openExternal(url)
   }, [])
 
-  const repoUrl = appInfo?.repository.url ?? 'https://github.com/freshman515/FastAgent'
+  const repoUrl = appInfo?.repository.url ?? 'https://github.com/freshman515/PragmaDesk'
   const releasesUrl = `${repoUrl}/releases`
   const statusIcon = updateState.kind === 'error'
     ? AlertCircle
@@ -2727,7 +2727,7 @@ function AboutPage(): JSX.Element {
         <AboutInfoTile
           icon={Github}
           label="仓库"
-          value={appInfo ? `${appInfo.repository.owner}/${appInfo.repository.repo}` : 'freshman515/FastAgent'}
+          value={appInfo ? `${appInfo.repository.owner}/${appInfo.repository.repo}` : 'freshman515/PragmaDesk'}
           detail="GitHub Releases 用于自动更新"
         />
         <AboutInfoTile

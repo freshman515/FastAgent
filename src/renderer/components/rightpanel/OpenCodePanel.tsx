@@ -144,7 +144,7 @@ interface PromptPayload {
 
 const selectedSessionByDirectory = new Map<string, string>()
 const selectedModelByDirectory = new Map<string, string>()
-const MODEL_STORAGE_PREFIX = 'fastagents:opencode:model:'
+const MODEL_STORAGE_PREFIX = 'pragma-desk:opencode:model:'
 const CARD = 'rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]'
 
 function formatTime(timestamp?: number): string {
@@ -678,7 +678,7 @@ export function OpenCodePanel(): JSX.Element {
         if (event.type === 'file.edited') {
           const file = event.properties?.file
           if (typeof file === 'string') {
-            window.dispatchEvent(new CustomEvent('fastagents:file-saved', {
+            window.dispatchEvent(new CustomEvent('pragma-desk:file-saved', {
               detail: { filePath: file },
             }))
           }

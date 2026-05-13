@@ -39,29 +39,29 @@ test('validates Claude session UUID shape', () => {
 
 test('normalizes Windows and POSIX paths consistently', () => {
   assert.equal(
-    normalizeClaudeSessionPath('D:\\pragma\\MyProject\\FastAgents\\'),
-    'd:/pragma/myproject/fastagents',
+    normalizeClaudeSessionPath('D:\\pragma\\MyProject\\Pragma Desk\\'),
+    'd:/pragma/myproject/pragma desk',
   )
 })
 
 test('matches Claude cwd only inside the expected workspace', () => {
   assert.equal(
     isClaudeSessionCwdMatch(
-      'D:\\pragma\\MyProject\\FastAgents',
-      'D:/pragma/MyProject/FastAgents',
+      'D:\\pragma\\MyProject\\Pragma Desk',
+      'D:/pragma/MyProject/Pragma Desk',
     ),
     true,
   )
   assert.equal(
     isClaudeSessionCwdMatch(
-      'D:\\pragma\\MyProject\\FastAgents',
-      'D:/pragma/MyProject/FastAgents/src',
+      'D:\\pragma\\MyProject\\Pragma Desk',
+      'D:/pragma/MyProject/Pragma Desk/src',
     ),
     true,
   )
   assert.equal(
     isClaudeSessionCwdMatch(
-      'D:\\pragma\\MyProject\\FastAgents',
+      'D:\\pragma\\MyProject\\Pragma Desk',
       'D:/pragma/MyProject/FastTerminal',
     ),
     false,

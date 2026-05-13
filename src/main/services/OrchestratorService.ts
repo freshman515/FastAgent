@@ -16,10 +16,10 @@ import { ptyManager } from './PtyManager'
 import { activityMonitor } from './ActivityMonitor'
 import {
   cleanupLegacyFastTerminalMcpRegistrations,
-  registerFastAgentsMcpInClaudeProjects,
-  registerFastAgentsMcpInCodex,
+  registerPragmaDeskMcpInClaudeProjects,
+  registerPragmaDeskMcpInCodex,
   syncMetaAgentToCodexAgentsMd,
-} from './FastAgentsMcpService'
+} from './PragmaDeskMcpService'
 import { shouldRegisterGlobalAgentConfig } from './AppPaths'
 
 // ─── ANSI / control-sequence stripping ──────────────────────────────────────
@@ -182,12 +182,12 @@ export class OrchestratorService {
     // they do not overwrite the user's stable Claude/Codex config.
     if (shouldRegisterGlobalAgentConfig()) {
       try {
-        registerFastAgentsMcpInClaudeProjects({ port: this.port!, token: this.token! })
+        registerPragmaDeskMcpInClaudeProjects({ port: this.port!, token: this.token! })
       } catch (err) {
         console.warn('[orchestrator] auto-register to ~/.claude.json failed:', err)
       }
       try {
-        registerFastAgentsMcpInCodex({ port: this.port!, token: this.token! })
+        registerPragmaDeskMcpInCodex({ port: this.port!, token: this.token! })
       } catch (err) {
         console.warn('[orchestrator] auto-register to ~/.codex/config.toml failed:', err)
       }
@@ -292,30 +292,30 @@ export class OrchestratorService {
       return
     }
 
-    if (route.method === 'GET' && route.path === '/fa/sessions') {
-      const callerSessionId = req.headers['x-fastagents-session-id']
+    if (route.method === 'GET' && route.path === '/pd/sessions') {
+      const callerSessionId = req.headers['x-pragma-desk-session-id']
       const sessions = await this.listSessions(typeof callerSessionId === 'string' ? callerSessionId : null)
       jsonResponse(res, 200, { sessions })
       return
     }
 
-    const sessionCloseMatch = route.path.match(/^\/fa\/sessions\/([^/]+)$/)
+    const sessionCloseMatch = route.path.match(/^\/pd\/sessions\/([^/]+)$/)
     if (sessionCloseMatch) {
       if (route.method !== 'DELETE') {
         errorResponse(res, 405, 'Method not allowed for this resource')
         return
       }
       const sessionId = decodeURIComponent(sessionCloseMatch[1])
-      const callerSessionId = headerString(req.headers['x-fastagents-session-id'])
+      const callerSessionId = headerString(req.headers['x-pragma-desk-session-id'])
       await this.handleCloseSession(res, sessionId, callerSessionId)
       return
     }
 
-    const sessionActionMatch = route.path.match(/^\/fa\/sessions\/([^/]+)\/(output|input|wait_idle)$/)
+    const sessionActionMatch = route.path.match(/^\/pd\/sessions\/([^/]+)\/(output|input|wait_idle)$/)
     if (sessionActionMatch) {
       const sessionId = decodeURIComponent(sessionActionMatch[1])
       const action = sessionActionMatch[2]
-      const callerSessionId = headerString(req.headers['x-fastagents-session-id'])
+      const callerSessionId = headerString(req.headers['x-pragma-desk-session-id'])
 
       // Workspace scope — callers can only touch sessions in the same cwd tree.
       if (callerSessionId && !ptyManager.canAccessSession(callerSessionId, sessionId)) {
@@ -349,8 +349,8 @@ export class OrchestratorService {
       return
     }
 
-    if (route.method === 'POST' && route.path === '/fa/sessions') {
-      const callerSessionId = headerString(req.headers['x-fastagents-session-id'])
+    if (route.method === 'POST' && route.path === '/pd/sessions') {
+      const callerSessionId = headerString(req.headers['x-pragma-desk-session-id'])
       await this.handleCreateSession(req, res, callerSessionId)
       return
     }

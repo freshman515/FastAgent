@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 
-const BROWSER_PARTITION = 'persist:fastagents-browser'
+const BROWSER_PARTITION = 'persist:pragma-desk-browser'
 const BROWSER_CONTEXT_TEXT_LIMIT = 12000
 const BROWSER_CONTEXT_HEADING_LIMIT = 24
 const BROWSER_CONTEXT_LINK_LIMIT = 24

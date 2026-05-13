@@ -2652,7 +2652,7 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     for (const file of targetFiles) {
       // eslint-disable-next-line no-await-in-loop
       await window.api.fs.writeFile(file.filePath, file.beforeContent)
-      window.dispatchEvent(new CustomEvent('fastagents:file-saved', {
+      window.dispatchEvent(new CustomEvent('pragma-desk:file-saved', {
         detail: { filePath: file.filePath },
       }))
     }

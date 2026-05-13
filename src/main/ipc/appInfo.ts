@@ -2,7 +2,7 @@ import { app, ipcMain } from 'electron'
 import { IPC, type AppInfo } from '@shared/types'
 
 const REPOSITORY_OWNER = 'freshman515'
-const REPOSITORY_REPO = 'FastAgent'
+const REPOSITORY_REPO = 'PragmaDesk'
 const REPOSITORY_URL = `https://github.com/${REPOSITORY_OWNER}/${REPOSITORY_REPO}`
 
 export function registerAppInfoHandlers(): void {

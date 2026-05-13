@@ -238,13 +238,13 @@ export function registerGitHandlers(): void {
 
   // Filesystem: write a temporary file and return the absolute path
   ipcMain.handle('fs:write-temp-file', async (_event, suggestedName: string, content: string, extension?: string) => {
-    const safeBaseName = (suggestedName || 'fastagents-temp')
+    const safeBaseName = (suggestedName || 'pragma-desk-temp')
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
       .trim()
       .replace(/\s+/g, '-')
-      || 'fastagents-temp'
+      || 'pragma-desk-temp'
     const safeExtension = (extension || 'txt').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'txt'
-    const tempDir = join(tmpdir(), 'fastagents')
+    const tempDir = join(tmpdir(), 'pragma-desk')
     await mkdir(tempDir, { recursive: true })
     const filePath = join(
       tempDir,
@@ -261,18 +261,18 @@ export function registerGitHandlers(): void {
     }
 
     const mimeExtension = match[1].toLowerCase() === 'image/jpeg' ? 'jpg' : 'png'
-    const safeBaseName = (suggestedName || 'fastagents-temp')
+    const safeBaseName = (suggestedName || 'pragma-desk-temp')
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
       .trim()
       .replace(/\s+/g, '-')
-      || 'fastagents-temp'
+      || 'pragma-desk-temp'
     const safeExtension = (extension || mimeExtension).replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || mimeExtension
     const buffer = Buffer.from(match[2], 'base64')
     if (buffer.byteLength > 20 * 1024 * 1024) {
       throw new Error('Temporary file is too large')
     }
 
-    const tempDir = join(tmpdir(), 'fastagents')
+    const tempDir = join(tmpdir(), 'pragma-desk')
     await mkdir(tempDir, { recursive: true })
     const filePath = join(
       tempDir,

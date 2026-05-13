@@ -12,7 +12,7 @@ import { isClaudeSessionUuid, type ClaudeSessionLaunchMode } from '@shared/claud
 import { getIdeServerPort } from './IdeServer'
 import { detectShell, buildAgentCommand } from './ShellDetector'
 import { resolveClaudeSessionLaunch } from './ClaudeSessionResolver'
-import { createFastAgentsMcpConfig, ensureFastAgentsMcpBridgePath } from './FastAgentsMcpService'
+import { createPragmaDeskMcpConfig, ensurePragmaDeskMcpBridgePath } from './PragmaDeskMcpService'
 import { windowsPathToWslPath } from './WslPath'
 import { createClaudeHookSettingsFile } from './HookInstaller'
 import { shouldRegisterGlobalAgentConfig } from './AppPaths'
@@ -71,11 +71,11 @@ const AGENT_SUBMIT_REINFORCE_DELAY_MS = 900
 const CODEX_STARTUP_INPUT_WARMUP_MS = 650
 const CODEX_STARTUP_SUBMIT_DELAY_MS = 1400
 const WSL_ENV_NAMES = [
-  'FASTAGENTS_SESSION_ID',
-  'FASTAGENTS_SESSION_TYPE',
-  'FASTAGENTS_IDE_PORT',
-  'FASTAGENTS_MCP_PORT',
-  'FASTAGENTS_MCP_TOKEN',
+  'PRAGMA_DESK_SESSION_ID',
+  'PRAGMA_DESK_SESSION_TYPE',
+  'PRAGMA_DESK_IDE_PORT',
+  'PRAGMA_DESK_MCP_PORT',
+  'PRAGMA_DESK_MCP_TOKEN',
 ]
 
 function createTerminalMirror(cols: number, rows: number): TerminalMirror {
@@ -371,31 +371,31 @@ function buildCodexMcpArgs(
   if (!options.sessionId) return []
 
   const args: string[] = []
-  const bridgePath = ensureFastAgentsMcpBridgePath(isWslSessionType(options.type) ? 'wsl' : 'windows')
+  const bridgePath = ensurePragmaDeskMcpBridgePath(isWslSessionType(options.type) ? 'wsl' : 'windows')
   if (bridgePath) {
     args.push(
       '-c',
-      `mcp_servers.fastagents.command=${tomlCliString('node')}`,
+      `mcp_servers.pragma-desk.command=${tomlCliString('node')}`,
       '-c',
-      `mcp_servers.fastagents.args=[${tomlCliString(bridgePath)}]`,
+      `mcp_servers.pragma-desk.args=[${tomlCliString(bridgePath)}]`,
       '-c',
-      `mcp_servers.fastagents.env.FASTAGENTS_MCP_PORT=${tomlCliString(String(mcpEnv.port))}`,
+      `mcp_servers.pragma-desk.env.PRAGMA_DESK_MCP_PORT=${tomlCliString(String(mcpEnv.port))}`,
       '-c',
-      `mcp_servers.fastagents.env.FASTAGENTS_MCP_TOKEN=${tomlCliString(mcpEnv.token)}`,
+      `mcp_servers.pragma-desk.env.PRAGMA_DESK_MCP_TOKEN=${tomlCliString(mcpEnv.token)}`,
     )
   }
 
   if (isWslSessionType(options.type)) {
     args.push(
       '-c',
-      `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${tomlCliString(options.sessionId)}`,
+      `mcp_servers.pragma-desk.env.PRAGMA_DESK_SESSION_ID=${tomlCliString(options.sessionId)}`,
     )
     return args
   }
 
   args.push(
     '-c',
-    `mcp_servers.fastagents.env.FASTAGENTS_SESSION_ID=${tomlCliString(options.sessionId)}`,
+    `mcp_servers.pragma-desk.env.PRAGMA_DESK_SESSION_ID=${tomlCliString(options.sessionId)}`,
   )
   return args
 }
@@ -642,7 +642,7 @@ export class PtyManager {
           geminiResumeId: options.geminiResumeId,
         })
     if (agentCmd && isClaudeCodeType(options.type) && options.sessionId && this.mcpEnv) {
-      const mcpConfigPath = createFastAgentsMcpConfig({
+      const mcpConfigPath = createPragmaDeskMcpConfig({
         port: this.mcpEnv.port,
         token: this.mcpEnv.token,
         sessionId: options.sessionId,
@@ -716,14 +716,14 @@ export class PtyManager {
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       // Inject session ID so hook scripts / MCP bridge can identify this exact session.
-      ...(options.sessionId ? { FASTAGENTS_SESSION_ID: options.sessionId } : {}),
-      FASTAGENTS_SESSION_TYPE: options.type,
+      ...(options.sessionId ? { PRAGMA_DESK_SESSION_ID: options.sessionId } : {}),
+      PRAGMA_DESK_SESSION_TYPE: options.type,
       // Editor IDE server (separate from the MCP orchestrator).
-      ...(getIdeServerPort() ? { FASTAGENTS_IDE_PORT: String(getIdeServerPort()) } : {}),
+      ...(getIdeServerPort() ? { PRAGMA_DESK_IDE_PORT: String(getIdeServerPort()) } : {}),
       // Pragma Desk MCP bridge — agents in this PTY can talk back to us.
       ...(this.mcpEnv ? {
-        FASTAGENTS_MCP_PORT: String(this.mcpEnv.port),
-        FASTAGENTS_MCP_TOKEN: this.mcpEnv.token,
+        PRAGMA_DESK_MCP_PORT: String(this.mcpEnv.port),
+        PRAGMA_DESK_MCP_TOKEN: this.mcpEnv.token,
       } : {}),
       ...(isWslSessionType(options.type) ? { WSLENV: mergeWslEnv(process.env.WSLENV) } : {}),
       ...(options.env ?? {}),

@@ -117,8 +117,8 @@ macOS 版本目前未做 Apple Developer ID 签名和公证，首次打开时可
 ### 安装依赖
 
 ```bash
-git clone https://github.com/freshman515/FastAgent.git
-cd FastAgent
+git clone https://github.com/freshman515/PragmaDesk.git
+cd PragmaDesk
 pnpm install
 ```
 
@@ -137,7 +137,7 @@ pnpm dev
 如需指定开发版数据目录，可设置：
 
 ```powershell
-$env:FASTAGENTS_USER_DATA_DIR='D:\path\to\pragma-desk-dev-profile'
+$env:PRAGMA_DESK_USER_DATA_DIR='D:\path\to\pragma-desk-dev-profile'
 pnpm dev
 ```
 

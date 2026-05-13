@@ -21,7 +21,7 @@ const terminalQuestionHighlights = new Map<string, {
   marker: IMarker
   timeoutId: number
 }>()
-const XTERM_CANVAS_SCALE_PATCH_KEY = '__fastagentsCanvasScalePatch'
+const XTERM_CANVAS_SCALE_PATCH_KEY = '__pragmaDeskCanvasScalePatch'
 
 type XtermMouseCoordsService = {
   [XTERM_CANVAS_SCALE_PATCH_KEY]?: true
