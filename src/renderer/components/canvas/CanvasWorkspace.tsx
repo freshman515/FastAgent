@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CanvasCard } from '@shared/types'
+import type { CanvasCard, SessionType } from '@shared/types'
+import { createSessionWithPrompt } from '@/lib/createSession'
+import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
+import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useCanvasUiStore } from '@/stores/canvasUi'
@@ -10,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { focusCanvasSessionTarget } from '@/lib/focusSessionTarget'
 import { CanvasGrid } from './CanvasGrid'
 import { CanvasToolbar } from './CanvasToolbar'
-import { CanvasContextMenu, type CanvasContextMenuState } from './CanvasContextMenu'
+import { CanvasContextMenu, type CanvasContextMenuState, type CanvasFrameCreateRequest } from './CanvasContextMenu'
 import { CanvasMarquee } from './CanvasMarquee'
 import { CanvasGuideLines } from './CanvasGuideLines'
 import { CanvasMinimap } from './CanvasMinimap'
@@ -20,12 +23,16 @@ import { CanvasSessionList } from './CanvasSessionList'
 import { CanvasSpaceSwitcher } from './CanvasSpaceSwitcher'
 import { CanvasSelectionBounds } from './CanvasSelectionBounds'
 import { CanvasMaximizedSwitcher } from './CanvasMaximizedSwitcher'
+import { useCanvasCommandMode } from './CanvasCommandMode'
+import { buildNewSessionOptions, type NewSessionOption } from '@/components/session/NewSessionMenu'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { FrameCard } from './cards/FrameCard'
 import { NoteCard } from './cards/NoteCard'
 import { SessionCard } from './cards/SessionCard'
 import { useCanvasViewport, screenToWorld } from './hooks/useCanvasViewport'
 import { useMarqueeSelect } from './hooks/useMarqueeSelect'
 import { useCanvasKeyboard } from './hooks/useCanvasKeyboard'
+import { addCanvasCardToActiveSpace } from './canvasSpaceMembership'
 
 /**
  * Top-level canvas view. Rendered by `MainPanel` when
@@ -209,6 +216,52 @@ export function CanvasWorkspace(): JSX.Element {
     return unsubscribe
   }, [])
 
+  const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
+  const showMinimap = useUIStore((state) => state.settings.canvasShowMinimap)
+  const layoutLocked = useUIStore((state) => state.settings.canvasLayoutLocked)
+  const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
+  const clearSelection = useCanvasStore((state) => state.clearSelection)
+
+  // ── Context menu state ───────────────────────────────────────────
+  const [menu, setMenu] = useState<CanvasContextMenuState | null>(null)
+  const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null)
+  const [pendingFrameCreate, setPendingFrameCreate] = useState<CanvasFrameCreateRequest | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
+
+  const getViewportCenter = useCallback((): { x: number; y: number } | null => {
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!rect) return null
+    const { scale, offsetX, offsetY } = useCanvasStore.getState().getViewport()
+    return {
+      x: (rect.width / 2 - offsetX) / scale,
+      y: (rect.height / 2 - offsetY) / scale,
+    }
+  }, [])
+
+  const requestCreateFrame = useCallback((request?: Partial<CanvasFrameCreateRequest>) => {
+    setPendingFrameCreate({
+      ids: [...(request?.ids ?? useCanvasStore.getState().selectedCardIds)],
+      fallback: request?.fallback ?? getViewportCenter() ?? undefined,
+      collapse: request?.collapse,
+    })
+  }, [getViewportCenter])
+
+  const createFrameWithTitle = useCallback((request: CanvasFrameCreateRequest, title: string) => {
+    const frameId = useCanvasStore.getState().addFrameAroundCards(request.ids, request.fallback)
+    if (!frameId) return
+    const nextTitle = title.trim() || '空间'
+    useCanvasStore.getState().updateCard(frameId, { frameTitle: nextTitle })
+    useCanvasUiStore.getState().setActiveSpaceId(frameId)
+    if (request.collapse) useCanvasStore.getState().toggleFrameCollapsed(frameId)
+  }, [])
+
+  const canvasCommandMode = useCanvasCommandMode({
+    viewportRef,
+    onOpenSearch: () => openSearch(null),
+    onRenameFrame: (cardId) => setRenamingFrameId(cardId),
+    onCreateFrame: () => requestCreateFrame(),
+  })
+
   useCanvasViewport(viewportEl)
   useMarqueeSelect(viewportEl)
   useCanvasKeyboard(viewportEl)
@@ -248,17 +301,6 @@ export function CanvasWorkspace(): JSX.Element {
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [openSearch, viewportEl])
-
-  const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
-  const showMinimap = useUIStore((state) => state.settings.canvasShowMinimap)
-  const layoutLocked = useUIStore((state) => state.settings.canvasLayoutLocked)
-  const maximizedCardId = useCanvasStore((state) => state.maximizedCardId)
-  const clearSelection = useCanvasStore((state) => state.clearSelection)
-
-  // ── Context menu state ───────────────────────────────────────────
-  const [menu, setMenu] = useState<CanvasContextMenuState | null>(null)
-  const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null)
-  const closeMenu = useCallback(() => setMenu(null), [])
 
   const onViewportPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget) return
@@ -334,10 +376,16 @@ export function CanvasWorkspace(): JSX.Element {
 
       <CanvasSpaceSwitcher />
       <CanvasSessionList />
-      <CanvasToolbar viewportRef={viewportRef} onOpenSearch={() => openSearch(null)} />
+      <CanvasToolbar
+        viewportRef={viewportRef}
+        onOpenSearch={() => openSearch(null)}
+        onOpenCommandMode={canvasCommandMode.enter}
+        onCreateFrame={() => requestCreateFrame()}
+      />
       <CanvasSearch open={searchOpen} scopeFrameId={searchScopeFrameId} onClose={closeSearch} />
       <CanvasMaximizedSwitcher />
       {showMinimap && !maximizedCardId && <CanvasMinimap viewportRef={viewportRef} />}
+      {canvasCommandMode.layer}
 
       {cards.length === 0 && <CanvasEmptyState viewportRef={viewportRef} />}
 
@@ -347,6 +395,17 @@ export function CanvasWorkspace(): JSX.Element {
           onClose={closeMenu}
           onRenameFrame={(cardId) => setRenamingFrameId(cardId)}
           onSearchFrame={(cardId) => openSearch(cardId)}
+          onCreateFrame={requestCreateFrame}
+        />
+      )}
+      {pendingFrameCreate && (
+        <CanvasFrameCreateDialog
+          request={pendingFrameCreate}
+          onClose={() => setPendingFrameCreate(null)}
+          onCreate={(title) => {
+            createFrameWithTitle(pendingFrameCreate, title)
+            setPendingFrameCreate(null)
+          }}
         />
       )}
       {renamingFrameId && (
@@ -356,6 +415,112 @@ export function CanvasWorkspace(): JSX.Element {
         />
       )}
     </div>
+  )
+}
+
+function CanvasFrameCreateDialog({
+  request,
+  onClose,
+  onCreate,
+}: {
+  request: CanvasFrameCreateRequest
+  onClose: () => void
+  onCreate: (title: string) => void
+}): JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [value, setValue] = useState('')
+  const selectedCount = request.ids.length
+
+  useEffect(() => {
+    setValue('')
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+    })
+  }, [request])
+
+  const commit = (): void => {
+    onCreate(value)
+  }
+
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[9500] bg-black/45 backdrop-blur-[2px]"
+        onPointerDown={onClose}
+        onContextMenu={(event) => event.preventDefault()}
+      />
+      <form
+        className={cn(
+          'fixed left-1/2 top-1/2 z-[9501] w-[380px] -translate-x-1/2 -translate-y-1/2',
+          'overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)]',
+          'bg-[var(--color-bg-secondary)] p-5 shadow-2xl shadow-black/45',
+          'animate-[fade-in_0.12s_ease-out]',
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="canvas-frame-create-title"
+        onSubmit={(event) => {
+          event.preventDefault()
+          commit()
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+          }
+        }}
+      >
+        <h3 id="canvas-frame-create-title" className="text-[var(--ui-font-md)] font-semibold text-[var(--color-text-primary)]">
+          新建空间
+        </h3>
+        <p className="mt-1 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+          {selectedCount > 0 ? `将 ${selectedCount} 张选中卡片放入空间。` : '创建一个空空间。'}
+        </p>
+        <label className="mt-4 block">
+          <span className="mb-1.5 block text-[var(--ui-font-2xs)] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
+            空间名称
+          </span>
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            spellCheck={false}
+            placeholder="空间"
+            className={cn(
+              'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
+              'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'outline-none transition-colors placeholder:text-[var(--color-text-tertiary)]',
+              'focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20',
+            )}
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(
+              'rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-1.5',
+              'text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors',
+              'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+            )}
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            className={cn(
+              'rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 py-1.5',
+              'text-[var(--ui-font-sm)] font-medium text-white transition-colors',
+              'hover:bg-[var(--color-accent-hover)]',
+            )}
+          >
+            创建
+          </button>
+        </div>
+      </form>
+    </>,
+    document.body,
   )
 }
 
@@ -520,17 +685,51 @@ function CulledSessionCard({ card, viewportEl }: { card: CanvasCard; viewportEl:
   return null
 }
 
-function CanvasEmptyState({ viewportRef }: { viewportRef: React.RefObject<HTMLDivElement | null> }): JSX.Element {
-  const addCard = useCanvasStore((state) => state.addCard)
-  const addNote = (): void => {
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const { scale, offsetX, offsetY } = useCanvasStore.getState().getLayout().viewport
-    const noteSize = getDefaultCanvasCardSize('note')
-    const cx = (rect.width / 2 - offsetX) / scale - noteSize.width / 2
-    const cy = (rect.height / 2 - offsetY) / scale - noteSize.height / 2
-    addCard({ kind: 'note', x: cx, y: cy, noteBody: '双击编辑内容，标题栏拖动', noteColor: 'yellow' })
+function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivElement | null>, option: NewSessionOption): void {
+  const projectId = useProjectsStore.getState().selectedProjectId
+  if (!projectId) {
+    useUIStore.getState().addToast({
+      title: '未选择项目',
+      body: '先选择一个项目，再从画布创建会话。',
+      type: 'warning',
+      duration: 2200,
+    })
+    return
   }
+
+  const rect = viewportRef.current?.getBoundingClientRect()
+  if (!rect) return
+
+  const { scale, offsetX, offsetY } = useCanvasStore.getState().getViewport()
+  const worktreeId = getDefaultWorktreeIdForProject(projectId)
+  const cardKind = option.type === 'terminal' || option.type === 'terminal-wsl' || option.customSessionDefinitionId ? 'terminal' : 'session'
+  const cardSize = getDefaultCanvasCardSize(cardKind)
+  const center = {
+    x: (rect.width / 2 - offsetX) / scale,
+    y: (rect.height / 2 - offsetY) / scale,
+  }
+
+  createSessionWithPrompt({
+    projectId,
+    type: option.type as SessionType | undefined,
+    customSessionDefinitionId: option.customSessionDefinitionId,
+    worktreeId,
+  }, (sessionId) => {
+    const paneStore = usePanesStore.getState()
+    paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
+    useSessionsStore.getState().setActive(sessionId)
+
+    const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
+      x: center.x - cardSize.width / 2,
+      y: center.y - cardSize.height / 2,
+    })
+    addCanvasCardToActiveSpace(cardId)
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
+  })
+}
+
+function CanvasEmptyState({ viewportRef }: { viewportRef: React.RefObject<HTMLDivElement | null> }): JSX.Element {
+  const [newSessionOpen, setNewSessionOpen] = useState(false)
 
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -543,12 +742,93 @@ function CanvasEmptyState({ viewportRef }: { viewportRef: React.RefObject<HTMLDi
         </p>
         <button
           type="button"
-          onClick={addNote}
+          onClick={() => setNewSessionOpen(true)}
           className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 py-1.5 text-[var(--ui-font-sm)] text-white transition-opacity hover:opacity-90"
         >
-          放一张便签试试
+          新建会话
         </button>
       </div>
+      {newSessionOpen && (
+        <CanvasNewSessionDialog
+          viewportRef={viewportRef}
+          onClose={() => setNewSessionOpen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+function CanvasNewSessionDialog({
+  viewportRef,
+  onClose,
+}: {
+  viewportRef: React.RefObject<HTMLDivElement | null>
+  onClose: () => void
+}): JSX.Element {
+  const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
+  const customSessionDefinitions = useUIStore((state) => state.settings.customSessionDefinitions)
+  const hiddenNewSessionOptionIds = useUIStore((state) => state.settings.hiddenNewSessionOptionIds)
+  const newSessionOptionOrder = useUIStore((state) => state.settings.newSessionOptionOrder)
+  const options = buildNewSessionOptions(customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder)
+
+  const selectOption = (option: NewSessionOption): void => {
+    createSessionAtViewportCenter(viewportRef, option)
+    onClose()
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9500] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="w-[min(520px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+          <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">新建会话</div>
+          <div className="text-[10px] text-[var(--color-text-tertiary)]">Esc 关闭</div>
+        </div>
+        <div
+          className="max-h-[420px] overflow-y-auto p-1.5"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              onClose()
+            }
+          }}
+        >
+          {!selectedProjectId ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              请先选择一个项目
+            </div>
+          ) : options.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              没有可用的会话类型
+            </div>
+          ) : options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => selectOption(option)}
+              className={cn(
+                'flex h-10 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 text-left transition-colors',
+                'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              )}
+            >
+              <SessionIconView
+                icon={option.customSessionDefinitionId ? option.icon : undefined}
+                fallbackSrc={option.customSessionDefinitionId ? undefined : option.icon}
+                className="h-5 w-5 shrink-0"
+                imageClassName="h-4 w-4 object-contain"
+              />
+              <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] font-medium">
+                {option.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }

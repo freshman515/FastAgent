@@ -9,6 +9,7 @@ import {
   AlignVerticalSpaceBetween,
   Bookmark,
   Check,
+  Command,
   Frame,
   Grid3x3,
   LayoutGrid,
@@ -33,7 +34,6 @@ import type { CanvasBookmark, CanvasCard, Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
-import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -42,11 +42,13 @@ import { addCanvasCardToActiveSpace } from './canvasSpaceMembership'
 interface CanvasToolbarProps {
   viewportRef: React.RefObject<HTMLDivElement | null>
   onOpenSearch: () => void
+  onOpenCommandMode: () => void
+  onCreateFrame: () => void
 }
 
 const CARD_NORMALIZATION_NAVIGATION_DELAY_MS = 300
 
-export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps): JSX.Element {
+export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, onCreateFrame }: CanvasToolbarProps): JSX.Element {
   const scale = useCanvasStore((state) => state.getLayout().viewport.scale)
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const bookmarks = useCanvasStore((state) => state.getLayout().bookmarks)
@@ -54,7 +56,6 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
   const layoutSnapshots = useCanvasStore((state) => state.getLayout().snapshots)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const addCard = useCanvasStore((state) => state.addCard)
-  const addFrameAroundCards = useCanvasStore((state) => state.addFrameAroundCards)
   const addBookmark = useCanvasStore((state) => state.addBookmark)
   const addBookmarkForCard = useCanvasStore((state) => state.addBookmarkForCard)
   const goToBookmark = useCanvasStore((state) => state.goToBookmark)
@@ -129,22 +130,6 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
     const y = (centerY - offsetY) / s - noteSize.height / 2
     const cardId = addCard({ kind: 'note', x, y, noteBody: '', noteColor: 'yellow' })
     addCanvasCardToActiveSpace(cardId)
-  }
-
-  const getViewportCenter = (): { x: number; y: number } | null => {
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return null
-    const { scale: s, offsetX, offsetY } = useCanvasStore.getState().getLayout().viewport
-    return {
-      x: (rect.width / 2 - offsetX) / s,
-      y: (rect.height / 2 - offsetY) / s,
-    }
-  }
-
-  const createFrame = (): void => {
-    const center = getViewportCenter()
-    const spaceId = addFrameAroundCards(selectedCardIds, center ?? undefined)
-    if (spaceId) useCanvasUiStore.getState().setActiveSpaceId(spaceId)
   }
 
   const connectSelection = (): void => {
@@ -265,7 +250,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
       <button type="button" onClick={createNoteAtCenter} className={btn(false)} title="新建便签">
         <StickyNote size={16} />
       </button>
-      <button type="button" onClick={createFrame} className={btn(false)} title="新建空间">
+      <button type="button" onClick={onCreateFrame} className={btn(false)} title="新建空间">
         <Frame size={16} />
       </button>
       <button
@@ -339,6 +324,9 @@ export function CanvasToolbar({ viewportRef, onOpenSearch }: CanvasToolbarProps)
 
       <button type="button" onClick={onOpenSearch} className={btn(false)} title="搜索画布">
         <Search size={16} />
+      </button>
+      <button type="button" onClick={onOpenCommandMode} className={btn(false)} title="Canvas Mode (Alt+F)">
+        <Command size={16} />
       </button>
       <div ref={bookmarksRef} className="relative">
         <button

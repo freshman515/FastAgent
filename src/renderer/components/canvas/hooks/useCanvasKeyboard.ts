@@ -171,7 +171,7 @@ function findCanvasNavigationTarget(
   return best?.card ?? null
 }
 
-function focusCanvasCardInDirection(direction: CanvasNavigationDirection): boolean {
+export function focusCanvasCardInDirection(direction: CanvasNavigationDirection): boolean {
   const store = useCanvasStore.getState()
   const selection = store.selectedCardIds
   if (selection.length !== 1) return false

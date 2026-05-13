@@ -38,16 +38,23 @@ interface CanvasContextMenuProps {
   onClose: () => void
   onRenameFrame?: (cardId: string) => void
   onSearchFrame?: (cardId: string) => void
+  onCreateFrame?: (request: CanvasFrameCreateRequest) => void
 }
 
-export function CanvasContextMenu({ state, onClose, onRenameFrame, onSearchFrame }: CanvasContextMenuProps): JSX.Element {
+export interface CanvasFrameCreateRequest {
+  ids: string[]
+  fallback?: { x: number; y: number }
+  collapse?: boolean
+}
+
+export function CanvasContextMenu({ state, onClose, onRenameFrame, onSearchFrame, onCreateFrame }: CanvasContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
   const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null)
   const [submenuAnchorRect, setSubmenuAnchorRect] = useState<DOMRect | null>(null)
   const [menuPosition, setMenuPosition] = useState({ left: state.screenX, top: state.screenY })
   const [submenuDirection, setSubmenuDirection] = useState<'right' | 'left'>('right')
-  const items = useMemo(() => buildMenuItems(state, onClose, onRenameFrame, onSearchFrame), [state, onClose, onRenameFrame, onSearchFrame])
+  const items = useMemo(() => buildMenuItems(state, onClose, onRenameFrame, onSearchFrame, onCreateFrame), [state, onClose, onRenameFrame, onSearchFrame, onCreateFrame])
 
   useEffect(() => {
     const onDown = (event: MouseEvent): void => {
@@ -240,19 +247,20 @@ function buildMenuItems(
   onClose: () => void,
   onRenameFrame?: (cardId: string) => void,
   onSearchFrame?: (cardId: string) => void,
+  onCreateFrame?: (request: CanvasFrameCreateRequest) => void,
 ): MenuItem[] {
   if (state.target === 'canvas') {
-    return buildCanvasItems(state, onClose)
+    return buildCanvasItems(state, onClose, onCreateFrame)
   }
-  return buildCardItems(state, onClose, onRenameFrame, onSearchFrame)
+  return buildCardItems(state, onClose, onRenameFrame, onSearchFrame, onCreateFrame)
 }
 
 function buildCanvasItems(
   state: Extract<CanvasContextMenuState, { target: 'canvas' }>,
   _onClose: () => void,
+  onCreateFrame?: (request: CanvasFrameCreateRequest) => void,
 ): MenuItem[] {
   const addCard = useCanvasStore.getState().addCard
-  const addFrameAroundCards = useCanvasStore.getState().addFrameAroundCards
   const fitAll = useCanvasStore.getState().fitAll
   const arrange = useCanvasStore.getState().arrange
   const addLayoutSnapshot = useCanvasStore.getState().addLayoutSnapshot
@@ -309,8 +317,7 @@ function buildCanvasItems(
       kind: 'item',
       label: '在此处新建空间',
       onClick: () => {
-        const spaceId = addFrameAroundCards([], { x: state.worldX, y: state.worldY })
-        if (spaceId) useCanvasUiStore.getState().setActiveSpaceId(spaceId)
+        onCreateFrame?.({ ids: [], fallback: { x: state.worldX, y: state.worldY } })
       },
     },
     { kind: 'separator' },
@@ -386,6 +393,7 @@ function buildCardItems(
   _onClose: () => void,
   onRenameFrame?: (cardId: string) => void,
   onSearchFrame?: (cardId: string) => void,
+  onCreateFrame?: (request: CanvasFrameCreateRequest) => void,
 ): MenuItem[] {
   const store = useCanvasStore.getState()
   const card = store.getCard(state.cardId)
@@ -400,6 +408,48 @@ function buildCardItems(
     .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
 
   const items: MenuItem[] = []
+  if (card.kind === 'frame') {
+    const projectId = useProjectsStore.getState().selectedProjectId
+    const settings = useUIStore.getState().settings
+    const newSessionOptions = projectId
+      ? buildNewSessionOptions(settings.customSessionDefinitions, settings.hiddenNewSessionOptionIds, settings.newSessionOptionOrder)
+      : []
+    const world = getWorldPointFromScreen(state.screenX, state.screenY)
+    const noteSize = getDefaultCanvasCardSize('note')
+
+    items.push({
+      kind: 'submenu',
+      label: !projectId
+        ? '新建会话（未选择项目）'
+        : newSessionOptions.length > 0 ? '新建会话' : '新建会话（无可显示项）',
+      disabled: !projectId || newSessionOptions.length === 0,
+      items: newSessionOptions.map((option) => ({
+        kind: 'item' as const,
+        label: option.label,
+        icon: option.icon,
+        customIcon: Boolean(option.customSessionDefinitionId),
+        onClick: () => {
+          if (!projectId) return
+          createCanvasSession(projectId, option.type, world.x, world.y, option.customSessionDefinitionId, card.id)
+        },
+      })),
+    })
+    items.push({
+      kind: 'item',
+      label: '新建便签',
+      onClick: () => {
+        const cardId = store.addCard({
+          kind: 'note',
+          x: world.x - noteSize.width / 2,
+          y: world.y - noteSize.height / 2,
+          noteBody: '',
+          noteColor: 'yellow',
+        })
+        addCanvasCardToSpace(cardId, card.id)
+      },
+    })
+    items.push({ kind: 'separator' })
+  }
   items.push({
     kind: 'item',
     label: card.favorite ? '取消收藏' : '收藏卡片',
@@ -452,13 +502,6 @@ function buildCardItems(
     const visibleMemberCount = memberCards.filter((member) => !member.hidden).length
     const frameTitle = card.frameTitle?.trim() || '空间'
     const frameSnapshots = card.frameSnapshots ?? []
-    const projectId = useProjectsStore.getState().selectedProjectId
-    const settings = useUIStore.getState().settings
-    const newSessionOptions = projectId
-      ? buildNewSessionOptions(settings.customSessionDefinitions, settings.hiddenNewSessionOptionIds, settings.newSessionOptionOrder)
-      : []
-    const world = getWorldPointFromScreen(state.screenX, state.screenY)
-    const noteSize = getDefaultCanvasCardSize('note')
     items.push({
       kind: 'item',
       label: '进入空间',
@@ -467,38 +510,6 @@ function buildCardItems(
         store.focusFrameWorkspace(card.id)
       },
     })
-    items.push({
-      kind: 'submenu',
-      label: !projectId
-        ? '在空间内新建会话（未选择项目）'
-        : newSessionOptions.length > 0 ? '在空间内新建会话' : '在空间内新建会话（无可显示项）',
-      disabled: !projectId || newSessionOptions.length === 0,
-      items: newSessionOptions.map((option) => ({
-        kind: 'item' as const,
-        label: option.label,
-        icon: option.icon,
-        customIcon: Boolean(option.customSessionDefinitionId),
-        onClick: () => {
-          if (!projectId) return
-          createCanvasSession(projectId, option.type, world.x, world.y, option.customSessionDefinitionId, card.id)
-        },
-      })),
-    })
-    items.push({
-      kind: 'item',
-      label: '在空间内新建便签',
-      onClick: () => {
-        const cardId = store.addCard({
-          kind: 'note',
-          x: world.x - noteSize.width / 2,
-          y: world.y - noteSize.height / 2,
-          noteBody: '',
-          noteColor: 'yellow',
-        })
-        addCanvasCardToSpace(cardId, card.id)
-      },
-    })
-    items.push({ kind: 'separator' })
     items.push({
       kind: 'item',
       label: '搜索空间内',
@@ -582,21 +593,12 @@ function buildCardItems(
     items.push({
       kind: 'item',
       label: '创建空间',
-      onClick: () => {
-        const spaceId = store.addFrameAroundCards(targetIds)
-        if (spaceId) useCanvasUiStore.getState().setActiveSpaceId(spaceId)
-      },
+      onClick: () => onCreateFrame?.({ ids: targetIds }),
     })
     items.push({
       kind: 'item',
       label: '创建空间并折叠',
-      onClick: () => {
-        const frameId = store.addFrameAroundCards(targetIds)
-        if (frameId) {
-          useCanvasUiStore.getState().setActiveSpaceId(frameId)
-          useCanvasStore.getState().toggleFrameCollapsed(frameId)
-        }
-      },
+      onClick: () => onCreateFrame?.({ ids: targetIds, collapse: true }),
     })
     if (relationsForTargets.length > 0) {
       items.push({ kind: 'item', label: '移除相关连线', onClick: () => store.removeRelationsForCards(targetIds) })
