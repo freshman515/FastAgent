@@ -99,14 +99,14 @@ export function MainPanel(): JSX.Element {
   const activeEditor = editors.find((tab) => tab.id === activeTabId)
   useEffect(() => {
     if (activeSession) {
-      document.title = `${activeSession.name} — FastAgents`
+      document.title = `${activeSession.name} — Pragma Desk`
       return
     }
     if (activeEditor) {
-      document.title = `${activeEditor.fileName} — FastAgents`
+      document.title = `${activeEditor.fileName} — Pragma Desk`
       return
     }
-    document.title = 'FastAgents'
+    document.title = 'Pragma Desk'
   }, [activeEditor?.fileName, activeEditor?.id, activeSession?.name, activeSession?.id])
 
   if (workspaceLayout === 'canvas') {

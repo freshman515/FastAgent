@@ -210,7 +210,7 @@ app.whenReady().then(async () => {
   installBundledSkills()
   registerAllHandlers()
 
-  // Boot the FastAgents MCP bridge HTTP server BEFORE spawning any PTYs, so
+  // Boot the Pragma Desk MCP bridge HTTP server BEFORE spawning any PTYs, so
   // the env vars (FASTAGENTS_MCP_PORT / FASTAGENTS_MCP_TOKEN) are in place
   // when sessions start. If init fails we keep going — the app must still
   // launch even when the bridge can't bind a port.

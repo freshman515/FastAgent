@@ -3,7 +3,7 @@ import { IPC, type McpCloseSessionResponse, type McpCreateSessionResponse, type 
 import { orchestratorService } from '../services/OrchestratorService'
 
 /**
- * Bridge IPC handlers for the FastAgents MCP server (Meta-Agent).
+ * Bridge IPC handlers for the Pragma Desk MCP server (Meta-Agent).
  *
  * The orchestrator HTTP server lives in the main process but does not own
  * the renderer's session/pane stores. To answer "list sessions" and "create

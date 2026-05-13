@@ -237,7 +237,7 @@ function UIPreview({ theme }: { theme: GhosttyTheme }): JSX.Element {
           <span className="block h-2 w-2 rounded-full" style={{ background: ui.warning }} />
           <span className="block h-2 w-2 rounded-full" style={{ background: ui.success }} />
         </div>
-        <span style={{ color: ui.textSecondary }}>FastAgents</span>
+        <span style={{ color: ui.textSecondary }}>Pragma Desk</span>
       </div>
       <div className="flex" style={{ minHeight: 80 }}>
         {/* Side panel */}

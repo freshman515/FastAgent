@@ -1,5 +1,5 @@
-appId: com.fastagents.app
-productName: FastAgents
+appId: com.pragma.desk
+productName: Pragma Desk
 copyright: Copyright © 2025
 
 directories:
@@ -27,7 +27,7 @@ asarUnpack:
   - "node_modules/@lydell/node-pty/**"
   - "node_modules/@lydell/node-pty-*/**"
 compression: maximum
-artifactName: "${productName}-Setup-${version}.${ext}"
+artifactName: "Pragma-Desk-Setup-${version}.${ext}"
 
 win:
   target:
@@ -41,7 +41,7 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 mac:
-  artifactName: "${productName}-${version}-${arch}.${ext}"
+  artifactName: "Pragma-Desk-${version}-${arch}.${ext}"
   target:
     - target: dmg
       arch: [x64, arm64]

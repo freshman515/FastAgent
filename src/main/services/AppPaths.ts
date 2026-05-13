@@ -22,7 +22,7 @@ function getDevProfileDir(): string {
   const override = process.env.FASTAGENTS_USER_DATA_DIR?.trim()
   if (override) return override
 
-  return join(app.getPath('appData'), 'FastAgents Dev', getWorkspaceProfileId())
+  return join(app.getPath('appData'), 'Pragma Desk Dev', getWorkspaceProfileId())
 }
 
 export function configureAppPaths(): void {

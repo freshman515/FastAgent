@@ -60,6 +60,6 @@ jobs:
       - name: Upload macOS assets to release
         run: |
           gh release upload "$RELEASE_TAG" \
-            dist/FastAgents-*-${{ matrix.arch }}.dmg \
-            dist/FastAgents-*-${{ matrix.arch }}.zip \
+            dist/Pragma-Desk-*-${{ matrix.arch }}.dmg \
+            dist/Pragma-Desk-*-${{ matrix.arch }}.zip \
             --clobber

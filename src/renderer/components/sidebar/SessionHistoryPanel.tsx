@@ -169,7 +169,7 @@ function inferCodexSessionIds(
 
       const startedAt = candidate.startedAt || candidate.updatedAt
       // A freshly launched Codex rollout is created shortly after the
-      // FastAgents tab. If it predates the tab by much, it is probably an older
+      // Pragma Desk tab. If it predates the tab by much, it is probably an older
       // transcript in the same project.
       if (startedAt < s.createdAt - 2 * 60_000) continue
 
@@ -246,7 +246,7 @@ function buildProjectGroups(
       key: `cwd:${cwd}`,
       projectId: null,
       // Orphan group labels show just the basename — the full path is already
-      // available in the tooltip and in the "添加到 FastAgents 项目" picker.
+      // available in the tooltip and in the "添加到 Pragma Desk 项目" picker.
       label: cwdBasename(cwd),
       pathHint: cwd,
       sessions: list,
@@ -611,7 +611,7 @@ export function SessionHistoryPanel(): JSX.Element {
     setAddProjectPicker(null)
     addToast({
       title: '已添加项目',
-      body: `${group.pathHint} 已加入 FastAgents，历史记录已重新归类。`,
+      body: `${group.pathHint} 已加入 Pragma Desk，历史记录已重新归类。`,
       type: 'success',
     })
     // No IPC call needed — the project list change triggers a re-render of the
@@ -974,7 +974,7 @@ export function SessionHistoryPanel(): JSX.Element {
                   setAddProjectPicker(pos)
                 }}
               >
-                <FolderPlus size={12} /> 添加到 FastAgents 项目…
+                <FolderPlus size={12} /> 添加到 Pragma Desk 项目…
               </button>
               <div className="my-0.5 h-px bg-[var(--color-border)]" />
             </>

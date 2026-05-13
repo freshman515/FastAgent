@@ -284,7 +284,7 @@ export interface SessionSubmitOptions {
   submit?: boolean
 }
 
-// ─── Meta-Agent (FastAgents MCP) ───
+// ─── Meta-Agent (Pragma Desk MCP) ───
 // The orchestrator HTTP server in main bridges to the renderer's stores for
 // actions that require renderer state (creating sessions, listing sessions
 // with their full metadata). Everything else (read / write / wait_for_idle)
@@ -954,7 +954,7 @@ export const IPC = {
 
   // ─── Meta-Agent / MCP bridge ───
   // main → renderer: ask renderer to perform an action requested by the
-  // FastAgents MCP server (called by an agent acting as orchestrator).
+  // Pragma Desk MCP server (called by an agent acting as orchestrator).
   // renderer → main: reply with the result keyed by requestId.
   MCP_LIST_SESSIONS_REQUEST: 'mcp:list-sessions-request',
   MCP_LIST_SESSIONS_RESPONSE: 'mcp:list-sessions-response',

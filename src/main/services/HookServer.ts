@@ -91,7 +91,7 @@ export class HookServer {
   stop(): void {
     // Deny all pending permission requests
     for (const [, perm] of this.pending) {
-      this.sendPermissionResponse(perm.res, 'deny', 'FastAgents is shutting down')
+      this.sendPermissionResponse(perm.res, 'deny', 'Pragma Desk is shutting down')
     }
     this.pending.clear()
     if (this.server) {

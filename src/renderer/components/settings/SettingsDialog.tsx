@@ -1027,7 +1027,7 @@ function ExtensionsPage({ settings }: { settings: AppSettings }): JSX.Element {
 
   return (
     <div className={PAGE_STACK}>
-      <PageIntro title="扩展设置" description="导入声明式插件清单，为 FastAgents 增加自定义启动器、快捷命令和提示词。" />
+      <PageIntro title="扩展设置" description="导入声明式插件清单，为 Pragma Desk 增加自定义启动器、快捷命令和提示词。" />
 
       <SettingsSection icon={Upload} title="导入插件" description="插件清单只安装配置项，不执行第三方代码。重复导入同 ID 插件会覆盖旧贡献项。">
         <div className="flex flex-wrap items-center gap-2">
@@ -1512,7 +1512,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
   const customThemeNames = useMemo(() => getAllCustomThemeNames(), [settings.customThemes])
   const builtinThemeNames = useMemo(() => allThemeNames.filter((n) => !customThemeNames.includes(n)), [allThemeNames, customThemeNames])
   const displayThemeName = useCallback((name: string): string => (
-    name === 'FastAgents Default' ? 'FastAgents 默认' : name
+    name === 'Pragma Desk Default' ? 'Pragma Desk 默认' : name
   ), [])
 
   function saveCustomTheme(name: string, theme: GhosttyTheme): void {
@@ -1527,7 +1527,7 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
     const next = { ...settings.customThemes }
     delete next[name]
     onUpdate('customThemes', next)
-    if (settings.terminalTheme === name) onUpdate('terminalTheme', 'FastAgents Default')
+    if (settings.terminalTheme === name) onUpdate('terminalTheme', 'Pragma Desk Default')
   }
 
   function handleImport(): void {
@@ -2709,7 +2709,7 @@ function AboutPage(): JSX.Element {
 
   return (
     <div className={PAGE_STACK}>
-      <PageIntro title="关于 FastAgents" description="查看当前版本、运行环境、仓库地址和更新状态。" />
+      <PageIntro title="关于 Pragma Desk" description="查看当前版本、运行环境、仓库地址和更新状态。" />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <AboutInfoTile
@@ -2859,7 +2859,7 @@ export function SettingsDialog(): JSX.Element | null {
         {/* Left nav */}
         <div className="flex w-[240px] shrink-0 flex-col border-r border-white/[0.05] bg-black/20 p-4">
           <div className="mb-6 mt-2 px-2">
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-accent)] drop-shadow-[0_0_8px_var(--color-accent-muted)]">FastAgents</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-accent)] drop-shadow-[0_0_8px_var(--color-accent-muted)]">Pragma Desk</div>
             <h2 className="mt-1 text-[22px] font-bold tracking-tight text-white drop-shadow-sm">设置中心</h2>
           </div>
           

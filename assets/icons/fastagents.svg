@@ -1,33 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1e1e24"/>
-      <stop offset="1" stop-color="#12121a"/>
+    <linearGradient id="bg" x1="76" y1="34" x2="438" y2="474" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17202a"/>
+      <stop offset="0.52" stop-color="#0c121a"/>
+      <stop offset="1" stop-color="#05070b"/>
     </linearGradient>
-    <linearGradient id="bolt" x1="220" y1="100" x2="310" y2="420" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#a78bfa"/>
-      <stop offset="0.55" stop-color="#7c6aef"/>
-      <stop offset="1" stop-color="#5b4cd4"/>
+    <linearGradient id="prompt" x1="130" y1="166" x2="382" y2="358" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f5f3ff"/>
+      <stop offset="0.45" stop-color="#c4b5fd"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="18" result="blur"/>
+    <linearGradient id="cursor" x1="266" y1="344" x2="386" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ddd6fe"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.62 0 0 0 0 0.38 0 0 0 0 1 0 0 0 0.72 0"/>
       <feMerge>
-        <feMergeNode in="blur"/>
+        <feMergeNode/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect x="15" y="15" width="482" height="482" rx="103" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
 
-  <!-- Subtle border -->
-  <rect x="1" y="1" width="510" height="510" rx="111" stroke="#7c6aef" stroke-width="1.5" opacity="0.12"/>
-
-  <!-- Lightning bolt — large, centered, clean -->
-  <path
-    d="M 296 108 L 224 256 L 268 256 L 216 404 L 320 240 L 272 240 L 328 108 Z"
-    fill="url(#bolt)"
-    filter="url(#glow)"
-  />
+  <g filter="url(#glow)">
+    <path d="M172 184L254 256L172 328" stroke="url(#prompt)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M298 342H374" stroke="url(#cursor)" stroke-width="48" stroke-linecap="round"/>
+  </g>
 </svg>

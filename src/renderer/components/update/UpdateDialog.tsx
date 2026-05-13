@@ -174,7 +174,7 @@ export function UpdateDialog(): JSX.Element | null {
           {state.kind === 'available' && (
             <>
               <p className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">
-                FastAgents 有新版本可用，是否立即下载并升级？
+                Pragma Desk 有新版本可用，是否立即下载并升级？
               </p>
               {state.notes && <ReleaseNotes notes={state.notes} />}
             </>

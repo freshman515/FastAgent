@@ -543,6 +543,7 @@ function refitAndRefreshTerminal(
   fitAddon: FitAddon | null,
   container: HTMLElement | null,
   focus = false,
+  forceScrollBottom = false,
 ): { cols: number; rows: number } | null {
   if (!terminal || !fitAddon || !container) return null
 
@@ -550,7 +551,7 @@ function refitAndRefreshTerminal(
   if (rect.width <= 0 || rect.height <= 0) return null
 
   try {
-    const shouldStayAtBottom = isTerminalAtBottom(terminal)
+    const shouldStayAtBottom = forceScrollBottom || isTerminalAtBottom(terminal)
     fitAddon.fit()
     if (terminal.rows > 0) {
       if (shouldStayAtBottom) {
@@ -602,6 +603,7 @@ function scheduleTerminalRepaint(
   container: HTMLElement | null,
   onDimensions?: (dimensions: { cols: number; rows: number }) => void,
   focus = false,
+  forceScrollBottom = false,
 ): () => void {
   let disposed = false
   const frameIds = new Set<number>()
@@ -609,7 +611,7 @@ function scheduleTerminalRepaint(
 
   const run = (): void => {
     if (disposed) return
-    const dimensions = refitAndRefreshTerminal(terminal, fitAddon, container, focus)
+    const dimensions = refitAndRefreshTerminal(terminal, fitAddon, container, focus, forceScrollBottom)
     if (dimensions) {
       onDimensions?.(dimensions)
     }
@@ -892,7 +894,7 @@ export function useXterm(
     fitAddonRef.current = fitAddon
     terminalRef.current = terminal
 
-    const scheduleRepaint = (focus = false): void => {
+    const scheduleRepaint = (focus = false, forceScrollBottom = false): void => {
       const cleanup = scheduleTerminalRepaint(
         terminal,
         fitAddon,
@@ -903,6 +905,7 @@ export function useXterm(
           }
         },
         focus,
+        forceScrollBottom,
       )
       repaintCleanups.push(cleanup)
     }
@@ -980,13 +983,17 @@ export function useXterm(
 
         for (const pendingEvent of pendingRestoreEvents) {
           if (pendingEvent.seq > restoredSnapshotSeq) {
-            terminal.write(pendingEvent.data)
+            await new Promise<void>((resolve) => {
+              terminal.write(pendingEvent.data, resolve)
+            })
           }
         }
         pendingRestoreEvents.length = 0
 
+        terminalScrollEdgeTargets.set(sessionId, 'bottom')
+        terminal.scrollToBottom()
         updateBottomState()
-        scheduleRepaint(false)
+        scheduleRepaint(false, true)
       }
     }
 
@@ -1304,7 +1311,12 @@ export function useXterm(
         terminal,
         fitAddon,
         container,
-        () => updateBottomState(),
+        () => {
+          terminalScrollEdgeTargets.set(sessionId, 'bottom')
+          updateBottomState()
+        },
+        false,
+        true,
       )
     })
     resizeObserver.observe(container)

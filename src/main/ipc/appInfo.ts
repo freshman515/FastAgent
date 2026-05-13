@@ -8,9 +8,9 @@ const REPOSITORY_URL = `https://github.com/${REPOSITORY_OWNER}/${REPOSITORY_REPO
 export function registerAppInfoHandlers(): void {
   ipcMain.handle(IPC.APP_INFO, (): AppInfo => ({
     name: app.getName(),
-    productName: 'FastAgents',
+    productName: 'Pragma Desk',
     version: app.getVersion(),
-    appId: 'com.fastagents.app',
+    appId: 'com.pragma.desk',
     platform: process.platform,
     arch: process.arch,
     isPackaged: app.isPackaged,

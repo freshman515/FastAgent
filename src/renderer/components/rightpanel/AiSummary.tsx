@@ -66,7 +66,7 @@ function buildSystemPrompt(projectName: string | undefined, projectPath: string 
   const customPrompt = useUIStore.getState().settings.aiSystemPrompt
   return `${customPrompt}
 
-You are an AI coding assistant embedded in FastAgents IDE.
+You are an AI coding assistant embedded in Pragma Desk IDE.
 ${projectName ? `Current project: ${projectName} (${projectPath})` : ''}
 
 IMPORTANT rules:

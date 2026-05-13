@@ -66,7 +66,7 @@ function writeLockFile(port: number, token: string, folders: string[]): string {
   const payload: LockFilePayload = {
     pid: process.pid,
     workspaceFolders: folders,
-    ideName: 'FastAgents',
+    ideName: 'Pragma Desk',
     transport: 'ws',
     runningInWindows: process.platform === 'win32',
     authToken: token,
@@ -107,7 +107,7 @@ function handleMessage(ws: WebSocket, raw: RawData): void {
         resources: { subscribe: true, listChanged: true },
         tools: { listChanged: true },
       },
-      serverInfo: { name: 'FastAgents', version: '1.0.0' },
+      serverInfo: { name: 'Pragma Desk', version: '1.0.0' },
     })
   }
 

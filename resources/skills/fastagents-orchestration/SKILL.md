@@ -1,17 +1,17 @@
 ---
 name: fastagents-orchestration
-description: 通过 fa_* MCP 工具编排多个 FastAgents 会话。适用于 Codex 或 Claude Code 需要调度其他运行中的会话、创建 worker agent 或终端、运行后台命令、监控其他 agent、把编码任务拆给多个独立会话、做跨 agent 复核、从已有 FastAgents 标签页恢复上下文，或读取 FastAgents 编辑器上下文时。
+description: 通过 fa_* MCP 工具编排多个 Pragma Desk 会话。适用于 Codex 或 Claude Code 需要调度其他运行中的会话、创建 worker agent 或终端、运行后台命令、监控其他 agent、把编码任务拆给多个独立会话、做跨 agent 复核、从已有 Pragma Desk 标签页恢复上下文，或读取 Pragma Desk 编辑器上下文时。
 ---
 
-# FastAgents 会话编排
+# Pragma Desk 会话编排
 
 ## 核心定位
 
-把 FastAgents MCP 当成一个“会话级操作系统”：保留一个主控会话负责判断、拆分、整合，其他会话负责并行调查、后台运行、独立实现、交叉复核和状态接力。目标不是少调用工具，而是把多会话能力用到真正提升完成质量的地方。
+把 Pragma Desk MCP 当成一个“会话级操作系统”：保留一个主控会话负责判断、拆分、整合，其他会话负责并行调查、后台运行、独立实现、交叉复核和状态接力。目标不是少调用工具，而是把多会话能力用到真正提升完成质量的地方。
 
 ## 什么时候使用
 
-优先使用 FastAgents 会话编排的场景：
+优先使用 Pragma Desk 会话编排的场景：
 
 - 多个模块、多个假设、多个日志来源可以并行调查。
 - 一个任务可以按前端、后端、测试、文档、脚本等边界拆开。
@@ -83,7 +83,7 @@ description: 通过 fa_* MCP 工具编排多个 FastAgents 会话。适用于 Co
 用于让另一个会话调查代码、日志、调用链、测试失败原因，但不改文件。
 
 ```text
-你是 FastAgents 只读调查 worker。不要编辑任何文件。
+你是 Pragma Desk 只读调查 worker。不要编辑任何文件。
 
 问题：
 <具体问题>
@@ -105,7 +105,7 @@ RESULT:
 用于明确边界内的实现任务。必须指定它拥有哪些文件或模块。
 
 ```text
-你是 FastAgents 代码实现 worker。你不是代码库里唯一的会话。
+你是 Pragma Desk 代码实现 worker。你不是代码库里唯一的会话。
 不要回滚用户改动，也不要回滚其他会话的改动。
 
 你的所有权范围：
@@ -156,7 +156,7 @@ RESULT:
 用于较大修改后的二次审查。review worker 默认不编辑文件。
 
 ```text
-你是 FastAgents 独立 reviewer。不要编辑文件。
+你是 Pragma Desk 独立 reviewer。不要编辑文件。
 
 请审查当前改动，重点找：
 - bug
@@ -257,7 +257,7 @@ RESULT:
 
 然后选择：主控本地修复、重新派一个更小范围的 worker、或丢弃该 worker 的部分结果。
 
-如果 FastAgents MCP 不可用，退回普通本地工具，并说明无法使用多会话编排。
+如果 Pragma Desk MCP 不可用，退回普通本地工具，并说明无法使用多会话编排。
 
 ## 最终整合
 

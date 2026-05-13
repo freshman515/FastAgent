@@ -89,7 +89,7 @@ function parseTaskFile(content: string, sourceFileName: string): Array<{ prompt:
 }
 
 function composeWorkerPrompt(task: InfiniteTaskItem): string {
-  return `你是 FastAgents 无限任务 worker。你不是代码库里的唯一会话，不能回滚用户或其他会话的改动。
+  return `你是 Pragma Desk 无限任务 worker。你不是代码库里的唯一会话，不能回滚用户或其他会话的改动。
 
 任务：
 ${task.prompt}
@@ -110,7 +110,7 @@ ${task.prompt}
 }
 
 function composeReviewPrompt(task: InfiniteTaskItem, workerReport: string): string {
-  return `你是 FastAgents 无限任务 reviewer。只读审查，不要修改文件。
+  return `你是 Pragma Desk 无限任务 reviewer。只读审查，不要修改文件。
 
 原始任务：
 ${task.prompt}

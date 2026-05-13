@@ -110,7 +110,7 @@ export function createFastAgentsMcpConfig(options: McpConfigOptions): string | n
 // Codex CLI loads MCP servers from ~/.codex/config.toml under
 // `[mcp_servers.<name>]` sections. Unlike Claude Code it has no
 // `--mcp-config <file>` CLI arg, so we rewrite this file on every
-// FastAgents startup with the fresh port/token.
+// Pragma Desk startup with the fresh port/token.
 //
 // We preserve everything else in config.toml (user preferences, project
 // trust levels, tui theme, ...) and only upsert the `fastagents` section.
@@ -233,7 +233,7 @@ export function registerFastAgentsMcpInCodex(options: Pick<McpConfigOptions, 'po
 //   ~/.claude/CLAUDE.md    (Claude)
 //   ~/.codex/AGENTS.md     (Codex)
 // The "Meta-Agent" section explaining the fa_* / ft_* toolset must stay
-// identical in both, otherwise Codex drifts out of sync. On every FastAgents
+// identical in both, otherwise Codex drifts out of sync. On every Pragma Desk
 // startup we mirror the section from CLAUDE.md into a managed block of
 // AGENTS.md. Everything else in AGENTS.md (e.g. Git rules) is untouched.
 

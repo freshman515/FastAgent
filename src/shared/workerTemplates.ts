@@ -24,7 +24,7 @@ export const BUILT_IN_WORKER_TEMPLATES: WorkerTemplate[] = [
 - 风险：
 - 阻塞：
 - 建议下一步：`,
-    prompt: `你是 FastAgents 任务规划 worker。不要编辑文件。
+    prompt: `你是 Pragma Desk 任务规划 worker。不要编辑文件。
 
 任务：
 {{task}}
@@ -64,7 +64,7 @@ RESULT:
 - 风险：
 - 阻塞：
 - 建议下一步：`,
-    prompt: `你是 FastAgents 工作流设计 worker。不要编辑文件。
+    prompt: `你是 Pragma Desk 工作流设计 worker。不要编辑文件。
 
 目标：
 {{task}}
@@ -103,7 +103,7 @@ RESULT:
 - 查看过的文件：
 - 置信度：
 - 仍不确定的问题：`,
-    prompt: `你是 FastAgents 只读调查 worker。不要编辑任何文件。
+    prompt: `你是 Pragma Desk 只读调查 worker。不要编辑任何文件。
 
 问题：
 {{task}}
@@ -134,7 +134,7 @@ RESULT:
 - 风险：
 - 阻塞：
 - 建议下一步：`,
-    prompt: `你是 FastAgents 验收 worker。不要编辑文件。
+    prompt: `你是 Pragma Desk 验收 worker。不要编辑文件。
 
 需求：
 {{task}}
@@ -168,7 +168,7 @@ RESULT:
     ownershipHint: '例如 src/main/services/Foo.ts 或 src/renderer/components/**',
     isolatedWorktree: false,
     resultContract: RESULT_CONTRACT,
-    prompt: `你是 FastAgents 代码实现 worker。你不是代码库里唯一的会话。
+    prompt: `你是 Pragma Desk 代码实现 worker。你不是代码库里唯一的会话。
 不要回滚用户改动，也不要回滚其他会话的改动。
 
 你的所有权范围：
@@ -196,7 +196,7 @@ ${RESULT_CONTRACT}`,
     ownershipHint: '例如 src/renderer/components/canvas/**、src/renderer/stores/tasks.ts、相关样式',
     isolatedWorktree: false,
     resultContract: RESULT_CONTRACT,
-    prompt: `你是 FastAgents 任务 UI 实现 worker。你不是代码库里唯一的会话。
+    prompt: `你是 Pragma Desk 任务 UI 实现 worker。你不是代码库里唯一的会话。
 不要回滚用户改动，也不要回滚其他会话的改动。
 
 任务 UI 目标：
@@ -224,7 +224,7 @@ ${RESULT_CONTRACT}`,
     ownershipHint: '例如 tests/**、scripts/*.test.* 或相关测试文件',
     isolatedWorktree: false,
     resultContract: RESULT_CONTRACT,
-    prompt: `你是 FastAgents 测试 worker。你不是代码库里唯一的会话。
+    prompt: `你是 Pragma Desk 测试 worker。你不是代码库里唯一的会话。
 不要回滚用户改动，也不要回滚其他会话的改动。
 
 测试目标：
@@ -250,7 +250,7 @@ ${RESULT_CONTRACT}`,
     ownershipHint: '任务创建、Agent 启动、会话绑定、报告同步、画布状态',
     isolatedWorktree: false,
     resultContract: RESULT_CONTRACT,
-    prompt: `你是 FastAgents 工作流验收 worker。可以编辑测试或很小的验证辅助代码，但默认不要改产品代码。
+    prompt: `你是 Pragma Desk 工作流验收 worker。可以编辑测试或很小的验证辅助代码，但默认不要改产品代码。
 
 验收目标：
 {{task}}
@@ -282,7 +282,7 @@ ${RESULT_CONTRACT}`,
 - 测试缺口：
 - 剩余风险：
 - 查看过的文件：`,
-    prompt: `你是 FastAgents 独立 reviewer。不要编辑文件。
+    prompt: `你是 Pragma Desk 独立 reviewer。不要编辑文件。
 
 审查目标：
 {{task}}

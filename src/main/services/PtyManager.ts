@@ -664,7 +664,7 @@ export class PtyManager {
       }
     }
     // Codex CLI spawns MCP servers with a *sealed* env, so pass the complete
-    // MCP config on the command line. This keeps dev/stable FastAgents
+    // MCP config on the command line. This keeps dev/stable Pragma Desk
     // profiles independent instead of sharing ~/.codex/config.toml.
     //
     // Use TOML literal strings here. Windows PowerShell 5 strips embedded
@@ -720,7 +720,7 @@ export class PtyManager {
       FASTAGENTS_SESSION_TYPE: options.type,
       // Editor IDE server (separate from the MCP orchestrator).
       ...(getIdeServerPort() ? { FASTAGENTS_IDE_PORT: String(getIdeServerPort()) } : {}),
-      // FastAgents MCP bridge — agents in this PTY can talk back to us.
+      // Pragma Desk MCP bridge — agents in this PTY can talk back to us.
       ...(this.mcpEnv ? {
         FASTAGENTS_MCP_PORT: String(this.mcpEnv.port),
         FASTAGENTS_MCP_TOKEN: this.mcpEnv.token,

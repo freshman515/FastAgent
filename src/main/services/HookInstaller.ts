@@ -1,4 +1,4 @@
-// HookInstaller — Register FastAgents hooks for Claude Code and Codex.
+// HookInstaller — Register Pragma Desk hooks for Claude Code and Codex.
 // Claude: Stop (command hook), Notification/PermissionRequest (HTTP hooks)
 // Codex: Stop (command hook)
 
@@ -80,7 +80,7 @@ function getCodexScriptPath(): string {
 
 /** Generate the hook script content — for command hooks (Stop, etc.) */
 function generateClaudeScript(port: number): string {
-  return `// FastAgents Hook — sends Claude Code events to FastAgents
+  return `// Pragma Desk Hook — sends Claude Code events to Pragma Desk
 // Auto-generated — do not edit manually
 const http = require('http');
 
@@ -130,10 +130,10 @@ function buildPortList(activePort: number): number[] {
   ]))
 }
 
-/** Generate the Codex Stop hook script. It no-ops when FastAgents is not running. */
+/** Generate the Codex Stop hook script. It no-ops when Pragma Desk is not running. */
 function generateCodexScript(port: number): string {
   const logFileName = `${CODEX_HOOK_SCRIPT_BASE}${getProfileSuffix()}.log`
-  return `// FastAgents Codex Hook — sends Codex Stop events to FastAgents
+  return `// Pragma Desk Codex Hook — sends Codex Stop events to Pragma Desk
 // Auto-generated — do not edit manually
 const fs = require('fs');
 const http = require('http');
@@ -376,7 +376,7 @@ function ensureCodexHooksFeatureEnabled(): void {
   writeFileSync(configPath, `${lines.join('\n').replace(/\n+$/, '')}\n`, 'utf-8')
 }
 
-/** Claude events we forward to FastAgents for agent activity tracking. */
+/** Claude events we forward to Pragma Desk for agent activity tracking. */
 const CLAUDE_ACTIVITY_EVENTS = ['Stop', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse'] as const
 
 function registerClaudeHooks(port: number): void {
@@ -403,7 +403,7 @@ function registerClaudeHooks(port: number): void {
   }
 
   // Notification: status-line hook (non-blocking — captures model, context, cost)
-  // Include the profile marker in a query param so sibling FastAgents profiles
+  // Include the profile marker in a query param so sibling Pragma Desk profiles
   // can coexist without replacing each other's hook URLs.
   const statusUrl = `http://127.0.0.1:${port}/status-line?src=${encodeURIComponent(httpMarker)}`
   addHttpHook(settings, 'Notification', statusUrl, httpMarker)
@@ -472,7 +472,7 @@ function registerCodexHooks(port: number): void {
     'Stop',
     command,
     commandMarker,
-    'Notifying FastAgents',
+    'Notifying Pragma Desk',
   )
 
   writeJsonObject(getCodexHooksJsonPath(), hooksConfig)

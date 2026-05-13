@@ -200,7 +200,7 @@ const api = {
       ipcRenderer.invoke(IPC.PERMISSION_RESPOND, id, behavior, suggestionIndex),
   },
 
-  // ─── FastAgents MCP bridge (Meta-Agent) ───
+  // ─── Pragma Desk MCP bridge (Meta-Agent) ───
   mcp: {
     onListSessionsRequest: (callback: (req: { requestId: string }) => void) => {
       const handler = (_: unknown, req: { requestId: string }) => callback(req)
@@ -549,7 +549,7 @@ const api = {
       const raw = new URLSearchParams(window.location.search).get('sessionIds') ?? ''
       return raw ? raw.split(',') : []
     },
-    getTitle: () => new URLSearchParams(window.location.search).get('title') ?? 'FastAgents',
+    getTitle: () => new URLSearchParams(window.location.search).get('title') ?? 'Pragma Desk',
   },
 
   platform: process.platform,

@@ -1,6 +1,6 @@
-# FastAgents
+# Pragma Desk
 
-FastAgents 是一个面向 AI Coding 的多 Agent 会话管理工具。
+Pragma Desk 是一个面向 AI Coding 的多 Agent 会话管理工具。
 
 它把 Claude Code、Codex、Gemini、OpenCode、浏览器和普通终端放进同一个项目工作区里，让你可以用经典分屏或无限画布同时管理多个会话、多个任务和多个开发上下文。
 
@@ -12,7 +12,7 @@ FastAgents 是一个面向 AI Coding 的多 Agent 会话管理工具。
 ![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows)
 ![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple)
 
-## 为什么做 FastAgents
+## 为什么做 Pragma Desk
 
 使用 AI Coding 时，真正麻烦的地方通常不是启动一个 Agent，而是同时管理很多 Agent。
 
@@ -23,7 +23,7 @@ FastAgents 是一个面向 AI Coding 的多 Agent 会话管理工具。
 - 终端、浏览器、文件、Git 信息和 AI 回复分散在不同 App 里。
 - 同时跑多个功能开发时，需要更清晰的分屏、分组和工作区隔离。
 
-FastAgents 的目标是把这些东西放回同一个工作台里，让你更容易并行调度多个 Agent。
+Pragma Desk 的目标是把这些东西放回同一个工作台里，让你更容易并行调度多个 Agent。
 
 ## 核心功能
 
@@ -70,7 +70,7 @@ FastAgents 的目标是把这些东西放回同一个工作台里，让你更容
 
 ### Meta-Agent MCP
 
-FastAgents 会给 Claude Code 会话自动注入本地 MCP 工具，让一个 Agent 可以查看和操作同工作区下的其他会话。
+Pragma Desk 会给 Claude Code 会话自动注入本地 MCP 工具，让一个 Agent 可以查看和操作同工作区下的其他会话。
 
 常用能力包括：
 
@@ -82,11 +82,11 @@ FastAgents 会给 Claude Code 会话自动注入本地 MCP 工具，让一个 Ag
 - 等待某个 session 输出静止。
 - 读取当前编辑器打开文件、选区和上下文。
 
-这让 FastAgents 不只是一个终端管理器，而是一个可以让 Agent 之间互相协作的本地工作台。
+这让 Pragma Desk 不只是一个终端管理器，而是一个可以让 Agent 之间互相协作的本地工作台。
 
 ## 适合谁
 
-FastAgents 更适合这些场景：
+Pragma Desk 更适合这些场景：
 
 - 同时使用多个 AI Coding CLI。
 - 经常让多个 Agent 并行处理不同任务。
@@ -100,9 +100,9 @@ FastAgents 更适合这些场景：
 
 前往 GitHub Releases 下载对应系统的安装包：
 
-- Windows：`FastAgents-Setup-x.y.z.exe`
-- macOS Intel：`FastAgents-x.y.z-x64.dmg`
-- macOS Apple Silicon：`FastAgents-x.y.z-arm64.dmg`
+- Windows：`Pragma-Desk-Setup-x.y.z.exe`
+- macOS Intel：`Pragma-Desk-x.y.z-x64.dmg`
+- macOS Apple Silicon：`Pragma-Desk-x.y.z-arm64.dmg`
 
 macOS 版本目前未做 Apple Developer ID 签名和公证，首次打开时可能需要在 Finder 中右键选择“打开”，或在系统设置的“隐私与安全性”中允许打开。
 
@@ -128,20 +128,20 @@ pnpm install
 pnpm dev
 ```
 
-开发版会自动使用独立的 Electron profile，不和已安装的正式版共享 FastAgents 配置、项目、分组、会话、画布、缓存和 MCP 临时文件。默认目录形如：
+开发版会自动使用独立的 Electron profile，不和已安装的正式版共享 Pragma Desk 配置、项目、分组、会话、画布、缓存和 MCP 临时文件。默认目录形如：
 
 ```text
-%APPDATA%\FastAgents Dev\<workspace-name>-<hash>\
+%APPDATA%\Pragma Desk Dev\<workspace-name>-<hash>\
 ```
 
 如需指定开发版数据目录，可设置：
 
 ```powershell
-$env:FASTAGENTS_USER_DATA_DIR='D:\path\to\fastagents-dev-profile'
+$env:FASTAGENTS_USER_DATA_DIR='D:\path\to\pragma-desk-dev-profile'
 pnpm dev
 ```
 
-Claude / Codex / Gemini 等外部 CLI 的登录态仍沿用各自工具的系统登录，不由 FastAgents 隔离。
+Claude / Codex / Gemini 等外部 CLI 的登录态仍沿用各自工具的系统登录，不由 Pragma Desk 隔离。
 
 ### 构建
 

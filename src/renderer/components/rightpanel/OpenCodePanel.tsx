@@ -536,7 +536,7 @@ export function OpenCodePanel(): JSX.Element {
           model: activeModel,
           method: 'POST',
           path: '/session',
-          body: { title: selectedProject?.name ?? 'FastAgents' },
+          body: { title: selectedProject?.name ?? 'Pragma Desk' },
         }) as OpencodeSessionInfo
         setSessions((current) => upsertSession(current, nextSession))
       }
@@ -721,7 +721,7 @@ export function OpenCodePanel(): JSX.Element {
         model: activeModel,
         method: 'POST',
         path: '/session',
-        body: { title: selectedProject?.name ?? 'FastAgents' },
+        body: { title: selectedProject?.name ?? 'Pragma Desk' },
       }) as OpencodeSessionInfo
       selectedSessionByDirectory.set(directory, session.id)
       setSessionId(session.id)

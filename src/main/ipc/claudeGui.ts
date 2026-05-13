@@ -208,7 +208,7 @@ async function fetchClaudeCodeLocalUsage(): Promise<ClaudeCodeLocalUsage> {
 
 function sanitizeCwdForClaudeProjectDir(cwd: string): string {
   // Claude Code replaces all path separators, ':' and '.' with '-'. Matches
-  // folders like D--pragma-MyProject-FastAgents or C--Users-22004.
+  // folders like D--pragma-MyProject-Pragma Desk or C--Users-22004.
   return cwd.replace(/[\\/:.]/g, '-')
 }
 

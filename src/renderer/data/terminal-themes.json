@@ -1246,8 +1246,8 @@
             "error": "#F38BA8"
         }
     },
-    "FastAgents Default": {
-        "name": "FastAgents Default",
+    "Pragma Desk Default": {
+        "name": "Pragma Desk Default",
         "palette": [
             "#1a1a1e",
             "#ef5757",
@@ -1288,8 +1288,8 @@
             "error": "#ef5757"
         }
     },
-    "FastAgents Light": {
-        "name": "FastAgents Light",
+    "Pragma Desk Light": {
+        "name": "Pragma Desk Light",
         "palette": [
             "#2e2e3a",
             "#c53030",

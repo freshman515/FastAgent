@@ -2837,7 +2837,7 @@ function MainApp(): JSX.Element {
     }
   }, [])
 
-  // FastAgents MCP bridge: handle list-sessions and create-session requests
+  // Pragma Desk MCP bridge: handle list-sessions and create-session requests
   // coming from the orchestrator HTTP server (Meta-Agent tools).
   useMcpBridge()
 

@@ -174,7 +174,7 @@ export class OrchestratorService {
 
     // FastTerminal used the same global Codex/Claude MCP registration names
     // during early development. Remove those stale registrations so Codex
-    // sessions launched by FastAgents only boot the MCP servers they need.
+    // sessions launched by Pragma Desk only boot the MCP servers they need.
     cleanupLegacyFastTerminalMcpRegistrations()
 
     // Packaged builds keep the convenience global registrations. Dev builds

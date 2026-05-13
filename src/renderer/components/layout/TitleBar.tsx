@@ -1,7 +1,8 @@
-import { ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, Zap, type LucideIcon } from 'lucide-react'
+import { ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
+import appIcon from '@/assets/icons/pragma-desk.png'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
@@ -461,7 +462,7 @@ export function TitleBar(): JSX.Element | null {
           },
           {
             icon: Info,
-            label: '关于 FastAgents',
+            label: '关于 Pragma Desk',
             onSelect: handleShowAbout,
           },
           {
@@ -546,9 +547,14 @@ export function TitleBar(): JSX.Element | null {
           scheduleMenuClose()
         }}
       >
-        <div className="flex items-center gap-1.5 pr-3">
-          <Zap size={14} className="text-[var(--color-accent)]" />
-          <span className="text-sm font-semibold text-[var(--color-text-secondary)]">FastAgents</span>
+        <div className="flex items-center gap-2 pr-3">
+          <img
+            src={appIcon}
+            alt=""
+            className="h-5 w-5 shrink-0 rounded-[5px]"
+            draggable={false}
+          />
+          <span className="text-sm font-semibold text-[var(--color-text-secondary)]">Pragma Desk</span>
         </div>
 
         <div

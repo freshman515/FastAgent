@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// FastAgents MCP bridge — runs as a child process under any MCP-capable
+// Pragma Desk MCP bridge — runs as a child process under any MCP-capable
 // agent (Claude Code, etc.). Exposes a "Meta-Agent" toolset plus editor-
 // context tools that let the agent:
-//   - inspect / drive / spawn other FastAgents sessions
+//   - inspect / drive / spawn other Pragma Desk sessions
 //   - read the currently-open editor file + selection
 //
-// All tools proxy to the OrchestratorService HTTP server in the FastAgents
+// All tools proxy to the OrchestratorService HTTP server in the Pragma Desk
 // main process. Auth uses a per-launch random Bearer token.
 //
-// Required env (injected by FastAgents when it spawns the PTY):
+// Required env (injected by Pragma Desk when it spawns the PTY):
 //   FASTAGENTS_MCP_PORT     – orchestrator HTTP port (loopback)
 //   FASTAGENTS_MCP_TOKEN    – random per-launch Bearer token
 // Optional:
-//   FASTAGENTS_SESSION_ID   – this agent's own session id (set by FastAgents
+//   FASTAGENTS_SESSION_ID   – this agent's own session id (set by Pragma Desk
 //                             so the bridge can flag `isSelf` and scope
 //                             workspace access).
 
@@ -24,7 +24,7 @@ const TOKEN = process.env.FASTAGENTS_MCP_TOKEN || ''
 const SELF_SESSION_ID = process.env.FASTAGENTS_SESSION_ID || ''
 const CONNECTED = Boolean(PORT && TOKEN)
 
-// If the bridge is spawned outside a FastAgents PTY (no orchestrator env),
+// If the bridge is spawned outside a Pragma Desk PTY (no orchestrator env),
 // we still speak MCP — we just fail tool calls with a clear message. This
 // keeps `claude mcp list` health checks green even when the bridge is
 // configured globally and then launched from a plain shell.
@@ -60,7 +60,7 @@ function request(method, path, body) {
               resolve(parsed)
             }
           } catch (err) {
-            reject(new Error(`Bad JSON from FastAgents: ${err.message}`))
+            reject(new Error(`Bad JSON from Pragma Desk: ${err.message}`))
           }
         })
       },
@@ -74,15 +74,15 @@ function request(method, path, body) {
 // ─── Tool definitions ───────────────────────────────────────────────────────
 
 const TOOLS = [
-  // Editor context (served by FastAgents' IdeServer, proxied via orchestrator /state)
+  // Editor context (served by Pragma Desk' IdeServer, proxied via orchestrator /state)
   {
     name: 'fa_get_open_file',
-    description: 'Get the currently open file in the FastAgents editor, including its path, language, and cursor position.',
+    description: 'Get the currently open file in the Pragma Desk editor, including its path, language, and cursor position.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'fa_get_selection',
-    description: 'Get the currently selected text in the FastAgents editor. Returns the selected code/text and the file it belongs to.',
+    description: 'Get the currently selected text in the Pragma Desk editor. Returns the selected code/text and the file it belongs to.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -95,13 +95,13 @@ const TOOLS = [
   {
     name: 'fa_list_sessions',
     description:
-      'List every FastAgents session currently in the workspace scope of this calling agent. Returns id, name, type, status, cwd, pane, and whether the calling agent owns each session. Use this first whenever you need to find a session to read or write to.',
+      'List every Pragma Desk session currently in the workspace scope of this calling agent. Returns id, name, type, status, cwd, pane, and whether the calling agent owns each session. Use this first whenever you need to find a session to read or write to.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'fa_read_session',
     description:
-      'Read recent terminal output from a FastAgents session. ANSI escape sequences are stripped. Use this to inspect what another session (or worker agent) has produced.',
+      'Read recent terminal output from a Pragma Desk session. ANSI escape sequences are stripped. Use this to inspect what another session (or worker agent) has produced.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -122,7 +122,7 @@ const TOOLS = [
   {
     name: 'fa_write_session',
     description:
-      'Send input to a FastAgents session as if the user typed it. By default a trailing Enter is appended. Use this to dispatch a prompt to a worker agent or run a shell command in another terminal. Refuses to write to the calling agent\'s own session.',
+      'Send input to a Pragma Desk session as if the user typed it. By default a trailing Enter is appended. Use this to dispatch a prompt to a worker agent or run a shell command in another terminal. Refuses to write to the calling agent\'s own session.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -142,7 +142,7 @@ const TOOLS = [
   {
     name: 'fa_close_session',
     description:
-      'Close a FastAgents session tab and terminate its backing process if it is still running. Refuses to close the calling agent\'s own session.',
+      'Close a Pragma Desk session tab and terminate its backing process if it is still running. Refuses to close the calling agent\'s own session.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -157,7 +157,7 @@ const TOOLS = [
   {
     name: 'fa_create_session',
     description:
-      'Create a new FastAgents session in the active pane. Use this to spawn a worker agent (claude-code / codex / gemini / opencode) or a plain terminal for a follow-up task.',
+      'Create a new Pragma Desk session in the active pane. Use this to spawn a worker agent (claude-code / codex / gemini / opencode) or a plain terminal for a follow-up task.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -172,11 +172,11 @@ const TOOLS = [
         },
         project_id: {
           type: 'string',
-          description: 'Optional FastAgents project id to attach the session to.',
+          description: 'Optional Pragma Desk project id to attach the session to.',
         },
         worktree_id: {
           type: 'string',
-          description: 'Optional FastAgents worktree id (overrides cwd resolution).',
+          description: 'Optional Pragma Desk worktree id (overrides cwd resolution).',
         },
         isolate_worktree: {
           type: 'boolean',
@@ -205,7 +205,7 @@ const TOOLS = [
   {
     name: 'fa_wait_for_idle',
     description:
-      'Block until a FastAgents session has produced no output for `idle_ms` milliseconds, or `timeout_ms` elapses. Use this as a synchronization point after dispatching work to a worker agent.',
+      'Block until a Pragma Desk session has produced no output for `idle_ms` milliseconds, or `timeout_ms` elapses. Use this as a synchronization point after dispatching work to a worker agent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -409,7 +409,7 @@ async function handleMessage(msg) {
         result: {
           content: [{
             type: 'text',
-            text: 'FastAgents MCP bridge is not attached to a FastAgents session. Start the MCP-capable agent from inside a FastAgents tab — the bridge needs FASTAGENTS_MCP_PORT / FASTAGENTS_MCP_TOKEN env vars that FastAgents injects automatically.',
+            text: 'Pragma Desk MCP bridge is not attached to a Pragma Desk session. Start the MCP-capable agent from inside a Pragma Desk tab — the bridge needs FASTAGENTS_MCP_PORT / FASTAGENTS_MCP_TOKEN env vars that Pragma Desk injects automatically.',
           }],
           isError: true,
         },

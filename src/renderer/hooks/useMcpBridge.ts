@@ -11,7 +11,7 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { createAgentWorktree } from '@/lib/agent-worktrees'
 
 /**
- * Bridges the FastAgents MCP HTTP server (main process) to the renderer's
+ * Bridges the Pragma Desk MCP HTTP server (main process) to the renderer's
  * session / pane stores. The orchestrator can ask the renderer to:
  *
  *   - list all sessions (id / name / type / cwd / pane / hasPty)
