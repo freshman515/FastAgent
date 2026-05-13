@@ -73,10 +73,6 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   }, [card.sessionRemark, remarkDialogOpen])
 
   if (!session) return null
-  const frameCoordinateMode =
-    coordinateMode === 'screen' && session.type !== 'claude-gui' && session.type !== 'browser'
-      ? 'screen-transform'
-      : coordinateMode
   const sessionIcon = getSessionIcon(session.type, isDarkTheme)
   const displayTitle = formatSessionCardTitle(session.name, card.sessionRemark)
   const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
@@ -223,7 +219,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
         borderless
         frameClassName="canvas-session-frame"
         bodyClassName={session.type === 'claude-gui' || session.type === 'browser' ? 'bg-[var(--color-bg-secondary)]' : 'bg-[var(--color-terminal-bg)]'}
-        coordinateMode={frameCoordinateMode}
+        coordinateMode={coordinateMode}
         focusOnClick
       >
         {card.collapsed ? (
