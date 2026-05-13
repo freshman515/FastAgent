@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react'
-import type { CanvasCard, SessionType } from '@shared/types'
+import { SESSION_TYPE_CONFIG, type CanvasCard, type SessionType } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
 import { cn } from '@/lib/utils'
+import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { useGroupsStore } from '@/stores/groups'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useWorktreesStore } from '@/stores/worktrees'
-import { getDefaultCanvasCardSize, useCanvasStore } from '@/stores/canvas'
+import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
-import { addCanvasCardToActiveSpace } from './canvasSpaceMembership'
+import { addCanvasCardToSpace } from './canvasSpaceMembership'
+import { getSmartNewCardPlacement } from './canvasSmartPlacement'
 import { focusCanvasCardInDirection } from './hooks/useCanvasKeyboard'
 
 type CanvasNavigationKey = 'h' | 'j' | 'k' | 'l' | 'ArrowLeft' | 'ArrowDown' | 'ArrowUp' | 'ArrowRight'
@@ -31,7 +33,7 @@ interface CanvasCommandModeController {
 
 interface CanvasCommandModeOptions {
   viewportRef: RefObject<HTMLDivElement | null>
-  onOpenSearch: () => void
+  searchOpen: boolean
   onRenameFrame: (cardId: string) => void
   onCreateFrame: () => void
 }
@@ -48,7 +50,7 @@ const CANVAS_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'h/j/k/l', label: '按空间方向聚焦卡片' },
   { key: '1-9', label: '跳转画布书签' },
   { key: 'a', label: '适配所有内容' },
-  { key: 'f', label: '搜索画布' },
+  { key: 'f', label: '切换会话' },
   { key: 'p', label: '切换项目' },
   { key: 'Tab', label: '上一个项目' },
   { key: 'n', label: '新建默认会话' },
@@ -362,6 +364,18 @@ interface CanvasCommandProjectSwitchItem {
   badge: string
 }
 
+interface CanvasCommandCardSwitchItem {
+  id: string
+  cardId: string
+  title: string
+  detail: string
+  searchText: string
+  priority: number
+  kind: 'session' | 'terminal'
+  isCurrent: boolean
+  isPrevious: boolean
+}
+
 function CanvasCommandProjectSwitcher({
   recentKeys,
   onBack,
@@ -667,6 +681,205 @@ function CanvasCommandProjectSwitcher({
   )
 }
 
+function CanvasCommandCardSwitcher({
+  onBack,
+  onSelect,
+}: {
+  onBack: () => void
+  onSelect: (cardId: string) => void
+}): JSX.Element {
+  const cards = useCanvasStore((state) => state.getLayout().cards)
+  const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds ?? [])
+  const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
+  const sessions = useSessionsStore((state) => state.sessions)
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const sessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions])
+  const sessionCards = useMemo(
+    () => cards.filter((card) => (card.kind === 'session' || card.kind === 'terminal') && card.refId),
+    [cards],
+  )
+  const sessionCardIds = useMemo(() => new Set(sessionCards.map((card) => card.id)), [sessionCards])
+  const currentCardId = selectedCardIds.find((id) => sessionCardIds.has(id)) ?? null
+  const previousCardId = recentCardIds.find((id) => id !== currentCardId && sessionCardIds.has(id)) ?? null
+  const recentRank = useMemo(
+    () => new Map(recentCardIds.map((id, index) => [id, index])),
+    [recentCardIds],
+  )
+
+  const items = useMemo<CanvasCommandCardSwitchItem[]>(() => {
+    return sessionCards
+      .map((card) => {
+        const session = card.refId ? sessionById.get(card.refId) : undefined
+        const title = session ? formatSessionCardTitle(session.name, card.sessionRemark) : '会话'
+        const typeLabel = session ? SESSION_TYPE_CONFIG[session.type]?.label ?? session.type : card.kind
+        const status = session?.status ? ` · ${session.status}` : ''
+        const rank = recentRank.get(card.id)
+        const isCurrent = card.id === currentCardId
+        const isPrevious = card.id === previousCardId
+        const priority = isPrevious
+          ? 2000
+          : (isCurrent ? 1000 : 0) + (rank !== undefined ? 500 - rank * 10 : 0)
+        return {
+          id: card.id,
+          cardId: card.id,
+          title,
+          detail: `${typeLabel}${status}`,
+          searchText: [title, session?.name, session?.type, session?.label, card.sessionRemark].filter(Boolean).join(' '),
+          priority,
+          kind: card.kind === 'terminal' ? 'terminal' : 'session',
+          isCurrent,
+          isPrevious,
+        }
+      })
+      .sort((a, b) => b.priority - a.priority || a.title.localeCompare(b.title))
+  }, [currentCardId, previousCardId, recentRank, sessionById, sessionCards])
+
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = normalizeCommandQuery(query)
+    if (!normalizedQuery) return items
+    return items.filter((item) => normalizeCommandQuery(item.searchText).includes(normalizedQuery))
+  }, [items, query])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    const focusInput = (): void => inputRef.current?.focus({ preventScroll: true })
+    window.requestAnimationFrame(focusInput)
+    window.setTimeout(focusInput, 40)
+    window.setTimeout(focusInput, 160)
+  }, [])
+
+  useEffect(() => {
+    if (visibleItems.length === 0 && selectedIndex !== 0) {
+      setSelectedIndex(0)
+      return
+    }
+    if (selectedIndex >= visibleItems.length) {
+      setSelectedIndex(Math.max(0, visibleItems.length - 1))
+    }
+  }, [selectedIndex, visibleItems.length])
+
+  const selectPrevious = useCallback(() => {
+    setSelectedIndex((current) => Math.max(0, current - 1))
+  }, [])
+
+  const selectNext = useCallback(() => {
+    setSelectedIndex((current) => Math.min(current + 1, Math.max(0, visibleItems.length - 1)))
+  }, [visibleItems.length])
+
+  const select = useCallback((index: number) => {
+    const item = visibleItems[index]
+    if (item) onSelect(item.cardId)
+  }, [onSelect, visibleItems])
+
+  const confirmSelected = useCallback(() => {
+    select(selectedIndex)
+  }, [select, selectedIndex])
+
+  useCommandPanelKeyboardCapture({
+    panelRef,
+    inputRef,
+    onBack,
+    onArrowDown: selectNext,
+    onArrowUp: selectPrevious,
+    onEnter: confirmSelected,
+    setQuery,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="w-[min(560px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            onBack()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectNext()
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            event.stopPropagation()
+            selectPrevious()
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            confirmSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">切换画布会话</div>
+            <div className="text-[10px] text-[var(--color-text-tertiary)]">Esc 返回 Canvas Mode</div>
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
+            placeholder="搜索画布会话"
+            className={cn(
+              'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
+              'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'placeholder:text-[var(--color-text-tertiary)] outline-none',
+            )}
+          />
+        </div>
+        <div className="max-h-[380px] overflow-y-auto p-1.5">
+          {visibleItems.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              没有匹配的会话
+            </div>
+          ) : visibleItems.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => select(index)}
+              className={cn(
+                'flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors',
+                index === selectedIndex
+                  ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+              )}
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[10px] font-bold">
+                {item.kind === 'terminal' ? 'T' : 'S'}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[var(--ui-font-sm)] font-medium">{item.title}</span>
+                <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{item.detail}</span>
+              </span>
+              {item.isPrevious && <span className="shrink-0 text-[10px] text-[var(--color-accent)]">上一个</span>}
+              {!item.isPrevious && item.isCurrent && <span className="shrink-0 text-[10px] text-[var(--color-accent)]">当前</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CanvasCommandOverlay({ editing }: { editing: boolean }): JSX.Element {
   return (
     <div className="pointer-events-none fixed inset-0 z-[9400]">
@@ -676,22 +889,12 @@ function CanvasCommandOverlay({ editing }: { editing: boolean }): JSX.Element {
             {editing ? 'Canvas Edit' : 'Canvas Mode'}
           </span>
           <span className="text-[11px] text-[var(--color-text-secondary)]">
-            {editing ? 'Esc 返回命令模式' : 'h/j/k/l 聚焦 · f 搜索 · n 会话 · t 便签 · s 空间 · : 命令 · ? 帮助 · i/Esc 退出'}
+            {editing ? 'Esc 返回命令模式' : 'h/j/k/l 聚焦 · f 切换会话 · n 新建会话 · t 便签 · s 空间 · : 命令 · ? 帮助 · i/Esc 退出'}
           </span>
         </div>
       </div>
     </div>
   )
-}
-
-function getViewportCenterWorld(viewportRef: RefObject<HTMLDivElement | null>): { x: number; y: number } | null {
-  const rect = viewportRef.current?.getBoundingClientRect()
-  if (!rect) return null
-  const { scale, offsetX, offsetY } = useCanvasStore.getState().getViewport()
-  return {
-    x: (rect.width / 2 - offsetX) / scale,
-    y: (rect.height / 2 - offsetY) / scale,
-  }
 }
 
 function fitAllToViewport(viewportRef: RefObject<HTMLDivElement | null>): void {
@@ -708,17 +911,17 @@ function selectedCards(): CanvasCard[] {
 }
 
 function addNoteAtCenter(viewportRef: RefObject<HTMLDivElement | null>): void {
-  const center = getViewportCenterWorld(viewportRef)
-  if (!center) return
   const noteSize = getDefaultCanvasCardSize('note')
+  const placement = getSmartNewCardPlacement(viewportRef, noteSize)
+  if (!placement) return
   const cardId = useCanvasStore.getState().addCard({
     kind: 'note',
-    x: center.x - noteSize.width / 2,
-    y: center.y - noteSize.height / 2,
+    x: placement.position.x,
+    y: placement.position.y,
     noteBody: '',
     noteColor: 'yellow',
-  })
-  addCanvasCardToActiveSpace(cardId)
+  }, placement.placeOptions)
+  addCanvasCardToSpace(cardId, placement.activeSpaceId)
 }
 
 function addDefaultSessionAtCenter(viewportRef: RefObject<HTMLDivElement | null>): void {
@@ -732,9 +935,6 @@ function addDefaultSessionAtCenter(viewportRef: RefObject<HTMLDivElement | null>
     })
     return
   }
-
-  const center = getViewportCenterWorld(viewportRef)
-  if (!center) return
 
   const settings = useUIStore.getState().settings
   const customSessionDefinitionId = settings.defaultCustomSessionId ?? undefined
@@ -753,11 +953,13 @@ function addDefaultSessionAtCenter(viewportRef: RefObject<HTMLDivElement | null>
     paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
     useSessionsStore.getState().setActive(sessionId)
 
+    const placement = getSmartNewCardPlacement(viewportRef, cardSize)
+    if (!placement) return
     const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
-      x: center.x - cardSize.width / 2,
-      y: center.y - cardSize.height / 2,
-    })
-    addCanvasCardToActiveSpace(cardId)
+      x: placement.position.x,
+      y: placement.position.y,
+    }, placement.placeOptions)
+    addCanvasCardToSpace(cardId, placement.activeSpaceId)
     requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
   })
 }
@@ -840,7 +1042,7 @@ function directionFromKey(key: string): Parameters<typeof focusCanvasCardInDirec
 
 export function useCanvasCommandMode({
   viewportRef,
-  onOpenSearch,
+  searchOpen,
   onRenameFrame,
   onCreateFrame,
 }: CanvasCommandModeOptions): CanvasCommandModeController {
@@ -848,12 +1050,15 @@ export function useCanvasCommandMode({
   const [editing, setEditing] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [inputOpen, setInputOpen] = useState(false)
+  const [cardSwitcherOpen, setCardSwitcherOpen] = useState(false)
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
   const [recentProjectKeys, setRecentProjectKeys] = useState<string[]>([])
   const focusRef = useRef<HTMLDivElement | null>(null)
   const activeRef = useRef(false)
   const editingRef = useRef(false)
   const restoreInputModePendingRef = useRef(false)
+  const previousSearchOpenRef = useRef(false)
+  const panelReturnGuardUntilRef = useRef(0)
   const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
   const selectedWorktreeId = useWorktreesStore((state) => state.selectedWorktreeId)
   const worktrees = useWorktreesStore((state) => state.worktrees)
@@ -907,6 +1112,7 @@ export function useCanvasCommandMode({
     setEditing(false)
     setHelpOpen(false)
     setInputOpen(false)
+    setCardSwitcherOpen(false)
     setProjectSwitcherOpen(false)
     restoreInputMode()
   }, [restoreInputMode])
@@ -940,20 +1146,63 @@ export function useCanvasCommandMode({
     else focusSink()
   }, [exit, focusSink])
 
+  const guardPanelReturn = useCallback(() => {
+    panelReturnGuardUntilRef.current = Date.now() + 220
+  }, [])
+
+  const closeCardSwitcher = useCallback(() => {
+    setCardSwitcherOpen(false)
+    guardPanelReturn()
+    focusSink()
+  }, [focusSink, guardPanelReturn])
+
   const closeProjectSwitcher = useCallback(() => {
     setProjectSwitcherOpen(false)
+    guardPanelReturn()
     focusSink()
-  }, [focusSink])
+  }, [focusSink, guardPanelReturn])
 
   const openProjectSwitcher = useCallback(() => {
     setProjectSwitcherOpen(true)
   }, [])
 
+  const openCardSwitcher = useCallback(() => {
+    setCardSwitcherOpen(true)
+  }, [])
+
+  const openCardSwitcherFromInput = useCallback(() => {
+    setInputOpen(false)
+    openCardSwitcher()
+  }, [openCardSwitcher])
+
+  const focusCanvasCommandCard = useCallback((cardId: string) => {
+    const canvas = useCanvasStore.getState()
+    const card = canvas.getCard(cardId)
+    if (!card) return
+    if (isCanvasCardHidden(card)) canvas.updateCard(cardId, { hidden: false, hiddenByFrameId: undefined })
+    canvas.clearMaximizedCard()
+    canvas.clearFocusReturn()
+    window.requestAnimationFrame(() => {
+      const latest = useCanvasStore.getState().getCard(cardId)
+      if (!latest) return
+      if (latest.kind === 'frame') useCanvasStore.getState().focusFrameWorkspace(cardId)
+      else useCanvasStore.getState().focusOnCard(cardId)
+    })
+  }, [])
+
+  const selectCardFromSwitcher = useCallback((cardId: string) => {
+    setCardSwitcherOpen(false)
+    guardPanelReturn()
+    focusCanvasCommandCard(cardId)
+    focusSink()
+  }, [focusCanvasCommandCard, focusSink, guardPanelReturn])
+
   const switchCanvasProjectContext = useCallback((context: CanvasCommandProjectContext) => {
     switchProjectContext(context.projectId, null, context.worktreeId)
     setProjectSwitcherOpen(false)
+    guardPanelReturn()
     focusSink()
-  }, [focusSink])
+  }, [focusSink, guardPanelReturn])
 
   const switchPreviousProject = useCallback(() => {
     if (!selectedProjectId) return
@@ -981,10 +1230,10 @@ export function useCanvasCommandMode({
     return [
       {
         id: 'search',
-        label: '搜索画布',
-        detail: '打开画布搜索并退出命令模式',
-        aliases: ['f', 'find', 'search', '搜索'],
-        run: () => runAndCloseInput(onOpenSearch, true),
+        label: '切换画布会话',
+        detail: '打开画布会话切换面板',
+        aliases: ['f', 'find', 'search', 'session', 'switch session', '会话'],
+        run: openCardSwitcherFromInput,
       },
       {
         id: 'project',
@@ -1187,7 +1436,7 @@ export function useCanvasCommandMode({
         run: exit,
       },
     ]
-  }, [enterEditing, exit, onCreateFrame, onOpenSearch, onRenameFrame, openProjectSwitcher, runAndCloseInput, switchPreviousProject, viewportRef])
+  }, [enterEditing, exit, onCreateFrame, onRenameFrame, openCardSwitcherFromInput, openProjectSwitcher, runAndCloseInput, switchPreviousProject, viewportRef])
 
   const runCanvasCommand = useCallback((key: string): boolean => {
     const normalized = key.length === 1 ? key.toLowerCase() : key
@@ -1209,8 +1458,7 @@ export function useCanvasCommandMode({
       return true
     }
     if (normalized === 'f') {
-      onOpenSearch()
-      exit()
+      openCardSwitcher()
       return true
     }
     if (normalized === 'p') {
@@ -1293,7 +1541,22 @@ export function useCanvasCommandMode({
       return true
     }
     return false
-  }, [enterEditing, exit, onCreateFrame, onOpenSearch, onRenameFrame, openProjectSwitcher, switchPreviousProject, viewportRef])
+  }, [enterEditing, exit, onCreateFrame, onRenameFrame, openCardSwitcher, openProjectSwitcher, switchPreviousProject, viewportRef])
+
+  useEffect(() => {
+    const wasOpen = previousSearchOpenRef.current
+    previousSearchOpenRef.current = searchOpen
+
+    if (searchOpen) {
+      restoreInputMode()
+      return
+    }
+
+    if (wasOpen && activeRef.current && !editingRef.current) {
+      focusSink()
+      ensureEnglishInputMode()
+    }
+  }, [ensureEnglishInputMode, focusSink, restoreInputMode, searchOpen])
 
   useEffect(() => {
     const handleCanvasCommandMode = (event: KeyboardEvent): void => {
@@ -1315,6 +1578,16 @@ export function useCanvasCommandMode({
 
       if (!activeRef.current) return
 
+      if (
+        Date.now() < panelReturnGuardUntilRef.current
+        && event.key === 'Enter'
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        return
+      }
+
       if (helpOpen) {
         event.preventDefault()
         event.stopPropagation()
@@ -1326,7 +1599,14 @@ export function useCanvasCommandMode({
         return
       }
 
-      if (inputOpen || projectSwitcherOpen || useUIStore.getState().settingsOpen || useUIStore.getState().sessionNamePrompt) return
+      if (
+        searchOpen
+        || inputOpen
+        || cardSwitcherOpen
+        || projectSwitcherOpen
+        || useUIStore.getState().settingsOpen
+        || useUIStore.getState().sessionNamePrompt
+      ) return
 
       if (editingRef.current) {
         if (event.key === 'Escape') {
@@ -1359,7 +1639,7 @@ export function useCanvasCommandMode({
 
     window.addEventListener('keydown', handleCanvasCommandMode, true)
     return () => window.removeEventListener('keydown', handleCanvasCommandMode, true)
-  }, [enter, exit, exitEditing, focusSink, helpOpen, inputOpen, projectSwitcherOpen, runCanvasCommand])
+  }, [cardSwitcherOpen, enter, exit, exitEditing, focusSink, helpOpen, inputOpen, projectSwitcherOpen, runCanvasCommand, searchOpen])
 
   const layer = active ? (
     <>
@@ -1370,6 +1650,7 @@ export function useCanvasCommandMode({
       />
       <CanvasCommandOverlay editing={editing} />
       {helpOpen && <CanvasCommandHelpPanel onClose={() => { setHelpOpen(false); focusSink() }} />}
+      {cardSwitcherOpen && <CanvasCommandCardSwitcher onBack={closeCardSwitcher} onSelect={selectCardFromSwitcher} />}
       {projectSwitcherOpen && (
         <CanvasCommandProjectSwitcher
           recentKeys={recentProjectKeys}

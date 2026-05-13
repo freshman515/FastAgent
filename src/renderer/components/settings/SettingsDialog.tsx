@@ -1342,8 +1342,8 @@ function CanvasPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
         </div>
       </SettingsSection>
 
-      <SettingsSection icon={Search} title="聚焦与阅读" description="控制点击卡片时的聚焦方式和自动缩放目标。">
-        <ToggleRow label="单击聚焦卡片" description="开启后单击会话卡片会缩放/居中；关闭后保留双击标题栏聚焦。" checked={settings.canvasFocusOnClick} onChange={(v) => onUpdate('canvasFocusOnClick', v)} />
+      <SettingsSection icon={Search} title="聚焦与阅读" description="控制点击卡片和空间时的聚焦方式和自动缩放目标。">
+        <ToggleRow label="点击聚焦卡片和空间" description="开启后单击卡片或空间会缩放/居中；关闭后单击只保留选择、拖动和内容交互。" checked={settings.canvasFocusOnClick} onChange={(v) => onUpdate('canvasFocusOnClick', v)} />
         <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
           <div className="mb-2 flex flex-col gap-0.5">
             <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">点击聚焦缩放字体</span>

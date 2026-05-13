@@ -303,12 +303,17 @@ function buildCanvasItems(
       kind: 'item',
       label: '在此处新建便签',
       onClick: () => {
+        const activeSpaceId = useCanvasUiStore.getState().activeSpaceId
         const cardId = addCard({
           kind: 'note',
           x: state.worldX - noteSize.width / 2,
           y: state.worldY - noteSize.height / 2,
           noteBody: '',
           noteColor: 'yellow',
+        }, {
+          forceFreePlacement: true,
+          forceAvoidOverlap: true,
+          ignoreOverlapCardIds: activeSpaceId ? [activeSpaceId] : undefined,
         })
         addCanvasCardToActiveSpace(cardId)
       },
@@ -368,11 +373,16 @@ function createCanvasSession(
 
     useSessionsStore.getState().setActive(sessionId)
     const canvasStore = useCanvasStore.getState()
+    const spaceId = targetSpaceId ?? useCanvasUiStore.getState().activeSpaceId
     const cardId = canvasStore.attachSession(sessionId, cardKind, {
       x: worldX - cardSize.width / 2,
       y: worldY - cardSize.height / 2,
+    }, {
+      forceFreePlacement: true,
+      forceAvoidOverlap: true,
+      ignoreOverlapCardIds: spaceId ? [spaceId] : undefined,
     })
-    addCanvasCardToSpace(cardId, targetSpaceId ?? useCanvasUiStore.getState().activeSpaceId)
+    addCanvasCardToSpace(cardId, spaceId)
     requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
   })
 }
@@ -444,6 +454,10 @@ function buildCardItems(
           y: world.y - noteSize.height / 2,
           noteBody: '',
           noteColor: 'yellow',
+        }, {
+          forceFreePlacement: true,
+          forceAvoidOverlap: true,
+          ignoreOverlapCardIds: [card.id],
         })
         addCanvasCardToSpace(cardId, card.id)
       },

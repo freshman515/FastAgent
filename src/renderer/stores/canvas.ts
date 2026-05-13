@@ -861,6 +861,12 @@ type CanvasPlacementSettings = {
   snapEnabled: boolean
 }
 
+interface CanvasPlaceCardOptions {
+  forceFreePlacement?: boolean
+  forceAvoidOverlap?: boolean
+  ignoreOverlapCardIds?: Iterable<string>
+}
+
 function getPlacementSettings(): CanvasPlacementSettings {
   const settings = useUIStore.getState().settings
   return {
@@ -870,13 +876,27 @@ function getPlacementSettings(): CanvasPlacementSettings {
   }
 }
 
-function placeCard(layout: CanvasLayout, card: CanvasCard, placement: CanvasPlacementSettings): CanvasCard[] {
-  if (placement.arrangeMode !== 'free') {
+function placeCard(
+  layout: CanvasLayout,
+  card: CanvasCard,
+  placement: CanvasPlacementSettings,
+  options: CanvasPlaceCardOptions = {},
+): CanvasCard[] {
+  if (!options.forceFreePlacement && placement.arrangeMode !== 'free') {
     return insertArrangedCard(layout.cards, card, placement.arrangeMode)
   }
 
-  const placed = placement.overlapMode === 'avoid'
-    ? { ...card, ...findNearestAvailablePosition(layout.cards, card, placement.snapEnabled) }
+  const shouldAvoidOverlap = options.forceAvoidOverlap || placement.overlapMode === 'avoid'
+  const placed = shouldAvoidOverlap
+    ? {
+        ...card,
+        ...findNearestAvailablePosition(
+          layout.cards,
+          card,
+          placement.snapEnabled,
+          new Set(options.ignoreOverlapCardIds ?? []),
+        ),
+      }
     : card
   return [...layout.cards, placed]
 }
@@ -1106,9 +1126,10 @@ function findNearestAvailablePosition(
   cards: CanvasCard[],
   card: CanvasCard,
   snapEnabled: boolean,
+  ignoreCardIds: Set<string> = new Set(),
 ): { x: number; y: number } {
   if (cards.length === 0) return { x: card.x, y: card.y }
-  const obstacleCards = cards.filter((candidate) => candidate.kind !== 'frame')
+  const obstacleCards = cards.filter((candidate) => candidate.id !== card.id && !ignoreCardIds.has(candidate.id))
 
   const normalize = (value: number): number => snapEnabled ? Math.round(value / CARD_GAP) * CARD_GAP : value
   const requested = { x: normalize(card.x), y: normalize(card.y) }
@@ -1220,7 +1241,7 @@ interface CanvasState {
   recordCardVisit: (cardId: string) => void
 
   // cards
-  addCard: (partial: Partial<CanvasCard> & { kind: CanvasCardKind }) => string
+  addCard: (partial: Partial<CanvasCard> & { kind: CanvasCardKind }, options?: CanvasPlaceCardOptions) => string
   addFrameAroundCards: (ids: string[], fallback?: { x: number; y: number }) => string | null
   toggleFrameCollapsed: (frameId: string) => void
   hideAllExceptFrame: (frameId: string) => void
@@ -1255,7 +1276,10 @@ interface CanvasState {
     sessionId: string,
     kind: 'session' | 'terminal',
     position?: { x: number; y: number },
+    options?: CanvasPlaceCardOptions,
   ) => string
+  /** Add a card to a frame and fit/move that frame without overlapping outside cards. */
+  addCardToFrame: (cardId: string, frameId: string | null | undefined) => void
   /** Remove all cards that reference this session (in every layout). */
   detachSessionEverywhere: (sessionId: string) => void
   /** Auto-populate the current layout from a list of session ids in horizontal
@@ -1517,7 +1541,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     animateViewport({ scale, offsetX, offsetY })
   },
 
-  addCard: (partial) => {
+  addCard: (partial, options = {}) => {
     const id = partial.id ?? `card-${generateId()}`
     const size = getDefaultCanvasCardSize(partial.kind)
     const now = Date.now()
@@ -1552,7 +1576,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
       const cards = partial.kind === 'frame'
         ? [...layout.cards, card]
-        : placeCard(layout, card, getPlacementSettings())
+        : placeCard(layout, card, getPlacementSettings(), options)
       return {
         layouts: {
           ...state.layouts,
@@ -1605,11 +1629,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         createdAt: now,
         updatedAt: now,
       }
+      const targetIds = new Set(targets.map((target) => target.id))
+      const placed = findNearestAvailablePosition(
+        layout.cards,
+        frame,
+        getPlacementSettings().snapEnabled,
+        targetIds,
+      )
+      const dx = placed.x - frame.x
+      const dy = placed.y - frame.y
+      const nextFrame = dx === 0 && dy === 0
+        ? frame
+        : { ...frame, x: placed.x, y: placed.y }
+      const cards = dx === 0 && dy === 0
+        ? layout.cards
+        : layout.cards.map((card) => targetIds.has(card.id)
+            ? { ...card, x: card.x + dx, y: card.y + dy, updatedAt: now }
+            : card)
       created = true
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards: [...layout.cards, frame] },
+          [state.activeLayoutKey]: { ...layout, cards: [...cards, nextFrame] },
         },
         selectedCardIds: [id],
         undoStack: pushUndo(state),
@@ -2165,7 +2206,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return null
   },
 
-  attachSession: (sessionId, kind, position) => {
+  attachSession: (sessionId, kind, position, options) => {
     const existing = get().findCardBySessionId(sessionId)
     if (existing && existing.layoutKey === get().activeLayoutKey) {
       get().setSelection([existing.card.id])
@@ -2199,20 +2240,114 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         }
         nextLayouts[toKey] = {
           ...toLayout,
-          cards: placeCard(toLayout, card, getPlacementSettings()),
+          cards: placeCard(toLayout, card, getPlacementSettings(), options),
         }
         return { layouts: nextLayouts, selectedCardIds: [existing.card.id], undoStack: pushUndo(state) }
       })
       return existing.card.id
     }
     const size = getDefaultCanvasCardSize(kind)
-    return get().addCard({
-      kind,
-      refId: sessionId,
-      x: position?.x ?? 0,
-      y: position?.y ?? 0,
-      width: size.width,
-      height: size.height,
+    const id = `card-${generateId()}`
+    const now = Date.now()
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const maxZ = layout.cards.reduce((acc, card) => Math.max(acc, card.zIndex), 0)
+      const card: CanvasCard = {
+        id,
+        kind,
+        refId: sessionId,
+        x: position?.x ?? 0,
+        y: position?.y ?? 0,
+        width: size.width,
+        height: size.height,
+        zIndex: maxZ + 1,
+        collapsed: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const cards = placeCard(layout, card, getPlacementSettings(), options)
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards },
+        },
+        selectedCardIds: [id],
+        undoStack: pushUndo(state),
+      }
+    })
+    return id
+  },
+
+  addCardToFrame: (cardId, frameId) => {
+    if (!frameId || frameId === cardId) return
+    set((state) => {
+      const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
+      const frame = layout.cards.find((card) => card.id === frameId && card.kind === 'frame')
+      const addedCard = layout.cards.find((card) => card.id === cardId && card.kind !== 'frame')
+      if (!frame || !addedCard) return state
+
+      const cardsById = new Map(layout.cards.map((card) => [card.id, card]))
+      const memberIds = Array.from(new Set([...(frame.frameMemberIds ?? []), cardId]))
+        .filter((id) => {
+          const member = cardsById.get(id)
+          return Boolean(member && member.kind !== 'frame' && member.id !== frameId)
+        })
+      const memberCards = memberIds
+        .map((id) => cardsById.get(id))
+        .filter((card): card is CanvasCard => Boolean(card && card.kind !== 'frame'))
+      if (memberCards.length === 0) return state
+
+      const now = Date.now()
+      const fitted = getFittedFrameRect(memberCards)
+      const fittedFrame: CanvasCard = {
+        ...frame,
+        ...fitted,
+        collapsed: false,
+        expandedWidth: undefined,
+        expandedHeight: undefined,
+        frameMemberIds: memberIds,
+        updatedAt: now,
+      }
+      const ignoredIds = new Set([frameId, ...memberIds])
+      const placed = findNearestAvailablePosition(
+        layout.cards,
+        fittedFrame,
+        getPlacementSettings().snapEnabled,
+        ignoredIds,
+      )
+      const dx = placed.x - fitted.x
+      const dy = placed.y - fitted.y
+
+      let touched = false
+      const nextCards = layout.cards.map((card) => {
+        if (card.id === frameId) {
+          if (
+            card.x === placed.x
+            && card.y === placed.y
+            && card.width === fitted.width
+            && card.height === fitted.height
+            && card.collapsed === false
+            && card.expandedWidth === undefined
+            && card.expandedHeight === undefined
+            && sameStringArray(card.frameMemberIds ?? [], memberIds)
+          ) {
+            return card
+          }
+          touched = true
+          return { ...fittedFrame, x: placed.x, y: placed.y }
+        }
+        if (!memberIds.includes(card.id) || (dx === 0 && dy === 0)) return card
+        touched = true
+        return { ...card, x: card.x + dx, y: card.y + dy, updatedAt: now }
+      })
+      if (!touched) return state
+      return {
+        layouts: {
+          ...state.layouts,
+          [state.activeLayoutKey]: { ...layout, cards: nextCards },
+        },
+        undoStack: pushUndo(state),
+      }
     })
   },
 

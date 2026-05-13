@@ -1148,6 +1148,8 @@ interface PaneCommandTabSwitchItem {
   detail: string
   searchText: string
   isCurrent: boolean
+  isPrevious: boolean
+  priority: number
 }
 
 function PaneCommandTabSwitcher({
@@ -1160,6 +1162,7 @@ function PaneCommandTabSwitcher({
   const activePaneId = usePanesStore((s) => s.activePaneId)
   const paneSessions = usePanesStore((s) => s.paneSessions[activePaneId] ?? [])
   const activeTabId = usePanesStore((s) => s.paneActiveSession[activePaneId] ?? null)
+  const paneRecentSessions = usePanesStore((s) => s.paneRecentSessions[activePaneId] ?? [])
   const sessions = useSessionsStore((s) => s.sessions)
   const editors = useEditorsStore((s) => s.tabs)
   const [query, setQuery] = useState('')
@@ -1167,7 +1170,18 @@ function PaneCommandTabSwitcher({
   const panelRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
+  const recentRank = useMemo(
+    () => new Map(paneRecentSessions.map((id, index) => [id, index])),
+    [paneRecentSessions],
+  )
+  const previousTabId = paneRecentSessions.find((id) => id !== activeTabId && paneSessions.includes(id)) ?? null
   const items = useMemo<PaneCommandTabSwitchItem[]>(() => paneSessions.map((id) => {
+    const rank = recentRank.get(id)
+    const isCurrent = id === activeTabId
+    const isPrevious = id === previousTabId
+    const priority = isPrevious
+      ? 2000
+      : (isCurrent ? 1000 : 0) + (rank !== undefined ? 500 - rank * 10 : 0)
     if (id.startsWith('editor-')) {
       const tab = editors.find((item) => item.id === id)
       return {
@@ -1175,7 +1189,9 @@ function PaneCommandTabSwitcher({
         title: tab?.fileName ?? '文件',
         detail: tab?.filePath ?? 'Editor',
         searchText: [tab?.fileName, tab?.filePath, tab?.language].filter(Boolean).join(' '),
-        isCurrent: id === activeTabId,
+        isCurrent,
+        isPrevious,
+        priority,
       }
     }
     const session = sessions.find((item) => item.id === id)
@@ -1184,9 +1200,11 @@ function PaneCommandTabSwitcher({
       title: session?.name ?? 'Session',
       detail: session ? SESSION_TYPE_CONFIG[session.type].label : 'Session',
       searchText: [session?.name, session?.type, session?.label].filter(Boolean).join(' '),
-      isCurrent: id === activeTabId,
+      isCurrent,
+      isPrevious,
+      priority,
     }
-  }), [activeTabId, editors, paneSessions, sessions])
+  }).sort((a, b) => b.priority - a.priority || a.title.localeCompare(b.title)), [activeTabId, editors, paneSessions, previousTabId, recentRank, sessions])
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalizePaneCommandQuery(query)
     if (!normalizedQuery) return items
@@ -1292,7 +1310,8 @@ function PaneCommandTabSwitcher({
                 <span className="block truncate text-[var(--ui-font-sm)] font-medium">{item.title}</span>
                 <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{item.detail}</span>
               </span>
-              {item.isCurrent && <span className="text-[10px] text-[var(--color-accent)]">当前</span>}
+              {item.isPrevious && <span className="text-[10px] text-[var(--color-accent)]">上一个</span>}
+              {!item.isPrevious && item.isCurrent && <span className="text-[10px] text-[var(--color-accent)]">当前</span>}
             </button>
           ))}
         </div>
@@ -1787,6 +1806,9 @@ function MainApp(): JSX.Element {
   const guardPaneCommandPanelOpening = useCallback(() => {
     paneCommandPanelOpeningUntilRef.current = Date.now() + 180
   }, [])
+  const guardPaneCommandPanelReturn = useCallback(() => {
+    paneCommandPanelOpeningUntilRef.current = Date.now() + 220
+  }, [])
   useEffect(() => {
     paneCommandModeRef.current = paneCommandMode
   }, [paneCommandMode])
@@ -1896,8 +1918,9 @@ function MainApp(): JSX.Element {
   }, [focusPaneCommandSink])
   const closePaneCommandTabSwitcher = useCallback(() => {
     setPaneCommandTabSwitcherOpen(false)
+    guardPaneCommandPanelReturn()
     focusPaneCommandSink()
-  }, [focusPaneCommandSink])
+  }, [focusPaneCommandSink, guardPaneCommandPanelReturn])
   const closePaneCommandJump = useCallback(() => {
     setPaneCommandJumpOpen(false)
     focusPaneCommandSink()
@@ -1959,9 +1982,10 @@ function MainApp(): JSX.Element {
     }
     setPaneCommandTabSwitcherOpen(false)
     setPaneCommandJumpOpen(false)
+    guardPaneCommandPanelReturn()
     focusPaneCommandSink()
     window.requestAnimationFrame(refreshPaneCommandRects)
-  }, [focusPaneCommandSink, refreshPaneCommandRects])
+  }, [focusPaneCommandSink, guardPaneCommandPanelReturn, refreshPaneCommandRects])
   const switchPaneCommandBack = useCallback(() => {
     const paneStore = usePanesStore.getState()
     const { paneId, tabId, tabIds } = getPaneCommandActiveTab()
@@ -3124,10 +3148,10 @@ function MainApp(): JSX.Element {
       if (
         Date.now() < paneCommandPanelOpeningUntilRef.current
         && e.key === 'Enter'
-        && !isPlainTextEditingTarget(e.target)
       ) {
         e.preventDefault()
         e.stopPropagation()
+        e.stopImmediatePropagation()
         return
       }
 

@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { useCanvasStore } from '@/stores/canvas'
+import { useUIStore } from '@/stores/ui'
 import { cn } from '@/lib/utils'
 import type { CanvasCard } from '@shared/types'
 import { CardFrame, type CardCoordinateMode } from './CardFrame'
@@ -24,6 +25,7 @@ export function FrameCard({ card, coordinateMode }: FrameCardProps): JSX.Element
   const updateCard = useCanvasStore((state) => state.updateCard)
   const removeCard = useCanvasStore((state) => state.removeCard)
   const toggleFrameCollapsed = useCanvasStore((state) => state.toggleFrameCollapsed)
+  const canvasFocusOnClick = useUIStore((state) => state.settings.canvasFocusOnClick)
   const frameZIndex = useCanvasStore((state) => {
     const cards = state.getLayout().cards
     const contentZIndexes = cards
@@ -42,7 +44,14 @@ export function FrameCard({ card, coordinateMode }: FrameCardProps): JSX.Element
   const memberCount = card.frameMemberIds?.length ?? 0
   const frameColorKey = card.frameColor ?? 'violet'
   const frameColor = FRAME_COLORS[frameColorKey] ?? FRAME_COLORS.violet
+  const selectFrame = (): void => {
+    useCanvasStore.getState().setSelection([card.id])
+  }
   const focusFrame = (): void => {
+    if (!canvasFocusOnClick) {
+      selectFrame()
+      return
+    }
     const canvas = useCanvasStore.getState()
     if (canvas.focusReturn?.cardId === card.id) {
       canvas.setSelection([card.id])

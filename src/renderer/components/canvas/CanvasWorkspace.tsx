@@ -19,7 +19,6 @@ import { CanvasGuideLines } from './CanvasGuideLines'
 import { CanvasMinimap } from './CanvasMinimap'
 import { CanvasRelations } from './CanvasRelations'
 import { CanvasSearch } from './CanvasSearch'
-import { CanvasSessionList } from './CanvasSessionList'
 import { CanvasSpaceSwitcher } from './CanvasSpaceSwitcher'
 import { CanvasSelectionBounds } from './CanvasSelectionBounds'
 import { CanvasMaximizedSwitcher } from './CanvasMaximizedSwitcher'
@@ -32,7 +31,8 @@ import { SessionCard } from './cards/SessionCard'
 import { useCanvasViewport, screenToWorld } from './hooks/useCanvasViewport'
 import { useMarqueeSelect } from './hooks/useMarqueeSelect'
 import { useCanvasKeyboard } from './hooks/useCanvasKeyboard'
-import { addCanvasCardToActiveSpace } from './canvasSpaceMembership'
+import { addCanvasCardToSpace } from './canvasSpaceMembership'
+import { getSmartNewCardPlacement } from './canvasSmartPlacement'
 
 /**
  * Top-level canvas view. Rendered by `MainPanel` when
@@ -257,14 +257,14 @@ export function CanvasWorkspace(): JSX.Element {
 
   const canvasCommandMode = useCanvasCommandMode({
     viewportRef,
-    onOpenSearch: () => openSearch(null),
+    searchOpen,
     onRenameFrame: (cardId) => setRenamingFrameId(cardId),
     onCreateFrame: () => requestCreateFrame(),
   })
 
   useCanvasViewport(viewportEl)
   useMarqueeSelect(viewportEl)
-  useCanvasKeyboard(viewportEl)
+  useCanvasKeyboard(viewportEl, { suspended: canvasCommandMode.active })
 
   useEffect(() => {
     if (!activeSpaceId) return
@@ -374,8 +374,9 @@ export function CanvasWorkspace(): JSX.Element {
         </div>
       </div>
 
-      <CanvasSpaceSwitcher />
-      <CanvasSessionList />
+      <div className="canvas-top-controls">
+        <CanvasSpaceSwitcher />
+      </div>
       <CanvasToolbar
         viewportRef={viewportRef}
         onOpenSearch={() => openSearch(null)}
@@ -637,7 +638,7 @@ function CanvasProjectedCardLayer({ cards, viewportEl }: { cards: CanvasCard[]; 
 function CanvasCardRenderer({ card, viewportEl }: { card: CanvasCard; viewportEl: HTMLDivElement | null }): JSX.Element | null {
   if (isCanvasCardHidden(card) && useCanvasStore.getState().maximizedCardId !== card.id) return null
   if (card.kind === 'frame') return <FrameCard card={card} coordinateMode="screen-transform" />
-  if (card.kind === 'note') return <NoteCard card={card} coordinateMode="screen" />
+  if (card.kind === 'note') return <NoteCard card={card} coordinateMode="screen-transform" />
   if (card.kind === 'session' || card.kind === 'terminal') {
     return <CulledSessionCard card={card} viewportEl={viewportEl} />
   }
@@ -697,17 +698,9 @@ function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivEleme
     return
   }
 
-  const rect = viewportRef.current?.getBoundingClientRect()
-  if (!rect) return
-
-  const { scale, offsetX, offsetY } = useCanvasStore.getState().getViewport()
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
   const cardKind = option.type === 'terminal' || option.type === 'terminal-wsl' || option.customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
-  const center = {
-    x: (rect.width / 2 - offsetX) / scale,
-    y: (rect.height / 2 - offsetY) / scale,
-  }
 
   createSessionWithPrompt({
     projectId,
@@ -719,11 +712,13 @@ function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivEleme
     paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
     useSessionsStore.getState().setActive(sessionId)
 
+    const placement = getSmartNewCardPlacement(viewportRef, cardSize)
+    if (!placement) return
     const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
-      x: center.x - cardSize.width / 2,
-      y: center.y - cardSize.height / 2,
-    })
-    addCanvasCardToActiveSpace(cardId)
+      x: placement.position.x,
+      y: placement.position.y,
+    }, placement.placeOptions)
+    addCanvasCardToSpace(cardId, placement.activeSpaceId)
     requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
   })
 }

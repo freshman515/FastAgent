@@ -203,9 +203,16 @@ function getCardsForActiveSpace(): CanvasCard[] {
  * passed-in viewport element — listeners bail out when focus is inside an
  * editable region (note textarea, terminal xterm input, etc.).
  */
-export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
+export function useCanvasKeyboard(
+  viewportEl: HTMLDivElement | null,
+  options: { suspended?: boolean } = {},
+): void {
   useEffect(() => {
     if (!viewportEl) return
+    if (options.suspended) {
+      window.api.shortcuts.setCanvasBookmarkShortcutsActive(false)
+      return () => window.api.shortcuts.setCanvasBookmarkShortcutsActive(false)
+    }
 
     const isTextInputFocused = (): boolean => {
       const active = document.activeElement
@@ -367,5 +374,5 @@ export function useCanvasKeyboard(viewportEl: HTMLDivElement | null): void {
       unsubscribeCanvasFitAllShortcut()
       window.removeEventListener('keydown', onKeyDown, { capture: true })
     }
-  }, [viewportEl])
+  }, [viewportEl, options.suspended])
 }

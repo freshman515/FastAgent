@@ -771,14 +771,48 @@ body.canvas-layout-animating [data-card-id] {
     box-shadow 140ms ease;
 }
 
-.canvas-space-switcher {
+.canvas-top-controls {
   position: absolute;
   top: 14px;
   left: 18px;
+  right: 18px;
   z-index: 30;
   display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-top-controls > * {
+  pointer-events: auto;
+}
+
+.canvas-session-list--collapsed,
+.canvas-session-list--vertical {
+  order: 0;
+}
+
+.canvas-session-list--collapsed {
+  width: fit-content;
+  max-width: fit-content;
+  flex: 0 0 auto;
+}
+
+.canvas-session-list--horizontal {
+  order: 2;
+  flex: 0 1 100%;
+  max-width: 100%;
+}
+
+.canvas-space-switcher {
+  order: 1;
+  display: flex;
+  min-width: 0;
   max-width: min(720px, calc(100vw - 120px));
   max-height: 96px;
+  flex: 1 1 280px;
   flex-wrap: wrap;
   gap: 8px;
   overflow: auto;

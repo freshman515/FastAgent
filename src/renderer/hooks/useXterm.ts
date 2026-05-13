@@ -21,6 +21,28 @@ const terminalQuestionHighlights = new Map<string, {
   marker: IMarker
   timeoutId: number
 }>()
+const XTERM_CANVAS_SCALE_PATCH_KEY = '__fastagentsCanvasScalePatch'
+
+type XtermMouseCoordsService = {
+  [XTERM_CANVAS_SCALE_PATCH_KEY]?: true
+  getCoords: (
+    event: { clientX: number; clientY: number },
+    element: HTMLElement,
+    colCount: number,
+    rowCount: number,
+    isSelection?: boolean,
+  ) => [number, number] | undefined
+  getMouseReportCoords?: (
+    event: MouseEvent,
+    element: HTMLElement,
+  ) => { col: number; row: number; x: number; y: number } | undefined
+}
+
+type XtermWithInternals = Terminal & {
+  _core?: {
+    _mouseCoordsService?: XtermMouseCoordsService
+  }
+}
 
 interface TerminalQuestionMarker {
   marker: IMarker
@@ -38,6 +60,55 @@ type TerminalQuestionNavigationOptions = {
 function isTerminalAtBottom(terminal: Terminal): boolean {
   const buffer = terminal.buffer.active
   return buffer.viewportY >= buffer.baseY
+}
+
+function adjustCanvasScaledMouseEvent<T extends { clientX: number; clientY: number }>(event: T, element: HTMLElement): T {
+  const cardElement = element.closest<HTMLElement>('[data-card-coordinate-mode="screen-transform"]')
+  if (!cardElement) return event
+
+  const cardRect = cardElement.getBoundingClientRect()
+  const scaleX = cardElement.offsetWidth > 0 ? cardRect.width / cardElement.offsetWidth : 1
+  const scaleY = cardElement.offsetHeight > 0 ? cardRect.height / cardElement.offsetHeight : 1
+  if (
+    !Number.isFinite(scaleX)
+    || !Number.isFinite(scaleY)
+    || Math.abs(scaleX - 1) < 0.001
+    || Math.abs(scaleY - 1) < 0.001
+  ) {
+    return event
+  }
+
+  const elementRect = element.getBoundingClientRect()
+  return {
+    ...event,
+    clientX: elementRect.left + ((event.clientX - elementRect.left) / scaleX),
+    clientY: elementRect.top + ((event.clientY - elementRect.top) / scaleY),
+  }
+}
+
+function patchTerminalMouseCoordsForCanvasScale(terminal: Terminal): void {
+  const mouseCoordsService = (terminal as XtermWithInternals)._core?._mouseCoordsService
+  if (!mouseCoordsService || mouseCoordsService[XTERM_CANVAS_SCALE_PATCH_KEY]) return
+
+  const originalGetCoords = mouseCoordsService.getCoords.bind(mouseCoordsService)
+  const originalGetMouseReportCoords = mouseCoordsService.getMouseReportCoords?.bind(mouseCoordsService)
+
+  mouseCoordsService.getCoords = (event, element, colCount, rowCount, isSelection) => originalGetCoords(
+    adjustCanvasScaledMouseEvent(event, element),
+    element,
+    colCount,
+    rowCount,
+    isSelection,
+  )
+
+  if (originalGetMouseReportCoords) {
+    mouseCoordsService.getMouseReportCoords = (event, element) => originalGetMouseReportCoords(
+      adjustCanvasScaledMouseEvent(event, element) as MouseEvent,
+      element,
+    )
+  }
+
+  mouseCoordsService[XTERM_CANVAS_SCALE_PATCH_KEY] = true
 }
 
 function getQuestionMarkerSet(sessionId: string): Set<TerminalQuestionMarker> {
@@ -792,6 +863,7 @@ export function useXterm(
     terminal.unicode.activeVersion = '11'
     searchAddonRef.current = searchAddon
     terminal.open(container)
+    patchTerminalMouseCoordsForCanvasScale(terminal)
     applyTerminalFitSafeArea(terminal)
     terminalRegistry.set(sessionId, terminal)
     const updateBottomState = (): void => {

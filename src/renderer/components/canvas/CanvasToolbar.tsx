@@ -37,7 +37,8 @@ import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { addCanvasCardToActiveSpace } from './canvasSpaceMembership'
+import { addCanvasCardToSpace } from './canvasSpaceMembership'
+import { getSmartNewCardPlacement } from './canvasSmartPlacement'
 
 interface CanvasToolbarProps {
   viewportRef: React.RefObject<HTMLDivElement | null>
@@ -120,16 +121,17 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
   }, [arrangeOpen, bookmarksOpen, sizeMenuOpen])
 
   const createNoteAtCenter = (): void => {
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const { scale: s, offsetX, offsetY } = useCanvasStore.getState().getLayout().viewport
-    const centerX = rect.width / 2
-    const centerY = rect.height / 2
     const noteSize = getDefaultCanvasCardSize('note')
-    const x = (centerX - offsetX) / s - noteSize.width / 2
-    const y = (centerY - offsetY) / s - noteSize.height / 2
-    const cardId = addCard({ kind: 'note', x, y, noteBody: '', noteColor: 'yellow' })
-    addCanvasCardToActiveSpace(cardId)
+    const placement = getSmartNewCardPlacement(viewportRef, noteSize)
+    if (!placement) return
+    const cardId = addCard({
+      kind: 'note',
+      x: placement.position.x,
+      y: placement.position.y,
+      noteBody: '',
+      noteColor: 'yellow',
+    }, placement.placeOptions)
+    addCanvasCardToSpace(cardId, placement.activeSpaceId)
   }
 
   const connectSelection = (): void => {

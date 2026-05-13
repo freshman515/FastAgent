@@ -34,6 +34,8 @@ export function focusCanvasSessionTarget(sessionId: string): boolean {
     cardId = refreshedCanvas.attachSession(
       sessionId,
       isTerminalSessionType(session.type) ? 'terminal' : 'session',
+      undefined,
+      { forceAvoidOverlap: true },
     )
     card = useCanvasStore.getState().getCard(cardId)
   }

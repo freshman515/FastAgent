@@ -365,7 +365,7 @@ export interface AppSettings {
   canvasWheelBehavior: CanvasWheelBehavior
   /** Modifier that turns wheel pan into zoom when canvasWheelBehavior is 'pan'. */
   canvasWheelZoomModifier: CanvasWheelZoomModifier
-  /** Single-click a canvas card to focus/read it. */
+  /** Single-click a canvas card or space to focus/read it. */
   canvasFocusOnClick: boolean
   /** Pan the canvas automatically while dragging/resizing near viewport edges. */
   canvasAutoPanOnDrag: boolean

@@ -16,8 +16,6 @@ export function CanvasSpaceSwitcher(): JSX.Element | null {
     [cards],
   )
 
-  if (spaces.length === 0) return null
-
   const activateAll = (): void => {
     setActiveSpaceId(null)
     useCanvasStore.getState().showAllCards()
