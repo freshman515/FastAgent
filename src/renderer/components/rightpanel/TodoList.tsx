@@ -1,6 +1,11 @@
-import { Check, CheckCheck, ListTodo, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react'
+import { Check, CheckCheck, ListTodo, MessageSquare, Pencil, Play, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
-import { cn, generateId } from '@/lib/utils'
+import type { Session } from '@shared/types'
+import { useProjectTodos } from '@/hooks/useProjectTodos'
+import { focusSessionTarget } from '@/lib/focusSessionTarget'
+import { createTodoItem } from '@/lib/todos'
+import { cn } from '@/lib/utils'
+import { useSessionsStore } from '@/stores/sessions'
 import { type TodoItem, type TodoPriority, useUIStore } from '@/stores/ui'
 
 type TodoFilter = 'all' | 'active' | 'completed'
@@ -29,6 +34,20 @@ const PRIORITY_BADGE_STYLES: Record<TodoPriority, string> = {
   low: 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]',
 }
 
+function getStatusBadgeClass(item: TodoItem): string {
+  if (item.completed || item.status === 'done') return 'bg-[var(--color-success)]/15 text-[var(--color-success)]'
+  if (item.status === 'active') return 'bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+  if (item.status === 'blocked') return 'bg-[var(--color-error)]/15 text-[var(--color-error)]'
+  return 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]'
+}
+
+function getStatusLabel(item: TodoItem): string {
+  if (item.completed || item.status === 'done') return '已完成'
+  if (item.status === 'active') return '进行中'
+  if (item.status === 'blocked') return '阻塞'
+  return '待办'
+}
+
 function getPriorityRank(priority: TodoPriority): number {
   if (priority === 'high') return 0
   if (priority === 'medium') return 1
@@ -38,6 +57,10 @@ function getPriorityRank(priority: TodoPriority): number {
 function sortItems(items: TodoItem[], sort: TodoSort): TodoItem[] {
   return [...items].sort((a, b) => {
     if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed)
+    if (a.status !== b.status) {
+      if (a.status === 'active') return -1
+      if (b.status === 'active') return 1
+    }
 
     if (sort === 'priority') {
       const priorityGap = getPriorityRank(a.priority) - getPriorityRank(b.priority)
@@ -71,8 +94,9 @@ function getEmptyMessage(filter: TodoFilter, query: string, totalCount: number):
 }
 
 export function TodoList(): JSX.Element {
-  const todoItems = useUIStore((s) => s.settings.todoItems)
-  const updateSettings = useUIStore((s) => s.updateSettings)
+  const { projectId, todoItems, saveTodoItems } = useProjectTodos()
+  const sessions = useSessionsStore((s) => s.sessions)
+  const requestTodoLaunch = useUIStore((s) => s.requestTodoLaunch)
 
   const [draft, setDraft] = useState('')
   const [priority, setPriority] = useState<TodoPriority>('medium')
@@ -103,8 +127,8 @@ export function TodoList(): JSX.Element {
   }, [filter, query, sort, todoItems])
 
   const saveItems = useCallback((nextItems: TodoItem[]) => {
-    updateSettings({ todoItems: nextItems })
-  }, [updateSettings])
+    saveTodoItems(nextItems)
+  }, [saveTodoItems])
 
   const handleAdd = useCallback(() => {
     const text = draft.trim()
@@ -113,9 +137,7 @@ export function TodoList(): JSX.Element {
     const now = Date.now()
     saveItems([
       {
-        id: `todo-${generateId()}`,
-        text,
-        completed: false,
+        ...createTodoItem(text),
         createdAt: now,
         updatedAt: now,
         priority,
@@ -129,9 +151,19 @@ export function TodoList(): JSX.Element {
 
   const handleToggle = useCallback((id: string) => {
     const now = Date.now()
-    saveItems(todoItems.map((item) => (
-      item.id === id ? { ...item, completed: !item.completed, updatedAt: now } : item
-    )))
+    saveItems(todoItems.map((item) => {
+      if (item.id !== id) return item
+      const completed = !item.completed
+      return {
+        ...item,
+        completed,
+        status: completed ? 'done' : 'todo',
+        updatedAt: now,
+        runs: completed
+          ? item.runs?.map((run) => run.completedAt ? run : { ...run, completedAt: now })
+          : item.runs,
+      }
+    }))
   }, [saveItems, todoItems])
 
   const handleDelete = useCallback((id: string) => {
@@ -153,7 +185,11 @@ export function TodoList(): JSX.Element {
     saveItems(todoItems.map((item) => ({
       ...item,
       completed: shouldCompleteAll,
+      status: shouldCompleteAll ? 'done' : 'todo',
       updatedAt: now,
+      runs: shouldCompleteAll
+        ? item.runs?.map((run) => run.completedAt ? run : { ...run, completedAt: now })
+        : item.runs,
     })))
   }, [activeCount, saveItems, todoItems])
 
@@ -334,6 +370,10 @@ export function TodoList(): JSX.Element {
           <div className="flex flex-col gap-1">
             {visibleItems.map((item) => {
               const isEditing = editingId === item.id
+              const linkedSessions = (item.linkedSessionIds ?? [])
+                .map((sessionId) => sessions.find((session) => session.id === sessionId))
+                .filter((session): session is Session => Boolean(session))
+              const primaryLinkedSession = linkedSessions[0]
               return (
                 <div
                   key={item.id}
@@ -391,6 +431,9 @@ export function TodoList(): JSX.Element {
                       )}
 
                       <div className="mt-1 flex items-center gap-1.5 text-[9px]">
+                        <span className={cn('rounded px-1 py-px font-medium', getStatusBadgeClass(item))}>
+                          {getStatusLabel(item)}
+                        </span>
                         <span className={cn('rounded px-1 py-px font-medium', PRIORITY_BADGE_STYLES[item.priority])}>
                           {PRIORITY_OPTIONS.find((option) => option.id === item.priority)?.label}
                         </span>
@@ -421,6 +464,29 @@ export function TodoList(): JSX.Element {
                         </>
                       ) : (
                         <>
+                          {!item.completed && projectId && (
+                            <button
+                              type="button"
+                              onClick={() => requestTodoLaunch(projectId, item.id)}
+                              className={cn(TOOL_BUTTON, 'px-1.5 hover:text-[var(--color-accent)]')}
+                              title="启动任务"
+                            >
+                              <Play size={11} />
+                            </button>
+                          )}
+                          {primaryLinkedSession && (
+                            <button
+                              type="button"
+                              onClick={() => focusSessionTarget(primaryLinkedSession.id)}
+                              className={cn(TOOL_BUTTON, 'px-1.5 hover:text-[var(--color-accent)]')}
+                              title={`打开关联会话：${primaryLinkedSession.name}`}
+                            >
+                              <MessageSquare size={11} />
+                              {linkedSessions.length > 1 && (
+                                <span className="text-[9px] tabular-nums">{linkedSessions.length}</span>
+                              )}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleStartEdit(item)}

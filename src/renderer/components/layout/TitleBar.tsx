@@ -197,6 +197,18 @@ export function TitleBar(): JSX.Element | null {
   const selectedWorktree = useWorktreesStore((s) =>
     s.worktrees.find((w) => w.id === s.selectedWorktreeId),
   )
+  const todoPopoverOpen = useUIStore((s) => s.todoPopoverOpen)
+  const toggleTodoPopover = useUIStore((s) => s.toggleTodoPopover)
+  const todoItemsByProject = useUIStore((s) => s.settings.todoItemsByProject)
+  const legacyTodoItems = useUIStore((s) => s.settings.todoItems)
+  const hasProjectTodoLists = Object.keys(todoItemsByProject).length > 0
+  const currentProjectTodoItems = selectedProjectId
+    ? (todoItemsByProject[selectedProjectId] ?? (hasProjectTodoLists ? [] : legacyTodoItems))
+    : legacyTodoItems
+  const activeTodoCount = useMemo(
+    () => currentProjectTodoItems.filter((item) => !item.completed).length,
+    [currentProjectTodoItems],
+  )
   const activeProjectPath = selectedWorktree?.path ?? selectedProject?.path ?? null
   const menuVisible = titleBarMenuVisibility === 'always' || menuAreaHovered || activeMenu !== null
   const titleBarHidden = hideTitleBar || focusMode
@@ -630,6 +642,27 @@ export function TitleBar(): JSX.Element | null {
       </div>
 
       <div className="no-drag flex h-full items-center">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={todoPopoverOpen}
+          aria-label={todoPopoverOpen ? '关闭项目 Todo' : '打开项目 Todo'}
+          onClick={toggleTodoPopover}
+          className={cn(
+            'relative mr-2 flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] border transition-colors duration-100',
+            todoPopoverOpen
+              ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/18 text-[var(--color-accent)]'
+              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+          )}
+          title="项目 Todo"
+        >
+          <ListTodo size={14} />
+          {activeTodoCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-accent)] px-1 text-[9px] font-semibold leading-none text-white shadow-sm">
+              {activeTodoCount > 99 ? '99+' : activeTodoCount}
+            </span>
+          )}
+        </button>
         <button
           type="button"
           role="switch"

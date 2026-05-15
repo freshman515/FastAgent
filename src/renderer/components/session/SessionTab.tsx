@@ -3,8 +3,14 @@ import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
+import {
+  addTodoForProject,
+  completeTodosForSession,
+  linkSessionToTodo,
+  updateTodoForProject,
+} from '@/lib/todos'
 import { useSessionsStore } from '@/stores/sessions'
-import { useUIStore } from '@/stores/ui'
+import { type TodoItem, useUIStore } from '@/stores/ui'
 import { usePanesStore, type SplitPosition } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useGitStore } from '@/stores/git'
@@ -84,6 +90,7 @@ export function SessionTab({
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null)
+  const [todoPickerOpen, setTodoPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragTokenRef = useRef<string | null>(null)
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -121,6 +128,7 @@ export function SessionTab({
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    setTodoPickerOpen(false)
     setContextMenu({ x: e.clientX, y: e.clientY })
   }, [])
 
@@ -163,6 +171,16 @@ export function SessionTab({
   const canCloseAll = paneSessions.length > 1
   const isSplit = usePanesStore((s) => s.root.type === 'split')
   const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
+  const todoItemsByProject = useUIStore((s) => s.settings.todoItemsByProject)
+  const legacyTodoItems = useUIStore((s) => s.settings.todoItems)
+  const projectTodos = (() => {
+    const hasProjectTodoLists = Object.keys(todoItemsByProject).length > 0
+    return todoItemsByProject[session.projectId] ?? (hasProjectTodoLists ? [] : legacyTodoItems)
+  })()
+  const linkedTodos = projectTodos.filter((todo) => (todo.linkedSessionIds ?? []).includes(session.id))
+  const linkableTodos = projectTodos.filter((todo) =>
+    !todo.completed && !(todo.linkedSessionIds ?? []).includes(session.id),
+  )
 
   const handleScrollToBottom = useCallback(() => {
     setContextMenu(null)
@@ -170,6 +188,46 @@ export function SessionTab({
     setActivePaneId(paneId)
     scrollTerminalToLatestSoon(session.id)
   }, [paneId, session.id, setPaneActiveSession, setActivePaneId])
+
+  const handleCreateTodoFromSession = useCallback(() => {
+    setContextMenu(null)
+    const todo = addTodoForProject(session.projectId, `跟进：${session.name}`, session.id)
+    if (!todo) return
+    const nextTodo = updateTodoForProject(session.projectId, todo.id, (item) => ({
+      ...item,
+      completed: false,
+      status: session.status === 'running' ? 'active' : 'todo',
+      updatedAt: Date.now(),
+    }))
+    useUIStore.getState().addToast({
+      type: 'success',
+      title: '已创建 Todo',
+      body: nextTodo?.text ?? todo.text,
+    })
+  }, [session.id, session.name, session.projectId, session.status])
+
+  const handleLinkTodo = useCallback((todo: TodoItem) => {
+    const linked = linkSessionToTodo(session.projectId, todo.id, session.id)
+    setTodoPickerOpen(false)
+    setContextMenu(null)
+    if (!linked) return
+    useUIStore.getState().addToast({
+      type: 'success',
+      title: '已关联 Todo',
+      body: linked.text,
+    })
+  }, [session.id, session.projectId])
+
+  const handleCompleteLinkedTodos = useCallback(() => {
+    setContextMenu(null)
+    const completed = completeTodosForSession(session.projectId, session.id)
+    if (completed.length === 0) return
+    useUIStore.getState().addToast({
+      type: 'success',
+      title: '关联 Todo 已完成',
+      body: completed.length === 1 ? completed[0].text : `${completed.length} 个 Todo`,
+    })
+  }, [session.id, session.projectId])
 
   const doCloseAll = useCallback(() => {
     const sessionsState = useSessionsStore.getState()
@@ -320,11 +378,12 @@ export function SessionTab({
         {/* Label tag */}
         {session.label && (
           <span
-            className="shrink-0 rounded-md px-1.5 py-0.5 text-[8.5px] font-bold leading-tight shadow-sm"
+            className="max-w-[96px] shrink-0 truncate rounded-md px-1.5 py-0.5 text-[8.5px] font-bold leading-tight shadow-sm"
+            title={session.label}
             style={{
-              backgroundColor: (session.color ?? 'var(--color-bg-surface)') + '20',
+              backgroundColor: session.color ? `${session.color}20` : 'var(--color-bg-surface)',
               color: session.color ?? 'var(--color-text-tertiary)',
-              border: `1px solid ${session.color ?? 'var(--color-text-tertiary)'}25`,
+              border: session.color ? `1px solid ${session.color}25` : '1px solid var(--color-border)',
             }}
           >
             {session.label}
@@ -376,7 +435,7 @@ export function SessionTab({
           <div
             style={{ top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
             className={cn(
-              'fixed w-44 rounded-[var(--radius-md)] py-1',
+              'fixed w-56 rounded-[var(--radius-md)] py-1',
               'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]',
               'shadow-lg shadow-black/30',
             )}
@@ -404,6 +463,53 @@ export function SessionTab({
                 className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
               >
                 滚动到底部
+              </button>
+            )}
+
+            <button
+              onClick={handleCreateTodoFromSession}
+              className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+            >
+              从当前会话创建 Todo
+            </button>
+
+            <button
+              onClick={() => setTodoPickerOpen((open) => !open)}
+              disabled={linkableTodos.length === 0}
+              className={linkableTodos.length > 0
+                ? 'flex w-full items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
+                : 'flex w-full cursor-not-allowed items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'}
+            >
+              <span>关联到 Todo...</span>
+              <span className="text-[var(--ui-font-2xs)] tabular-nums">{linkableTodos.length}</span>
+            </button>
+
+            {todoPickerOpen && (
+              <div className="mx-1 my-1 max-h-44 overflow-y-auto rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1">
+                {linkableTodos.map((todo) => (
+                  <button
+                    key={todo.id}
+                    type="button"
+                    onClick={() => handleLinkTodo(todo)}
+                    className="flex w-full flex-col items-start gap-0.5 px-2 py-1.5 text-left hover:bg-[var(--color-bg-tertiary)]"
+                  >
+                    <span className="line-clamp-1 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)]">
+                      {todo.text}
+                    </span>
+                    <span className="text-[9px] text-[var(--color-text-tertiary)]">
+                      {todo.status === 'active' ? '进行中' : todo.priority === 'high' ? '重要' : '待办'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {linkedTodos.some((todo) => !todo.completed) && (
+              <button
+                onClick={handleCompleteLinkedTodos}
+                className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              >
+                标记关联 Todo 完成
               </button>
             )}
 

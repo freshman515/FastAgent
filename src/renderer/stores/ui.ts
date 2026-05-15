@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_FUNASR_WS_ENDPOINT, LEGACY_DEFAULT_VOICE_API_ENDPOINT } from '@shared/types'
-import type { SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrStartupAction, WorkspaceLayout } from '@shared/types'
+import type { AgentSessionType, SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrStartupAction, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
@@ -10,6 +10,8 @@ export type VisualizerMode = 'melody' | 'bars'
 export type DockSide = 'left' | 'right'
 export type DockPanelId = 'projects' | 'recentSessions' | 'sessionHistory' | 'agent' | 'agentBoard' | 'tasks' | 'commands' | 'prompts' | 'promptOptimizer' | 'todo' | 'files' | 'search' | 'timeline' | 'git' | 'ai' | 'claude'
 export type TodoPriority = 'low' | 'medium' | 'high'
+export type TodoStatus = 'todo' | 'active' | 'blocked' | 'done'
+export type TodoRunMode = 'session' | 'workflow'
 export type AgentBoardStatus = 'todo' | 'in_progress' | 'review' | 'done'
 export type AgentBoardPriority = 'low' | 'medium' | 'high'
 export type GitChangesViewMode = 'flat' | 'tree'
@@ -162,9 +164,32 @@ export interface TodoItem {
   id: string
   text: string
   completed: boolean
+  status: TodoStatus
   createdAt: number
   updatedAt: number
   priority: TodoPriority
+  promptDraft?: string
+  todoLaunchSessionType?: AgentSessionType
+  notes?: string
+  linkedSessionIds?: string[]
+  linkedWorkflowTaskId?: string
+  runs?: TodoRun[]
+}
+
+export interface TodoRun {
+  id: string
+  mode: TodoRunMode
+  promptSnapshot: string
+  startedAt: number
+  completedAt?: number
+  sessionId?: string
+  workflowTaskId?: string
+}
+
+export interface TodoLaunchRequest {
+  projectId: string
+  todoId: string
+  requestId: string
 }
 
 export interface AgentBoardItem {
@@ -335,6 +360,7 @@ export interface AppSettings {
   quickCommandGroups: QuickCommandGroup[]
   quickCommands: QuickCommand[]
   todoItems: TodoItem[]
+  todoItemsByProject: Record<string, TodoItem[]>
   agentBoardItems: AgentBoardItem[]
   promptItems: PromptItem[]
   terminalTheme: string
@@ -460,6 +486,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   quickCommandGroups: [],
   quickCommands: [...DEFAULT_QUICK_COMMANDS],
   todoItems: [],
+  todoItemsByProject: {},
   agentBoardItems: [],
   promptItems: [],
   terminalTheme: 'Catppuccin Mocha',
@@ -526,10 +553,15 @@ interface UIState {
   hideRightPanel: boolean
   hideStatusBar: boolean
   hideTitleBar: boolean
+  todoPopoverOpen: boolean
+  todoLaunchRequest: TodoLaunchRequest | null
   toggleHideLeftPanel: () => void
   toggleHideRightPanel: () => void
   toggleHideStatusBar: () => void
   toggleHideTitleBar: () => void
+  setTodoPopoverOpen: (open: boolean) => void
+  toggleTodoPopover: () => void
+  requestTodoLaunch: (projectId: string, todoId: string) => void
 
   settingsOpen: boolean
   settingsPage: string
@@ -782,31 +814,123 @@ function normalizeTodoItems(raw: unknown): { items: TodoItem[]; seeded: boolean 
       seeded = true
     }
 
+    const rawCompleted = typeof (item as { completed?: unknown }).completed === 'boolean'
+      ? (item as { completed: boolean }).completed
+      : false
+    const status = normalizeTodoStatus((item as { status?: unknown }).status, rawCompleted)
+    const createdAt = typeof (item as { createdAt?: unknown }).createdAt === 'number'
+      ? (item as { createdAt: number }).createdAt
+      : Date.now()
+    const updatedAt = typeof (item as { updatedAt?: unknown }).updatedAt === 'number'
+      ? (item as { updatedAt: number }).updatedAt
+      : createdAt
+    const priority =
+      (item as { priority?: unknown }).priority === 'low'
+      || (item as { priority?: unknown }).priority === 'medium'
+      || (item as { priority?: unknown }).priority === 'high'
+        ? (item as { priority: TodoPriority }).priority
+        : 'medium'
+
+    if (status !== (item as { status?: unknown }).status) seeded = true
+    if (rawCompleted !== (status === 'done')) seeded = true
+
     seenIds.add(id)
     items.push({
       id,
       text,
-      completed: typeof (item as { completed?: unknown }).completed === 'boolean'
-        ? (item as { completed: boolean }).completed
-        : false,
-      createdAt: typeof (item as { createdAt?: unknown }).createdAt === 'number'
-        ? (item as { createdAt: number }).createdAt
-        : Date.now(),
-      updatedAt: typeof (item as { updatedAt?: unknown }).updatedAt === 'number'
-        ? (item as { updatedAt: number }).updatedAt
-        : (typeof (item as { createdAt?: unknown }).createdAt === 'number'
-            ? (item as { createdAt: number }).createdAt
-            : Date.now()),
-      priority:
-        (item as { priority?: unknown }).priority === 'low'
-        || (item as { priority?: unknown }).priority === 'medium'
-        || (item as { priority?: unknown }).priority === 'high'
-          ? (item as { priority: TodoPriority }).priority
-          : 'medium',
+      completed: status === 'done',
+      status,
+      createdAt,
+      updatedAt,
+      priority,
+      promptDraft: normalizeOptionalTodoString((item as { promptDraft?: unknown }).promptDraft),
+      todoLaunchSessionType: normalizeTodoLaunchSessionType((item as { todoLaunchSessionType?: unknown }).todoLaunchSessionType),
+      notes: normalizeOptionalTodoString((item as { notes?: unknown }).notes),
+      linkedSessionIds: normalizeLinkedSessionIds((item as { linkedSessionIds?: unknown }).linkedSessionIds),
+      linkedWorkflowTaskId: normalizeOptionalTodoString((item as { linkedWorkflowTaskId?: unknown }).linkedWorkflowTaskId),
+      runs: normalizeTodoRuns((item as { runs?: unknown }).runs),
     })
   }
 
   return { items, seeded }
+}
+
+function normalizeTodoStatus(raw: unknown, completed: boolean): TodoStatus {
+  if (raw === 'todo' || raw === 'active' || raw === 'blocked' || raw === 'done') return raw
+  return completed ? 'done' : 'todo'
+}
+
+function normalizeOptionalTodoString(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function normalizeTodoLaunchSessionType(raw: unknown): AgentSessionType | undefined {
+  return raw === 'claude-code'
+    || raw === 'claude-code-yolo'
+    || raw === 'claude-code-wsl'
+    || raw === 'claude-code-yolo-wsl'
+    || raw === 'codex'
+    || raw === 'codex-yolo'
+    || raw === 'codex-wsl'
+    || raw === 'codex-yolo-wsl'
+    || raw === 'gemini'
+    || raw === 'gemini-yolo'
+    || raw === 'opencode'
+    ? raw
+    : undefined
+}
+
+function normalizeLinkedSessionIds(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const linkedSessionIds = Array.from(new Set(raw.filter((id): id is string => typeof id === 'string')))
+  return linkedSessionIds.length > 0 ? linkedSessionIds : undefined
+}
+
+function normalizeTodoRuns(raw: unknown): TodoRun[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+
+  const runs = raw.flatMap((value): TodoRun[] => {
+    if (!value || typeof value !== 'object') return []
+    const run = value as Record<string, unknown>
+    const mode = run.mode === 'workflow' ? 'workflow' : run.mode === 'session' ? 'session' : null
+    if (!mode || typeof run.promptSnapshot !== 'string') return []
+    return [{
+      id: typeof run.id === 'string' && run.id.trim() ? run.id : `run-${generateId()}`,
+      mode,
+      promptSnapshot: run.promptSnapshot,
+      startedAt: typeof run.startedAt === 'number' ? run.startedAt : Date.now(),
+      completedAt: typeof run.completedAt === 'number' ? run.completedAt : undefined,
+      sessionId: typeof run.sessionId === 'string' ? run.sessionId : undefined,
+      workflowTaskId: typeof run.workflowTaskId === 'string' ? run.workflowTaskId : undefined,
+    }]
+  })
+
+  return runs.length > 0 ? runs : undefined
+}
+
+function normalizeTodoItemsByProject(raw: unknown): { itemsByProject: Record<string, TodoItem[]>; seeded: boolean } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { itemsByProject: {}, seeded: false }
+  }
+
+  let seeded = false
+  const itemsByProject: Record<string, TodoItem[]> = {}
+
+  for (const [projectId, value] of Object.entries(raw as Record<string, unknown>)) {
+    const normalizedProjectId = projectId.trim()
+    if (!normalizedProjectId || normalizedProjectId !== projectId || !Array.isArray(value)) {
+      seeded = true
+      continue
+    }
+
+    const normalized = normalizeTodoItems(value)
+    itemsByProject[projectId] = normalized.items
+    seeded ||= normalized.seeded || normalized.items.length !== value.length
+  }
+
+  return { itemsByProject, seeded }
 }
 
 function isAgentBoardStatus(value: unknown): value is AgentBoardStatus {
@@ -1440,6 +1564,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   hideRightPanel: false,
   hideStatusBar: false,
   hideTitleBar: false,
+  todoPopoverOpen: false,
+  todoLaunchRequest: null,
   toggleHideLeftPanel: () =>
     set((state) => {
       const next = { hideLeftPanel: !state.hideLeftPanel }
@@ -1464,6 +1590,16 @@ export const useUIStore = create<UIState>((set, get) => ({
       persistNextUI(state, next)
       return next
     }),
+  setTodoPopoverOpen: (open) => set({ todoPopoverOpen: open }),
+  toggleTodoPopover: () => set((state) => ({ todoPopoverOpen: !state.todoPopoverOpen })),
+  requestTodoLaunch: (projectId, todoId) => set({
+    todoPopoverOpen: true,
+    todoLaunchRequest: {
+      projectId,
+      todoId,
+      requestId: generateId(),
+    },
+  }),
 
   settingsOpen: false,
   settingsPage: 'general',
@@ -1635,6 +1771,11 @@ export const useUIStore = create<UIState>((set, get) => ({
         const normalizedTodoItems = normalizeTodoItems(raw.todoItems)
         s.todoItems = normalizedTodoItems.items
         shouldPersistSettings ||= normalizedTodoItems.seeded
+      }
+      if (raw.todoItemsByProject !== undefined) {
+        const normalizedTodoItemsByProject = normalizeTodoItemsByProject(raw.todoItemsByProject)
+        s.todoItemsByProject = normalizedTodoItemsByProject.itemsByProject
+        shouldPersistSettings ||= normalizedTodoItemsByProject.seeded
       }
       if (raw.agentBoardItems !== undefined) {
         const normalizedAgentBoardItems = normalizeAgentBoardItems(raw.agentBoardItems)

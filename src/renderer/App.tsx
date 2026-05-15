@@ -4,6 +4,7 @@ import { MainPanel } from '@/components/layout/MainPanel'
 import { StatusBar } from '@/components/layout/StatusBar'
 import { RightPanel } from '@/components/layout/RightPanel'
 import { ToastContainer } from '@/components/notification/ToastContainer'
+import { ProjectTodoFloatingPanel } from '@/components/todo/ProjectTodoFloatingPanel'
 import { SessionNamePromptDialog } from '@/components/session/SessionNamePromptDialog'
 import {
   buildNewSessionOptions,
@@ -3421,10 +3422,11 @@ function MainApp(): JSX.Element {
 
         {/* Main panel */}
         <div className={cn(
-          'app-main-frame flex-1 overflow-hidden',
+          'app-main-frame relative flex-1 overflow-hidden',
           !hideChrome && 'rounded-[var(--radius-panel)]',
         )}>
           <MainPanel />
+          <ProjectTodoFloatingPanel />
         </div>
 
         {/* Right panel */}

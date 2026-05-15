@@ -155,6 +155,24 @@ body,
   user-select: none;
 }
 
+select {
+  color-scheme: dark;
+}
+
+.theme-light select {
+  color-scheme: light;
+}
+
+select option {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+select option:checked {
+  background-color: var(--color-accent);
+  color: #ffffff;
+}
+
 /* Title bar always stays fixed size regardless of UI font settings */
 .titlebar-fixed {
   font-size: 13px !important;

@@ -743,7 +743,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   }, [onOpenProject, project.id])
 
   return (
-    <div className="relative">
+    <div className="relative py-0.5">
       {/* Main project row */}
       <div
         draggable

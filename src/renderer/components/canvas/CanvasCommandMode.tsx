@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react'
-import { SESSION_TYPE_CONFIG, type CanvasCard, type SessionType } from '@shared/types'
+import { SESSION_TYPE_CONFIG, type CanvasCard } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
 import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
+import { buildNewSessionOptions, type NewSessionOption } from '@/components/session/NewSessionMenu'
+import { SessionIconView } from '@/components/session/SessionIconView'
 import { useGroupsStore } from '@/stores/groups'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
@@ -53,7 +55,7 @@ const CANVAS_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'f', label: '切换会话' },
   { key: 'p', label: '切换项目' },
   { key: 'Tab', label: '上一个项目' },
-  { key: 'n', label: '新建默认会话' },
+  { key: 'n', label: '新建会话' },
   { key: 't', label: '新建便签' },
   { key: 's', label: '新建空间' },
   { key: 'b', label: '保存书签' },
@@ -67,7 +69,7 @@ const CANVAS_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'u', label: '选中会话滚动到底部' },
   { key: ':', label: '输入命令' },
   { key: '?', label: '帮助' },
-  { key: 'i', label: '临时编辑选中会话' },
+  { key: 'i', label: '编辑当前视口卡片' },
   { key: 'Esc / Enter', label: '退出 Canvas Mode' },
 ]
 
@@ -100,6 +102,21 @@ function scoreCommand(command: CanvasCommandInputCommand, query: string): number
   const fields = [command.label, command.detail, command.id, ...command.aliases]
     .map(normalizeCommandQuery)
     .filter(Boolean)
+
+  if (fields.some((field) => field === query)) return 100
+  if (fields.some((field) => field.startsWith(query))) return 80
+  if (fields.some((field) => field.includes(query))) return 40
+  return 0
+}
+
+function scoreNewSessionOption(option: NewSessionOption, query: string): number {
+  if (!query) return 1
+  const fields = [
+    option.label,
+    option.id,
+    option.type ?? '',
+    option.customSessionDefinitionId ?? '',
+  ].map(normalizeCommandQuery).filter(Boolean)
 
   if (fields.some((field) => field === query)) return 100
   if (fields.some((field) => field.startsWith(query))) return 80
@@ -312,6 +329,186 @@ function CanvasCommandInputDialog({
               </span>
               {index === selectedIndex && (
                 <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">Enter</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CanvasCommandNewSessionDialog({
+  viewportRef,
+  onClose,
+  onAfterNamePromptClose,
+}: {
+  viewportRef: RefObject<HTMLDivElement | null>
+  onClose: () => void
+  onAfterNamePromptClose: () => void
+}): JSX.Element {
+  const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
+  const customSessionDefinitions = useUIStore((state) => state.settings.customSessionDefinitions)
+  const hiddenNewSessionOptionIds = useUIStore((state) => state.settings.hiddenNewSessionOptionIds)
+  const newSessionOptionOrder = useUIStore((state) => state.settings.newSessionOptionOrder)
+  const setSessionNamePrompt = useUIStore((state) => state.setSessionNamePrompt)
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const options = useMemo(
+    () => buildNewSessionOptions(customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder),
+    [customSessionDefinitions, hiddenNewSessionOptionIds, newSessionOptionOrder],
+  )
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = normalizeCommandQuery(query)
+    return options
+      .map((option, index) => ({ option, index, score: scoreNewSessionOption(option, normalizedQuery) }))
+      .filter((item) => !normalizedQuery || item.score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map((item) => item.option)
+  }, [options, query])
+  const selectedOption = filteredOptions[selectedIndex] ?? null
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
+  }, [])
+
+  const openNamePrompt = useCallback((option: NewSessionOption) => {
+    if (!selectedProjectId) return
+    const projectId = selectedProjectId
+    const defaultName = option.customSessionDefinitionId
+      ? useSessionsStore.getState().generateDefaultSessionName(projectId, 'terminal', option.label)
+      : useSessionsStore.getState().generateDefaultSessionName(projectId, option.type ?? 'terminal')
+
+    onClose()
+    setSessionNamePrompt({
+      defaultName,
+      title: `新建 ${option.label}`,
+      description: '输入会话名称，回车后在画布当前视口创建卡片。',
+      sessionType: option.type,
+      onSubmit: (name) => {
+        createCanvasSessionAtCenter(viewportRef, option, name)
+        onAfterNamePromptClose()
+      },
+      onUseDefault: () => {
+        createCanvasSessionAtCenter(viewportRef, option, defaultName)
+        onAfterNamePromptClose()
+      },
+      onCancel: onAfterNamePromptClose,
+    })
+  }, [onAfterNamePromptClose, onClose, selectedProjectId, setSessionNamePrompt, viewportRef])
+
+  const selectPrevious = useCallback(() => {
+    setSelectedIndex((current) => Math.max(0, current - 1))
+  }, [])
+  const selectNext = useCallback(() => {
+    setSelectedIndex((current) => Math.min(current + 1, Math.max(0, filteredOptions.length - 1)))
+  }, [filteredOptions.length])
+  const confirmSelected = useCallback(() => {
+    if (selectedOption) openNamePrompt(selectedOption)
+  }, [openNamePrompt, selectedOption])
+
+  useCommandPanelKeyboardCapture({
+    panelRef,
+    inputRef,
+    onBack: onClose,
+    onArrowDown: selectNext,
+    onArrowUp: selectPrevious,
+    onEnter: confirmSelected,
+    setQuery,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-[9600] flex items-start justify-center bg-black/30 px-4 pt-20 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={panelRef}
+        className={cn(
+          'w-[min(520px,calc(100vw-32px))] overflow-hidden rounded-[var(--radius-xl)]',
+          'border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45',
+        )}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+            return
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            selectNext()
+            return
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            selectPrevious()
+            return
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            confirmSelected()
+          }
+        }}
+      >
+        <div className="border-b border-[var(--color-border)] px-4 py-3">
+          <div className="mb-2 text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+            新建会话
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
+            placeholder="输入类型，例如 co、claude、t"
+            className={cn(
+              'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
+              'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
+              'placeholder:text-[var(--color-text-tertiary)] outline-none',
+              'focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20',
+            )}
+          />
+        </div>
+        <div className="max-h-[360px] overflow-y-auto p-1.5">
+          {!selectedProjectId ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              请先选择一个项目
+            </div>
+          ) : filteredOptions.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              没有匹配的会话类型
+            </div>
+          ) : filteredOptions.map((option, index) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => openNamePrompt(option)}
+              className={cn(
+                'flex h-10 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 text-left transition-colors',
+                index === selectedIndex
+                  ? 'bg-[var(--color-accent)]/16 text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              )}
+            >
+              <SessionIconView
+                icon={option.customSessionDefinitionId ? option.icon : undefined}
+                fallbackSrc={option.customSessionDefinitionId ? undefined : option.icon}
+                className="h-5 w-5 shrink-0"
+                imageClassName="h-4 w-4 object-contain"
+              />
+              <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] font-medium">
+                {option.label}
+              </span>
+              {index === selectedIndex && (
+                <span className="text-[10px] text-[var(--color-text-tertiary)]">Enter</span>
               )}
             </button>
           ))}
@@ -889,7 +1086,7 @@ function CanvasCommandOverlay({ editing }: { editing: boolean }): JSX.Element {
             {editing ? 'Canvas Edit' : 'Canvas Mode'}
           </span>
           <span className="text-[11px] text-[var(--color-text-secondary)]">
-            {editing ? 'Esc 返回命令模式' : 'h/j/k/l 聚焦 · f 切换会话 · n 新建会话 · t 便签 · s 空间 · : 命令 · ? 帮助 · i/Esc 退出'}
+            {editing ? 'Esc 返回命令模式' : 'h/j/k/l 聚焦 · f 切换会话 · n 新建会话 · t 便签 · s 空间 · : 命令 · ? 帮助 · i 编辑 · Esc/Enter 退出'}
           </span>
         </div>
       </div>
@@ -910,6 +1107,117 @@ function selectedCards(): CanvasCard[] {
     .filter((card): card is CanvasCard => Boolean(card))
 }
 
+function getCanvasCommandCardsForActiveSpace(): CanvasCard[] {
+  const canvas = useCanvasStore.getState()
+  const cards = canvas.getCards()
+  const activeSpaceId = useCanvasUiStore.getState().activeSpaceId
+  if (!activeSpaceId) return cards
+
+  const activeSpace = cards.find((card) => card.id === activeSpaceId && card.kind === 'frame')
+  if (!activeSpace) return cards
+
+  const visibleIds = new Set([activeSpace.id, ...(activeSpace.frameMemberIds ?? [])])
+  return cards.filter((card) => visibleIds.has(card.id))
+}
+
+function getCanvasCardElement(cardId: string): HTMLElement | null {
+  const escaped = cardId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return document.querySelector(`[data-card-id="${escaped}"]`) as HTMLElement | null
+}
+
+function isCanvasCommandEditableCard(card: CanvasCard): boolean {
+  if (isCanvasCardHidden(card)) return false
+  if (card.kind === 'note') return true
+  if ((card.kind !== 'session' && card.kind !== 'terminal') || !card.refId || card.collapsed) return false
+
+  const session = useSessionsStore.getState().sessions.find((item) => item.id === card.refId)
+  return !session || (session.type !== 'browser' && session.type !== 'claude-gui')
+}
+
+function getScreenRectOverlapArea(a: DOMRect, b: DOMRect): number {
+  const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+  const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+  return width * height
+}
+
+function findViewportEditingCard(viewportEl: HTMLDivElement | null): CanvasCard | null {
+  const canvas = useCanvasStore.getState()
+  const maximizedCardId = canvas.maximizedCardId
+  if (maximizedCardId) {
+    const card = canvas.getCard(maximizedCardId)
+    if (card && isCanvasCommandEditableCard(card)) return card
+  }
+
+  if (!viewportEl) return null
+  const viewportRect = viewportEl.getBoundingClientRect()
+  if (viewportRect.width <= 0 || viewportRect.height <= 0) return null
+
+  const viewportArea = Math.max(1, viewportRect.width * viewportRect.height)
+  const viewportCenterX = viewportRect.left + viewportRect.width / 2
+  const viewportCenterY = viewportRect.top + viewportRect.height / 2
+  const maxCenterDistance = Math.max(1, Math.hypot(viewportRect.width, viewportRect.height) / 2)
+
+  let best: { card: CanvasCard; score: number; visibleArea: number; centerDistance: number } | null = null
+  for (const card of getCanvasCommandCardsForActiveSpace()) {
+    if (!isCanvasCommandEditableCard(card)) continue
+
+    const cardEl = getCanvasCardElement(card.id)
+    if (!cardEl) continue
+
+    const cardRect = cardEl.getBoundingClientRect()
+    if (cardRect.width <= 0 || cardRect.height <= 0) continue
+
+    const visibleArea = getScreenRectOverlapArea(cardRect, viewportRect)
+    if (visibleArea <= 0) continue
+
+    const cardCenterX = cardRect.left + cardRect.width / 2
+    const cardCenterY = cardRect.top + cardRect.height / 2
+    const centerDistance = Math.hypot(cardCenterX - viewportCenterX, cardCenterY - viewportCenterY)
+    const viewportCoverage = visibleArea / viewportArea
+    const cardCoverage = visibleArea / Math.max(1, cardRect.width * cardRect.height)
+    const centerProximity = 1 - Math.min(1, centerDistance / maxCenterDistance)
+    const score = viewportCoverage * 0.68 + centerProximity * 0.27 + cardCoverage * 0.05
+
+    if (
+      !best
+      || score > best.score
+      || (
+        Math.abs(score - best.score) < 0.0001
+        && (
+          visibleArea > best.visibleArea
+          || (visibleArea === best.visibleArea && centerDistance < best.centerDistance)
+          || (visibleArea === best.visibleArea && centerDistance === best.centerDistance && card.zIndex > best.card.zIndex)
+        )
+      )
+    ) {
+      best = { card, score, visibleArea, centerDistance }
+    }
+  }
+
+  return best?.card ?? null
+}
+
+function selectCardForEditing(card: CanvasCard): void {
+  const canvas = useCanvasStore.getState()
+  const latest = canvas.getCard(card.id)
+  if (!latest) return
+
+  if (useUIStore.getState().settings.canvasFocusOnClick) {
+    if (canvas.maximizedCardId === latest.id || canvas.focusReturn?.cardId === latest.id) {
+      canvas.setSelection([latest.id])
+      if (latest.kind !== 'frame') canvas.bringToFront(latest.id)
+      canvas.recordCardVisit(latest.id)
+      return
+    }
+    canvas.focusOnCard(latest.id)
+    return
+  }
+
+  canvas.setSelection([latest.id])
+  if (latest.kind !== 'frame') canvas.bringToFront(latest.id)
+  canvas.recordCardVisit(latest.id)
+}
+
 function addNoteAtCenter(viewportRef: RefObject<HTMLDivElement | null>): void {
   const noteSize = getDefaultCanvasCardSize('note')
   const placement = getSmartNewCardPlacement(viewportRef, noteSize)
@@ -924,7 +1232,11 @@ function addNoteAtCenter(viewportRef: RefObject<HTMLDivElement | null>): void {
   addCanvasCardToSpace(cardId, placement.activeSpaceId)
 }
 
-function addDefaultSessionAtCenter(viewportRef: RefObject<HTMLDivElement | null>): void {
+function createCanvasSessionAtCenter(
+  viewportRef: RefObject<HTMLDivElement | null>,
+  option: NewSessionOption,
+  name: string,
+): void {
   const projectId = useProjectsStore.getState().selectedProjectId
   if (!projectId) {
     useUIStore.getState().addToast({
@@ -936,18 +1248,16 @@ function addDefaultSessionAtCenter(viewportRef: RefObject<HTMLDivElement | null>
     return
   }
 
-  const settings = useUIStore.getState().settings
-  const customSessionDefinitionId = settings.defaultCustomSessionId ?? undefined
-  const type = customSessionDefinitionId ? undefined : settings.defaultSessionType
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = type === 'terminal' || type === 'terminal-wsl' || customSessionDefinitionId ? 'terminal' : 'session'
+  const cardKind = option.type === 'terminal' || option.type === 'terminal-wsl' || option.customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
   createSessionWithPrompt({
     projectId,
-    type: type as SessionType | undefined,
-    customSessionDefinitionId,
+    type: option.type,
+    customSessionDefinitionId: option.customSessionDefinitionId,
     worktreeId,
+    forceName: name,
   }, (sessionId) => {
     const paneStore = usePanesStore.getState()
     paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
@@ -1006,18 +1316,38 @@ function scrollSelectedSessionToBottom(): void {
   scrollTerminalToLatest(card.refId)
 }
 
-function focusSelectedCardInput(): void {
-  const [card] = selectedCards()
-  if (!card) return
+function focusCardInput(card: CanvasCard): void {
   if ((card.kind === 'session' || card.kind === 'terminal') && card.refId) {
     focusTerminalInputSoon(card.refId)
     return
   }
 
-  const escaped = card.id.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  const cardEl = document.querySelector(`[data-card-id="${escaped}"]`) as HTMLElement | null
+  const cardEl = getCanvasCardElement(card.id)
   const input = cardEl?.querySelector('textarea, input, [contenteditable="true"]') as HTMLElement | null
   input?.focus({ preventScroll: true })
+}
+
+function focusCardInputSoon(card: CanvasCard): void {
+  if ((card.kind === 'session' || card.kind === 'terminal') && card.refId) {
+    focusTerminalInputSoon(card.refId)
+    return
+  }
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const latest = useCanvasStore.getState().getCard(card.id)
+      if (latest) focusCardInput(latest)
+    })
+  })
+}
+
+function focusViewportCardInput(viewportRef: RefObject<HTMLDivElement | null>): void {
+  const target = findViewportEditingCard(viewportRef.current)
+    ?? selectedCards().find(isCanvasCommandEditableCard)
+  if (!target) return
+
+  selectCardForEditing(target)
+  focusCardInputSoon(target)
 }
 
 function runArrange(mode: CanvasArrangeMode | 'pack'): void {
@@ -1052,6 +1382,7 @@ export function useCanvasCommandMode({
   const [inputOpen, setInputOpen] = useState(false)
   const [cardSwitcherOpen, setCardSwitcherOpen] = useState(false)
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
+  const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [recentProjectKeys, setRecentProjectKeys] = useState<string[]>([])
   const focusRef = useRef<HTMLDivElement | null>(null)
   const activeRef = useRef(false)
@@ -1114,6 +1445,7 @@ export function useCanvasCommandMode({
     setInputOpen(false)
     setCardSwitcherOpen(false)
     setProjectSwitcherOpen(false)
+    setNewSessionOpen(false)
     restoreInputMode()
   }, [restoreInputMode])
 
@@ -1121,8 +1453,8 @@ export function useCanvasCommandMode({
     editingRef.current = true
     setEditing(true)
     restoreInputMode()
-    window.requestAnimationFrame(focusSelectedCardInput)
-  }, [restoreInputMode])
+    window.requestAnimationFrame(() => focusViewportCardInput(viewportRef))
+  }, [restoreInputMode, viewportRef])
 
   const exitEditing = useCallback(() => {
     editingRef.current = false
@@ -1162,8 +1494,19 @@ export function useCanvasCommandMode({
     focusSink()
   }, [focusSink, guardPanelReturn])
 
+  const closeNewSessionSelector = useCallback(() => {
+    setNewSessionOpen(false)
+    guardPanelReturn()
+    focusSink()
+  }, [focusSink, guardPanelReturn])
+
   const openProjectSwitcher = useCallback(() => {
     setProjectSwitcherOpen(true)
+  }, [])
+
+  const openNewSessionSelector = useCallback(() => {
+    setInputOpen(false)
+    setNewSessionOpen(true)
   }, [])
 
   const openCardSwitcher = useCallback(() => {
@@ -1251,10 +1594,10 @@ export function useCanvasCommandMode({
       },
       {
         id: 'new-session',
-        label: '新建默认会话',
-        detail: '在当前视口中心创建默认会话卡片',
-        aliases: ['n', 'new session', 'session', '会话'],
-        run: () => runAndCloseInput(() => addDefaultSessionAtCenter(viewportRef)),
+        label: '新建会话',
+        detail: '选择会话类型并在当前视口创建卡片',
+        aliases: ['n', 'new', 'new session', 'session', '新建', '会话'],
+        run: openNewSessionSelector,
       },
       {
         id: 'new-note',
@@ -1423,8 +1766,8 @@ export function useCanvasCommandMode({
       },
       {
         id: 'edit-input',
-        label: '编辑选中卡片',
-        detail: '临时把键盘输入交还给选中的会话或便签',
+        label: '编辑当前视口卡片',
+        detail: '扫描当前视口并把输入交给最合适的会话或便签',
         aliases: ['i', 'input', 'edit', 'terminal', '输入'],
         run: () => runAndCloseInput(enterEditing),
       },
@@ -1436,7 +1779,7 @@ export function useCanvasCommandMode({
         run: exit,
       },
     ]
-  }, [enterEditing, exit, onCreateFrame, onRenameFrame, openCardSwitcherFromInput, openProjectSwitcher, runAndCloseInput, switchPreviousProject, viewportRef])
+  }, [enterEditing, exit, onCreateFrame, onRenameFrame, openCardSwitcherFromInput, openNewSessionSelector, openProjectSwitcher, runAndCloseInput, switchPreviousProject, viewportRef])
 
   const runCanvasCommand = useCallback((key: string): boolean => {
     const normalized = key.length === 1 ? key.toLowerCase() : key
@@ -1488,7 +1831,7 @@ export function useCanvasCommandMode({
       return true
     }
     if (normalized === 'n') {
-      addDefaultSessionAtCenter(viewportRef)
+      openNewSessionSelector()
       return true
     }
     if (normalized === 't') {
@@ -1541,7 +1884,7 @@ export function useCanvasCommandMode({
       return true
     }
     return false
-  }, [enterEditing, exit, onCreateFrame, onRenameFrame, openCardSwitcher, openProjectSwitcher, switchPreviousProject, viewportRef])
+  }, [enterEditing, exit, onCreateFrame, onRenameFrame, openCardSwitcher, openNewSessionSelector, openProjectSwitcher, switchPreviousProject, viewportRef])
 
   useEffect(() => {
     const wasOpen = previousSearchOpenRef.current
@@ -1604,6 +1947,7 @@ export function useCanvasCommandMode({
         || inputOpen
         || cardSwitcherOpen
         || projectSwitcherOpen
+        || newSessionOpen
         || useUIStore.getState().settingsOpen
         || useUIStore.getState().sessionNamePrompt
       ) return
@@ -1639,7 +1983,7 @@ export function useCanvasCommandMode({
 
     window.addEventListener('keydown', handleCanvasCommandMode, true)
     return () => window.removeEventListener('keydown', handleCanvasCommandMode, true)
-  }, [cardSwitcherOpen, enter, exit, exitEditing, focusSink, helpOpen, inputOpen, projectSwitcherOpen, runCanvasCommand, searchOpen])
+  }, [cardSwitcherOpen, enter, exit, exitEditing, focusSink, helpOpen, inputOpen, newSessionOpen, projectSwitcherOpen, runCanvasCommand, searchOpen])
 
   const layer = active ? (
     <>
@@ -1656,6 +2000,16 @@ export function useCanvasCommandMode({
           recentKeys={recentProjectKeys}
           onBack={closeProjectSwitcher}
           onSelect={switchCanvasProjectContext}
+        />
+      )}
+      {newSessionOpen && (
+        <CanvasCommandNewSessionDialog
+          viewportRef={viewportRef}
+          onClose={closeNewSessionSelector}
+          onAfterNamePromptClose={() => {
+            guardPanelReturn()
+            focusSink()
+          }}
         />
       )}
       {inputOpen && <CanvasCommandInputDialog commands={commands} onBack={() => { setInputOpen(false); focusSink() }} />}
