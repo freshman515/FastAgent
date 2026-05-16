@@ -1,5 +1,12 @@
 # Pragma Desk
 
+> [!IMPORTANT]
+> 本项目已从 **FastAgent** 更名为 **Pragma Desk**，新的主仓库地址是：
+>
+> **https://github.com/freshman515/PragmaDesk**
+>
+> 当前 `freshman515/FastAgent` 仓库会保留历史记录、Star 和旧版本链接，方便老用户找到项目；后续代码、文档和版本发布请以新仓库为准。
+
 Pragma Desk 是一个面向 AI Coding 的多 Agent 会话管理工具。
 
 它把 Claude Code、Codex、Gemini、OpenCode、浏览器和普通终端放进同一个项目工作区里，让你可以用经典分屏或无限画布同时管理多个会话、多个任务和多个开发上下文。
