@@ -60,7 +60,7 @@ function sanitizeSession(s: unknown): Session | null {
   if (!s || typeof s !== 'object') return null
   const obj = s as Record<string, unknown>
   if (typeof obj.id !== 'string' || typeof obj.projectId !== 'string') return null
-  const type = (['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'claude-gui', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode', 'terminal', 'terminal-wsl'].includes(obj.type as string)
+  const type = (['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'claude-gui', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode', 'terminal', 'terminal-wsl', 'note'].includes(obj.type as string)
     ? obj.type
     : 'terminal') as SessionType
   return {
@@ -91,6 +91,9 @@ function sanitizeSession(s: unknown): Session | null {
     customSessionArgs: Array.isArray(obj.customSessionArgs)
       ? obj.customSessionArgs.filter((arg): arg is string => typeof arg === 'string')
       : undefined,
+    noteBody: type === 'note' && typeof obj.noteBody === 'string' ? obj.noteBody : undefined,
+    connectedSessionId: type === 'note' && typeof obj.connectedSessionId === 'string' ? obj.connectedSessionId : undefined,
+    noteSyncId: type === 'note' && typeof obj.noteSyncId === 'string' ? obj.noteSyncId : undefined,
   }
 }
 

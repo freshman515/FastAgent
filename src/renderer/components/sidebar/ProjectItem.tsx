@@ -1,4 +1,4 @@
-import { ArrowRightLeft, ChevronRight, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ChevronRight, Copy, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Group, GroupItemOrderEntry, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
@@ -552,6 +552,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const moveGroupToParentAt = useGroupsStore((s) => s.moveGroupToParentAt)
   const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
   const updateSettings = useUIStore((s) => s.updateSettings)
+  const addToast = useUIStore((s) => s.addToast)
 
   const branchInfo = useGitStore((s) => s.branchInfo[project.id])
   const templates = useTemplatesStore((s) => s.templates)
@@ -685,6 +686,25 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
     removeProject(project.id)
     setShowMenu(null)
   }, [project.groupId, project.id, removeProject, removeProjectFromGroup])
+
+  const handleCopyProjectPath = useCallback(async () => {
+    setContextMenu(null)
+    setShowMenu(null)
+    try {
+      await navigator.clipboard.writeText(project.path)
+      addToast({
+        type: 'success',
+        title: '已复制项目地址',
+        body: project.path,
+      })
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: '复制项目地址失败',
+        body: error instanceof Error ? error.message : '无法写入剪贴板。',
+      })
+    }
+  }, [addToast, project.path])
 
   const handleCreateSession = useCallback((option: NewSessionOption) => {
     selectProject(project.id)
@@ -937,6 +957,13 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
             >
               <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
               <FolderOpen size={14} /> 打开项目
+            </button>
+            <button
+              className={MENU_ITEM}
+              onClick={handleCopyProjectPath}
+            >
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <Copy size={14} /> 复制项目地址
             </button>
             <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
             

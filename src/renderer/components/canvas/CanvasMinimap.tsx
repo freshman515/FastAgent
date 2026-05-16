@@ -73,7 +73,8 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
     >
       <svg width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} style={{ display: 'block' }}>
         {visibleCards.map((card) => {
-          const isSession = card.kind === 'session' || card.kind === 'terminal'
+          const isWorkCard = card.kind === 'session' || card.kind === 'terminal' || card.kind === 'editor'
+          const isDirectory = card.kind === 'directory'
           const isFrame = card.kind === 'frame'
           return (
             <rect
@@ -82,7 +83,7 @@ export function CanvasMinimap({ viewportRef }: CanvasMinimapProps): JSX.Element 
               y={worldToMapY(card.y)}
               width={Math.max(2, card.width * scale)}
               height={Math.max(2, card.height * scale)}
-              fill={isFrame ? 'transparent' : isSession ? 'color-mix(in srgb, var(--color-accent) 60%, transparent)' : 'color-mix(in srgb, var(--color-text-tertiary) 40%, transparent)'}
+              fill={isFrame ? 'transparent' : isDirectory ? 'color-mix(in srgb, #60a5fa 62%, transparent)' : isWorkCard ? 'color-mix(in srgb, var(--color-accent) 60%, transparent)' : 'color-mix(in srgb, var(--color-text-tertiary) 40%, transparent)'}
               stroke={isFrame ? 'color-mix(in srgb, var(--color-accent) 62%, transparent)' : undefined}
               strokeWidth={isFrame ? 1 : undefined}
               rx={1}

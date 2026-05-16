@@ -11,6 +11,8 @@ import {
   type CanvasLayout,
   type CanvasLayoutSnapshot,
   type CanvasRelation,
+  type CanvasRelationDirection,
+  type CanvasRelationKind,
   type CanvasViewport,
 } from '@shared/types'
 import { generateId } from '@/lib/utils'
@@ -104,6 +106,18 @@ function clampScale(scale: number): number {
 
 export function isCanvasCardHidden(card: CanvasCard): boolean {
   return Boolean(card.hidden || card.hiddenByFrameId)
+}
+
+function isWorkSurfaceCard(card: CanvasCard): boolean {
+  return card.kind === 'session' || card.kind === 'terminal' || card.kind === 'editor' || card.kind === 'note'
+}
+
+function isCanvasRelationKind(value: unknown): value is CanvasRelationKind {
+  return value === 'related' || value === 'depends' || value === 'file' || value === 'debug' || value === 'todo'
+}
+
+function isCanvasRelationDirection(value: unknown): value is CanvasRelationDirection {
+  return value === 'forward' || value === 'backward' || value === 'both' || value === 'none'
 }
 
 /** Viewport transition duration for programmatic canvas navigation, in ms. */
@@ -220,11 +234,16 @@ function parsePixelSize(value: string): number | null {
   return Number.isFinite(size) && size > 0 ? size : null
 }
 
+function getWorkSurfaceFocusFontPx(): number {
+  const settings = useUIStore.getState().settings
+  return Math.max(1, settings.terminalFontSize, settings.editorFontSize)
+}
+
 function getTransformedCardBaseFontPx(card: CanvasCard, cardElement: HTMLElement): number | null {
   if (cardElement.dataset.cardCoordinateMode !== 'screen-transform') return null
 
-  if (card.kind === 'session' || card.kind === 'terminal') {
-    return useUIStore.getState().settings.terminalFontSize
+  if (isWorkSurfaceCard(card)) {
+    return getWorkSurfaceFocusFontPx()
   }
 
   const xtermEl = cardElement.querySelector('.xterm-rows, .xterm') as HTMLElement | null
@@ -258,12 +277,12 @@ function getFocusTargetScale(card: CanvasCard, currentScale: number): number {
   return clampScale(targetFontPx / baseFontPx)
 }
 
-function getConfiguredSessionFocusScale(): number {
+function getConfiguredWorkSurfaceFocusScale(): number {
   const settings = useUIStore.getState().settings
   const rangeMin = Math.min(settings.canvasFocusReadableFontMinPx, settings.canvasFocusReadableFontMaxPx)
   const rangeMax = Math.max(settings.canvasFocusReadableFontMinPx, settings.canvasFocusReadableFontMaxPx)
   const targetFontPx = Math.max(rangeMin, Math.min(rangeMax, settings.canvasFocusTargetFontPx))
-  return clampScale(targetFontPx / settings.terminalFontSize)
+  return clampScale(targetFontPx / getWorkSurfaceFocusFontPx())
 }
 
 function getFocusVisibleScaleCap(
@@ -315,7 +334,7 @@ function resizeSessionCardsToGrid(
 ): { cards: CanvasCard[]; touched: boolean } {
   const targetIds = new Set<string>()
   const resizedCards = layout.cards.map((card) => {
-    if (card.kind !== 'session' && card.kind !== 'terminal') return card
+    if (!isWorkSurfaceCard(card)) return card
     targetIds.add(card.id)
     return {
       ...card,
@@ -360,7 +379,7 @@ function isValidCard(value: unknown): value is CanvasCard {
   const card = value as Record<string, unknown>
   return (
     typeof card.id === 'string'
-    && (card.kind === 'session' || card.kind === 'terminal' || card.kind === 'note' || card.kind === 'frame')
+    && (card.kind === 'session' || card.kind === 'terminal' || card.kind === 'editor' || card.kind === 'directory' || card.kind === 'note' || card.kind === 'frame')
     && (card.refId === null || typeof card.refId === 'string')
     && typeof card.x === 'number'
     && typeof card.y === 'number'
@@ -395,6 +414,19 @@ function isValidRelation(value: unknown): value is CanvasRelation {
   )
 }
 
+function sanitizeRelation(relation: CanvasRelation): CanvasRelation {
+  return {
+    id: relation.id,
+    fromCardId: relation.fromCardId,
+    toCardId: relation.toCardId,
+    kind: isCanvasRelationKind(relation.kind) ? relation.kind : 'related',
+    label: typeof relation.label === 'string' ? relation.label : undefined,
+    direction: isCanvasRelationDirection(relation.direction) ? relation.direction : 'forward',
+    createdAt: typeof relation.createdAt === 'number' ? relation.createdAt : Date.now(),
+    updatedAt: typeof relation.updatedAt === 'number' ? relation.updatedAt : Date.now(),
+  }
+}
+
 function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
   return {
     ...card,
@@ -410,6 +442,11 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
     cardSnapshots: undefined,
     frameSnapshots: undefined,
     sessionRemark: typeof card.sessionRemark === 'string' ? card.sessionRemark : undefined,
+    noteBody: typeof card.noteBody === 'string' ? card.noteBody : undefined,
+    noteColor: typeof card.noteColor === 'string' ? card.noteColor : undefined,
+    noteSyncId: typeof card.noteSyncId === 'string' ? card.noteSyncId : undefined,
+    directoryPath: typeof card.directoryPath === 'string' ? card.directoryPath : undefined,
+    directoryTitle: typeof card.directoryTitle === 'string' ? card.directoryTitle : undefined,
     frameMemberIds: Array.isArray(card.frameMemberIds)
       ? card.frameMemberIds.filter((id): id is string => typeof id === 'string')
       : undefined,
@@ -418,9 +455,19 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
   }
 }
 
+function normalizeLegacyNoteCardSize(card: CanvasCard): CanvasCard {
+  if (card.kind !== 'note') return card
+  if (card.width !== LEGACY_NOTE_CARD_SIZE.width || card.height !== LEGACY_NOTE_CARD_SIZE.height) return card
+
+  const size = getDefaultCanvasCardSize('note')
+  return { ...card, width: size.width, height: size.height }
+}
+
 function getCanvasCardLabel(card: CanvasCard): string {
   if (card.kind === 'frame') return card.frameTitle?.trim() || '空间'
   if (card.kind === 'note') return card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签'
+  if (card.kind === 'directory') return card.directoryTitle?.trim() || '目录'
+  if (card.kind === 'editor') return card.sessionRemark?.trim() || '文件'
   return card.sessionRemark?.trim() || '会话'
 }
 
@@ -471,7 +518,7 @@ function sanitizeFrameSnapshot(snapshot: CanvasFrameSnapshot): CanvasFrameSnapsh
     relations: snapshot.relations
       .filter(isValidRelation)
       .filter((relation) => ids.has(relation.fromCardId) && ids.has(relation.toCardId))
-      .map((relation) => ({ ...relation })),
+      .map(sanitizeRelation),
     createdAt: typeof snapshot.createdAt === 'number' ? snapshot.createdAt : Date.now(),
     updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
   }
@@ -497,7 +544,7 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
   const data = raw as Record<string, unknown>
   const rawCards = Array.isArray(data.cards) ? data.cards : []
   const cards = rawCards.filter(isValidCard).map((card) => {
-    const clean = sanitizeSnapshotCard(card)
+    const clean = normalizeLegacyNoteCardSize(sanitizeSnapshotCard(card))
     return {
       ...clean,
       cardSnapshots: Array.isArray(card.cardSnapshots)
@@ -553,11 +600,7 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
       seenRelations.add(key)
       return true
     })
-    .map((relation) => ({
-      ...relation,
-      createdAt: typeof relation.createdAt === 'number' ? relation.createdAt : Date.now(),
-      updatedAt: typeof relation.updatedAt === 'number' ? relation.updatedAt : Date.now(),
-    }))
+    .map(sanitizeRelation)
 
   const rawSnapshots = Array.isArray(data.snapshots) ? data.snapshots : []
   const snapshots = rawSnapshots.filter(isValidLayoutSnapshot).map((snapshot) => ({
@@ -569,11 +612,7 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
     },
     cards: snapshot.cards.filter(isValidCard).map(sanitizeSnapshotCard),
     relations: Array.isArray(snapshot.relations)
-      ? snapshot.relations.filter(isValidRelation).map((relation) => ({
-          ...relation,
-          createdAt: typeof relation.createdAt === 'number' ? relation.createdAt : Date.now(),
-          updatedAt: typeof relation.updatedAt === 'number' ? relation.updatedAt : Date.now(),
-        }))
+      ? snapshot.relations.filter(isValidRelation).map(sanitizeRelation)
       : [],
     createdAt: typeof snapshot.createdAt === 'number' ? snapshot.createdAt : Date.now(),
     updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
@@ -587,9 +626,13 @@ function sanitizeLayout(raw: unknown): CanvasLayout | null {
 const DEFAULT_CARD_SIZE: Record<CanvasCardKind, { width: number; height: number }> = {
   session: { width: 1040, height: 660 },
   terminal: { width: 1040, height: 660 },
-  note: { width: 320, height: 240 },
+  editor: { width: 1040, height: 660 },
+  directory: { width: 360, height: 760 },
+  note: { width: 520, height: 330 },
   frame: { width: 760, height: 460 },
 }
+
+const LEGACY_NOTE_CARD_SIZE = { width: 320, height: 240 } as const
 
 const CARD_GAP = 24
 const FRAME_AUTO_PADDING = 56
@@ -847,8 +890,20 @@ export function computeFrameAutoLayoutPreview(
 }
 
 export function getDefaultCanvasCardSize(kind: CanvasCardKind): { width: number; height: number } {
-  if (kind === 'note' || kind === 'frame') return DEFAULT_CARD_SIZE[kind]
+  if (kind === 'frame') return DEFAULT_CARD_SIZE[kind]
   const settings = useUIStore.getState().settings
+  if (kind === 'directory') {
+    return {
+      width: settings.canvasDirectoryCardWidth,
+      height: settings.canvasDirectoryCardHeight,
+    }
+  }
+  if (kind === 'note') {
+    return {
+      width: settings.canvasNoteCardWidth,
+      height: settings.canvasNoteCardHeight,
+    }
+  }
   return {
     width: settings.canvasSessionCardWidth,
     height: settings.canvasSessionCardHeight,
@@ -1267,27 +1322,27 @@ interface CanvasState {
   toggleSelection: (id: string, additive: boolean) => void
   clearSelection: () => void
 
-  // session card helpers
-  /** Find the card (in any layout) that references the given session id. */
+  // tab/session card helpers
+  /** Find the card (in any layout) that references the given session/editor tab id. */
   findCardBySessionId: (sessionId: string) => { layoutKey: string; card: CanvasCard } | null
-  /** Attach a session as a card in the current active layout. Idempotent — if
+  /** Attach a session/editor tab as a card in the current active layout. Idempotent — if
    *  a card already exists we return its id and optionally center the viewport. */
   attachSession: (
     sessionId: string,
-    kind: 'session' | 'terminal',
+    kind: 'session' | 'terminal' | 'editor',
     position?: { x: number; y: number },
     options?: CanvasPlaceCardOptions,
   ) => string
   /** Add a card to a frame and fit/move that frame without overlapping outside cards. */
   addCardToFrame: (cardId: string, frameId: string | null | undefined) => void
-  /** Remove all cards that reference this session (in every layout). */
+  /** Remove all cards that reference this session/editor tab (in every layout). */
   detachSessionEverywhere: (sessionId: string) => void
-  /** Auto-populate the current layout from a list of session ids in horizontal
-   *  flow. Returns the new card ids that were actually created (skipping any
-   *  session that already had a card). */
+  /** Auto-populate the current layout from a list of session/editor tab ids in
+   *  horizontal flow. Returns the new card ids that were actually created
+   *  (skipping any id that already had a card). */
   autoPopulateFromSessions: (
     sessionIds: string[],
-    kindFor: (id: string) => 'session' | 'terminal',
+    kindFor: (id: string) => 'session' | 'terminal' | 'editor',
   ) => string[]
 
   // bulk ops (used by context menu / keyboard)
@@ -1312,7 +1367,11 @@ interface CanvasState {
   removeLayoutSnapshot: (id: string) => void
 
   // relations
-  addRelation: (fromCardId: string, toCardId: string) => string | null
+  addRelation: (
+    fromCardId: string,
+    toCardId: string,
+    options?: { kind?: CanvasRelationKind; label?: string; direction?: CanvasRelationDirection },
+  ) => string | null
   removeRelation: (id: string) => void
   removeRelationsForCards: (ids: string[]) => void
 
@@ -1568,6 +1627,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         sessionRemark: partial.sessionRemark,
         noteBody: partial.noteBody,
         noteColor: partial.noteColor,
+        noteSyncId: partial.noteSyncId,
+        directoryPath: partial.directoryPath,
+        directoryTitle: partial.directoryTitle,
         frameTitle: partial.frameTitle,
         frameColor: partial.frameColor,
         frameMemberIds: partial.frameMemberIds,
@@ -1798,7 +1860,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const focusArea = getCanvasFocusScreenArea()
     if (!focusArea) return
 
-    const targetScale = getConfiguredSessionFocusScale()
+    const targetScale = getConfiguredWorkSurfaceFocusScale()
     const targetWidth = Math.max(320, Math.round(focusArea.width / targetScale))
     const targetHeight = Math.max(240, Math.round(focusArea.height / targetScale))
 
@@ -2818,7 +2880,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   // ─── Relations ───
 
-  addRelation: (fromCardId, toCardId) => {
+  addRelation: (fromCardId, toCardId, options) => {
     if (fromCardId === toCardId) return null
     const id = `relation-${generateId()}`
     const now = Date.now()
@@ -2834,12 +2896,35 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       )
       if (existing) {
         relationId = existing.id
+        if (options) {
+          return {
+            layouts: {
+              ...state.layouts,
+              [state.activeLayoutKey]: {
+                ...layout,
+                relations: layout.relations.map((relation) => relation.id === existing.id
+                  ? {
+                      ...relation,
+                      kind: options.kind ?? relation.kind ?? 'related',
+                      label: options.label?.trim() || relation.label,
+                      direction: options.direction ?? relation.direction ?? 'forward',
+                      updatedAt: now,
+                    }
+                  : relation),
+              },
+            },
+            undoStack: pushUndo(state),
+          }
+        }
         return state
       }
       const relation: CanvasRelation = {
         id,
         fromCardId,
         toCardId,
+        kind: options?.kind ?? 'related',
+        label: options?.label?.trim() || undefined,
+        direction: options?.direction ?? 'forward',
         createdAt: now,
         updatedAt: now,
       }

@@ -124,6 +124,17 @@ export function useCardDrag({
       useCanvasUiStore.getState().setGuides(snap.guides)
       liveDeltaRef.current = { dx, dy }
 
+      const liveGeometry = new Map<string, AvoidanceGeometry>()
+      for (const card of cards) {
+        if (!ids.includes(card.id) || card.kind === 'frame') continue
+        liveGeometry.set(card.id, {
+          x: card.x + dx,
+          y: card.y + dy,
+          width: card.width,
+          height: card.height,
+        })
+      }
+
       if (settings.canvasOverlapMode === 'avoid') {
         const avoidance = resolveAvoidOverlap(cards, ids, dx, dy)
         applyAvoidanceStyles(cards, avoidance, avoidanceRef.current)
@@ -132,6 +143,17 @@ export function useCardDrag({
         applyAvoidanceStyles(cards, { positions: new Map(), affectedIds: new Set() }, avoidanceRef.current)
         avoidanceRef.current = { positions: new Map(), affectedIds: new Set() }
       }
+      for (const [id, position] of avoidanceRef.current.positions) {
+        const card = cards.find((candidate) => candidate.id === id)
+        if (!card || card.kind === 'frame') continue
+        liveGeometry.set(id, {
+          x: position.x,
+          y: position.y,
+          width: card.width,
+          height: card.height,
+        })
+      }
+      useCanvasUiStore.getState().setLiveCardGeometry(liveGeometry)
 
       applyLiveCardMovement(ids, cards, dx, dy, viewport.scale, viewport)
       liveFrameIdsRef.current = applyLiveFrameAutoLayoutForMovement(
@@ -330,6 +352,7 @@ export function useCardDrag({
       if (avoidance.positions.size > 0) {
         useCanvasStore.getState().updateCardPositions(avoidance.positions)
       }
+      useCanvasUiStore.getState().clearLiveCardGeometry()
       resetLiveFrameAutoLayout(liveFrameIds)
       cleanupAvoidanceTransitions(avoidance.affectedIds)
       if (!movedScreen && event.type === 'pointerup') onHandleClick?.()

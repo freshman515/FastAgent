@@ -15,6 +15,7 @@ export function CanvasSpaceSwitcher(): JSX.Element | null {
       .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.createdAt - b.createdAt)),
     [cards],
   )
+  const activeSpace = activeSpaceId ? spaces.find((space) => space.id === activeSpaceId) ?? null : null
 
   const activateAll = (): void => {
     setActiveSpaceId(null)
@@ -39,12 +40,28 @@ export function CanvasSpaceSwitcher(): JSX.Element | null {
       <button
         type="button"
         onClick={activateAll}
-        className={cn('canvas-space-switcher__item', activeSpaceId === null && 'canvas-space-switcher__item--active')}
+        className={cn('canvas-space-switcher__item canvas-space-switcher__item--root', activeSpaceId === null && 'canvas-space-switcher__item--active')}
         title="显示全部空间和卡片"
       >
-        All
+        全部
       </button>
+      {activeSpace && (
+        <>
+          <span className="canvas-space-switcher__separator">/</span>
+          <button
+            type="button"
+            onClick={() => activateSpace(activeSpace.id)}
+            className="canvas-space-switcher__item canvas-space-switcher__item--active"
+            style={{ '--canvas-space-accent': getSpaceAccent(activeSpace) } as CSSProperties}
+            title={`${activeSpace.frameTitle?.trim() || '空间'} · ${activeSpace.frameMemberIds?.length ?? 0} 张卡片`}
+          >
+            <span className="canvas-space-switcher__dot" />
+            <span className="canvas-space-switcher__label">{activeSpace.frameTitle?.trim() || '空间'}</span>
+          </button>
+        </>
+      )}
       {spaces.map((space) => (
+        activeSpaceId === space.id ? null :
         <button
           key={space.id}
           type="button"

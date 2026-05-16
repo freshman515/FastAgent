@@ -15,6 +15,7 @@ import { formatSessionCardTitle, normalizeSessionRemark } from '@/lib/canvasSess
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from '../CanvasMenu'
+import { createConnectedNoteForCard } from '../canvasConnectedNote'
 import { CardFrame, type CardCoordinateMode } from './CardFrame'
 
 interface SessionCardProps {
@@ -242,7 +243,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
           </div>
         ) : (
           <div className="h-full w-full overflow-hidden bg-[var(--color-terminal-bg)]">
-            <TerminalView session={session} isActive={selected} />
+            <TerminalView session={session} isActive={selected} canvasCardId={card.id} />
           </div>
         )}
       </CardFrame>
@@ -255,6 +256,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
             {canScrollToBottom && (
               <CanvasMenuItem label="滚动到底部" onClick={scrollToBottom} />
             )}
+            <CanvasMenuItem label="新建连接便签" onClick={() => { setTitleMenu(null); createConnectedNoteForCard(card) }} />
             <CanvasMenuItem label={card.favorite ? '取消收藏' : '收藏卡片'} onClick={toggleFavorite} />
             <CanvasMenuItem label="保存卡片快照" onClick={saveCardSnapshot} />
             {(card.cardSnapshots?.length ?? 0) > 0 && (

@@ -4,8 +4,18 @@ import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
 import {
+  CANVAS_DIRECTORY_CARD_HEIGHT_MAX,
+  CANVAS_DIRECTORY_CARD_HEIGHT_MIN,
+  CANVAS_DIRECTORY_CARD_WIDTH_MAX,
+  CANVAS_DIRECTORY_CARD_WIDTH_MIN,
   CANVAS_FOCUS_FONT_PX_MAX,
   CANVAS_FOCUS_FONT_PX_MIN,
+  CANVAS_NOTE_CARD_HEIGHT_MAX,
+  CANVAS_NOTE_CARD_HEIGHT_MIN,
+  CANVAS_NOTE_CARD_WIDTH_MAX,
+  CANVAS_NOTE_CARD_WIDTH_MIN,
+  CANVAS_NOTE_FONT_SIZE_MAX,
+  CANVAS_NOTE_FONT_SIZE_MIN,
   CANVAS_SESSION_CARD_HEIGHT_MAX,
   CANVAS_SESSION_CARD_HEIGHT_MIN,
   CANVAS_SESSION_CARD_WIDTH_MAX,
@@ -143,7 +153,7 @@ function FontSelect({ label, value, options, labels, onChange }: {
   label: string; value: string; options: string[]; labels: string[]; onChange: (v: string) => void
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
       <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt, i) => {
@@ -153,7 +163,7 @@ function FontSelect({ label, value, options, labels, onChange }: {
               key={opt}
               onClick={() => onChange(opt)}
               className={cn(
-                'rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200',
+                'max-w-full truncate rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200',
                 isSelected
                   ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)] drop-shadow-sm shadow-[inset_0_1px_4px_rgba(0,0,0,0.1)]'
                   : 'border-white/[0.06] bg-white/[0.02] text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-[var(--color-text-primary)]',
@@ -1327,7 +1337,8 @@ function CanvasPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
         <ToggleRow label="锁定布局" description="防止误拖动、误缩放和误删除画布卡片。" checked={settings.canvasLayoutLocked} onChange={(v) => onUpdate('canvasLayoutLocked', v)} />
       </SettingsSection>
 
-      <SettingsSection icon={SplitSquareHorizontal} title="卡片尺寸" description="新建会话卡片和批量尺寸归一化使用这些默认值。">
+      <SettingsSection icon={SplitSquareHorizontal} title="卡片尺寸" description="新建会话、目录和便签卡片使用这些默认值。">
+        <div className="grid gap-3 min-[980px]:grid-cols-2">
         <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
           <div className="mb-2 flex flex-col gap-0.5">
             <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建会话卡片默认尺寸</span>
@@ -1339,6 +1350,48 @@ function CanvasPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
             <PixelNumberField label="宽度" value={settings.canvasSessionCardWidth} min={CANVAS_SESSION_CARD_WIDTH_MIN} max={CANVAS_SESSION_CARD_WIDTH_MAX} onChange={(v) => onUpdate('canvasSessionCardWidth', v)} />
             <PixelNumberField label="高度" value={settings.canvasSessionCardHeight} min={CANVAS_SESSION_CARD_HEIGHT_MIN} max={CANVAS_SESSION_CARD_HEIGHT_MAX} onChange={(v) => onUpdate('canvasSessionCardHeight', v)} />
           </div>
+        </div>
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+          <div className="mb-2 flex flex-col gap-0.5">
+            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建目录卡片默认尺寸</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              目录卡片按长条布局展示项目文件树，不跟随会话卡片尺寸。
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <PixelNumberField label="宽度" value={settings.canvasDirectoryCardWidth} min={CANVAS_DIRECTORY_CARD_WIDTH_MIN} max={CANVAS_DIRECTORY_CARD_WIDTH_MAX} onChange={(v) => onUpdate('canvasDirectoryCardWidth', v)} />
+            <PixelNumberField label="高度" value={settings.canvasDirectoryCardHeight} min={CANVAS_DIRECTORY_CARD_HEIGHT_MIN} max={CANVAS_DIRECTORY_CARD_HEIGHT_MAX} onChange={(v) => onUpdate('canvasDirectoryCardHeight', v)} />
+          </div>
+        </div>
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/35 p-3">
+          <div className="mb-2 flex flex-col gap-0.5">
+            <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">新建便签卡片默认尺寸</span>
+            <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+              默认是会话卡片的一半尺寸，适合贴在终端旁边。
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <PixelNumberField label="宽度" value={settings.canvasNoteCardWidth} min={CANVAS_NOTE_CARD_WIDTH_MIN} max={CANVAS_NOTE_CARD_WIDTH_MAX} onChange={(v) => onUpdate('canvasNoteCardWidth', v)} />
+            <PixelNumberField label="高度" value={settings.canvasNoteCardHeight} min={CANVAS_NOTE_CARD_HEIGHT_MIN} max={CANVAS_NOTE_CARD_HEIGHT_MAX} onChange={(v) => onUpdate('canvasNoteCardHeight', v)} />
+          </div>
+          <div className="mt-3">
+            <FontSizeSlider
+              label="便签字号"
+              value={settings.canvasNoteFontSize}
+              min={CANVAS_NOTE_FONT_SIZE_MIN}
+              max={CANVAS_NOTE_FONT_SIZE_MAX}
+              onChange={(v) => onUpdate('canvasNoteFontSize', v)}
+            />
+          </div>
+          <div className="mt-3">
+            <ToggleRow
+              label="发送便签后自动回车"
+              description="开启后把便签内容放入连接会话后会追加 Enter；关闭时只放入输入框。"
+              checked={settings.noteSendAutoSubmit}
+              onChange={(v) => onUpdate('noteSendAutoSubmit', v)}
+            />
+          </div>
+        </div>
         </div>
       </SettingsSection>
 
@@ -2163,7 +2216,7 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4 min-[1120px]:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
         <FontSizeSlider label="字号" value={settings.editorFontSize} min={11} max={28} onChange={(v) => onUpdate('editorFontSize', v)} />
         <FontSelect
           label="字体"
@@ -2174,7 +2227,7 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 min-[1120px]:grid-cols-2">
         <ToggleRow
           label="自动换行"
           description="超长代码行自动换行，不再横向滚动"
@@ -2205,11 +2258,17 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
           checked={settings.editorFontLigatures}
           onChange={(v) => onUpdate('editorFontLigatures', v)}
         />
+        <ToggleRow
+          label="语法检查"
+          description="显示当前文件的语法和类型诊断波浪线"
+          checked={settings.editorSyntaxCheck}
+          onChange={(v) => onUpdate('editorSyntaxCheck', v)}
+        />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <span className="text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]">预览</span>
-        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[#1a1a1e]">
+        <div className="min-w-0 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[#1a1a1e]">
           {settings.editorStickyScroll && (
             <div
               className="border-b border-white/5 bg-[#202026] px-4 py-2 text-[11px] text-[#8e8e96]"
@@ -2218,7 +2277,7 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
               function updateSessionState(session, patch)
             </div>
           )}
-          <div className="flex min-h-[220px]">
+          <div className="flex min-h-[220px] min-w-0">
             {settings.editorLineNumbers && (
               <div
                 className="select-none border-r border-white/5 px-3 py-3 text-right text-[#5e5e66]"
@@ -2233,7 +2292,7 @@ function EditorPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
               </div>
             )}
             <pre
-              className="flex-1 overflow-hidden px-4 py-3 leading-7 text-[#e8e8ec]"
+              className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-4 py-3 leading-7 text-[#e8e8ec]"
               style={{
                 fontFamily: settings.editorFontFamily,
                 fontSize: settings.editorFontSize,
@@ -2698,7 +2757,7 @@ function AboutPage(): JSX.Element {
     void window.api.shell.openExternal(url)
   }, [])
 
-  const repoUrl = appInfo?.repository.url ?? 'https://github.com/freshman515/PragmaDesk'
+  const repoUrl = appInfo?.repository.url ?? 'https://github.com/freshman515/FastAgent'
   const releasesUrl = `${repoUrl}/releases`
   const statusIcon = updateState.kind === 'error'
     ? AlertCircle
@@ -2727,7 +2786,7 @@ function AboutPage(): JSX.Element {
         <AboutInfoTile
           icon={Github}
           label="仓库"
-          value={appInfo ? `${appInfo.repository.owner}/${appInfo.repository.repo}` : 'freshman515/PragmaDesk'}
+          value={appInfo ? `${appInfo.repository.owner}/${appInfo.repository.repo}` : 'freshman515/FastAgent'}
           detail="GitHub Releases 用于自动更新"
         />
         <AboutInfoTile
@@ -2905,8 +2964,8 @@ export function SettingsDialog(): JSX.Element | null {
         </div>
 
         {/* Right content */}
-        <div className="relative flex flex-1 flex-col bg-[linear-gradient(180deg,rgba(0,0,0,0.1),transparent)]">
-          <div className="flex-1 overflow-y-auto scrollbar-none px-10 py-10 pb-20">
+        <div className="relative flex min-w-0 flex-1 flex-col bg-[linear-gradient(180deg,rgba(0,0,0,0.1),transparent)]">
+          <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-none px-6 py-10 pb-20 min-[960px]:px-10">
             {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'sessions' && <SessionsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'extensions' && <ExtensionsPage settings={settings} />}

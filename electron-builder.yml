@@ -63,4 +63,4 @@ linux:
 publish:
   - provider: github
     owner: freshman515
-    repo: PragmaDesk
+    repo: FastAgent

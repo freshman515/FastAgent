@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CanvasCard, SessionType } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
@@ -7,10 +7,13 @@ import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore, resolveCa
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useEditorsStore } from '@/stores/editors'
 import { useUIStore } from '@/stores/ui'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { cn } from '@/lib/utils'
+import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
 import { focusCanvasSessionTarget } from '@/lib/focusSessionTarget'
+import { createNoteSyncId } from '@/lib/noteSync'
 import { CanvasGrid } from './CanvasGrid'
 import { CanvasToolbar } from './CanvasToolbar'
 import { CanvasContextMenu, type CanvasContextMenuState, type CanvasFrameCreateRequest } from './CanvasContextMenu'
@@ -28,11 +31,14 @@ import { SessionIconView } from '@/components/session/SessionIconView'
 import { FrameCard } from './cards/FrameCard'
 import { NoteCard } from './cards/NoteCard'
 import { SessionCard } from './cards/SessionCard'
+import { EditorCard } from './cards/EditorCard'
+import { DirectoryCard } from './cards/DirectoryCard'
 import { useCanvasViewport, screenToWorld } from './hooks/useCanvasViewport'
 import { useMarqueeSelect } from './hooks/useMarqueeSelect'
 import { useCanvasKeyboard } from './hooks/useCanvasKeyboard'
 import { addCanvasCardToSpace } from './canvasSpaceMembership'
 import { getSmartNewCardPlacement } from './canvasSmartPlacement'
+import { createConnectedNoteForCard } from './canvasConnectedNote'
 
 /**
  * Top-level canvas view. Rendered by `MainPanel` when
@@ -41,18 +47,25 @@ import { getSmartNewCardPlacement } from './canvasSmartPlacement'
  */
 function cleanupOrphanedCanvasCards(): void {
   const sessionState = useSessionsStore.getState()
-  if (!sessionState._loaded) return
-
   const validSessionIds = new Set(sessionState.sessions.map((session) => session.id))
+  const validEditorIds = new Set(useEditorsStore.getState().tabs.map((tab) => tab.id))
   const canvas = useCanvasStore.getState()
   const staleRefIds = new Set<string>()
 
   for (const layout of Object.values(canvas.layouts)) {
     for (const card of layout.cards) {
       if (
-        (card.kind === 'session' || card.kind === 'terminal')
+        sessionState._loaded
+        && (card.kind === 'session' || card.kind === 'terminal')
         && card.refId
         && !validSessionIds.has(card.refId)
+      ) {
+        staleRefIds.add(card.refId)
+      }
+      if (
+        card.kind === 'editor'
+        && card.refId
+        && !validEditorIds.has(card.refId)
       ) {
         staleRefIds.add(card.refId)
       }
@@ -96,6 +109,20 @@ export function CanvasWorkspace(): JSX.Element {
   const pendingSessionFocusId = useCanvasUiStore((state) => state.pendingSessionFocusId)
   const sessionsLoaded = useSessionsStore((state) => state._loaded)
   const sessionIdsKey = useSessionsStore((state) => state.sessions.map((session) => session.id).join('\x1f'))
+  const classicNoteSyncKey = useSessionsStore((state) =>
+    state.sessions
+      .filter((session) => session.type === 'note')
+      .map((session) => `${session.id}\x1f${session.connectedSessionId ?? ''}\x1f${session.noteSyncId ?? ''}\x1f${session.noteBody ?? ''}`)
+      .join('\x1e'),
+  )
+  const editorIdsKey = useEditorsStore((state) => state.tabs.map((tab) => tab.id).join('\x1f'))
+  const visibleCards = useMemo(() => {
+    if (!activeSpaceId) return cards
+    const activeSpace = cards.find((card) => card.id === activeSpaceId && card.kind === 'frame')
+    if (!activeSpace) return cards
+    const visibleIds = new Set([activeSpace.id, ...(activeSpace.frameMemberIds ?? [])])
+    return cards.filter((card) => visibleIds.has(card.id))
+  }, [activeSpaceId, cards])
 
   // 1) Keep canvas layout key aligned with the current panes scope.
   useEffect(() => {
@@ -121,46 +148,58 @@ export function CanvasWorkspace(): JSX.Element {
   useEffect(() => {
     if (!sessionsLoaded) return
     cleanupOrphanedCanvasCards()
-  }, [cards, sessionIdsKey, sessionsLoaded])
+  }, [cards, editorIdsKey, sessionIdsKey, sessionsLoaded])
 
-  // 2) Ongoing sync — whenever the panes tree gains a session that doesn't
-  //    yet have a canvas card (either because the user just opened one from
-  //    the sidebar, or because the layout was empty when they switched to
-  //    canvas mode), auto-attach a card for it. Existing cards are never
+  // 2) Ongoing sync — whenever the panes tree gains a session or editor tab
+  //    that doesn't yet have a canvas card (either because the user just
+  //    opened one from the sidebar, or because the layout was empty when they
+  //    switched to canvas mode), auto-attach a card for it. Existing cards are never
   //    touched, so this is idempotent across re-runs.
   //
-  //    When the user opens a single session (the common sidebar-click path),
+  //    When the user opens a single tab (the common sidebar-click path),
   //    we also focus the freshly created card — matches the muscle memory
   //    of "clicking a session makes it the thing you're looking at".
   const isInitialSyncRef = useRef(true)
   const canvasSelectionSyncRef = useRef(false)
   useEffect(() => {
     const canvas = useCanvasStore.getState()
-    const sessionIdsInPanes = Object.values(paneSessions).flat().filter((id) => !id.startsWith('editor-'))
+    const tabIdsInPanes = Object.values(paneSessions).flat()
+    const sessionsStore = useSessionsStore.getState()
     const skipActiveTabFocus = canvasSelectionSyncRef.current
     canvasSelectionSyncRef.current = false
-    const shouldFocusActiveTab = Boolean(activeTabId && sessionIdsInPanes.includes(activeTabId) && !skipActiveTabFocus)
-    if (sessionIdsInPanes.length === 0) {
+    const activeTabIsCanvasAttachable = Boolean(
+      activeTabId
+      && (
+        activeTabId.startsWith('editor-')
+        || sessionsStore.sessions.find((session) => session.id === activeTabId)?.type !== 'note'
+      ),
+    )
+    const shouldFocusActiveTab = Boolean(activeTabId && activeTabIsCanvasAttachable && tabIdsInPanes.includes(activeTabId) && !skipActiveTabFocus)
+    if (tabIdsInPanes.length === 0) {
       isInitialSyncRef.current = false
       return
     }
     const existingRefs = new Set(canvas.getCards().map((c) => c.refId).filter(Boolean) as string[])
-    const newIds = sessionIdsInPanes.filter((id) => !existingRefs.has(id))
+    const newIds = tabIdsInPanes.filter((id) => {
+      if (existingRefs.has(id)) return false
+      if (id.startsWith('editor-')) return true
+      return sessionsStore.sessions.find((session) => session.id === id)?.type !== 'note'
+    })
     if (newIds.length === 0) {
       if (shouldFocusActiveTab && activeTabId) {
-        requestAnimationFrame(() => focusCanvasCardForSession(activeTabId))
+        requestAnimationFrame(() => focusCanvasCardForRef(activeTabId))
       }
       isInitialSyncRef.current = false
       return
     }
-    const sessionsStore = useSessionsStore.getState()
     const created = canvas.autoPopulateFromSessions(newIds, (id) => {
+      if (id.startsWith('editor-')) return 'editor'
       const session = sessionsStore.sessions.find((s) => s.id === id)
       return session?.type === 'terminal' || session?.type === 'terminal-wsl' ? 'terminal' : 'session'
     })
 
     if (shouldFocusActiveTab && activeTabId) {
-      requestAnimationFrame(() => focusCanvasCardForSession(activeTabId))
+      requestAnimationFrame(() => focusCanvasCardForRef(activeTabId))
       isInitialSyncRef.current = false
       return
     }
@@ -176,18 +215,94 @@ export function CanvasWorkspace(): JSX.Element {
     isInitialSyncRef.current = false
   }, [activeTabId, paneSessions])
 
+  // Keep connected note cards and classic note tabs paired by a shared sync id.
+  // This also backfills notes created before sync existed.
+  useEffect(() => {
+    if (!sessionsLoaded) return
+
+    const canvas = useCanvasStore.getState()
+    const layout = canvas.getLayout()
+    const sessionsStore = useSessionsStore.getState()
+    const sessionById = new Map(sessionsStore.sessions.map((session) => [session.id, session]))
+    const cardById = new Map(layout.cards.map((card) => [card.id, card]))
+
+    for (const noteCard of layout.cards) {
+      if (noteCard.kind !== 'note') continue
+      const relation = layout.relations.find((item) => item.fromCardId === noteCard.id || item.toCardId === noteCard.id)
+      if (!relation) continue
+      const targetCardId = relation.fromCardId === noteCard.id ? relation.toCardId : relation.fromCardId
+      const targetCard = cardById.get(targetCardId)
+      if (!targetCard || (targetCard.kind !== 'session' && targetCard.kind !== 'terminal') || !targetCard.refId) continue
+      const targetSession = sessionById.get(targetCard.refId)
+      if (!targetSession) continue
+
+      const noteSyncId = noteCard.noteSyncId ?? createNoteSyncId()
+      if (!noteCard.noteSyncId) {
+        canvas.updateCard(noteCard.id, { noteSyncId })
+      }
+      if (!sessionsStore.sessions.some((session) => session.type === 'note' && session.noteSyncId === noteSyncId)) {
+        createConnectedNoteTabForSession(targetSession, undefined, {
+          activate: false,
+          initialBody: noteCard.noteBody ?? '',
+          noteSyncId,
+        })
+      }
+    }
+
+    for (const noteSession of sessionsStore.sessions) {
+      if (noteSession.type !== 'note' || !noteSession.connectedSessionId) continue
+      const noteSyncId = noteSession.noteSyncId ?? createNoteSyncId()
+      if (!noteSession.noteSyncId) {
+        sessionsStore.updateSession(noteSession.id, { noteSyncId })
+        continue
+      }
+      const existingNoteCard = layout.cards.find((card) => card.kind === 'note' && card.noteSyncId === noteSyncId)
+      if (existingNoteCard) {
+        if ((existingNoteCard.noteBody ?? '') !== (noteSession.noteBody ?? '')) {
+          canvas.updateCard(existingNoteCard.id, { noteBody: noteSession.noteBody ?? '' })
+        }
+        continue
+      }
+      const targetCard = layout.cards.find((card) =>
+        (card.kind === 'session' || card.kind === 'terminal') && card.refId === noteSession.connectedSessionId,
+      )
+      if (targetCard) {
+        createConnectedNoteForCard(targetCard, {
+          createClassicTab: false,
+          focus: false,
+          noteBody: noteSession.noteBody ?? '',
+          noteSyncId,
+        })
+      }
+    }
+  }, [cards, classicNoteSyncKey, sessionsLoaded])
+
   // 3) When a canvas card is focused/selected, keep classic tabs in sync so
-  //    switching back to classic mode lands on the same session.
+  //    switching back to classic mode lands on the same tab.
   useEffect(() => {
     const selectedCardId = selectedCardIds[0]
     if (!selectedCardId) return
 
     const card = useCanvasStore.getState().getCard(selectedCardId)
-    if (!card?.refId || card.refId.startsWith('editor-')) return
+    const panes = usePanesStore.getState()
+    if (!card?.refId) return
+    if (card.kind === 'editor') {
+      const editorExists = useEditorsStore.getState().tabs.some((tab) => tab.id === card.refId)
+      if (!editorExists) return
+      const paneId = panes.findPaneForSession(card.refId)
+      canvasSelectionSyncRef.current = true
+      if (paneId) {
+        panes.setActivePaneId(paneId)
+        panes.setPaneActiveSession(paneId, card.refId)
+      } else {
+        panes.addSessionToPane(activePaneId, card.refId)
+      }
+      return
+    }
+
     const sessionExists = useSessionsStore.getState().sessions.some((session) => session.id === card.refId)
     if (!sessionExists) return
 
-    const panes = usePanesStore.getState()
     const paneId = panes.findPaneForSession(card.refId)
     canvasSelectionSyncRef.current = true
     if (paneId) {
@@ -359,15 +474,15 @@ export function CanvasWorkspace(): JSX.Element {
         data-canvas-viewport
         className="absolute inset-0 touch-none"
         role="region"
-        aria-label={`Canvas workspace, ${cards.length} cards`}
+        aria-label={`Canvas workspace, ${visibleCards.length} cards`}
         onPointerDown={onViewportPointerDown}
         onDoubleClick={onViewportDoubleClick}
         onContextMenu={onContextMenu}
       >
         <div data-canvas-pan-layer className="pointer-events-none absolute inset-0">
           {gridEnabled && <CanvasGrid />}
-          <CanvasRelations cards={cards} />
-          <CanvasProjectedCardLayer cards={cards} viewportEl={viewportEl} />
+          <CanvasRelations cards={visibleCards} />
+          <CanvasProjectedCardLayer cards={visibleCards} viewportEl={viewportEl} />
           <CanvasGuideLines />
           <CanvasMarquee />
           <CanvasSelectionBounds />
@@ -639,15 +754,17 @@ function CanvasCardRenderer({ card, viewportEl }: { card: CanvasCard; viewportEl
   if (isCanvasCardHidden(card) && useCanvasStore.getState().maximizedCardId !== card.id) return null
   if (card.kind === 'frame') return <FrameCard card={card} coordinateMode="screen-transform" />
   if (card.kind === 'note') return <NoteCard card={card} coordinateMode="screen-transform" />
+  if (card.kind === 'directory') return <DirectoryCard card={card} coordinateMode="screen-transform" />
+  if (card.kind === 'editor') return <EditorCard card={card} coordinateMode="screen-transform" />
   if (card.kind === 'session' || card.kind === 'terminal') {
     return <CulledSessionCard card={card} viewportEl={viewportEl} />
   }
   return null
 }
 
-function focusCanvasCardForSession(sessionId: string): void {
+function focusCanvasCardForRef(refId: string): void {
   const canvas = useCanvasStore.getState()
-  const card = canvas.getCards().find((candidate) => candidate.refId === sessionId)
+  const card = canvas.getCards().find((candidate) => candidate.refId === refId)
   if (!card) return
   canvas.focusOnCard(card.id)
 }

@@ -1,5 +1,6 @@
 import { useSessionsStore } from '@/stores/sessions'
 import { BrowserSessionView } from './BrowserSessionView'
+import { NoteSessionView } from './NoteSessionView'
 import { TerminalView } from './TerminalView'
 
 export function TerminalContainer(): JSX.Element {
@@ -45,7 +46,9 @@ export function TerminalContainer(): JSX.Element {
           >
             {session.type === 'browser'
               ? <BrowserSessionView session={session} isActive={isVisible} />
-              : <TerminalView session={session} isActive={isVisible} />}
+              : session.type === 'note'
+                ? <NoteSessionView session={session} isActive={isVisible} />
+                : <TerminalView session={session} isActive={isVisible} />}
           </div>
         )
       })}

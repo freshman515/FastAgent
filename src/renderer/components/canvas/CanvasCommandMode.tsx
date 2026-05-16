@@ -7,10 +7,12 @@ import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { buildNewSessionOptions, type NewSessionOption } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
+import { focusOpenEditorSoon } from '@/components/session/EditorView'
 import { useGroupsStore } from '@/stores/groups'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useEditorsStore } from '@/stores/editors'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useCanvasUiStore } from '@/stores/canvasUi'
@@ -568,7 +570,7 @@ interface CanvasCommandCardSwitchItem {
   detail: string
   searchText: string
   priority: number
-  kind: 'session' | 'terminal'
+  kind: 'session' | 'terminal' | 'editor'
   isCurrent: boolean
   isPrevious: boolean
 }
@@ -889,28 +891,52 @@ function CanvasCommandCardSwitcher({
   const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds ?? [])
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const sessions = useSessionsStore((state) => state.sessions)
+  const editors = useEditorsStore((state) => state.tabs)
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const sessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions])
-  const sessionCards = useMemo(
-    () => cards.filter((card) => (card.kind === 'session' || card.kind === 'terminal') && card.refId),
+  const editorById = useMemo(() => new Map(editors.map((tab) => [tab.id, tab])), [editors])
+  const workCards = useMemo(
+    () => cards.filter((card) => (card.kind === 'session' || card.kind === 'terminal' || card.kind === 'editor') && card.refId),
     [cards],
   )
-  const sessionCardIds = useMemo(() => new Set(sessionCards.map((card) => card.id)), [sessionCards])
-  const currentCardId = selectedCardIds.find((id) => sessionCardIds.has(id)) ?? null
-  const previousCardId = recentCardIds.find((id) => id !== currentCardId && sessionCardIds.has(id)) ?? null
+  const workCardIds = useMemo(() => new Set(workCards.map((card) => card.id)), [workCards])
+  const currentCardId = selectedCardIds.find((id) => workCardIds.has(id)) ?? null
+  const previousCardId = recentCardIds.find((id) => id !== currentCardId && workCardIds.has(id)) ?? null
   const recentRank = useMemo(
     () => new Map(recentCardIds.map((id, index) => [id, index])),
     [recentCardIds],
   )
 
   const items = useMemo<CanvasCommandCardSwitchItem[]>(() => {
-    return sessionCards
+    return workCards
       .map((card) => {
+        if (card.kind === 'editor') {
+          const tab = card.refId ? editorById.get(card.refId) : undefined
+          if (!tab) return null
+          const rank = recentRank.get(card.id)
+          const isCurrent = card.id === currentCardId
+          const isPrevious = card.id === previousCardId
+          const priority = isPrevious
+            ? 2000
+            : (isCurrent ? 1000 : 0) + (rank !== undefined ? 500 - rank * 10 : 0)
+          return {
+            id: card.id,
+            cardId: card.id,
+            title: tab.fileName,
+            detail: `${tab.language}${tab.modified ? ' · 未保存' : ''}`,
+            searchText: [tab.fileName, tab.filePath, tab.language].filter(Boolean).join(' '),
+            priority,
+            kind: 'editor' as const,
+            isCurrent,
+            isPrevious,
+          }
+        }
         const session = card.refId ? sessionById.get(card.refId) : undefined
+        if (!session) return null
         const title = session ? formatSessionCardTitle(session.name, card.sessionRemark) : '会话'
         const typeLabel = session ? SESSION_TYPE_CONFIG[session.type]?.label ?? session.type : card.kind
         const status = session?.status ? ` · ${session.status}` : ''
@@ -932,8 +958,9 @@ function CanvasCommandCardSwitcher({
           isPrevious,
         }
       })
+      .filter((item): item is CanvasCommandCardSwitchItem => Boolean(item))
       .sort((a, b) => b.priority - a.priority || a.title.localeCompare(b.title))
-  }, [currentCardId, previousCardId, recentRank, sessionById, sessionCards])
+  }, [currentCardId, editorById, previousCardId, recentRank, sessionById, workCards])
 
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalizeCommandQuery(query)
@@ -1027,7 +1054,7 @@ function CanvasCommandCardSwitcher({
       >
         <div className="border-b border-[var(--color-border)] px-4 py-3">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">切换画布会话</div>
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">切换画布卡片</div>
             <div className="text-[10px] text-[var(--color-text-tertiary)]">Esc 返回 Canvas Mode</div>
           </div>
           <input
@@ -1035,7 +1062,7 @@ function CanvasCommandCardSwitcher({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             spellCheck={false}
-            placeholder="搜索画布会话"
+            placeholder="搜索画布卡片"
             className={cn(
               'h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
               'bg-[var(--color-bg-primary)] px-3 text-[var(--ui-font-sm)] text-[var(--color-text-primary)]',
@@ -1046,7 +1073,7 @@ function CanvasCommandCardSwitcher({
         <div className="max-h-[380px] overflow-y-auto p-1.5">
           {visibleItems.length === 0 ? (
             <div className="px-3 py-6 text-center text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
-              没有匹配的会话
+              没有匹配的卡片
             </div>
           ) : visibleItems.map((item, index) => (
             <button
@@ -1061,7 +1088,7 @@ function CanvasCommandCardSwitcher({
               )}
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[10px] font-bold">
-                {item.kind === 'terminal' ? 'T' : 'S'}
+                {item.kind === 'terminal' ? 'T' : item.kind === 'editor' ? 'F' : 'S'}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[var(--ui-font-sm)] font-medium">{item.title}</span>
@@ -1128,6 +1155,7 @@ function getCanvasCardElement(cardId: string): HTMLElement | null {
 function isCanvasCommandEditableCard(card: CanvasCard): boolean {
   if (isCanvasCardHidden(card)) return false
   if (card.kind === 'note') return true
+  if (card.kind === 'editor') return Boolean(card.refId && !card.collapsed)
   if ((card.kind !== 'session' && card.kind !== 'terminal') || !card.refId || card.collapsed) return false
 
   const session = useSessionsStore.getState().sessions.find((item) => item.id === card.refId)
@@ -1321,6 +1349,10 @@ function focusCardInput(card: CanvasCard): void {
     focusTerminalInputSoon(card.refId)
     return
   }
+  if (card.kind === 'editor' && card.refId) {
+    focusOpenEditorSoon(card.refId)
+    return
+  }
 
   const cardEl = getCanvasCardElement(card.id)
   const input = cardEl?.querySelector('textarea, input, [contenteditable="true"]') as HTMLElement | null
@@ -1330,6 +1362,10 @@ function focusCardInput(card: CanvasCard): void {
 function focusCardInputSoon(card: CanvasCard): void {
   if ((card.kind === 'session' || card.kind === 'terminal') && card.refId) {
     focusTerminalInputSoon(card.refId)
+    return
+  }
+  if (card.kind === 'editor' && card.refId) {
+    focusOpenEditorSoon(card.refId)
     return
   }
 
@@ -1573,9 +1609,9 @@ export function useCanvasCommandMode({
     return [
       {
         id: 'search',
-        label: '切换画布会话',
-        detail: '打开画布会话切换面板',
-        aliases: ['f', 'find', 'search', 'session', 'switch session', '会话'],
+        label: '切换画布卡片',
+        detail: '打开画布卡片切换面板',
+        aliases: ['f', 'find', 'search', 'session', 'file', 'switch card', '会话', '文件'],
         run: openCardSwitcherFromInput,
       },
       {

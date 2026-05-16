@@ -3,13 +3,14 @@ import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import * as monaco from 'monaco-editor'
 import { Code2, Columns2, Eye, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
-import { type EditorCursorInfo, useEditorsStore } from '@/stores/editors'
+import { type EditorCursorInfo, resolveEditorLanguage, useEditorsStore } from '@/stores/editors'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectSearchStore } from '@/stores/search'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { registerContentSelectAllTarget } from '@/lib/contentSelectAll'
 import { defineMonacoTheme, MONACO_THEME_NAME } from '@/lib/monacoTheme'
 import { registerEnhancedCSharpLanguage } from '@/lib/csharpLanguage'
 import { renderMarkdown } from '@/lib/markdown'
@@ -25,9 +26,72 @@ self.MonacoEnvironment = {
   },
 }
 
+let monacoTypeScriptSyntaxCheckEnabled: boolean | null = null
+let monacoTypeScriptCompilerOptionsConfigured = false
+function ensureMonacoTypeScriptDefaults(syntaxCheckEnabled: boolean): void {
+  const shouldUpdateCompilerOptions = !monacoTypeScriptCompilerOptionsConfigured
+  const shouldUpdateDiagnostics = monacoTypeScriptSyntaxCheckEnabled !== syntaxCheckEnabled
+  if (!shouldUpdateCompilerOptions && !shouldUpdateDiagnostics) return
+  monacoTypeScriptCompilerOptionsConfigured = true
+  monacoTypeScriptSyntaxCheckEnabled = syntaxCheckEnabled
+
+  const compilerOptions: monaco.languages.typescript.CompilerOptions = {
+    target: monaco.languages.typescript.ScriptTarget.ESNext,
+    module: monaco.languages.typescript.ModuleKind.ESNext,
+    moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+    jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+    allowJs: true,
+    allowNonTsExtensions: true,
+    allowSyntheticDefaultImports: true,
+    esModuleInterop: true,
+    resolveJsonModule: true,
+    skipLibCheck: true,
+    strict: false,
+  }
+
+  if (shouldUpdateCompilerOptions) {
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions)
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
+  }
+
+  if (shouldUpdateDiagnostics) {
+    const diagnosticsOptions: monaco.languages.typescript.DiagnosticsOptions = syntaxCheckEnabled
+      ? {
+          diagnosticCodesToIgnore: [
+            2307, // Cannot find module ... (standalone Monaco has no project/node_modules resolver)
+            2792, // Cannot find module ... under non-project module resolution
+            7016, // Could not find a declaration file for module ...
+          ],
+        }
+      : {
+          noSemanticValidation: true,
+          noSyntaxValidation: true,
+          noSuggestionDiagnostics: true,
+        }
+
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOptions)
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOptions)
+    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({ validate: syntaxCheckEnabled })
+    monaco.languages.css.cssDefaults.setOptions({ validate: syntaxCheckEnabled })
+    monaco.languages.css.scssDefaults.setOptions({ validate: syntaxCheckEnabled })
+    monaco.languages.css.lessDefaults.setOptions({ validate: syntaxCheckEnabled })
+
+    if (!syntaxCheckEnabled) {
+      for (const model of monaco.editor.getModels()) {
+        const languageId = model.getLanguageId()
+        if (!['typescript', 'javascript', 'json', 'css', 'scss', 'less'].includes(languageId)) continue
+        for (const owner of ['typescript', 'javascript', 'json', 'css', 'scss', 'less']) {
+          monaco.editor.setModelMarkers(model, owner, [])
+        }
+      }
+    }
+  }
+}
+
 // Define theme once per terminal theme name
 let lastAppliedTheme = ''
-function ensureTheme(terminalThemeName: string): void {
+function ensureTheme(terminalThemeName: string, syntaxCheckEnabled: boolean): void {
+  ensureMonacoTypeScriptDefaults(syntaxCheckEnabled)
   registerEnhancedCSharpLanguage()
   if (lastAppliedTheme === terminalThemeName) return
   lastAppliedTheme = terminalThemeName
@@ -219,6 +283,27 @@ function formatDetailedCodePath(filePath: string, range: { startLine: number; en
 
 function normalizeEditorFilePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function toMonacoLanguageId(language: string): string {
+  if (language === 'typescriptreact') return 'typescript'
+  if (language === 'javascriptreact') return 'javascript'
+  return language
+}
+
+function createMonacoModelUri(filePath: string, scopeId: string, variant: string): monaco.Uri {
+  const normalizedPath = filePath.replace(/\\/g, '/')
+  const uriPath = /^[A-Za-z]:\//.test(normalizedPath)
+    ? `/${normalizedPath}`
+    : normalizedPath.startsWith('/')
+      ? normalizedPath
+      : `/${normalizedPath}`
+
+  return monaco.Uri.from({
+    scheme: 'file',
+    path: uriPath,
+    query: `pragmaDeskScope=${encodeURIComponent(scopeId)}&variant=${encodeURIComponent(variant)}`,
+  })
 }
 
 function normalizePreviewSearchText(text: string): string {
@@ -715,6 +800,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const markdownPreviewRef = useRef<HTMLDivElement>(null)
   const markdownScrollSyncRef = useRef<'source' | 'preview' | null>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | monaco.editor.IStandaloneDiffEditor | null>(null)
+  const modelScopeIdRef = useRef(`editor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
   const tab = useEditorsStore((s) => s.tabs.find((t) => t.id === editorTabId))
@@ -730,6 +816,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const editorLineNumbers = useUIStore((s) => s.settings.editorLineNumbers)
   const editorStickyScroll = useUIStore((s) => s.settings.editorStickyScroll)
   const editorFontLigatures = useUIStore((s) => s.settings.editorFontLigatures)
+  const editorSyntaxCheck = useUIStore((s) => s.settings.editorSyntaxCheck)
   const terminalTheme = useUIStore((s) => s.settings.terminalTheme)
   const addToast = useUIStore((s) => s.addToast)
   const projectPath = useProjectsStore((s) => s.projects.find((p) => p.id === s.selectedProjectId)?.path ?? null)
@@ -751,6 +838,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   const [error, setError] = useState<string | null>(null)
   const savedContentRef = useRef<string>('')
   const watchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const editorLanguage = tab ? resolveEditorLanguage(tab.fileName, tab.language) : 'plaintext'
   const editorOptions = useMemo(
     () =>
       buildEditorOptions({
@@ -764,8 +852,8 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       }),
     [editorFontFamily, editorFontLigatures, editorFontSize, editorLineNumbers, editorMinimap, editorStickyScroll, editorWordWrap],
   )
-  const isMarkdownEditor = tab?.language === 'markdown' && !tab.isDiff
-  const isImageEditor = tab?.language === 'image' && !tab.isDiff
+  const isMarkdownEditor = editorLanguage === 'markdown' && !tab?.isDiff
+  const isImageEditor = editorLanguage === 'image' && !tab?.isDiff
   const renderedMarkdown = useMemo(
     () => (isMarkdownEditor ? renderMarkdown(markdownSource) : ''),
     [isMarkdownEditor, markdownSource],
@@ -777,7 +865,9 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
 
     let disposed = false
     let fileSavedListener: ((event: Event) => void) | null = null
-    ensureTheme(useUIStore.getState().settings.terminalTheme)
+    let unregisterSelectAllTarget: (() => void) | null = null
+    const ownedModels: monaco.editor.ITextModel[] = []
+    ensureTheme(useUIStore.getState().settings.terminalTheme, useUIStore.getState().settings.editorSyntaxCheck)
     setLoading(true)
     setError(null)
     setImagePreview(null)
@@ -796,7 +886,17 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       normalizeEditorFilePath(filePath) === normalizeEditorFilePath(tab.filePath)
     )
 
-    if (tab.language === 'image' && !tab.isDiff) {
+    const createOwnedModel = (content: string, variant: string): monaco.editor.ITextModel => {
+      const model = monaco.editor.createModel(
+        content,
+        toMonacoLanguageId(editorLanguage),
+        createMonacoModelUri(tab.filePath, modelScopeIdRef.current, `${editorTabId}-${variant}`),
+      )
+      ownedModels.push(model)
+      return model
+    }
+
+    if (editorLanguage === 'image' && !tab.isDiff) {
       const loadImagePreview = (): void => {
         void window.api.fs.readFileDataUrl(tab.filePath).then((payload) => {
           if (disposed) return
@@ -854,8 +954,8 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           enableSplitViewResizing: true,
         })
 
-        const originalModel = monaco.editor.createModel(originalContent, tab.language)
-        const modifiedModel = monaco.editor.createModel(modifiedContent, tab.language)
+        const originalModel = createOwnedModel(originalContent, 'original')
+        const modifiedModel = createOwnedModel(modifiedContent, 'modified')
         diffEditor.setModel({ original: originalModel, modified: modifiedModel })
 
         editorRef.current = diffEditor
@@ -877,7 +977,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             filePath: tab.filePath,
             fileUrl: `file://${tab.filePath.replace(/\\/g, '/')}`,
             fileName: tab.fileName,
-            language: tab.language,
+            language: editorLanguage,
             cursorLine: position.lineNumber,
             cursorColumn: position.column,
             selection: {
@@ -924,6 +1024,11 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             await persistEditorValue(modEditor.getValue())
           },
         })
+        unregisterSelectAllTarget = registerContentSelectAllTarget(editorTabId, () => {
+          modEditor.focus()
+          modEditor.trigger('pragma-desk', 'editor.action.selectAll', null)
+          return true
+        })
 
         registerEditorContextActions(modEditor, contextMenuEditorRef, setEditorContextMenu)
 
@@ -958,7 +1063,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       window.api.fs.readFile(tab.filePath).then((content) => {
         if (disposed) return
         savedContentRef.current = content
-        if (tab.language === 'markdown') setMarkdownSource(content)
+        if (editorLanguage === 'markdown') setMarkdownSource(content)
         const opts = buildEditorOptions({
           fontFamily: useUIStore.getState().settings.editorFontFamily,
           fontSize: useUIStore.getState().settings.editorFontSize,
@@ -969,13 +1074,14 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           fontLigatures: useUIStore.getState().settings.editorFontLigatures,
         })
 
-        const editor = monaco.editor.create(container, { ...opts, value: content, language: tab.language })
+        const model = createOwnedModel(content, 'normal')
+        const editor = monaco.editor.create(container, { ...opts, model })
         editorRef.current = editor
 
         // Track modifications
         editor.onDidChangeModelContent(() => {
           const current = editor.getValue()
-          if (tab.language === 'markdown') setMarkdownSource(current)
+          if (editorLanguage === 'markdown') setMarkdownSource(current)
           setModified(editorTabId, current !== savedContentRef.current)
         })
 
@@ -986,7 +1092,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
           const position = selection.getPosition()
           const selectionInfo = buildSelectionInfo(selection, editor.getModel())
           const selections = buildSelectionsInfo(editor.getSelections(), editor.getModel())
-          if (tab.language === 'markdown') setMarkdownSelectionText(selectionInfo?.text ?? '')
+          if (editorLanguage === 'markdown') setMarkdownSelectionText(selectionInfo?.text ?? '')
           setLastFocusedTabId(editorTabId)
           setCursorInfo({ line: position.lineNumber, column: position.column, selection: selectionInfo, selections })
           window.api.ide.selectionChanged({
@@ -994,7 +1100,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             filePath: tab.filePath,
             fileUrl: `file://${tab.filePath.replace(/\\/g, '/')}`,
             fileName: tab.fileName,
-            language: tab.language,
+            language: editorLanguage,
             cursorLine: position.lineNumber,
             cursorColumn: position.column,
             selection: {
@@ -1037,6 +1143,11 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             await persistEditorValue(editor.getValue())
           },
         })
+        unregisterSelectAllTarget = registerContentSelectAllTarget(editorTabId, () => {
+          editor.focus()
+          editor.trigger('pragma-desk', 'editor.action.selectAll', null)
+          return true
+        })
 
         registerEditorContextActions(editor, contextMenuEditorRef, setEditorContextMenu)
 
@@ -1047,7 +1158,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             savedContentRef.current = diskContent
             const viewState = editor.saveViewState()
             editor.setValue(diskContent)
-            if (tab.language === 'markdown') setMarkdownSource(diskContent)
+            if (editorLanguage === 'markdown') setMarkdownSource(diskContent)
             if (viewState) editor.restoreViewState(viewState)
           }).catch(() => {})
         }
@@ -1076,13 +1187,15 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       disposed = true
       if (watchTimerRef.current) clearInterval(watchTimerRef.current)
       if (fileSavedListener) window.removeEventListener('pragma-desk:file-saved', fileSavedListener as EventListener)
+      unregisterSelectAllTarget?.()
       editorBindings.delete(editorTabId)
       editorRef.current?.dispose()
       editorRef.current = null
+      ownedModels.forEach((model) => model.dispose())
       setCursorInfo(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editorTabId, tab?.filePath, tab?.isDiff])
+  }, [editorLanguage, editorTabId, tab?.filePath, tab?.isDiff])
 
   useEffect(() => {
     if (!isMarkdownEditor) {
@@ -1175,9 +1288,8 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   }, [editorOptions])
 
   useEffect(() => {
-    defineMonacoTheme(terminalTheme)
-    lastAppliedTheme = terminalTheme
-  }, [terminalTheme])
+    ensureTheme(terminalTheme, editorSyntaxCheck)
+  }, [editorSyntaxCheck, terminalTheme])
 
   useEffect(() => {
     if (!navigationTarget || !editorRef.current) return
@@ -1587,7 +1699,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             <EditorMenuItem
               label="发送选区到会话..."
               disabled={!menuHasSelection}
-              onClick={() => runEditorMenuAction((editor) => showSendPickerForSelection(editor, tab, setSendPicker))}
+              onClick={() => runEditorMenuAction((editor) => showSendPickerForSelection(editor, { ...tab, language: editorLanguage }, setSendPicker))}
             />
             <EditorMenuItem
               label="在项目中搜索文本"

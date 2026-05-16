@@ -31,6 +31,16 @@ export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
 export const CANVAS_SESSION_CARD_HEIGHT_MIN = 320
 export const CANVAS_SESSION_CARD_HEIGHT_MAX = 1600
+export const CANVAS_DIRECTORY_CARD_WIDTH_MIN = 260
+export const CANVAS_DIRECTORY_CARD_WIDTH_MAX = 900
+export const CANVAS_DIRECTORY_CARD_HEIGHT_MIN = 420
+export const CANVAS_DIRECTORY_CARD_HEIGHT_MAX = 1800
+export const CANVAS_NOTE_CARD_WIDTH_MIN = 320
+export const CANVAS_NOTE_CARD_WIDTH_MAX = 1600
+export const CANVAS_NOTE_CARD_HEIGHT_MIN = 240
+export const CANVAS_NOTE_CARD_HEIGHT_MAX = 1200
+export const CANVAS_NOTE_FONT_SIZE_MIN = 10
+export const CANVAS_NOTE_FONT_SIZE_MAX = 32
 export const CANVAS_FOCUS_FONT_PX_MIN = 8
 export const CANVAS_FOCUS_FONT_PX_MAX = 48
 export const CANVAS_FOCUS_FONT_TARGET_DEFAULT = 17
@@ -200,7 +210,7 @@ export interface AgentBoardItem {
   description: string
   status: AgentBoardStatus
   priority: AgentBoardPriority
-  sessionType: Exclude<SessionType, 'browser' | 'claude-gui'>
+  sessionType: Exclude<SessionType, 'browser' | 'claude-gui' | 'note'>
   sessionId?: string
   createdAt: number
   updatedAt: number
@@ -275,6 +285,7 @@ export interface AppSettings {
   editorLineNumbers: boolean
   editorStickyScroll: boolean
   editorFontLigatures: boolean
+  editorSyntaxCheck: boolean
   visibleGroupId: string | null // null = show all groups
   visibleProjectId: string | null // null = show all projects
   defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'terminal' | 'terminal-wsl' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode'
@@ -411,6 +422,18 @@ export interface AppSettings {
   canvasSessionCardWidth: number
   /** Default height for newly-created canvas session / terminal cards */
   canvasSessionCardHeight: number
+  /** Default width for newly-created canvas directory cards */
+  canvasDirectoryCardWidth: number
+  /** Default height for newly-created canvas directory cards */
+  canvasDirectoryCardHeight: number
+  /** Default width for newly-created canvas note cards */
+  canvasNoteCardWidth: number
+  /** Default height for newly-created canvas note cards */
+  canvasNoteCardHeight: number
+  /** Font size for canvas note cards */
+  canvasNoteFontSize: number
+  /** Submit with Enter after sending note text to a connected session. */
+  noteSendAutoSubmit: boolean
   /** Current visual font size lower bound where clicking a canvas card only centers it */
   canvasFocusReadableFontMinPx: number
   /** Current visual font size upper bound where clicking a canvas card only centers it */
@@ -431,6 +454,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   editorLineNumbers: true,
   editorStickyScroll: true,
   editorFontLigatures: true,
+  editorSyntaxCheck: true,
   visibleGroupId: null,
   visibleProjectId: null,
   defaultSessionType: 'claude-code',
@@ -520,6 +544,12 @@ Keep it brief and actionable. Use the same language as the terminal output.`,
   canvasLayoutLocked: false,
   canvasSessionCardWidth: 1040,
   canvasSessionCardHeight: 660,
+  canvasDirectoryCardWidth: 360,
+  canvasDirectoryCardHeight: 760,
+  canvasNoteCardWidth: 520,
+  canvasNoteCardHeight: 330,
+  canvasNoteFontSize: 18,
+  noteSendAutoSubmit: false,
   canvasFocusReadableFontMinPx: CANVAS_FOCUS_FONT_RANGE_MIN_DEFAULT,
   canvasFocusReadableFontMaxPx: CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT,
   canvasFocusTargetFontPx: CANVAS_FOCUS_FONT_TARGET_DEFAULT,
@@ -1201,6 +1231,26 @@ function clampCanvasSessionCardHeight(height: number): number {
   return Math.round(Math.max(CANVAS_SESSION_CARD_HEIGHT_MIN, Math.min(CANVAS_SESSION_CARD_HEIGHT_MAX, height)))
 }
 
+function clampCanvasDirectoryCardWidth(width: number): number {
+  return Math.round(Math.max(CANVAS_DIRECTORY_CARD_WIDTH_MIN, Math.min(CANVAS_DIRECTORY_CARD_WIDTH_MAX, width)))
+}
+
+function clampCanvasDirectoryCardHeight(height: number): number {
+  return Math.round(Math.max(CANVAS_DIRECTORY_CARD_HEIGHT_MIN, Math.min(CANVAS_DIRECTORY_CARD_HEIGHT_MAX, height)))
+}
+
+function clampCanvasNoteCardWidth(width: number): number {
+  return Math.round(Math.max(CANVAS_NOTE_CARD_WIDTH_MIN, Math.min(CANVAS_NOTE_CARD_WIDTH_MAX, width)))
+}
+
+function clampCanvasNoteCardHeight(height: number): number {
+  return Math.round(Math.max(CANVAS_NOTE_CARD_HEIGHT_MIN, Math.min(CANVAS_NOTE_CARD_HEIGHT_MAX, height)))
+}
+
+function clampCanvasNoteFontSize(size: number): number {
+  return Math.round(Math.max(CANVAS_NOTE_FONT_SIZE_MIN, Math.min(CANVAS_NOTE_FONT_SIZE_MAX, size)))
+}
+
 function clampCanvasFocusFontPx(size: number): number {
   return Math.round(Math.max(CANVAS_FOCUS_FONT_PX_MIN, Math.min(CANVAS_FOCUS_FONT_PX_MAX, size)))
 }
@@ -1651,6 +1701,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.editorLineNumbers === 'boolean') s.editorLineNumbers = raw.editorLineNumbers
       if (typeof raw.editorStickyScroll === 'boolean') s.editorStickyScroll = raw.editorStickyScroll
       if (typeof raw.editorFontLigatures === 'boolean') s.editorFontLigatures = raw.editorFontLigatures
+      if (typeof raw.editorSyntaxCheck === 'boolean') s.editorSyntaxCheck = raw.editorSyntaxCheck
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
       if (raw.visibleProjectId === null || typeof raw.visibleProjectId === 'string') s.visibleProjectId = raw.visibleProjectId as string | null
       if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'terminal', 'terminal-wsl', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
@@ -1856,6 +1907,12 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.canvasLayoutLocked === 'boolean') s.canvasLayoutLocked = raw.canvasLayoutLocked
       if (typeof raw.canvasSessionCardWidth === 'number') s.canvasSessionCardWidth = clampCanvasSessionCardWidth(raw.canvasSessionCardWidth)
       if (typeof raw.canvasSessionCardHeight === 'number') s.canvasSessionCardHeight = clampCanvasSessionCardHeight(raw.canvasSessionCardHeight)
+      if (typeof raw.canvasDirectoryCardWidth === 'number') s.canvasDirectoryCardWidth = clampCanvasDirectoryCardWidth(raw.canvasDirectoryCardWidth)
+      if (typeof raw.canvasDirectoryCardHeight === 'number') s.canvasDirectoryCardHeight = clampCanvasDirectoryCardHeight(raw.canvasDirectoryCardHeight)
+      if (typeof raw.canvasNoteCardWidth === 'number') s.canvasNoteCardWidth = clampCanvasNoteCardWidth(raw.canvasNoteCardWidth)
+      if (typeof raw.canvasNoteCardHeight === 'number') s.canvasNoteCardHeight = clampCanvasNoteCardHeight(raw.canvasNoteCardHeight)
+      if (typeof raw.canvasNoteFontSize === 'number') s.canvasNoteFontSize = clampCanvasNoteFontSize(raw.canvasNoteFontSize)
+      if (typeof raw.noteSendAutoSubmit === 'boolean') s.noteSendAutoSubmit = raw.noteSendAutoSubmit
       if (typeof raw.canvasFocusReadableFontMinPx === 'number') s.canvasFocusReadableFontMinPx = raw.canvasFocusReadableFontMinPx
       if (typeof raw.canvasFocusReadableFontMaxPx === 'number') s.canvasFocusReadableFontMaxPx = raw.canvasFocusReadableFontMaxPx
       if (typeof raw.canvasFocusTargetFontPx === 'number') s.canvasFocusTargetFontPx = raw.canvasFocusTargetFontPx
@@ -1919,6 +1976,13 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.canvasInputMode = normalizeCanvasInputMode(settings.canvasInputMode)
     settings.canvasWheelBehavior = normalizeCanvasWheelBehavior(settings.canvasWheelBehavior)
     settings.canvasWheelZoomModifier = normalizeCanvasWheelZoomModifier(settings.canvasWheelZoomModifier)
+    settings.canvasSessionCardWidth = clampCanvasSessionCardWidth(settings.canvasSessionCardWidth)
+    settings.canvasSessionCardHeight = clampCanvasSessionCardHeight(settings.canvasSessionCardHeight)
+    settings.canvasDirectoryCardWidth = clampCanvasDirectoryCardWidth(settings.canvasDirectoryCardWidth)
+    settings.canvasDirectoryCardHeight = clampCanvasDirectoryCardHeight(settings.canvasDirectoryCardHeight)
+    settings.canvasNoteCardWidth = clampCanvasNoteCardWidth(settings.canvasNoteCardWidth)
+    settings.canvasNoteCardHeight = clampCanvasNoteCardHeight(settings.canvasNoteCardHeight)
+    settings.canvasNoteFontSize = clampCanvasNoteFontSize(settings.canvasNoteFontSize)
     settings.notificationToastDurationMs = normalizeNotificationToastDurationMs(settings.notificationToastDurationMs)
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))

@@ -17,6 +17,8 @@ import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
+import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
+import { removeCanvasNotesBySyncId } from '@/lib/noteSync'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { beginTabDragGuard, endTabDragGuard } from '@/lib/tabDragGuard'
 import { SessionIconView } from './SessionIconView'
@@ -107,10 +109,11 @@ export function SessionTab({
 
   const doClose = useCallback(() => {
     if (session.ptyId) window.api.session.kill(session.ptyId)
+    if (session.type === 'note') removeCanvasNotesBySyncId(session.noteSyncId)
     removeSessionFromPane(paneId, session.id)
     removeSession(session.id)
     setShowCloseConfirm(false)
-  }, [session.id, session.ptyId, paneId, removeSession, removeSessionFromPane])
+  }, [session.id, session.noteSyncId, session.ptyId, session.type, paneId, removeSession, removeSessionFromPane])
 
   const handleClose = useCallback(
     (e?: React.MouseEvent) => {
@@ -170,7 +173,9 @@ export function SessionTab({
   const canSplit = paneSessions.length >= 2
   const canCloseAll = paneSessions.length > 1
   const isSplit = usePanesStore((s) => s.root.type === 'split')
-  const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
+  const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui' && session.type !== 'note'
+  const canCreateConnectedNote = session.type !== 'browser' && session.type !== 'claude-gui' && session.type !== 'note'
+  const canUseTodoActions = session.type !== 'note'
   const todoItemsByProject = useUIStore((s) => s.settings.todoItemsByProject)
   const legacyTodoItems = useUIStore((s) => s.settings.todoItems)
   const projectTodos = (() => {
@@ -188,6 +193,11 @@ export function SessionTab({
     setActivePaneId(paneId)
     scrollTerminalToLatestSoon(session.id)
   }, [paneId, session.id, setPaneActiveSession, setActivePaneId])
+
+  const handleCreateConnectedNote = useCallback(() => {
+    setContextMenu(null)
+    createConnectedNoteTabForSession(session, paneId)
+  }, [paneId, session])
 
   const handleCreateTodoFromSession = useCallback(() => {
     setContextMenu(null)
@@ -466,25 +476,38 @@ export function SessionTab({
               </button>
             )}
 
-            <button
-              onClick={handleCreateTodoFromSession}
-              className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
-            >
-              从当前会话创建 Todo
-            </button>
+            {canCreateConnectedNote && (
+              <button
+                onClick={handleCreateConnectedNote}
+                className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              >
+                新建连接便签
+              </button>
+            )}
 
-            <button
-              onClick={() => setTodoPickerOpen((open) => !open)}
-              disabled={linkableTodos.length === 0}
-              className={linkableTodos.length > 0
-                ? 'flex w-full items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
-                : 'flex w-full cursor-not-allowed items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'}
-            >
-              <span>关联到 Todo...</span>
-              <span className="text-[var(--ui-font-2xs)] tabular-nums">{linkableTodos.length}</span>
-            </button>
+            {canUseTodoActions && (
+              <button
+                onClick={handleCreateTodoFromSession}
+                className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"
+              >
+                从当前会话创建 Todo
+              </button>
+            )}
 
-            {todoPickerOpen && (
+            {canUseTodoActions && (
+              <button
+                onClick={() => setTodoPickerOpen((open) => !open)}
+                disabled={linkableTodos.length === 0}
+                className={linkableTodos.length > 0
+                  ? 'flex w-full items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
+                  : 'flex w-full cursor-not-allowed items-center justify-between px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'}
+              >
+                <span>关联到 Todo...</span>
+                <span className="text-[var(--ui-font-2xs)] tabular-nums">{linkableTodos.length}</span>
+              </button>
+            )}
+
+            {canUseTodoActions && todoPickerOpen && (
               <div className="mx-1 my-1 max-h-44 overflow-y-auto rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1">
                 {linkableTodos.map((todo) => (
                   <button
@@ -504,7 +527,7 @@ export function SessionTab({
               </div>
             )}
 
-            {linkedTodos.some((todo) => !todo.completed) && (
+            {canUseTodoActions && linkedTodos.some((todo) => !todo.completed) && (
               <button
                 onClick={handleCompleteLinkedTodos}
                 className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]"

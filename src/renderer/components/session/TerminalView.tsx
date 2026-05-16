@@ -1,4 +1,4 @@
-import { X, Zap, ChevronUp, ChevronDown, Copy, ClipboardPaste, FileText, Keyboard, ListChecks, Search, Eraser, Mic, Pause, Play, Send, Undo2 } from 'lucide-react'
+import { X, Zap, ChevronUp, ChevronDown, Copy, ClipboardPaste, FileText, Keyboard, ListChecks, Search, Eraser, Mic, Pause, Play, Send, Undo2, StickyNote } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { Session } from '@shared/types'
@@ -20,14 +20,20 @@ import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useEditorsStore } from '@/stores/editors'
 import { usePanesStore } from '@/stores/panes'
+import { useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { registerContentSelectAllTarget } from '@/lib/contentSelectAll'
+import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
+import { createConnectedNoteForCard } from '@/components/canvas/canvasConnectedNote'
 import { SessionIconView } from './SessionIconView'
 
 interface TerminalViewProps {
   session: Session
   isActive: boolean
+  paneId?: string
+  canvasCardId?: string
 }
 
 const CONTEXT_MENU_ITEM =
@@ -360,7 +366,7 @@ async function prepareVoiceAudio(blob: Blob, mimeType: string, websocketEndpoint
   }
 }
 
-export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Element {
+export function TerminalView({ session, isActive, paneId, canvasCardId }: TerminalViewProps): JSX.Element {
   const { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef, isAtBottom } = useXterm(session, isActive)
   const isDarkTheme = useIsDarkTheme()
   const allSessions = useSessionsStore((s) => s.sessions)
@@ -413,6 +419,14 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   useEffect(() => {
     voiceAcceptsInputRef.current = isActive
   }, [isActive])
+
+  useEffect(() => registerContentSelectAllTarget(session.id, () => {
+    const terminal = terminalRef.current
+    if (!terminal) return false
+    terminal.focus()
+    terminal.selectAll()
+    return true
+  }), [session.id, terminalRef])
   useEffect(() => {
     voiceInputPausedRef.current = voiceInputPaused
   }, [voiceInputPaused])
@@ -794,6 +808,23 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
       })
     }, 80)
   }, [terminalRef])
+
+  const doCreateConnectedNote = useCallback(() => {
+    setContextMenu(null)
+    if (settings.workspaceLayout === 'canvas' || canvasCardId) {
+      const canvas = useCanvasStore.getState()
+      const targetCard = canvasCardId
+        ? canvas.getCard(canvasCardId)
+        : canvas.getCards().find((card) =>
+            (card.kind === 'session' || card.kind === 'terminal') && card.refId === session.id,
+          )
+      if (targetCard) {
+        createConnectedNoteForCard(targetCard)
+        return
+      }
+    }
+    createConnectedNoteTabForSession(session, paneId)
+  }, [canvasCardId, paneId, session, settings.workspaceLayout])
 
   const stopVoiceLevelMeter = useCallback(() => {
     if (voiceMeterFrameRef.current !== null) {
@@ -1736,7 +1767,7 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
   const menuWidth = 200
   const questionMenuItemCount = (contextMenu?.questionNavigation.previousLine != null ? 1 : 0)
     + (contextMenu?.questionNavigation.nextLine != null ? 1 : 0)
-  const estimatedContextMenuHeight = (contextMenu?.fileLink ? 590 : 548)
+  const estimatedContextMenuHeight = (contextMenu?.fileLink ? 626 : 584)
     + (questionMenuItemCount > 0 ? 8 + questionMenuItemCount * 34 : 0)
   const contextMenuMaxHeight = Math.max(160, window.innerHeight - CONTEXT_MENU_VIEWPORT_MARGIN * 2)
   const menuHeight = Math.min(contextMenuMeasuredHeight || estimatedContextMenuHeight, contextMenuMaxHeight)
@@ -2050,6 +2081,16 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
                 复制工作目录
               </span>
             </button>
+            <button
+              type="button"
+              className={CONTEXT_MENU_ITEM}
+              onClick={doCreateConnectedNote}
+            >
+              <span className="flex items-center gap-2">
+                <StickyNote size={13} />
+                新建连接便签
+              </span>
+            </button>
             <div className="my-1 h-px bg-[var(--color-border)]" />
             <button
               type="button"
@@ -2079,28 +2120,32 @@ export function TerminalView({ session, isActive }: TerminalViewProps): JSX.Elem
                 {settings.voiceInputMode === 'api' ? 'Win+H' : LOCAL_ASR_SHORTCUT_LABEL}
               </span>
             </button>
-            <button
-              type="button"
-              className={CONTEXT_MENU_ITEM}
-              onClick={() => openSendPicker('send')}
-              disabled={!contextMenu.hasSelection || targetSessions.length === 0}
-            >
-              <span className="flex items-center gap-2">
-                <Send size={13} />
-                发送到其他会话
-              </span>
-            </button>
-            <button
-              type="button"
-              className={CONTEXT_MENU_ITEM}
-              onClick={() => openSendPicker('insert')}
-              disabled={!contextMenu.hasSelection || targetSessions.length === 0}
-            >
-              <span className="flex items-center gap-2">
-                <ClipboardPaste size={13} />
-                放到其他会话
-              </span>
-            </button>
+            {contextMenu.hasSelection && (
+              <>
+                <button
+                  type="button"
+                  className={CONTEXT_MENU_ITEM}
+                  onClick={() => openSendPicker('send')}
+                  disabled={targetSessions.length === 0}
+                >
+                  <span className="flex items-center gap-2">
+                    <Send size={13} />
+                    发送到其他会话
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={CONTEXT_MENU_ITEM}
+                  onClick={() => openSendPicker('insert')}
+                  disabled={targetSessions.length === 0}
+                >
+                  <span className="flex items-center gap-2">
+                    <ClipboardPaste size={13} />
+                    放到其他会话
+                  </span>
+                </button>
+              </>
+            )}
             <div className="my-1 h-px bg-[var(--color-border)]" />
             <button
               type="button"

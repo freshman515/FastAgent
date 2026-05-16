@@ -3,6 +3,7 @@ import type { CanvasCard } from '@shared/types'
 import { cancelViewportAnimation, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useUIStore } from '@/stores/ui'
+import { selectAllContentTarget } from '@/lib/contentSelectAll'
 
 type CanvasNavigationDirection = 'left' | 'right' | 'up' | 'down'
 
@@ -198,6 +199,10 @@ function getCardsForActiveSpace(): CanvasCard[] {
   return cards.filter((card) => visibleIds.has(card.id))
 }
 
+function isContentCard(card: CanvasCard): boolean {
+  return card.kind === 'session' || card.kind === 'terminal' || card.kind === 'editor'
+}
+
 /**
  * Canvas-specific keyboard shortcuts. Attached to `window` but scoped to the
  * passed-in viewport element — listeners bail out when focus is inside an
@@ -289,7 +294,17 @@ export function useCanvasKeyboard(
       const layoutLocked = useUIStore.getState().settings.canvasLayoutLocked
 
       // Select all
-      if (event.key === 'a' && (event.ctrlKey || event.metaKey)) {
+      if (event.key.toLowerCase() === 'a' && (event.ctrlKey || event.metaKey)) {
+        const selectedCard = selection.length === 1 ? store.getCard(selection[0]) : null
+        if (selectedCard?.refId && isContentCard(selectedCard)) {
+          if (selectAllContentTarget(selectedCard.refId)) {
+            event.preventDefault()
+            event.stopPropagation()
+            event.stopImmediatePropagation()
+          }
+          return
+        }
+
         event.preventDefault()
         const all = getCardsForActiveSpace().map((c) => c.id)
         store.setSelection(all)

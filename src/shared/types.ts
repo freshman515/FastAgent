@@ -33,9 +33,9 @@ export interface Project {
 
 export const UNGROUPED_PROJECT_GROUP_ID = '__ungrouped__'
 
-export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'claude-gui' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal' | 'terminal-wsl'
-export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal' | 'terminal-wsl'>
-export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui'>
+export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'claude-gui' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal' | 'terminal-wsl' | 'note'
+export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal' | 'terminal-wsl' | 'note'>
+export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'note'>
 export type TerminalShellMode = 'auto' | 'pwsh' | 'powershell' | 'cmd' | 'gitbash' | 'custom'
 export interface TerminalShellAvailability {
   available: boolean
@@ -104,6 +104,12 @@ export interface Session {
   customSessionIcon?: string
   customSessionCommand?: string
   customSessionArgs?: string[]
+  /** Classic-mode note body. Note sessions do not launch a PTY. */
+  noteBody?: string
+  /** Session id this classic note is connected to. */
+  connectedSessionId?: string
+  /** Shared id linking a classic note tab to a canvas note card. */
+  noteSyncId?: string
 }
 
 // ─── Canvas Mode ───
@@ -117,12 +123,14 @@ export interface Session {
 
 export type WorkspaceLayout = 'panes' | 'canvas'
 
-export type CanvasCardKind = 'session' | 'terminal' | 'note' | 'frame'
+export type CanvasCardKind = 'session' | 'terminal' | 'editor' | 'directory' | 'note' | 'frame'
+export type CanvasRelationKind = 'related' | 'depends' | 'file' | 'debug' | 'todo'
+export type CanvasRelationDirection = 'forward' | 'backward' | 'both' | 'none'
 
 export interface CanvasCard {
   id: string
   kind: CanvasCardKind
-  /** Session id for kind='session'|'terminal'; null for note cards. */
+  /** Session id for kind='session'|'terminal', editor tab id for kind='editor', project id for kind='directory'; null for note/frame cards. */
   refId: string | null
   x: number
   y: number
@@ -149,6 +157,12 @@ export interface CanvasCard {
   noteBody?: string
   /** Note-card accent color token (e.g. 'yellow' | 'blue' | 'green' | 'pink'). */
   noteColor?: string
+  /** Shared id linking this canvas note card to a classic note tab. */
+  noteSyncId?: string
+  /** Directory-card root path. */
+  directoryPath?: string
+  /** Directory-card display title. */
+  directoryTitle?: string
   /** Frame-card title. */
   frameTitle?: string
   /** Frame-card accent color token. */
@@ -179,6 +193,9 @@ export interface CanvasRelation {
   id: string
   fromCardId: string
   toCardId: string
+  kind?: CanvasRelationKind
+  label?: string
+  direction?: CanvasRelationDirection
   createdAt: number
   updatedAt: number
 }
@@ -1037,4 +1054,5 @@ export const SESSION_TYPE_CONFIG: Record<
   opencode: { label: 'OpenCode', command: 'opencode', icon: 'code' },
   terminal: { label: 'Terminal', command: '', icon: 'terminal' },
   'terminal-wsl': { label: 'Terminal(WSL)', command: 'wsl.exe', icon: 'terminal' },
+  note: { label: '便签', command: '', icon: 'note' },
 }

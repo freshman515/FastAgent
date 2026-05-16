@@ -17,6 +17,7 @@ import { NewSessionMenu } from '@/components/session/NewSessionMenu'
 import { TerminalView } from '@/components/session/TerminalView'
 import { BrowserSessionView } from '@/components/session/BrowserSessionView'
 import { EditorView } from '@/components/session/EditorView'
+import { NoteSessionView } from '@/components/session/NoteSessionView'
 import { EmptyState } from '@/components/session/EmptyState'
 import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
 
@@ -160,9 +161,9 @@ function getDropPreviewStyle(zone: DropZone): CSSProperties {
   return { left: 18, right: 18, top: 18, bottom: 18 }
 }
 
-type PaneTabGroup = 'terminal' | 'claude' | 'codex' | 'gemini' | 'opencode' | 'browser' | 'file' | 'other'
+type PaneTabGroup = 'terminal' | 'claude' | 'codex' | 'gemini' | 'opencode' | 'browser' | 'file' | 'note' | 'other'
 
-const PANE_TAB_GROUP_ORDER: PaneTabGroup[] = ['terminal', 'claude', 'codex', 'gemini', 'opencode', 'browser', 'file', 'other']
+const PANE_TAB_GROUP_ORDER: PaneTabGroup[] = ['terminal', 'claude', 'codex', 'gemini', 'opencode', 'browser', 'file', 'note', 'other']
 const PANE_TAB_GROUP_LABEL: Record<PaneTabGroup, string> = {
   terminal: '终端',
   claude: 'Claude',
@@ -171,10 +172,12 @@ const PANE_TAB_GROUP_LABEL: Record<PaneTabGroup, string> = {
   opencode: 'OpenCode',
   browser: 'Browser',
   file: '文件',
+  note: '便签',
   other: '其他',
 }
 
 function getSessionTabGroup(type: string): PaneTabGroup {
+  if (type === 'note') return 'note'
   if (type === 'terminal' || type === 'terminal-wsl') return 'terminal'
   if (type === 'browser') return 'browser'
   if (type.startsWith('claude')) return 'claude'
@@ -1632,7 +1635,9 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
                 ? <ClaudeCodePanel sessionId={session.id} />
                 : session.type === 'browser'
                   ? <BrowserSessionView session={session} isActive={isActive && isActivePane} />
-                : <TerminalView session={session} isActive={isActive && isActivePane} />}
+                  : session.type === 'note'
+                    ? <NoteSessionView session={session} isActive={isActive && isActivePane} />
+                    : <TerminalView session={session} isActive={isActive && isActivePane} paneId={paneId} />}
             </div>
           )
         })}

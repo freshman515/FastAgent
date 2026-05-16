@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import type { CanvasCard, SessionType } from '@shared/types'
+import type { CanvasCard, CanvasRelationDirection, CanvasRelationKind, SessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
@@ -8,15 +8,25 @@ import { getDefaultCanvasCardSize, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useEditorsStore } from '@/stores/editors'
+import { useWorktreesStore } from '@/stores/worktrees'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { buildNewSessionOptions } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { FRAME_COLORS } from './cards/FrameCard'
 import { addCanvasCardToActiveSpace, addCanvasCardToSpace } from './canvasSpaceMembership'
+import { createConnectedNoteForCard } from './canvasConnectedNote'
 
 const SUBMENU_WIDTH = 220
 const MENU_MARGIN = 8
+const RELATION_PRESETS: Array<{ kind: CanvasRelationKind; label: string }> = [
+  { kind: 'related', label: '相关' },
+  { kind: 'depends', label: '依赖' },
+  { kind: 'file', label: '相关文件' },
+  { kind: 'debug', label: '调试输出' },
+  { kind: 'todo', label: '待处理' },
+]
 
 export type CanvasContextMenuState =
   | {
@@ -255,6 +265,17 @@ function buildMenuItems(
   return buildCardItems(state, onClose, onRenameFrame, onSearchFrame, onCreateFrame)
 }
 
+function relationMenuItems(fromCardId: string, toCardId: string, direction: CanvasRelationDirection = 'forward'): ActionMenuItem[] {
+  return RELATION_PRESETS.map((preset) => ({
+    kind: 'item' as const,
+    label: preset.label,
+    onClick: () => useCanvasStore.getState().addRelation(fromCardId, toCardId, {
+      kind: preset.kind,
+      direction,
+    }),
+  }))
+}
+
 function buildCanvasItems(
   state: Extract<CanvasContextMenuState, { target: 'canvas' }>,
   _onClose: () => void,
@@ -279,6 +300,10 @@ function buildCanvasItems(
     if (mode !== 'free') arrange(mode)
   }
   const noteSize = getDefaultCanvasCardSize('note')
+  const directorySize = getDefaultCanvasCardSize('directory')
+  const selectedWorktree = useWorktreesStore.getState().worktrees.find((worktree) =>
+    worktree.id === useWorktreesStore.getState().selectedWorktreeId && worktree.projectId === projectId)
+  const project = projectId ? useProjectsStore.getState().projects.find((item) => item.id === projectId) : null
 
   return [
     {
@@ -316,6 +341,15 @@ function buildCanvasItems(
           ignoreOverlapCardIds: activeSpaceId ? [activeSpaceId] : undefined,
         })
         addCanvasCardToActiveSpace(cardId)
+      },
+    },
+    {
+      kind: 'item',
+      label: project ? '在此处新建目录卡片' : '新建目录卡片（未选择项目）',
+      disabled: !project,
+      onClick: () => {
+        if (!project) return
+        createDirectoryCardAt(project.id, selectedWorktree?.path ?? project.path, selectedWorktree ? `${project.name} / ${selectedWorktree.branch}` : project.name, state.worldX - directorySize.width / 2, state.worldY - directorySize.height / 2)
       },
     },
     {
@@ -387,6 +421,25 @@ function createCanvasSession(
   })
 }
 
+function createDirectoryCardAt(projectId: string, directoryPath: string, title: string, x: number, y: number, targetSpaceId?: string): string {
+  const canvasStore = useCanvasStore.getState()
+  const spaceId = targetSpaceId ?? useCanvasUiStore.getState().activeSpaceId
+  const cardId = canvasStore.addCard({
+    kind: 'directory',
+    refId: projectId,
+    x,
+    y,
+    directoryPath,
+    directoryTitle: title,
+  }, {
+    forceFreePlacement: true,
+    forceAvoidOverlap: true,
+    ignoreOverlapCardIds: spaceId ? [spaceId] : undefined,
+  })
+  addCanvasCardToSpace(cardId, spaceId)
+  return cardId
+}
+
 function getWorldPointFromScreen(screenX: number, screenY: number): { x: number; y: number } {
   const viewportEl = document.querySelector('[data-canvas-viewport]') as HTMLDivElement | null
   const rect = viewportEl?.getBoundingClientRect()
@@ -426,6 +479,10 @@ function buildCardItems(
       : []
     const world = getWorldPointFromScreen(state.screenX, state.screenY)
     const noteSize = getDefaultCanvasCardSize('note')
+    const directorySize = getDefaultCanvasCardSize('directory')
+    const project = projectId ? useProjectsStore.getState().projects.find((item) => item.id === projectId) : null
+    const selectedWorktree = useWorktreesStore.getState().worktrees.find((worktree) =>
+      worktree.id === useWorktreesStore.getState().selectedWorktreeId && worktree.projectId === projectId)
 
     items.push({
       kind: 'submenu',
@@ -460,6 +517,22 @@ function buildCardItems(
           ignoreOverlapCardIds: [card.id],
         })
         addCanvasCardToSpace(cardId, card.id)
+      },
+    })
+    items.push({
+      kind: 'item',
+      label: project ? '新建目录卡片' : '新建目录卡片（未选择项目）',
+      disabled: !project,
+      onClick: () => {
+        if (!project) return
+        createDirectoryCardAt(
+          project.id,
+          selectedWorktree?.path ?? project.path,
+          selectedWorktree ? `${project.name} / ${selectedWorktree.branch}` : project.name,
+          world.x - directorySize.width / 2,
+          world.y - directorySize.height / 2,
+          card.id,
+        )
       },
     })
     items.push({ kind: 'separator' })
@@ -501,6 +574,11 @@ function buildCardItems(
   }
 
   if (card.kind === 'session' || card.kind === 'terminal') {
+    items.push({
+      kind: 'item',
+      label: '新建连接便签',
+      onClick: () => createConnectedNoteForCard(card),
+    })
     items.push({
       kind: 'item',
       label: card.collapsed ? '展开预览' : '折叠为预览',
@@ -603,6 +681,15 @@ function buildCardItems(
     items.push({ kind: 'separator' })
     if (targetIds.length === 2) {
       items.push({ kind: 'item', label: '连接选中卡片', onClick: () => store.addRelation(targetIds[0], targetIds[1]) })
+      items.push({
+        kind: 'submenu',
+        label: '连接为',
+        items: [
+          ...relationMenuItems(targetIds[0], targetIds[1]),
+          { kind: 'item' as const, label: '双向关联', onClick: () => store.addRelation(targetIds[0], targetIds[1], { kind: 'related', direction: 'both' }) },
+          { kind: 'item' as const, label: '无方向关联', onClick: () => store.addRelation(targetIds[0], targetIds[1], { kind: 'related', direction: 'none' }) },
+        ],
+      })
     }
     items.push({
       kind: 'item',
@@ -713,6 +800,24 @@ function buildCardItems(
     })
   }
 
+  const editorCardIds = targetIds.filter((id) => store.getCard(id)?.kind === 'editor')
+  if (editorCardIds.length > 0) {
+    items.push({
+      kind: 'item',
+      label: editorCardIds.length > 1 ? `从画布移除文件 (${editorCardIds.length})` : '从画布移除',
+      onClick: () => store.removeCards(editorCardIds),
+    })
+  }
+
+  const directoryCardIds = targetIds.filter((id) => store.getCard(id)?.kind === 'directory')
+  if (directoryCardIds.length > 0) {
+    items.push({
+      kind: 'item',
+      label: directoryCardIds.length > 1 ? `从画布移除目录 (${directoryCardIds.length})` : '从画布移除目录',
+      onClick: () => store.removeCards(directoryCardIds),
+    })
+  }
+
   return items
 }
 
@@ -762,8 +867,17 @@ function getCardSizeLabel(card: CanvasCard): string {
       : null
     return session?.name ?? (card.kind === 'terminal' ? 'Terminal' : 'Session')
   }
+  if (card.kind === 'editor') {
+    const tab = card.refId
+      ? useEditorsStore.getState().tabs.find((candidate) => candidate.id === card.refId)
+      : null
+    return tab?.fileName ?? '文件'
+  }
   if (card.kind === 'frame') {
     return card.frameTitle?.trim() || '空间'
+  }
+  if (card.kind === 'directory') {
+    return card.directoryTitle?.trim() || '目录'
   }
   const noteText = card.noteBody?.trim().replace(/\s+/g, ' ')
   return noteText ? `便签 · ${noteText.slice(0, 14)}` : '便签'

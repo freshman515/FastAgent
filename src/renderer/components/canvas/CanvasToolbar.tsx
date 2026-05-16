@@ -11,6 +11,7 @@ import {
   Check,
   Command,
   Frame,
+  FolderTree,
   Grid3x3,
   LayoutGrid,
   Link2,
@@ -34,7 +35,10 @@ import type { CanvasBookmark, CanvasCard, Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
+import { useEditorsStore, type EditorTab } from '@/stores/editors'
+import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useWorktreesStore } from '@/stores/worktrees'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { addCanvasCardToSpace } from './canvasSpaceMembership'
@@ -76,6 +80,10 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
   const normalizeCardsToDefaultSessionSize = useCanvasStore((state) => state.normalizeCardsToDefaultSessionSize)
   const arrange = useCanvasStore((state) => state.arrange)
   const sessions = useSessionsStore((state) => state.sessions)
+  const editors = useEditorsStore((state) => state.tabs)
+  const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
+  const selectedProject = useProjectsStore((state) => state.projects.find((project) => project.id === state.selectedProjectId))
+  const selectedWorktree = useWorktreesStore((state) => state.worktrees.find((worktree) => worktree.id === state.selectedWorktreeId && worktree.projectId === selectedProjectId))
 
   const gridEnabled = useUIStore((state) => state.settings.canvasGridEnabled)
   const snapEnabled = useUIStore((state) => state.settings.canvasSnapEnabled)
@@ -130,6 +138,30 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
       y: placement.position.y,
       noteBody: '',
       noteColor: 'yellow',
+    }, placement.placeOptions)
+    addCanvasCardToSpace(cardId, placement.activeSpaceId)
+  }
+
+  const createDirectoryAtCenter = (): void => {
+    const directoryPath = selectedWorktree?.path ?? selectedProject?.path
+    if (!selectedProject || !directoryPath) {
+      useUIStore.getState().addToast({
+        title: '未选择项目',
+        body: '先选择一个项目，再创建目录卡片。',
+        type: 'warning',
+      })
+      return
+    }
+    const directorySize = getDefaultCanvasCardSize('directory')
+    const placement = getSmartNewCardPlacement(viewportRef, directorySize)
+    if (!placement) return
+    const cardId = addCard({
+      kind: 'directory',
+      refId: selectedProject.id,
+      x: placement.position.x,
+      y: placement.position.y,
+      directoryPath,
+      directoryTitle: selectedWorktree ? `${selectedProject.name} / ${selectedWorktree.branch}` : selectedProject.name,
     }, placement.placeOptions)
     addCanvasCardToSpace(cardId, placement.activeSpaceId)
   }
@@ -227,7 +259,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
 
   const saveSelectedCardBookmark = (): void => {
     if (!selectedBookmarkCard) return
-    addBookmarkForCard(selectedBookmarkCard.id, getCanvasToolbarCardTitle(selectedBookmarkCard, sessions))
+    addBookmarkForCard(selectedBookmarkCard.id, getCanvasToolbarCardTitle(selectedBookmarkCard, sessions, editors))
     setBookmarksOpen(false)
   }
 
@@ -251,6 +283,9 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
     <div data-canvas-toolbar className="absolute bottom-4 left-4 z-10 flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]/95 p-1 shadow-lg backdrop-blur">
       <button type="button" onClick={createNoteAtCenter} className={btn(false)} title="新建便签">
         <StickyNote size={16} />
+      </button>
+      <button type="button" onClick={createDirectoryAtCenter} className={btn(false)} title="新建目录卡片">
+        <FolderTree size={16} />
       </button>
       <button type="button" onClick={onCreateFrame} className={btn(false)} title="新建空间">
         <Frame size={16} />
@@ -355,7 +390,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
             <BookmarkItem label="保存当前视图" onClick={() => addBookmark()} />
             {selectedBookmarkCard && (
               <BookmarkItem
-                label={`保存选中：${getCanvasToolbarCardTitle(selectedBookmarkCard, sessions)}`}
+                label={`保存选中：${getCanvasToolbarCardTitle(selectedBookmarkCard, sessions, editors)}`}
                 onClick={saveSelectedCardBookmark}
               />
             )}
@@ -369,6 +404,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
                     key={card.id}
                     card={card}
                     sessions={sessions}
+                    editors={editors}
                     onClick={() => navigateToCard(card.id)}
                   />
                 ))}
@@ -377,7 +413,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
             {bookmarks.length > 0 && <div className="my-1 h-px bg-[var(--color-border)]" />}
             {bookmarks.length > 0 && <BookmarkSectionLabel label="书签" />}
             {bookmarks.map((bookmark, index) => {
-              const meta = getBookmarkMeta(bookmark, cardsById, sessions)
+              const meta = getBookmarkMeta(bookmark, cardsById, sessions, editors)
               return (
               <div
                 key={bookmark.id}
@@ -546,7 +582,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
         {sizeMenuOpen && (
           <div className="absolute bottom-full left-0 mb-1 min-w-[220px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1 shadow-xl">
             <SizeItem icon={<SquareEqual size={14} />} label="适配聚焦工作区" onClick={handleNormalizeToFocusArea} />
-            <SizeItem icon={<PanelsTopLeft size={14} />} label="恢复新建会话尺寸" onClick={handleNormalizeToDefaultSize} />
+            <SizeItem icon={<PanelsTopLeft size={14} />} label="恢复工作卡片尺寸" onClick={handleNormalizeToDefaultSize} />
           </div>
         )}
       </div>
@@ -654,10 +690,12 @@ function BookmarkSectionLabel({ label }: { label: string }): JSX.Element {
 function RecentCardItem({
   card,
   sessions,
+  editors,
   onClick,
 }: {
   card: CanvasCard
   sessions: Session[]
+  editors: EditorTab[]
   onClick: () => void
 }): JSX.Element {
   return (
@@ -668,9 +706,9 @@ function RecentCardItem({
     >
       <span className="canvas-arrange-menu-item-indicator absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[var(--color-accent)]" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[var(--ui-font-sm)]">{getCanvasToolbarCardTitle(card, sessions)}</span>
+        <span className="block truncate text-[var(--ui-font-sm)]">{getCanvasToolbarCardTitle(card, sessions, editors)}</span>
         <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">
-          {getCanvasToolbarCardMeta(card, sessions)}
+          {getCanvasToolbarCardMeta(card, sessions, editors)}
         </span>
       </span>
     </button>
@@ -702,17 +740,22 @@ function getArrangeModeLabel(mode: CanvasArrangeMode): string {
   }
 }
 
-function getBookmarkMeta(bookmark: CanvasBookmark, cardsById: Map<string, CanvasCard>, sessions: Session[]): string {
+function getBookmarkMeta(bookmark: CanvasBookmark, cardsById: Map<string, CanvasCard>, sessions: Session[], editors: EditorTab[]): string {
   if (!bookmark.cardId) return '视图书签'
   const card = cardsById.get(bookmark.cardId)
   if (!card) return '目标已移除'
-  return getCanvasToolbarCardMeta(card, sessions)
+  return getCanvasToolbarCardMeta(card, sessions, editors)
 }
 
-function getCanvasToolbarCardTitle(card: CanvasCard, sessions: Session[]): string {
+function getCanvasToolbarCardTitle(card: CanvasCard, sessions: Session[], editors: EditorTab[]): string {
   if (card.kind === 'frame') return card.frameTitle?.trim() || '空间'
   if (card.kind === 'note') {
     return card.noteBody?.split(/\r?\n/).find((line) => line.trim())?.trim() || '便签'
+  }
+  if (card.kind === 'directory') return card.directoryTitle?.trim() || '目录'
+  if (card.kind === 'editor') {
+    const tab = card.refId ? editors.find((candidate) => candidate.id === card.refId) : undefined
+    return tab?.fileName ?? card.sessionRemark?.trim() ?? '文件'
   }
 
   const session = card.refId ? sessions.find((candidate) => candidate.id === card.refId) : undefined
@@ -720,13 +763,18 @@ function getCanvasToolbarCardTitle(card: CanvasCard, sessions: Session[]): strin
   return card.sessionRemark?.trim() || (card.kind === 'terminal' ? 'Terminal' : '会话')
 }
 
-function getCanvasToolbarCardMeta(card: CanvasCard, sessions: Session[]): string {
+function getCanvasToolbarCardMeta(card: CanvasCard, sessions: Session[], editors: EditorTab[]): string {
   const hiddenState = isCanvasCardHidden(card) ? '隐藏' : ''
   let meta: string
   if (card.kind === 'frame') {
     meta = `空间 · ${card.frameMemberIds?.length ?? 0} 张卡片`
   } else if (card.kind === 'note') {
     meta = '便签'
+  } else if (card.kind === 'directory') {
+    meta = card.directoryPath ?? '目录'
+  } else if (card.kind === 'editor') {
+    const tab = card.refId ? editors.find((candidate) => candidate.id === card.refId) : undefined
+    meta = tab ? `${tab.language}${tab.modified ? ' · 未保存' : ''}` : '文件'
   } else {
     const session = card.refId ? sessions.find((candidate) => candidate.id === card.refId) : undefined
     meta = session ? `${session.type} · ${session.status}` : card.kind

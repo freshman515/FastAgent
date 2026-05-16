@@ -20,6 +20,7 @@ function focusCanvasCardSoon(cardId: string): void {
 export function focusCanvasSessionTarget(sessionId: string): boolean {
   const session = useSessionsStore.getState().sessions.find((item) => item.id === sessionId)
   if (!session) return false
+  if (session.type === 'note') return false
 
   const panes = usePanesStore.getState()
   const canvas = useCanvasStore.getState()

@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react'
 import type { CanvasCard } from '@shared/types'
 import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
+import { useEditorsStore } from '@/stores/editors'
 import { getTerminalBufferText } from '@/hooks/useXterm'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
 import { cn } from '@/lib/utils'
@@ -124,6 +125,7 @@ function scoreSearch(row: SearchResult, query: string, compactQuery: string): nu
 export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearchProps): JSX.Element | null {
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const sessions = useSessionsStore((state) => state.sessions)
+  const editors = useEditorsStore((state) => state.tabs)
   const previewCardInViewport = useCanvasStore((state) => state.previewCardInViewport)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -139,6 +141,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
 
   const results = useMemo(() => {
     const sessionById = new Map(sessions.map((session) => [session.id, session]))
+    const editorById = new Map(editors.map((tab) => [tab.id, tab]))
     const frameByMemberId = new Map<string, CanvasCard>()
     for (const frame of cards) {
       if (frame.kind !== 'frame') continue
@@ -177,6 +180,27 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
           haystack: card.frameTitle ?? '',
         }
       }
+      if (card.kind === 'directory') {
+        const title = card.directoryTitle?.trim() || '目录'
+        const meta = ['目录', card.directoryPath, frameMeta].filter(Boolean).join(' · ')
+        return {
+          card,
+          title,
+          meta,
+          haystack: `${title}\n${card.directoryPath ?? ''}\n${frameTitle ?? ''}`,
+        }
+      }
+      if (card.kind === 'editor') {
+        const tab = card.refId ? editorById.get(card.refId) : undefined
+        const title = tab?.fileName ?? '文件'
+        const meta = [tab?.language ?? 'editor', tab?.filePath, frameMeta].filter(Boolean).join(' · ')
+        return {
+          card,
+          title,
+          meta,
+          haystack: `${title}\n${tab?.filePath ?? ''}\n${tab?.language ?? ''}\n${frameTitle ?? ''}`,
+        }
+      }
       const session = card.refId ? sessionById.get(card.refId) : undefined
       const terminalText = card.refId ? getTerminalBufferText(card.refId, 120) : ''
       const title = session ? formatSessionCardTitle(session.name, card.sessionRemark) : '会话'
@@ -196,7 +220,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
         .map((item) => item.row)
       : rows
     return filtered.slice(0, 24)
-  }, [cards, query, scopeFrameId, sessions])
+  }, [cards, editors, query, scopeFrameId, sessions])
 
   useEffect(() => {
     if (!open) return

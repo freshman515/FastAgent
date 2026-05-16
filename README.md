@@ -117,8 +117,8 @@ macOS 版本目前未做 Apple Developer ID 签名和公证，首次打开时可
 ### 安装依赖
 
 ```bash
-git clone https://github.com/freshman515/PragmaDesk.git
-cd PragmaDesk
+git clone https://github.com/freshman515/FastAgent.git
+cd FastAgent
 pnpm install
 ```
 

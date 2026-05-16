@@ -152,6 +152,7 @@ export function useSelectionBoundsDrag(element: HTMLDivElement | null): void {
         if (state.avoidance.positions.size > 0) {
           useCanvasStore.getState().updateCardPositions(state.avoidance.positions)
         }
+        useCanvasUiStore.getState().clearLiveCardGeometry()
         resetLiveFrameAutoLayout(state.liveFrameIds)
         cleanupAvoidanceTransitions(state.avoidance.affectedIds)
         return
@@ -178,6 +179,7 @@ export function useSelectionBoundsDrag(element: HTMLDivElement | null): void {
           ui.updateSettings({ canvasArrangeMode: 'free' })
         }
       }
+      useCanvasUiStore.getState().clearLiveCardGeometry()
     }
 
     element.addEventListener('pointerdown', onPointerDown)
@@ -214,6 +216,17 @@ function handleDragMove(
   state.liveDy = dy
   element.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`
 
+  const liveGeometry = new Map<string, AvoidanceGeometry>()
+  for (const card of cards) {
+    if (!state.ids.includes(card.id) || card.kind === 'frame') continue
+    liveGeometry.set(card.id, {
+      x: card.x + dx,
+      y: card.y + dy,
+      width: card.width,
+      height: card.height,
+    })
+  }
+
   if (settings.canvasOverlapMode === 'avoid') {
     const avoidance = resolveAvoidOverlap(cards, state.ids, dx, dy)
     applyAvoidanceStyles(cards, avoidance, state.avoidance)
@@ -222,6 +235,17 @@ function handleDragMove(
     applyAvoidanceStyles(cards, { positions: new Map(), affectedIds: new Set() }, state.avoidance)
     state.avoidance = { positions: new Map(), affectedIds: new Set() }
   }
+  for (const [id, position] of state.avoidance.positions) {
+    const card = cards.find((candidate) => candidate.id === id)
+    if (!card || card.kind === 'frame') continue
+    liveGeometry.set(id, {
+      x: position.x,
+      y: position.y,
+      width: card.width,
+      height: card.height,
+    })
+  }
+  useCanvasUiStore.getState().setLiveCardGeometry(liveGeometry)
 
   applyLiveCardMovement(state.ids, cards, dx, dy, scale)
   state.liveFrameIds = applyLiveFrameAutoLayoutForMovement(
@@ -257,6 +281,18 @@ function handleResizeMove(
     applyAvoidanceStyles(cards, { positions: new Map(), affectedIds: new Set() }, state.avoidance)
     state.avoidance = { positions: new Map(), affectedIds: new Set() }
   }
+  const liveGeometry = new Map<string, AvoidanceGeometry>(geometry)
+  for (const [id, position] of state.avoidance.positions) {
+    const card = cards.find((candidate) => candidate.id === id)
+    if (!card || card.kind === 'frame') continue
+    liveGeometry.set(id, {
+      x: position.x,
+      y: position.y,
+      width: card.width,
+      height: card.height,
+    })
+  }
+  useCanvasUiStore.getState().setLiveCardGeometry(liveGeometry)
   state.liveFrameIds = applyLiveFrameAutoLayoutForGeometry(
     cards,
     new Map<string, AvoidanceGeometry>(geometry),
@@ -365,10 +401,10 @@ function getBounds(cards: Array<{ x: number; y: number; width: number; height: n
 }
 
 function getMinSize(card: CanvasCard): { minWidth: number; minHeight: number } {
-  if (card.kind === 'session' || card.kind === 'terminal') {
+  if (card.kind === 'session' || card.kind === 'terminal' || card.kind === 'editor' || card.kind === 'note') {
     return { minWidth: 320, minHeight: card.collapsed ? 104 : 240 }
   }
+  if (card.kind === 'directory') return { minWidth: 260, minHeight: 360 }
   if (card.kind === 'frame') return { minWidth: 240, minHeight: 160 }
-  if (card.kind === 'note') return { minWidth: 160, minHeight: 120 }
   return { minWidth: 120, minHeight: 80 }
 }

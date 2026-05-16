@@ -77,20 +77,17 @@ const EXT_LANG_MAP: Record<string, string> = {
 }
 
 export function detectLanguage(fileName: string): string {
-  const lower = fileName.toLowerCase()
+  const lower = fileName.replace(/\s+\(diff\)$/i, '').toLowerCase()
   if (isImageFileName(lower)) return 'image'
   if (lower === 'dockerfile') return 'dockerfile'
   const ext = lower.split('.').pop() ?? ''
   return EXT_LANG_MAP[ext] ?? 'plaintext'
 }
 
-function resolveStoredLanguage(fileName: string, storedLanguage: unknown): string {
+export function resolveEditorLanguage(fileName: string, storedLanguage: unknown): string {
   const detectedLanguage = detectLanguage(fileName)
-  if (typeof storedLanguage !== 'string') return detectedLanguage
-  if (storedLanguage === 'plaintext' && detectedLanguage !== 'plaintext') {
-    return detectedLanguage
-  }
-  return storedLanguage
+  if (detectedLanguage !== 'plaintext') return detectedLanguage
+  return typeof storedLanguage === 'string' && storedLanguage.trim() ? storedLanguage : detectedLanguage
 }
 
 function normalizeFilePath(value: string): string {
@@ -141,7 +138,7 @@ export function sanitizeEditorTab(
     id: tab.id,
     filePath: tab.filePath,
     fileName: tab.fileName,
-    language: resolveStoredLanguage(tab.fileName, tab.language),
+    language: resolveEditorLanguage(tab.fileName, tab.language),
     modified: false,
     isDiff: Boolean(tab.isDiff),
     originalContent: typeof tab.originalContent === 'string' ? tab.originalContent : undefined,
@@ -213,7 +210,7 @@ export const useEditorsStore = create<EditorsState>((set, get) => ({
   openFile: (filePath, context) => {
     const existing = get().tabs.find((t) => t.filePath === filePath && !t.isDiff)
     if (existing) {
-      const nextLanguage = resolveStoredLanguage(existing.fileName, existing.language)
+      const nextLanguage = resolveEditorLanguage(existing.fileName, existing.language)
       if (nextLanguage !== existing.language) {
         set((state) => {
           const tabs = state.tabs.map((tab) =>
@@ -263,7 +260,7 @@ export const useEditorsStore = create<EditorsState>((set, get) => ({
         const tabs = s.tabs.map((t) => t.id === existing.id ? {
           ...t,
           originalContent,
-          language: resolveStoredLanguage(t.fileName, t.language),
+          language: resolveEditorLanguage(t.fileName, t.language),
         } : t)
         schedulePersist(tabs)
         return { tabs }

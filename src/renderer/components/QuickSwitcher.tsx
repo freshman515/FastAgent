@@ -138,6 +138,7 @@ export function QuickSwitcher(): JSX.Element | null {
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modeRef = useRef<SwitcherMode | null>(null)
   const selectedIdxRef = useRef(0)
   const mruItemsRef = useRef<SwitcherItem[]>([])
 
@@ -152,6 +153,7 @@ export function QuickSwitcher(): JSX.Element | null {
   const paneSessions = usePanesStore((s) => s.paneSessions[activePaneId] ?? [])
   const paneRecentSessions = usePanesStore((s) => s.paneRecentSessions[activePaneId] ?? [])
 
+  modeRef.current = mode
   selectedIdxRef.current = selectedIdx
 
   const projectNameById = useMemo(
@@ -305,7 +307,8 @@ export function QuickSwitcher(): JSX.Element | null {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (mode === 'search' || !event.ctrlKey || event.key !== 'Tab') return
+      const currentMode = modeRef.current
+      if (currentMode === 'search' || !event.ctrlKey || event.key !== 'Tab') return
 
       const items = mruItemsRef.current
       if (items.length === 0) return
@@ -313,9 +316,10 @@ export function QuickSwitcher(): JSX.Element | null {
       event.preventDefault()
       event.stopPropagation()
 
+      modeRef.current = 'mru'
       setMode('mru')
       setSelectedIdx((currentIdx) => {
-        if (mode !== 'mru') {
+        if (currentMode !== 'mru') {
           return event.shiftKey ? items.length - 1 : 0
         }
         const direction = event.shiftKey ? -1 : 1
@@ -324,17 +328,20 @@ export function QuickSwitcher(): JSX.Element | null {
     }
 
     const handleKeyUp = (event: KeyboardEvent): void => {
-      if (mode !== 'mru') return
+      if (modeRef.current !== 'mru') return
       if (event.key !== 'Control') return
 
       event.preventDefault()
       const item = mruItemsRef.current[selectedIdxRef.current]
       if (item) activateItem(item)
+      modeRef.current = null
       setMode(null)
     }
 
     const handleBlur = (): void => {
-      if (mode === 'mru') setMode(null)
+      if (modeRef.current !== 'mru') return
+      modeRef.current = null
+      setMode(null)
     }
 
     window.addEventListener('keydown', handleKeyDown, true)
@@ -366,7 +373,10 @@ export function QuickSwitcher(): JSX.Element | null {
     }
   }, [selectedIdx, visibleItems])
 
-  const close = useCallback(() => setMode(null), [])
+  const close = useCallback(() => {
+    modeRef.current = null
+    setMode(null)
+  }, [])
 
   const handleSelect = useCallback((idx: number) => {
     const item = visibleItems[idx]
