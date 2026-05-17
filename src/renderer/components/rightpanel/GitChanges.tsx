@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, GitBranch, RefreshCw, Circle, Plus, Minus, U
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { isCodexType, type SessionType } from '@shared/types'
+import { getDocumentFileKind } from '@shared/fileTypes'
 import { cn, generateId } from '@/lib/utils'
 import claudeIcon from '@/assets/icons/Claude.png'
 import { useProjectsStore } from '@/stores/projects'
@@ -16,6 +17,7 @@ import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui
 import { renderMarkdown } from '@/lib/markdown'
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 import { parseCustomSessionArgs } from '@/lib/createSession'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 import { SESSION_OPTIONS, getCustomSessionOptionId } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
 
@@ -483,17 +485,20 @@ export function GitChanges(): JSX.Element {
   const handleOpenFile = useCallback((filePath: string) => {
     if (!projectPath) return
     const fullPath = `${projectPath}/${filePath}`
-    const tabId = useEditorsStore.getState().openFile(fullPath, {
-      projectId: selectedProjectId,
-      worktreeId: editorWorktreeId,
+    openWorkspaceFile(fullPath, {
+      context: {
+        projectId: selectedProjectId,
+        worktreeId: editorWorktreeId,
+      },
     })
-    const ps = usePanesStore.getState()
-    ps.addSessionToPane(ps.activePaneId, tabId)
-    ps.setPaneActiveSession(ps.activePaneId, tabId)
   }, [projectPath, selectedProjectId, editorWorktreeId])
 
   const handleOpenDiff = useCallback(async (filePath: string) => {
     if (!projectPath) return
+    if (getDocumentFileKind(filePath)) {
+      handleOpenFile(filePath)
+      return
+    }
     try {
       const original = await window.api.git.showHead(projectPath, filePath)
       const fullPath = `${projectPath}/${filePath}`

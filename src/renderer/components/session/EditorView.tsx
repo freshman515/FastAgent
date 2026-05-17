@@ -2,7 +2,7 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import * as monaco from 'monaco-editor'
-import { Code2, Columns2, Eye, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
+import { Code2, Columns2, ExternalLink, Eye, FileText, FolderOpen, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
 import { type EditorCursorInfo, resolveEditorLanguage, useEditorsStore } from '@/stores/editors'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -14,6 +14,7 @@ import { registerContentSelectAllTarget } from '@/lib/contentSelectAll'
 import { defineMonacoTheme, MONACO_THEME_NAME } from '@/lib/monacoTheme'
 import { registerEnhancedCSharpLanguage } from '@/lib/csharpLanguage'
 import { renderMarkdown } from '@/lib/markdown'
+import { openWorkspaceFileInSystem } from '@/lib/openWorkspaceFile'
 
 // Configure Monaco workers for Vite
 self.MonacoEnvironment = {
@@ -747,6 +748,127 @@ function ImagePreview({
   )
 }
 
+const DOCUMENT_WEBVIEW_PARTITION = 'persist:pragma-desk-documents'
+
+function encodeFileUrlSegment(segment: string): string {
+  if (/^[A-Za-z]:$/.test(segment)) return segment
+  return encodeURIComponent(segment)
+}
+
+function toFileUrl(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  if (normalized.startsWith('//')) {
+    return `file:${normalized.split('/').map(encodeFileUrlSegment).join('/')}`
+  }
+
+  const path = /^[A-Za-z]:\//.test(normalized)
+    ? `/${normalized}`
+    : normalized.startsWith('/')
+      ? normalized
+      : `/${normalized}`
+
+  return `file://${path.split('/').map(encodeFileUrlSegment).join('/')}`
+}
+
+function getParentPath(filePath: string): string {
+  return filePath.replace(/[/\\][^/\\]+$/, '') || filePath
+}
+
+function getDocumentTypeLabel(language: string): string {
+  if (language === 'pdf') return 'PDF'
+  if (language === 'spreadsheet') return 'Excel'
+  return 'Word'
+}
+
+function DocumentPreview({
+  filePath,
+  fileName,
+  language,
+}: {
+  filePath: string
+  fileName: string
+  language: string
+}): JSX.Element {
+  const fileUrl = useMemo(() => toFileUrl(filePath), [filePath])
+  const typeLabel = getDocumentTypeLabel(language)
+
+  if (language === 'pdf') {
+    return (
+      <div className="flex h-full w-full flex-col bg-[var(--color-bg-primary)]">
+        <div className="relative flex h-9 shrink-0 items-center justify-end border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/70 px-2">
+          <div className="pointer-events-none absolute inset-x-24 top-0 flex h-full items-center justify-center">
+            <span className="truncate text-sm font-medium text-[var(--color-text-secondary)]">
+              {fileName}
+            </span>
+          </div>
+          <div className="inline-flex shrink-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+            <button
+              type="button"
+              onClick={() => openWorkspaceFileInSystem(filePath)}
+              aria-label="用系统应用打开"
+              title="用系统应用打开"
+              className="flex h-6 w-8 items-center justify-center text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            >
+              <ExternalLink size={13} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => { void window.api.shell.openPath(getParentPath(filePath)) }}
+              aria-label="在文件夹中显示"
+              title="在文件夹中显示"
+              className="flex h-6 w-8 items-center justify-center border-l border-[var(--color-border)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            >
+              <FolderOpen size={13} strokeWidth={2.2} />
+            </button>
+          </div>
+        </div>
+        <div className="relative min-h-0 flex-1 bg-white">
+          <webview
+            src={fileUrl}
+            partition={DOCUMENT_WEBVIEW_PARTITION}
+            webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes"
+            className="absolute inset-0 h-full w-full"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-[var(--color-bg-primary)] p-6">
+      <div className="flex max-w-md flex-col items-center text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-accent)]">
+          <FileText size={26} strokeWidth={1.8} />
+        </div>
+        <div className="max-w-full truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
+          {fileName}
+        </div>
+        <div className="mt-1 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">
+          {typeLabel} 文件使用系统默认应用打开。
+        </div>
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => openWorkspaceFileInSystem(filePath)}
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+          >
+            <ExternalLink size={13} />
+            打开
+          </button>
+          <button
+            type="button"
+            onClick={() => { void window.api.shell.openPath(getParentPath(filePath)) }}
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+          >
+            <FolderOpen size={13} />
+            文件夹
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface EditorBinding {
   getContent: () => string
   applyGeneratedCode: (code: string, selection: EditorCursorInfo['selection']) => Promise<void>
@@ -854,6 +976,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   )
   const isMarkdownEditor = editorLanguage === 'markdown' && !tab?.isDiff
   const isImageEditor = editorLanguage === 'image' && !tab?.isDiff
+  const isDocumentEditor = ['pdf', 'word', 'spreadsheet'].includes(editorLanguage) && !tab?.isDiff
   const renderedMarkdown = useMemo(
     () => (isMarkdownEditor ? renderMarkdown(markdownSource) : ''),
     [isMarkdownEditor, markdownSource],
@@ -896,7 +1019,11 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
       return model
     }
 
-    if (editorLanguage === 'image' && !tab.isDiff) {
+    if (['pdf', 'word', 'spreadsheet'].includes(editorLanguage) && !tab.isDiff) {
+      setModified(editorTabId, false)
+      setCursorInfo(null)
+      setLoading(false)
+    } else if (editorLanguage === 'image' && !tab.isDiff) {
       const loadImagePreview = (): void => {
         void window.api.fs.readFileDataUrl(tab.filePath).then((payload) => {
           if (disposed) return
@@ -1317,7 +1444,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
   useEffect(() => {
     if (!isActive) return
     setLastFocusedTabId(editorTabId)
-    if (isImageEditor) {
+    if (isImageEditor || isDocumentEditor) {
       setCursorInfo(null)
       return
     }
@@ -1332,7 +1459,7 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
     } else {
       (ed as monaco.editor.IStandaloneCodeEditor).focus()
     }
-  }, [editorTabId, isActive, isImageEditor, isMarkdownEditor, markdownMode, setCursorInfo, setLastFocusedTabId])
+  }, [editorTabId, isActive, isDocumentEditor, isImageEditor, isMarkdownEditor, markdownMode, setCursorInfo, setLastFocusedTabId])
 
   // Get running sessions for picker — only current project, deduplicated
   const allSessions = useSessionsStore((s) => s.sessions)
@@ -1590,6 +1717,14 @@ export function EditorView({ editorTabId, isActive }: EditorViewProps): JSX.Elem
             }}
             onFitToViewChange={setImageFitToView}
             onZoomChange={setImageZoom}
+          />
+        </div>
+      ) : isDocumentEditor && tab ? (
+        <div className="min-h-0 w-full flex-1">
+          <DocumentPreview
+            filePath={tab.filePath}
+            fileName={tab.fileName}
+            language={editorLanguage}
           />
         </div>
       ) : (

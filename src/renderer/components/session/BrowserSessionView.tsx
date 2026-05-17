@@ -9,7 +9,7 @@ const BROWSER_PARTITION = 'persist:pragma-desk-browser'
 const BROWSER_CONTEXT_TEXT_LIMIT = 12000
 const BROWSER_CONTEXT_HEADING_LIMIT = 24
 const BROWSER_CONTEXT_LINK_LIMIT = 24
-const WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:'])
+const WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:', 'chrome-extension:'])
 const EXTERNAL_OPEN_PROTOCOLS = new Set(['http:', 'https:'])
 
 type BrowserWebviewElement = HTMLElement & {
@@ -87,6 +87,21 @@ function getCurrentWebviewUrl(webview: BrowserWebviewElement | null): string | n
   if (!webview) return null
   try {
     return webview.getURL() || null
+  } catch {
+    return null
+  }
+}
+
+function fileUrlToPath(raw: string): string | null {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'file:') return null
+    const pathname = decodeURIComponent(url.pathname)
+    if (window.api.platform === 'win32') {
+      if (url.hostname) return `\\\\${url.hostname}${pathname.replace(/\//g, '\\')}`
+      return pathname.replace(/^\/([A-Za-z]:)/, '$1').replace(/\//g, '\\')
+    }
+    return pathname
   } catch {
     return null
   }
@@ -392,6 +407,11 @@ export function BrowserSessionView({ session, isActive }: BrowserSessionViewProp
 
   const openExternal = (): void => {
     const current = getCurrentWebviewUrl(webviewRef.current) ?? currentUrl
+    const localPath = fileUrlToPath(current)
+    if (localPath) {
+      void window.api.shell.openPath(localPath)
+      return
+    }
     void window.api.shell.openExternal(current)
   }
 

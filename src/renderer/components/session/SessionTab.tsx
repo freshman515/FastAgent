@@ -21,6 +21,7 @@ import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
 import { removeCanvasNotesBySyncId } from '@/lib/noteSync'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { beginTabDragGuard, endTabDragGuard } from '@/lib/tabDragGuard'
+import { shouldPopOutTabFromDrop } from '@/lib/tabDetachDrop'
 import { SessionIconView } from './SessionIconView'
 
 interface SessionTabProps {
@@ -308,11 +309,9 @@ export function SessionTab({
             return
           }
 
-          // Detect if dropped outside the window → pop out
+          // Dropping outside the pane workspace pops the tab into its own window.
           const { clientX, clientY, screenX, screenY } = e
-          const inWindow = clientX >= 0 && clientY >= 0
-            && clientX <= window.innerWidth && clientY <= window.innerHeight
-          if (!inWindow && !session.pinned) {
+          if (shouldPopOutTabFromDrop(clientX, clientY) && !session.pinned) {
             const liveSession = useSessionsStore.getState().sessions.find((s) => s.id === session.id)
             const project = useProjectsStore.getState().projects.find((p) => p.id === session.projectId)
             const branch = useGitStore.getState().branchInfo[session.projectId]?.current

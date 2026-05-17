@@ -5,7 +5,7 @@ import { detectTerminalShellAvailability } from '../services/ShellDetector'
 
 export function registerDialogHandlers(): void {
   ipcMain.handle(IPC.SHELL_OPEN_PATH, (_event, path: string) => {
-    shell.openPath(path)
+    return shell.openPath(path)
   })
 
   ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, (_event, url: string) => {

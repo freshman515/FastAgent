@@ -4,10 +4,9 @@ import type { CanvasCard } from '@shared/types'
 import { useCanvasStore } from '@/stores/canvas'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
-import { useEditorsStore } from '@/stores/editors'
-import { usePanesStore } from '@/stores/panes'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { cn } from '@/lib/utils'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 import { CardFrame, type CardCoordinateMode } from './CardFrame'
 import { addCanvasCardToSpace } from '../canvasSpaceMembership'
 
@@ -252,10 +251,8 @@ function DirectoryRow({
 }
 
 function openFileFromDirectoryCard(filePath: string, projectId: string | null, worktreeId: string | undefined, sourceCard: CanvasCard): void {
-  const tabId = useEditorsStore.getState().openFile(filePath, { projectId, worktreeId })
-  const panes = usePanesStore.getState()
-  panes.addSessionToPane(panes.activePaneId, tabId)
-  panes.setPaneActiveSession(panes.activePaneId, tabId)
+  const tabId = openWorkspaceFile(filePath, { context: { projectId, worktreeId } })
+  if (!tabId) return
 
   const canvas = useCanvasStore.getState()
   const cardId = canvas.attachSession(tabId, 'editor', {
@@ -267,7 +264,7 @@ function openFileFromDirectoryCard(filePath: string, projectId: string | null, w
     ignoreOverlapCardIds: [sourceCard.id],
   })
   addCanvasCardToSpace(cardId, useCanvasUiStore.getState().activeSpaceId)
-  requestAnimationFrame(() => canvas.focusOnCard(cardId))
+  requestAnimationFrame(() => canvas.focusOnCard(cardId, { allowReturn: false }))
 }
 
 function sortEntries(entries: DirectoryEntry[]): DirectoryEntry[] {

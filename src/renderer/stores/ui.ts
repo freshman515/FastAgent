@@ -464,7 +464,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hiddenNewSessionOptionIds: [...DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS],
   newSessionMenuPresetVersion: NEW_SESSION_MENU_PRESET_VERSION,
   newSessionOptionOrder: [],
-  promptSessionNameOnCreate: false,
+  promptSessionNameOnCreate: true,
   terminalShellMode: 'auto',
   terminalShellCommand: '',
   terminalShellArgs: '',

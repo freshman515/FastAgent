@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Clock, Eye, FolderPlus, List, MoreHorizontal, Palette, Trash2, Edit3, CornerUpLeft } from 'lucide-react'
+import { ChevronRight, Clock, Eye, FolderPlus, List, MoreHorizontal, Palette, Trash2, Edit3, CornerUpLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Group, GroupItemOrderEntry, Project } from '@shared/types'
 import { cn } from '@/lib/utils'
@@ -362,11 +362,7 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
         )}
 
         <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-text-secondary)]">
-          {group.collapsed ? (
-            <ChevronRight size={12} strokeWidth={2.5} className="transition-transform duration-200" />
-          ) : (
-            <ChevronDown size={12} strokeWidth={2.5} className="transition-transform duration-200" />
-          )}
+          <ChevronRight size={12} strokeWidth={2.5} className={cn('transition-transform duration-200', !group.collapsed && 'rotate-90')} />
         </div>
       </div>
 

@@ -9,8 +9,8 @@ import { geminiIcon } from '@/lib/geminiIcon'
 import { browserIcon } from '@/lib/browserIcon'
 import { cn } from '@/lib/utils'
 import { switchProjectContext } from '@/lib/project-context'
-import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
-import { usePanesStore } from '@/stores/panes'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
+import { detectLanguage, FILE_ICONS } from '@/stores/editors'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -298,14 +298,12 @@ export function TitleBarSearch(): JSX.Element {
   const handleOpenFile = (result: FileResultItem) => {
     switchProjectContext(result.projectId, null, result.worktreeId)
 
-    const tabId = useEditorsStore.getState().openFile(result.filePath, {
-      projectId: result.projectId,
-      worktreeId: result.worktreeId,
+    openWorkspaceFile(result.filePath, {
+      context: {
+        projectId: result.projectId,
+        worktreeId: result.worktreeId,
+      },
     })
-
-    const paneStore = usePanesStore.getState()
-    paneStore.addSessionToPane(paneStore.activePaneId, tabId)
-    paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
     setOpen(false)
   }
 

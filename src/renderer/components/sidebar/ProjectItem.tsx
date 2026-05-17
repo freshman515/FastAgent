@@ -1,10 +1,14 @@
-import { ArrowRightLeft, ChevronRight, Copy, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
+import { Archive, ArrowRightLeft, Check, ChevronRight, Copy, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Pin, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { Group, GroupItemOrderEntry, Project, SessionType, TaskBundle, Worktree } from '@shared/types'
+import type { Group, GroupItemOrderEntry, OutputState, Project, Session, SessionType, TaskBundle, Worktree } from '@shared/types'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
+import { focusSessionTarget } from '@/lib/focusSessionTarget'
+import { getSessionIcon } from '@/lib/sessionIcon'
+import { removeCanvasNotesBySyncId } from '@/lib/noteSync'
 import { cn } from '@/lib/utils'
+import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { useProjectsStore } from '@/stores/projects'
 import { normalizeGroupColor, useGroupsStore } from '@/stores/groups'
 import { useSessionsStore } from '@/stores/sessions'
@@ -23,6 +27,7 @@ const SECTION_HEADER = 'text-[10px] font-black uppercase tracking-[0.2em] text-[
 const INPUT_CLS = 'w-full rounded-[var(--radius-md)] border border-white/[0.1] bg-black/20 px-3 py-1.5 text-[var(--ui-font-sm)] text-white outline-none focus:bg-black/40 transition-all duration-200'
 const OVERLAY_PANEL = 'fixed left-1/2 top-1/3 z-50 -translate-x-1/2 rounded-[var(--radius-lg)] border border-white/[0.08] bg-[var(--color-bg-secondary)]/95 backdrop-blur-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.05)] animate-in fade-in zoom-in-95 duration-200'
 const WT_ROW = 'group/wt relative flex h-7.5 w-full cursor-pointer items-center gap-2 pl-8 pr-3 text-[12px] transition-all duration-200'
+const PROJECT_SESSION_PREVIEW_LIMIT = 5
 
 type ProjectContextSubmenuType = 'sessions' | 'tasks' | 'move'
 
@@ -49,6 +54,53 @@ function getSubmenuStyle(anchorRect: DOMRect, width: number): { top: number; lef
     : anchorRect.right + gap
   const top = Math.max(4, Math.min(anchorRect.top, window.innerHeight - 4))
   return { top, left, width, zIndex: 9999 }
+}
+
+function formatSessionAge(updatedAt: number): string {
+  const elapsed = Math.max(0, Date.now() - updatedAt)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (elapsed < minute) return '刚刚'
+  if (elapsed < hour) return `${Math.floor(elapsed / minute)} 分`
+  if (elapsed < day) return `${Math.floor(elapsed / hour)} 小时`
+  return `${Math.floor(elapsed / day)} 天`
+}
+
+export function getProjectSessionPriority(session: Session, outputState: OutputState | undefined): number {
+  if (outputState === 'outputting') return 40
+  if (outputState === 'unread') return 30
+  if (session.status === 'running') return 20
+  if (session.status === 'waiting-input') return 10
+  return 0
+}
+
+export function getWorktreeDisplayLabel(worktreeId: string | undefined, worktreeById: Map<string, Worktree>): string | null {
+  if (!worktreeId) return null
+  const worktree = worktreeById.get(worktreeId)
+  return worktree?.branch || worktree?.path.replace(/\\/g, '/').split('/').pop() || null
+}
+
+function focusProjectSession(session: Session): void {
+  focusSessionTarget(session.id)
+}
+
+function toggleProjectSessionPinned(session: Session): void {
+  useSessionsStore.getState().updateSession(session.id, { pinned: !session.pinned })
+}
+
+function archiveProjectSession(session: Session): void {
+  if (session.pinned) return
+  if (session.ptyId) window.api.session.kill(session.ptyId)
+  if (session.type === 'note') removeCanvasNotesBySyncId(session.noteSyncId)
+
+  const paneStore = usePanesStore.getState()
+  for (const [paneId, sessionIds] of Object.entries(paneStore.paneSessions)) {
+    if (sessionIds.includes(session.id)) {
+      paneStore.removeSessionFromPane(paneId, session.id)
+    }
+  }
+  useSessionsStore.getState().removeSession(session.id)
 }
 
 // ── New Branch Input (portal overlay) ──
@@ -519,6 +571,134 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
   )
 }
 
+export function ProjectSessionRow({
+  session,
+  active,
+  outputState,
+  worktreeLabel,
+  isDarkTheme,
+  contextLabel,
+  rowClassName,
+  showConnector = true,
+}: {
+  session: Session
+  active: boolean
+  outputState: OutputState | undefined
+  worktreeLabel: string | null
+  isDarkTheme: boolean
+  contextLabel?: string | null
+  rowClassName?: string
+  showConnector?: boolean
+}): JSX.Element {
+  const [confirmArchive, setConfirmArchive] = useState(false)
+  const isOutputting = outputState === 'outputting'
+  const isUnread = outputState === 'unread'
+
+  useEffect(() => {
+    if (!confirmArchive) return undefined
+    const timer = window.setTimeout(() => setConfirmArchive(false), 3500)
+    return () => window.clearTimeout(timer)
+  }, [confirmArchive])
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    focusProjectSession(session)
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => focusProjectSession(session)}
+      onKeyDown={handleKeyDown}
+      title={[session.name, contextLabel, worktreeLabel].filter(Boolean).join(' · ')}
+      className={cn(
+        'group/session relative flex h-7.5 min-w-0 items-center gap-2 rounded-[var(--radius-sm)] pl-2 pr-2 text-left transition-colors',
+        rowClassName ?? 'ml-8 mr-1 w-[calc(100%-2.25rem)]',
+        active
+          ? 'bg-[var(--color-accent)]/12 text-[var(--color-text-primary)]'
+          : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+      )}
+    >
+      {showConnector && <span className="absolute -left-4 bottom-0 top-0 w-px bg-[var(--color-border)]/45" />}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          toggleProjectSessionPinned(session)
+        }}
+        className={cn(
+          'flex h-4 w-4 shrink-0 items-center justify-center rounded-[var(--radius-sm)] transition-colors',
+          session.pinned
+            ? 'text-[var(--color-accent)] hover:bg-[var(--color-accent)]/15'
+            : 'text-[var(--color-text-tertiary)] opacity-70 hover:bg-[var(--color-bg-primary)] hover:text-[var(--color-text-secondary)] hover:opacity-100',
+        )}
+        title={session.pinned ? '取消置顶' : '置顶会话'}
+        aria-label={session.pinned ? '取消置顶' : '置顶会话'}
+      >
+        <Pin size={11} className={cn(session.pinned && 'fill-current')} />
+      </button>
+      <SessionIconView
+        fallbackSrc={getSessionIcon(session.type, isDarkTheme)}
+        icon={session.customSessionIcon}
+        className="h-4 w-4 shrink-0"
+        imageClassName="h-3.5 w-3.5 object-contain"
+      />
+      <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-5">
+        {session.name}
+      </span>
+      {contextLabel && (
+        <span className="max-w-[76px] shrink-0 truncate rounded-[var(--radius-sm)] bg-[var(--color-bg-primary)]/45 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--color-text-tertiary)]">
+          {contextLabel}
+        </span>
+      )}
+      {confirmArchive ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            archiveProjectSession(session)
+          }}
+          className="flex h-5 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] bg-[var(--color-error)]/15 px-1.5 text-[10px] font-semibold text-[var(--color-error)] transition-colors hover:bg-[var(--color-error)]/25"
+          title="确认归档"
+        >
+          <Check size={10} />
+          确认
+        </button>
+      ) : (
+        <>
+          <span className="shrink-0 text-[10px] font-medium tabular-nums text-[var(--color-text-tertiary)] group-hover/session:hidden">
+            {formatSessionAge(session.updatedAt)}
+          </span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              setConfirmArchive(true)
+            }}
+            disabled={session.pinned}
+            className={cn(
+              'hidden h-5 shrink-0 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 text-[10px] font-medium transition-colors group-hover/session:flex',
+              session.pinned
+                ? 'cursor-not-allowed text-[var(--color-text-tertiary)] opacity-50'
+                : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-primary)] hover:text-[var(--color-text-primary)]',
+            )}
+            title={session.pinned ? '置顶会话不能归档' : '归档会话'}
+          >
+            <Archive size={10} />
+          </button>
+        </>
+      )}
+      {!confirmArchive && isOutputting ? (
+        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)] shadow-[0_0_4px_var(--color-accent)] group-hover/session:hidden" />
+      ) : !confirmArchive && isUnread ? (
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)] group-hover/session:hidden" />
+      ) : null}
+    </div>
+  )
+}
+
 // ── Main Component ──
 
 interface ProjectItemProps {
@@ -553,6 +733,9 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const addToast = useUIStore((s) => s.addToast)
+  const isDarkTheme = useIsDarkTheme()
+  const activePaneId = usePanesStore((s) => s.activePaneId)
+  const activeTabId = usePanesStore((s) => s.paneActiveSession[activePaneId] ?? null)
 
   const branchInfo = useGitStore((s) => s.branchInfo[project.id])
   const templates = useTemplatesStore((s) => s.templates)
@@ -572,6 +755,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const [projDragOver, setProjDragOver] = useState(false)
   const [branchSubmenuAnchor, setBranchSubmenuAnchor] = useState<DOMRect | null>(null)
   const [projectSubmenu, setProjectSubmenu] = useState<ProjectContextSubmenuState | null>(null)
+  const [showAllProjectSessions, setShowAllProjectSessions] = useState(false)
   const branchMenuRef = useRef<HTMLButtonElement>(null)
   const branchCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const projectSubmenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -634,6 +818,27 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const mainWorktree = useMemo(() => worktrees.find((w) => w.isMain), [worktrees])
 
   const sessions = useMemo(() => allSessions.filter((s) => s.projectId === project.id), [allSessions, project.id])
+  const sortedProjectSessions = useMemo(
+    () => [...sessions].sort((a, b) => {
+      const priority = getProjectSessionPriority(b, outputStates[b.id]) - getProjectSessionPriority(a, outputStates[a.id])
+      if (priority !== 0) return priority
+      return b.updatedAt - a.updatedAt
+    }),
+    [outputStates, sessions],
+  )
+  const regularProjectSessions = useMemo(
+    () => sortedProjectSessions.filter((session) => !session.pinned),
+    [sortedProjectSessions],
+  )
+  const visibleProjectSessions = showAllProjectSessions
+    ? regularProjectSessions
+    : regularProjectSessions.slice(0, PROJECT_SESSION_PREVIEW_LIMIT)
+  const hiddenProjectSessionCount = regularProjectSessions.length - visibleProjectSessions.length
+  const hasProjectChildren = hasWorktreeChildren || regularProjectSessions.length > 0
+  const worktreeById = useMemo(
+    () => new Map(worktrees.map((worktree) => [worktree.id, worktree])),
+    [worktrees],
+  )
   const runningSessionCount = useMemo(() => sessions.filter((s) => s.status === 'running').length, [sessions])
   const otherGroups = useMemo(
     () => allGroups.filter((g) => g.id !== project.groupId),
@@ -755,8 +960,8 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
 
   const handleToggleExpand = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    if (hasWorktreeChildren) setExpanded((prev) => !prev)
-  }, [hasWorktreeChildren])
+    if (hasProjectChildren) setExpanded((prev) => !prev)
+  }, [hasProjectChildren])
 
   const handleRowDoubleClick = useCallback(() => {
     onOpenProject?.(project.id)
@@ -820,15 +1025,24 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
           }
         }}
       >
-        <div className="flex h-4 w-7 shrink-0 items-center gap-1">
-          {hasWorktreeChildren ? (
-            <button onClick={handleToggleExpand} className="flex h-full w-3 shrink-0 items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
-              <ChevronRight size={11} strokeWidth={2.5} className={cn('transition-transform duration-200', expanded && 'rotate-90')} />
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center">
+          {hasProjectChildren ? (
+            <button
+              type="button"
+              onClick={handleToggleExpand}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
+              title={expanded ? '折叠项目' : '展开项目'}
+              aria-label={expanded ? '折叠项目' : '展开项目'}
+            >
+              {expanded ? (
+                <FolderOpen size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--project-selected-color)]' : 'text-[var(--color-text-tertiary)] group-hover:text-[var(--project-hover-icon)]')} />
+              ) : (
+                <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--project-selected-color)]' : 'text-[var(--color-text-tertiary)] group-hover:text-[var(--project-hover-icon)]')} />
+              )}
             </button>
           ) : (
-            <span className="w-3 shrink-0" />
+            <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--project-selected-color)]' : 'text-[var(--color-text-tertiary)] group-hover:text-[var(--project-hover-icon)]')} />
           )}
-          <Folder size={14} className={cn('shrink-0', isMainWtActive ? 'text-[var(--project-selected-color)]' : 'text-[var(--color-text-tertiary)] group-hover:text-[var(--project-hover-icon)]')} />
         </div>
 
         <span className={cn(
@@ -882,15 +1096,53 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
         </button>
       </div>
 
-      {/* Worktree children (when expanded) */}
-      {expanded && hasWorktreeChildren && nonMainWorktrees.map((wt) => (
-        <WorktreeRow
-          key={wt.id}
-          wt={wt}
-          project={project}
-          isActive={isSelected && selectedWorktreeId === wt.id}
-        />
-      ))}
+      {/* Project children (sessions first, then worktrees) */}
+      {expanded && hasProjectChildren && (
+        <div className="mt-0.5 space-y-0.5">
+          {visibleProjectSessions.map((session) => (
+            <ProjectSessionRow
+              key={session.id}
+              session={session}
+              active={activeTabId === session.id}
+              outputState={outputStates[session.id]}
+              worktreeLabel={getWorktreeDisplayLabel(session.worktreeId, worktreeById)}
+              isDarkTheme={isDarkTheme}
+            />
+          ))}
+          {hiddenProjectSessionCount > 0 && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                setShowAllProjectSessions(true)
+              }}
+              className="ml-8 mr-1 flex h-7 items-center rounded-[var(--radius-sm)] px-2 text-[12px] font-medium text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            >
+              展开更多 {hiddenProjectSessionCount}
+            </button>
+          )}
+          {showAllProjectSessions && regularProjectSessions.length > PROJECT_SESSION_PREVIEW_LIMIT && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                setShowAllProjectSessions(false)
+              }}
+              className="ml-8 mr-1 flex h-7 items-center rounded-[var(--radius-sm)] px-2 text-[12px] font-medium text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            >
+              收起显示
+            </button>
+          )}
+          {hasWorktreeChildren && nonMainWorktrees.map((wt) => (
+            <WorktreeRow
+              key={wt.id}
+              wt={wt}
+              project={project}
+              isActive={isSelected && selectedWorktreeId === wt.id}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Three-dot menu */}
       {showMenu && createPortal(

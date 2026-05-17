@@ -2878,6 +2878,18 @@ export function SettingsDialog(): JSX.Element | null {
     }
   }, [settings.defaultSessionType, updateSettings])
 
+  useEffect(() => {
+    if (!open) return undefined
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      close()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [close, open])
+
   const handleUpdate = useCallback(
     (key: keyof AppSettings, value: unknown) => {
       updateSettings({ [key]: value })

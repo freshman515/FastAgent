@@ -470,9 +470,9 @@ import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
 import { usePanesStore } from '@/stores/panes'
 import { useWorktreesStore } from '@/stores/worktrees'
-import { useEditorsStore } from '@/stores/editors'
 import { getXtermTheme, defaultDarkTheme } from '@/lib/ghosttyTheme'
 import { parseCustomSessionArgs } from '@/lib/createSession'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 
 const TERMINAL_FONT_SIZE_MIN = 8
 const TERMINAL_FONT_SIZE_MAX = 36
@@ -899,13 +899,10 @@ export function useXterm(
         projectId: sessionRef.current.projectId,
         worktreeId: sessionRef.current.worktreeId ?? null,
       }
-      const editors = useEditorsStore.getState()
-      const tabId = ref.line !== null
-        ? editors.openFileAtLocation(absolute, { line: ref.line, column: ref.column ?? 1 }, context)
-        : editors.openFile(absolute, context)
-      const paneStore = usePanesStore.getState()
-      paneStore.addSessionToPane(paneStore.activePaneId, tabId)
-      paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
+      openWorkspaceFile(absolute, {
+        context,
+        location: ref.line !== null ? { line: ref.line, column: ref.column ?? 1 } : null,
+      })
     }
 
     // Link provider - double-click opens URLs and file paths.

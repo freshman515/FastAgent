@@ -39,6 +39,7 @@ import {
 } from '@/lib/claudeSlashCommands'
 import { highlightCode, renderMarkdown } from '@/lib/markdown'
 import { cn, generateId } from '@/lib/utils'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 import { detectLanguage, useEditorsStore } from '@/stores/editors'
 import {
   getClaudeScopeKey,
@@ -1765,11 +1766,11 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
       projectId: resolvedProjectId,
       worktreeId: worktreeScopeId ?? null,
     }
-    const tabId = location
-      ? useEditorsStore.getState().openFileAtLocation(filePath, location, context)
-      : useEditorsStore.getState().openFile(filePath, context)
-    addSessionToPane(activePaneId, tabId)
-    setPaneActiveSession(activePaneId, tabId)
+    openWorkspaceFile(filePath, {
+      context,
+      location: location ?? null,
+      paneId: activePaneId,
+    })
   }, [activePaneId, addSessionToPane, resolvedProjectId, setPaneActiveSession, worktreeScopeId])
 
   const insertAtCursor = useCallback((textToInsert: string) => {

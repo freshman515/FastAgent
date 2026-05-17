@@ -11,6 +11,7 @@ import { useGitStore } from '@/stores/git'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { beginTabDragGuard, endTabDragGuard, getCurrentTabDragData } from '@/lib/tabDragGuard'
+import { shouldPopOutTabFromDrop } from '@/lib/tabDetachDrop'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionTab } from '@/components/session/SessionTab'
 import { NewSessionMenu } from '@/components/session/NewSessionMenu'
@@ -404,9 +405,7 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
           }
 
           const { clientX, clientY, screenX, screenY } = e
-          const inWindow = clientX >= 0 && clientY >= 0
-            && clientX <= window.innerWidth && clientY <= window.innerHeight
-          if (!inWindow) {
+          if (shouldPopOutTabFromDrop(clientX, clientY)) {
             requestPopOut({ x: screenX, y: screenY })
           }
         }}
@@ -673,6 +672,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
   const [dragTabId, setDragTabId] = useState<string | null>(null)
   const [externalDragPreview, setExternalDragPreview] = useState<ExternalDragPreview | null>(null)
   const termAreaRef = useRef<HTMLDivElement>(null)
+  const tabStripRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const paneMenuButtonRef = useRef<HTMLButtonElement>(null)
   const windowDragRef = useRef<WindowDragState | null>(null)
@@ -1195,6 +1195,29 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     return () => stopWindowDrag()
   }, [stopWindowDrag])
 
+  const scrollActiveTabIntoView = useCallback((tabId: string): void => {
+    const tabStrip = tabStripRef.current
+    if (!tabStrip) return
+    const tabElement = Array.from(tabStrip.querySelectorAll<HTMLElement>('[data-pane-tab-id]'))
+      .find((element) => element.dataset.paneTabId === tabId)
+    if (!tabElement) return
+
+    const stripRect = tabStrip.getBoundingClientRect()
+    const tabRect = tabElement.getBoundingClientRect()
+    const inset = 8
+    if (tabRect.left < stripRect.left + inset) {
+      tabStrip.scrollLeft += tabRect.left - stripRect.left - inset
+    } else if (tabRect.right > stripRect.right - inset) {
+      tabStrip.scrollLeft += tabRect.right - stripRect.right + inset
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!paneActiveSessionId) return undefined
+    const frame = window.requestAnimationFrame(() => scrollActiveTabIntoView(paneActiveSessionId))
+    return () => window.cancelAnimationFrame(frame)
+  }, [paneActiveSessionId, scrollActiveTabIntoView])
+
   useEffect(() => {
     if (!dragTabId && !externalDragPreview) return
 
@@ -1285,6 +1308,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
       >
         {/* Scrollable tabs + buttons area */}
         <div
+          ref={tabStripRef}
           className={cn(
             'flex min-w-0 flex-1 items-end gap-0 overflow-x-auto scrollbar-none',
             paneDensityMode === 'compact' ? 'px-1' : 'px-2',

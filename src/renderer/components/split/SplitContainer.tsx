@@ -378,7 +378,7 @@ export function SplitContainer({ projectId }: Props): JSX.Element {
       const fullscreenActiveTabId = paneActiveSession[fullscreenLeaf.id] ?? paneSessions[fullscreenLeaf.id]?.[0] ?? null
 
       return (
-        <div className="flex h-full w-full overflow-hidden bg-[var(--color-titlebar-bg)]">
+        <div data-pane-workspace-root="true" className="flex h-full w-full overflow-hidden bg-[var(--color-titlebar-bg)]">
           {leafIds.length > 1 && (
             <FocusStrip
               items={focusStripItems}
@@ -412,7 +412,7 @@ export function SplitContainer({ projectId }: Props): JSX.Element {
   }
 
   return (
-    <div className={cn('h-full w-full overflow-hidden', paneUiMode === 'classic' ? 'pane-layout-classic' : 'pane-layout-separated')}>
+    <div data-pane-workspace-root="true" className={cn('h-full w-full overflow-hidden', paneUiMode === 'classic' ? 'pane-layout-classic' : 'pane-layout-separated')}>
       <SplitNodeRenderer node={root} projectId={projectId} paneUiMode={paneUiMode} />
     </div>
   )

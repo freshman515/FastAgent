@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, shell } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
@@ -24,9 +24,39 @@ let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
 const canvasBookmarkShortcutWebContents = new Set<number>()
 const EXTERNAL_WEB_PROTOCOLS = new Set(['http:', 'https:'])
-const BROWSER_WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:'])
+const BROWSER_WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:', 'chrome-extension:'])
 
 type StartupWindowState = 'maximized' | 'normal'
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (max < min) return min
+  return Math.min(max, Math.max(min, value))
+}
+
+function getVisibleDetachedWindowBounds(
+  position: { x: number; y: number } | undefined,
+  width: number,
+  height: number,
+): { x: number; y: number; width: number; height: number } | undefined {
+  if (!position) return undefined
+
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(position.x),
+    y: Math.round(position.y),
+  })
+  const area = display.workArea
+  const safeWidth = Math.max(400, Math.min(Math.round(width), area.width))
+  const safeHeight = Math.max(300, Math.min(Math.round(height), area.height))
+  const rawX = Math.round(position.x - safeWidth / 2)
+  const rawY = Math.round(position.y - safeHeight / 2)
+
+  return {
+    x: clampNumber(rawX, area.x, area.x + area.width - safeWidth),
+    y: clampNumber(rawY, area.y, area.y + area.height - safeHeight),
+    width: safeWidth,
+    height: safeHeight,
+  }
+}
 
 function getUrlProtocol(raw: string): string | null {
   try {
@@ -321,10 +351,11 @@ app.whenReady().then(async () => {
     const id = `detach-${Date.now()}`
     const w = size?.width ?? 800
     const h = size?.height ?? 600
+    const visibleBounds = getVisibleDetachedWindowBounds(position, w, h)
     const win = new BrowserWindow({
-      width: w,
-      height: h,
-      ...(position ? { x: Math.round(position.x - w / 2), y: Math.round(position.y - h / 2) } : {}),
+      width: visibleBounds?.width ?? w,
+      height: visibleBounds?.height ?? h,
+      ...(visibleBounds ? { x: visibleBounds.x, y: visibleBounds.y } : {}),
       minWidth: 400,
       minHeight: 300,
       frame: false,

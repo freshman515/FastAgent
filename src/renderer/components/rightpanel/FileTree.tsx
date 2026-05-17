@@ -1,6 +1,7 @@
 import { ChevronRight, ExternalLink, File, FilePlus, Folder, FolderOpen, FolderPlus, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getDocumentFileKind } from '@shared/fileTypes'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui'
 import { useProjectsStore } from '@/stores/projects'
@@ -9,6 +10,7 @@ import { usePanesStore } from '@/stores/panes'
 import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
 import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 
 interface TreeEntry {
   name: string
@@ -263,11 +265,7 @@ function TreeNode({
       return
     }
 
-    const tabId = useEditorsStore.getState().openFile(path, { projectId, worktreeId })
-    const paneStore = usePanesStore.getState()
-    const paneId = paneStore.activePaneId
-    paneStore.addSessionToPane(paneId, tabId)
-    paneStore.setPaneActiveSession(paneId, tabId)
+    openWorkspaceFile(path, { context: { projectId, worktreeId } })
   }, [isDir, onSelect, path, projectId, worktreeId])
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
@@ -558,11 +556,8 @@ export function FileTree(): JSX.Element {
       refreshTree()
       setSelectedEntry({ path: targetPath, isDir: pendingCreation.kind === 'folder' })
 
-      if (pendingCreation.kind === 'file') {
-        const tabId = useEditorsStore.getState().openFile(targetPath, { projectId: selectedProjectId, worktreeId: editorWorktreeId })
-        const paneStore = usePanesStore.getState()
-        paneStore.addSessionToPane(paneStore.activePaneId, tabId)
-        paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
+      if (pendingCreation.kind === 'file' && !getDocumentFileKind(targetPath)) {
+        openWorkspaceFile(targetPath, { context: { projectId: selectedProjectId, worktreeId: editorWorktreeId } })
       }
 
       addToast({

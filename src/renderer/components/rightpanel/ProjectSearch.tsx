@@ -2,8 +2,7 @@ import { FileCode2, Filter, LoaderCircle, Search, X } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import type { ProjectSearchMatch } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { useEditorsStore } from '@/stores/editors'
-import { usePanesStore } from '@/stores/panes'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 import { useProjectsStore } from '@/stores/projects'
 import { useProjectSearchStore } from '@/stores/search'
 import { useWorktreesStore } from '@/stores/worktrees'
@@ -69,20 +68,15 @@ export function ProjectSearch(): JSX.Element {
   const handleOpenResult = useCallback((match: ProjectSearchMatch) => {
     if (!selectedProjectId) return
 
-    const tabId = useEditorsStore.getState().openFileAtLocation(
-      match.filePath,
-      {
+    openWorkspaceFile(match.filePath, {
+      location: {
         line: match.line,
         column: match.column,
         endLine: match.line,
         endColumn: match.endColumn,
       },
-      { projectId: selectedProjectId, worktreeId },
-    )
-
-    const paneStore = usePanesStore.getState()
-    paneStore.addSessionToPane(paneStore.activePaneId, tabId)
-    paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
+      context: { projectId: selectedProjectId, worktreeId },
+    })
   }, [selectedProjectId, worktreeId])
 
   if (!rootPath) {

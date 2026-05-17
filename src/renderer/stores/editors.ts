@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { isImageFileName } from '@shared/fileTypes'
+import { getDocumentFileKind, isImageFileName } from '@shared/fileTypes'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 
@@ -79,6 +79,8 @@ const EXT_LANG_MAP: Record<string, string> = {
 export function detectLanguage(fileName: string): string {
   const lower = fileName.replace(/\s+\(diff\)$/i, '').toLowerCase()
   if (isImageFileName(lower)) return 'image'
+  const documentKind = getDocumentFileKind(lower)
+  if (documentKind) return documentKind
   if (lower === 'dockerfile') return 'dockerfile'
   const ext = lower.split('.').pop() ?? ''
   return EXT_LANG_MAP[ext] ?? 'plaintext'
@@ -180,6 +182,9 @@ export const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   sql: { icon: 'SQL', color: '#e38c00' },
   xml: { icon: 'XML', color: '#e34c26' },
   image: { icon: 'IMG', color: '#45c8c8' },
+  pdf: { icon: 'PDF', color: '#e05252' },
+  word: { icon: 'DOC', color: '#4d7dff' },
+  spreadsheet: { icon: 'XLS', color: '#3baa6f' },
   plaintext: { icon: 'TXT', color: '#8e8e96' },
 }
 

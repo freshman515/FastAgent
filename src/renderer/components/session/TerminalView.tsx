@@ -16,10 +16,9 @@ import {
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { getSessionIcon } from '@/lib/sessionIcon'
+import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
-import { useEditorsStore } from '@/stores/editors'
-import { usePanesStore } from '@/stores/panes'
 import { useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -762,13 +761,12 @@ export function TerminalView({ session, isActive, paneId, canvasCardId }: Termin
       projectId: session.projectId,
       worktreeId: session.worktreeId ?? null,
     }
-    const editors = useEditorsStore.getState()
-    const tabId = fileLink.line !== null
-      ? editors.openFileAtLocation(fileLink.absolutePath, { line: fileLink.line, column: fileLink.column ?? 1 }, context)
-      : editors.openFile(fileLink.absolutePath, context)
-    const paneStore = usePanesStore.getState()
-    paneStore.addSessionToPane(paneStore.activePaneId, tabId)
-    paneStore.setPaneActiveSession(paneStore.activePaneId, tabId)
+    openWorkspaceFile(fileLink.absolutePath, {
+      context,
+      location: fileLink.line !== null
+        ? { line: fileLink.line, column: fileLink.column ?? 1 }
+        : null,
+    })
   }, [session.projectId, session.worktreeId])
 
   const doOpenContextFile = useCallback(() => {
