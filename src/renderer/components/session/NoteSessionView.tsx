@@ -5,7 +5,7 @@ import type { Session } from '@shared/types'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { registerContentSelectAllTarget } from '@/lib/contentSelectAll'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
-import { buildNoteSendPayload } from '@/lib/noteSend'
+import { sendNoteTextToPty } from '@/lib/noteSend'
 import { syncClassicNoteBodyToCanvas } from '@/lib/noteSync'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { useSessionsStore } from '@/stores/sessions'
@@ -97,7 +97,7 @@ export function NoteSessionView({ session, isActive }: NoteSessionViewProps): JS
     window.setTimeout(() => {
       const latestTarget = useSessionsStore.getState().sessions.find((item) => item.id === target.id)
       const ptyId = latestTarget?.ptyId ?? target.ptyId
-      if (ptyId) window.api.session.write(ptyId, buildNoteSendPayload(value, settings.noteSendAutoSubmit))
+      if (ptyId) void sendNoteTextToPty(ptyId, value, settings.noteSendAutoSubmit)
     }, 80)
   }, [session.connectedSessionId, settings.noteSendAutoSubmit])
 

@@ -43,6 +43,11 @@ interface CanvasHistoryEntry {
   focusReturn: { cardId: string; viewport: CanvasViewport } | null
 }
 
+interface CanvasFocusOptions {
+  /** Disable the same-card "return to previous viewport" toggle for programmatic focus calls. */
+  allowReturn?: boolean
+}
+
 function cloneCanvasCard(card: CanvasCard): CanvasCard {
   return {
     ...card,
@@ -1287,7 +1292,7 @@ interface CanvasState {
    * Animate the viewport so `cardId` lands centered. Scale only changes when
    * the card's transformed text is outside the readable font-size range.
    */
-  focusOnCard: (cardId: string) => void
+  focusOnCard: (cardId: string, options?: CanvasFocusOptions) => void
   /** Fit a space as a workspace in the readable focus area. */
   focusFrameWorkspace: (frameId: string) => void
   /** Preview a card from search by moving the viewport without activating the session. */
@@ -1512,10 +1517,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   clearMaximizedCard: () => set({ maximizedCardId: null }),
 
-  focusOnCard: (cardId) => {
+  focusOnCard: (cardId, options) => {
+    const allowReturn = options?.allowReturn !== false
     cancelViewportAnimation()
     const focusReturn = get().focusReturn
-    if (focusReturn?.cardId === cardId) {
+    if (allowReturn && focusReturn?.cardId === cardId) {
       const card = get().getCard(cardId)
       get().setSelection([cardId])
       if (card?.kind !== 'frame') get().bringToFront(cardId)
@@ -1534,7 +1540,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     get().setSelection([cardId])
     if (card.kind !== 'frame') get().bringToFront(cardId)
     get().recordCardVisit(cardId)
-    set({ focusReturn: { cardId, viewport: returnViewport } })
+    set({ focusReturn: allowReturn ? { cardId, viewport: returnViewport } : null })
     animateViewport(targetViewport)
   },
 

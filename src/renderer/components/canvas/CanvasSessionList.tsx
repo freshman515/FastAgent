@@ -62,7 +62,7 @@ export function CanvasSessionList(): JSX.Element | null {
     revealCard(cardId)
     canvas.clearMaximizedCard()
     canvas.clearFocusReturn()
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
   }
 
   const maximizeCard = (cardId: string): void => {

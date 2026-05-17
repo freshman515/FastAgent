@@ -273,7 +273,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
     requestAnimationFrame(() => {
       const latest = useCanvasStore.getState().getCard(cardId)
       if (latest?.kind === 'frame') useCanvasStore.getState().focusFrameWorkspace(cardId)
-      else useCanvasStore.getState().focusOnCard(cardId)
+      else useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false })
     })
     setBookmarksOpen(false)
   }

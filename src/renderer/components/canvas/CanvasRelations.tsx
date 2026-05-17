@@ -75,7 +75,7 @@ export function CanvasRelations({ cards: scopedCards }: { cards?: CanvasCard[] }
     if (!canvas.getCard(targetId)) return
     canvas.clearMaximizedCard()
     canvas.clearFocusReturn()
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(targetId))
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(targetId, { allowReturn: false }))
   }
 
   return (

@@ -417,7 +417,7 @@ function createCanvasSession(
       ignoreOverlapCardIds: spaceId ? [spaceId] : undefined,
     })
     addCanvasCardToSpace(cardId, spaceId)
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
   })
 }
 

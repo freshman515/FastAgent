@@ -273,7 +273,7 @@ export function CanvasSearch({ open, scopeFrameId = null, onClose }: CanvasSearc
     requestAnimationFrame(() => {
       const latest = useCanvasStore.getState().getCard(result.card.id)
       if (latest?.kind === 'frame') useCanvasStore.getState().focusFrameWorkspace(result.card.id)
-      else useCanvasStore.getState().focusOnCard(result.card.id)
+      else useCanvasStore.getState().focusOnCard(result.card.id, { allowReturn: false })
     })
     onClose()
   }

@@ -210,7 +210,7 @@ export function CanvasWorkspace(): JSX.Element {
     if (!isInitialSyncRef.current && created.length === 1) {
       // Defer one frame so the card's DOM element exists and getBoundingClientRect
       // on the viewport is stable.
-      requestAnimationFrame(() => canvas.focusOnCard(created[0]))
+      requestAnimationFrame(() => canvas.focusOnCard(created[0], { allowReturn: false }))
     }
     isInitialSyncRef.current = false
   }, [activeTabId, paneSessions])
@@ -766,7 +766,7 @@ function focusCanvasCardForRef(refId: string): void {
   const canvas = useCanvasStore.getState()
   const card = canvas.getCards().find((candidate) => candidate.refId === refId)
   if (!card) return
-  canvas.focusOnCard(card.id)
+  canvas.focusOnCard(card.id, { allowReturn: false })
 }
 
 /**
@@ -836,7 +836,7 @@ function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivEleme
       y: placement.position.y,
     }, placement.placeOptions)
     addCanvasCardToSpace(cardId, placement.activeSpaceId)
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
   })
 }
 

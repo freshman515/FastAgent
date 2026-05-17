@@ -1298,7 +1298,7 @@ function createCanvasSessionAtCenter(
       y: placement.position.y,
     }, placement.placeOptions)
     addCanvasCardToSpace(cardId, placement.activeSpaceId)
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId))
+    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
   })
 }
 
@@ -1565,7 +1565,7 @@ export function useCanvasCommandMode({
       const latest = useCanvasStore.getState().getCard(cardId)
       if (!latest) return
       if (latest.kind === 'frame') useCanvasStore.getState().focusFrameWorkspace(cardId)
-      else useCanvasStore.getState().focusOnCard(cardId)
+      else useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false })
     })
   }, [])
 

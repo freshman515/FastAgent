@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom'
 import { Send } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { CanvasCard, Session } from '@shared/types'
-import { buildNoteSendPayload } from '@/lib/noteSend'
+import { sendNoteTextToPty } from '@/lib/noteSend'
 import { removeClassicNotesBySyncId, syncCanvasNoteBodyToClassic } from '@/lib/noteSync'
 import { useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
@@ -110,10 +110,14 @@ export function NoteCard({ card, coordinateMode }: NoteCardProps): JSX.Element {
       return
     }
 
-    window.api.session.write(target.ptyId, buildNoteSendPayload(text, noteSendAutoSubmit))
+    void sendNoteTextToPty(target.ptyId, text, noteSendAutoSubmit).then((ok) => {
+      if (!ok) {
+        addToast({ type: 'error', title: '便签发送失败', body: target.session.name })
+      }
+    })
     useSessionsStore.getState().setActive(target.session.id)
     requestAnimationFrame(() => {
-      useCanvasStore.getState().focusOnCard(target.cardId)
+      useCanvasStore.getState().focusOnCard(target.cardId, { allowReturn: false })
     })
     addToast({ type: 'success', title: '便签已发送', body: target.session.name })
   }

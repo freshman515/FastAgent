@@ -71,7 +71,7 @@ function focusNoteCard(cardId: string): void {
     const canvas = useCanvasStore.getState()
     canvas.clearMaximizedCard()
     canvas.clearFocusReturn()
-    canvas.focusOnCard(cardId)
+    canvas.focusOnCard(cardId, { allowReturn: false })
   })
 }
 

@@ -12,7 +12,7 @@ import { isTerminalSessionType } from '@shared/types'
 function focusCanvasCardSoon(cardId: string): void {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      useCanvasStore.getState().focusOnCard(cardId)
+      useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false })
     })
   })
 }
