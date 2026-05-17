@@ -3387,6 +3387,7 @@ function MainApp(): JSX.Element {
   const focusMode = useUIStore((s) => s.focusMode)
   const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
   const hideRightPanel = useUIStore((s) => s.hideRightPanel)
+  const rightDockPanelCount = useUIStore((s) => s.dockPanelOrder.right.length)
   const hideStatusBar = useUIStore((s) => s.hideStatusBar)
   const hideTitleBar = useUIStore((s) => s.hideTitleBar)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
@@ -3431,7 +3432,7 @@ function MainApp(): JSX.Element {
         </div>
 
         {/* Right panel */}
-        {!hideChrome && !hideRightPanel && <RightPanel />}
+        {!hideChrome && !hideRightPanel && rightDockPanelCount > 0 && <RightPanel />}
       </div>
 
       {/* Status bar */}

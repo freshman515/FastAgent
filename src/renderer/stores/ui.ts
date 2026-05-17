@@ -49,6 +49,9 @@ export const CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT = 20
 export const NOTIFICATION_TOAST_DURATION_MS_MIN = 1000
 export const NOTIFICATION_TOAST_DURATION_MS_MAX = 30000
 export const NOTIFICATION_TOAST_DURATION_MS_DEFAULT = 8000
+const STATUS_BAR_DEFAULT_HIDDEN_VERSION = 1
+const RIGHT_DOCK_DEFAULT_EMPTY_VERSION = 1
+const EDITOR_SYNTAX_CHECK_DEFAULT_OFF_VERSION = 1
 
 const GIT_REVIEW_SESSION_TYPES = new Set<SessionType>([
   'claude-code',
@@ -140,12 +143,12 @@ export const DOCK_PANEL_IDS: DockPanelId[] = [
 
 export const DEFAULT_DOCK_PANEL_ORDER: Record<DockSide, DockPanelId[]> = {
   left: ['projects', 'recentSessions', 'sessionHistory', 'git', 'files'],
-  right: ['agent', 'agentBoard', 'tasks', 'commands', 'prompts', 'promptOptimizer', 'todo', 'search', 'timeline', 'ai', 'claude'],
+  right: [],
 }
 
 const DEFAULT_DOCK_PANEL_ACTIVE: Record<DockSide, DockPanelId | null> = {
   left: 'projects',
-  right: 'agent',
+  right: null,
 }
 
 const DEFAULT_DOCK_PANEL_COLLAPSED: Record<DockSide, boolean> = {
@@ -346,6 +349,12 @@ export interface AppSettings {
   gitReviewFixMode: GitReviewFixMode
   /** Last visited settings dialog page — persisted so reopening lands on the previous tab */
   lastSettingsPage: string
+  /** Internal preset marker for migrating the status bar default visibility. */
+  statusBarDefaultHiddenVersion: number
+  /** Internal preset marker for migrating the right dock to an empty default. */
+  rightDockDefaultEmptyVersion: number
+  /** Internal preset marker for migrating editor diagnostics to an opt-in default. */
+  editorSyntaxCheckDefaultOffVersion: number
   /** Global shell treatment: floating rounded panels, or connected square panels. */
   appChromeStyle: AppChromeStyle
   /** Visualizer canvas width in px (shared by melody and bars) */
@@ -454,7 +463,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   editorLineNumbers: true,
   editorStickyScroll: true,
   editorFontLigatures: true,
-  editorSyntaxCheck: true,
+  editorSyntaxCheck: false,
   visibleGroupId: null,
   visibleProjectId: null,
   defaultSessionType: 'claude-code',
@@ -496,6 +505,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   gitReviewMode: 'codex',
   gitReviewFixMode: 'claude-gui',
   lastSettingsPage: 'general',
+  statusBarDefaultHiddenVersion: STATUS_BAR_DEFAULT_HIDDEN_VERSION,
+  rightDockDefaultEmptyVersion: RIGHT_DOCK_DEFAULT_EMPTY_VERSION,
+  editorSyntaxCheckDefaultOffVersion: EDITOR_SYNTAX_CHECK_DEFAULT_OFF_VERSION,
   appChromeStyle: 'floating',
   visualizerWidth: 192,
   showPlayerControls: true,
@@ -1275,7 +1287,7 @@ function normalizeCanvasFocusFontSettings(settings: AppSettings): AppSettings {
   }
 }
 
-function normalizeDockPanelOrder(raw: unknown): {
+function normalizeDockPanelOrder(raw: unknown, clearRight: boolean): {
   order: Record<DockSide, DockPanelId[]>
   seeded: boolean
 } {
@@ -1285,7 +1297,7 @@ function normalizeDockPanelOrder(raw: unknown): {
 
   const input = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null
 
-  for (const side of ['left', 'right'] as const) {
+  for (const side of (clearRight ? ['left'] : ['left', 'right']) as DockSide[]) {
     const value = input?.[side]
     if (value === undefined) continue
     if (!Array.isArray(value)) {
@@ -1301,6 +1313,11 @@ function normalizeDockPanelOrder(raw: unknown): {
       seen.add(item)
       order[side].push(item)
     }
+  }
+
+  const rightValue = input?.right
+  if (clearRight && rightValue !== undefined && (!Array.isArray(rightValue) || rightValue.length > 0)) {
+    seeded = true
   }
 
   for (const side of ['left', 'right'] as const) {
@@ -1612,7 +1629,7 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   hideLeftPanel: false,
   hideRightPanel: false,
-  hideStatusBar: false,
+  hideStatusBar: true,
   hideTitleBar: false,
   todoPopoverOpen: false,
   todoLaunchRequest: null,
@@ -1796,6 +1813,31 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.lastSettingsPage === 'string' && raw.lastSettingsPage) {
         s.lastSettingsPage = raw.lastSettingsPage
       }
+      const statusBarDefaultHiddenVersion = typeof raw.statusBarDefaultHiddenVersion === 'number' && Number.isFinite(raw.statusBarDefaultHiddenVersion)
+        ? Math.max(0, Math.round(raw.statusBarDefaultHiddenVersion))
+        : 0
+      const shouldMigrateStatusBarDefault = statusBarDefaultHiddenVersion < STATUS_BAR_DEFAULT_HIDDEN_VERSION
+      s.statusBarDefaultHiddenVersion = STATUS_BAR_DEFAULT_HIDDEN_VERSION
+      if (shouldMigrateStatusBarDefault) {
+        shouldPersistSettings = true
+      }
+      const rightDockDefaultEmptyVersion = typeof raw.rightDockDefaultEmptyVersion === 'number' && Number.isFinite(raw.rightDockDefaultEmptyVersion)
+        ? Math.max(0, Math.round(raw.rightDockDefaultEmptyVersion))
+        : 0
+      const shouldMigrateRightDockDefault = rightDockDefaultEmptyVersion < RIGHT_DOCK_DEFAULT_EMPTY_VERSION
+      s.rightDockDefaultEmptyVersion = RIGHT_DOCK_DEFAULT_EMPTY_VERSION
+      if (shouldMigrateRightDockDefault) {
+        shouldPersistSettings = true
+      }
+      const editorSyntaxCheckDefaultOffVersion = typeof raw.editorSyntaxCheckDefaultOffVersion === 'number' && Number.isFinite(raw.editorSyntaxCheckDefaultOffVersion)
+        ? Math.max(0, Math.round(raw.editorSyntaxCheckDefaultOffVersion))
+        : 0
+      const shouldMigrateEditorSyntaxCheckDefault = editorSyntaxCheckDefaultOffVersion < EDITOR_SYNTAX_CHECK_DEFAULT_OFF_VERSION
+      s.editorSyntaxCheckDefaultOffVersion = EDITOR_SYNTAX_CHECK_DEFAULT_OFF_VERSION
+      if (shouldMigrateEditorSyntaxCheckDefault) {
+        s.editorSyntaxCheck = false
+        shouldPersistSettings = true
+      }
       if (typeof raw.visualizerWidth === 'number') s.visualizerWidth = Math.max(80, Math.min(7680, raw.visualizerWidth))
       if (typeof raw.showPlayerControls === 'boolean') s.showPlayerControls = raw.showPlayerControls
       if (typeof raw.showTrackInfo === 'boolean') s.showTrackInfo = raw.showTrackInfo
@@ -1838,7 +1880,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         s.promptItems = normalizedPromptItems.items
         shouldPersistSettings ||= normalizedPromptItems.seeded
       }
-      const normalizedDockPanelOrder = normalizeDockPanelOrder(raw.dockPanelOrder)
+      const normalizedDockPanelOrder = normalizeDockPanelOrder(raw.dockPanelOrder, shouldMigrateRightDockDefault)
       const normalizedDockPanelActiveTab = normalizeDockPanelActiveTab(
         raw.dockPanelActiveTab,
         normalizedDockPanelOrder.order,
@@ -1932,7 +1974,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         dockPanelWidth: normalizedDockPanelWidth.width,
         hideLeftPanel: typeof raw.hideLeftPanel === 'boolean' ? raw.hideLeftPanel : false,
         hideRightPanel: typeof raw.hideRightPanel === 'boolean' ? raw.hideRightPanel : false,
-        hideStatusBar: typeof raw.hideStatusBar === 'boolean' ? raw.hideStatusBar : false,
+        hideStatusBar: shouldMigrateStatusBarDefault ? true : (typeof raw.hideStatusBar === 'boolean' ? raw.hideStatusBar : true),
         hideTitleBar: typeof raw.hideTitleBar === 'boolean' ? raw.hideTitleBar : false,
       })
     } else {
@@ -1940,7 +1982,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         ...getDefaultDockPanelsState(),
         hideLeftPanel: false,
         hideRightPanel: false,
-        hideStatusBar: false,
+        hideStatusBar: true,
         hideTitleBar: false,
       })
     }

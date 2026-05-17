@@ -74,7 +74,7 @@ export function ToastContainer(): JSX.Element {
               transition={{ type: 'spring', stiffness: 500, damping: 35 }}
               role={canJump ? 'button' : undefined}
               tabIndex={canJump ? 0 : undefined}
-              aria-label={canJump ? 'Jump to notification target' : undefined}
+              aria-label={canJump ? '跳转到通知目标' : undefined}
               onClick={canJump ? () => handleJump(toast) : undefined}
               onKeyDown={(event) => handleToastKeyDown(event, toast)}
               className={cn(
@@ -103,7 +103,7 @@ export function ToastContainer(): JSX.Element {
                       'transition-colors duration-100',
                     )}
                   >
-                    Jump to session <ArrowRight size={10} />
+                    跳转到会话 <ArrowRight size={10} />
                   </span>
                 )}
               </div>

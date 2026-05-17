@@ -110,6 +110,13 @@ export function removeClassicNotesBySyncId(noteSyncId: string | undefined): void
 export function removeCanvasNotesBySyncId(noteSyncId: string | undefined): void {
   if (!noteSyncId) return
 
+  const activeNoteIds = useCanvasStore.getState().getLayout().cards
+    .filter((card) => card.kind === 'note' && card.noteSyncId === noteSyncId)
+    .map((card) => card.id)
+  if (activeNoteIds.length > 0) {
+    useCanvasStore.getState().removeCards(activeNoteIds)
+  }
+
   useCanvasStore.setState((state) => {
     let changed = false
     const layouts = Object.fromEntries(Object.entries(state.layouts).map(([layoutKey, layout]) => {

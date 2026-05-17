@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Play, Plus, Search, Settings, Square, X, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, Play, Plus, Search, Settings, Square, X, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
@@ -253,15 +253,12 @@ export function TitleBar(): JSX.Element | null {
   const updateSettings = useUIStore((s) => s.updateSettings)
   const openSettings = useUIStore((s) => s.openSettings)
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
-  const activateDockPanel = useUIStore((s) => s.activateDockPanel)
   const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
-  const hideRightPanel = useUIStore((s) => s.hideRightPanel)
   const hideStatusBar = useUIStore((s) => s.hideStatusBar)
   const hideTitleBar = useUIStore((s) => s.hideTitleBar)
   const focusMode = useUIStore((s) => s.focusMode)
   const setFocusMode = useUIStore((s) => s.setFocusMode)
   const toggleHideLeftPanel = useUIStore((s) => s.toggleHideLeftPanel)
-  const toggleHideRightPanel = useUIStore((s) => s.toggleHideRightPanel)
   const toggleHideStatusBar = useUIStore((s) => s.toggleHideStatusBar)
   const toggleHideTitleBar = useUIStore((s) => s.toggleHideTitleBar)
   const addToast = useUIStore((s) => s.addToast)
@@ -476,11 +473,21 @@ export function TitleBar(): JSX.Element | null {
       return
     }
 
-    runLaunchProfile({
+    const sessionId = runLaunchProfile({
       profile: titleRunProfile,
       projectPath: activeProjectPath,
       worktreeId: selectedWorktreeId,
+      focus: false,
     })
+    if (sessionId) {
+      addToast({
+        type: 'success',
+        title: '运行已启动',
+        body: `${titleRunProfile.name} 已在后台运行，点击跳转到运行会话。`,
+        sessionId,
+        duration: 9000,
+      })
+    }
   }, [
     activeProjectPath,
     addToast,
@@ -649,19 +656,9 @@ export function TitleBar(): JSX.Element | null {
             onSelect: () => toggleDockPanel('left'),
           },
           {
-            icon: PanelRightOpen,
-            label: '切换右侧面板',
-            onSelect: () => toggleDockPanel('right'),
-          },
-          {
             icon: hideLeftPanel ? Eye : EyeOff,
             label: hideLeftPanel ? '显示左侧栏' : '隐藏左侧栏',
             onSelect: toggleHideLeftPanel,
-          },
-          {
-            icon: hideRightPanel ? Eye : EyeOff,
-            label: hideRightPanel ? '显示右侧栏' : '隐藏右侧栏',
-            onSelect: toggleHideRightPanel,
           },
           {
             icon: hideStatusBar ? Eye : EyeOff,
@@ -677,16 +674,6 @@ export function TitleBar(): JSX.Element | null {
             icon: Focus,
             label: focusModeActive ? '退出专注模式' : '进入专注模式',
             onSelect: handleToggleFocusMode,
-          },
-          {
-            icon: Search,
-            label: '打开搜索面板',
-            onSelect: () => activateDockPanel('search'),
-          },
-          {
-            icon: ListTodo,
-            label: '打开 Todo 面板',
-            onSelect: () => activateDockPanel('todo'),
           },
           {
             icon: Square,
@@ -724,7 +711,6 @@ export function TitleBar(): JSX.Element | null {
       },
     ]
   }, [
-    activateDockPanel,
     activeProjectPath,
     activeTabId,
     availableIdes,
@@ -733,7 +719,6 @@ export function TitleBar(): JSX.Element | null {
     fullscreenPaneId,
     focusModeActive,
     hideLeftPanel,
-    hideRightPanel,
     hideStatusBar,
     hideTitleBar,
     windowFullscreen,
@@ -751,7 +736,6 @@ export function TitleBar(): JSX.Element | null {
     showTitleBarSearch,
     toggleDockPanel,
     toggleHideLeftPanel,
-    toggleHideRightPanel,
     toggleHideStatusBar,
     updateSettings,
   ])

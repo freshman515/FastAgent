@@ -17,6 +17,7 @@ interface ConfigData {
   editors: unknown[]
   worktrees: unknown[]
   templates: unknown[]
+  launches: unknown[]
   activeTasks: unknown[]
   infiniteTasks: Record<string, unknown>
   ui: Record<string, unknown>
@@ -33,6 +34,7 @@ const DEFAULT_DATA: ConfigData = {
   editors: [],
   worktrees: [],
   templates: [],
+  launches: [],
   activeTasks: [],
   infiniteTasks: {},
   ui: {},
@@ -72,6 +74,7 @@ export function readConfig(): ConfigData {
       editors: Array.isArray(parsed.editors) ? parsed.editors : [],
       worktrees: Array.isArray(parsed.worktrees) ? parsed.worktrees : [],
       templates: Array.isArray(parsed.templates) ? parsed.templates : [],
+      launches: Array.isArray(parsed.launches) ? parsed.launches : [],
       activeTasks: Array.isArray(parsed.activeTasks) ? parsed.activeTasks : [],
       infiniteTasks: parsed.infiniteTasks && typeof parsed.infiniteTasks === 'object' && !Array.isArray(parsed.infiniteTasks) ? parsed.infiniteTasks : {},
       ui: parsed.ui && typeof parsed.ui === 'object' ? parsed.ui : {},

@@ -10,6 +10,7 @@ interface RunLaunchProfileOptions {
   profile: LaunchProfile
   projectPath: string
   worktreeId?: string | null
+  focus?: boolean
 }
 
 function isAbsolutePath(path: string): boolean {
@@ -72,7 +73,7 @@ function waitAndSubmitCommand(sessionId: string, command: string, attempts = 0):
   window.setTimeout(() => waitAndSubmitCommand(sessionId, command, attempts + 1), 250)
 }
 
-export function runLaunchProfile({ profile, projectPath, worktreeId }: RunLaunchProfileOptions): string | null {
+export function runLaunchProfile({ profile, projectPath, worktreeId, focus = true }: RunLaunchProfileOptions): string | null {
   const command = buildShellInput(profile)
   if (!command.trim()) {
     useUIStore.getState().addToast({
@@ -85,6 +86,7 @@ export function runLaunchProfile({ profile, projectPath, worktreeId }: RunLaunch
 
   const launchCwd = joinLaunchCwd(projectPath, profile.cwd)
   const sessionStore = useSessionsStore.getState()
+  const previousActiveSessionId = sessionStore.activeSessionId
   const targetWorktreeId = worktreeId ?? getDefaultWorktreeIdForProject(profile.projectId)
   const sessionId = sessionStore.addSession(profile.projectId, 'terminal', targetWorktreeId)
   sessionStore.updateSession(sessionId, {
@@ -94,16 +96,25 @@ export function runLaunchProfile({ profile, projectPath, worktreeId }: RunLaunch
   })
 
   const paneStore = usePanesStore.getState()
-  paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
-  paneStore.setPaneActiveSession(paneStore.activePaneId, sessionId)
-  sessionStore.setActive(sessionId)
+  const targetPaneId = paneStore.activePaneId
+  const previousPaneActiveSessionId = paneStore.paneActiveSession[targetPaneId] ?? null
+  paneStore.addSessionToPane(targetPaneId, sessionId)
+  if (focus) {
+    paneStore.setPaneActiveSession(targetPaneId, sessionId)
+    sessionStore.setActive(sessionId)
+  } else {
+    paneStore.setPaneActiveSession(targetPaneId, previousPaneActiveSessionId)
+    sessionStore.setActive(previousActiveSessionId)
+  }
   useLaunchesStore.getState().setProjectRunningSession(profile.projectId, {
     profileId: profile.id,
     sessionId,
     startedAt: Date.now(),
   })
-  useProjectsStore.getState().selectProject(profile.projectId)
-  focusSessionTarget(sessionId)
+  if (focus) {
+    useProjectsStore.getState().selectProject(profile.projectId)
+    focusSessionTarget(sessionId)
+  }
 
   window.setTimeout(() => waitAndSubmitCommand(sessionId, command), 300)
   return sessionId

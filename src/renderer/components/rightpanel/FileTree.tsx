@@ -370,7 +370,7 @@ function TreeNode({
             <FileTypeIcon name={name} />
           </>
         )}
-        <span className={cn('flex-1 truncate text-[12px] transition-colors duration-200', isSelected ? 'font-bold' : 'font-medium')}>
+        <span className={cn('flex-1 truncate text-[var(--ui-font-sm)] transition-colors duration-200', isSelected ? 'font-bold' : 'font-medium')}>
           {name}
         </span>
       </div>

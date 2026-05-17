@@ -519,6 +519,47 @@ function withRecentCard(layout: CanvasLayout, cardId: string): CanvasLayout {
   return { ...layout, recentCardIds }
 }
 
+function getNextFocusCardIdAfterRemoval(
+  layout: CanvasLayout,
+  removedIds: Set<string>,
+  selectedCardIds: string[],
+): string | null {
+  const remainingIds = new Set(layout.cards.map((card) => card.id))
+  const recentCardId = (layout.recentCardIds ?? [])
+    .find((cardId) => !removedIds.has(cardId) && remainingIds.has(cardId))
+  if (recentCardId) return recentCardId
+
+  return selectedCardIds.find((cardId) => !removedIds.has(cardId) && remainingIds.has(cardId)) ?? null
+}
+
+function focusCardInLayout(
+  layout: CanvasLayout,
+  cardId: string | null,
+  now: number,
+): { layout: CanvasLayout; selectedCardIds: string[]; focusViewport: CanvasViewport | null } | null {
+  if (!cardId) return null
+  const card = layout.cards.find((item) => item.id === cardId)
+  if (!card) return null
+
+  const targetViewport = getCardFocusViewport(card, layout.viewport)
+  const recentLayout = withRecentCard(layout, cardId)
+  let cards = recentLayout.cards
+  if (card.kind !== 'frame') {
+    const maxZ = cards.reduce((acc, item) => Math.max(acc, item.zIndex), 0)
+    if (card.zIndex < maxZ) {
+      cards = cards.map((item) =>
+        item.id === cardId ? { ...item, zIndex: maxZ + 1, updatedAt: now } : item,
+      )
+    }
+  }
+
+  return {
+    layout: { ...recentLayout, cards },
+    selectedCardIds: [cardId],
+    focusViewport: targetViewport,
+  }
+}
+
 function isValidCardSnapshot(value: unknown): value is CanvasCardSnapshot {
   if (!value || typeof value !== 'object') return false
   const snapshot = value as Record<string, unknown>
@@ -2243,26 +2284,46 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   removeCard: (id) => {
+    let focusViewport: CanvasViewport | null = null
+    cancelViewportAnimation()
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
       const now = Date.now()
+      const removedIds = new Set([id])
       const cards = layout.cards
         .filter((card) => card.id !== id)
         .map((card) => card.hiddenByFrameId === id ? { ...card, hiddenByFrameId: undefined, updatedAt: now } : card)
       if (cards.length === layout.cards.length) return state
       const frameLayout = applyFrameAutoLayout(cards, [id], now)
       const relations = layout.relations.filter((relation) => relation.fromCardId !== id && relation.toCardId !== id)
+      const remainingIds = new Set(frameLayout.cards.map((card) => card.id))
+      let nextLayout: CanvasLayout = {
+        ...layout,
+        cards: frameLayout.cards,
+        recentCardIds: (layout.recentCardIds ?? []).filter((cardId) => remainingIds.has(cardId)),
+        relations,
+      }
+      const focused = focusCardInLayout(
+        nextLayout,
+        getNextFocusCardIdAfterRemoval(nextLayout, removedIds, state.selectedCardIds),
+        now,
+      )
+      if (focused) {
+        nextLayout = focused.layout
+        focusViewport = focused.focusViewport
+      }
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards: frameLayout.cards, relations },
+          [state.activeLayoutKey]: nextLayout,
         },
-        selectedCardIds: state.selectedCardIds.filter((cardId) => cardId !== id),
-        focusReturn: state.focusReturn?.cardId === id ? null : state.focusReturn,
+        selectedCardIds: focused?.selectedCardIds ?? state.selectedCardIds.filter((cardId) => cardId !== id),
+        focusReturn: focused ? null : (state.focusReturn?.cardId === id ? null : state.focusReturn),
         maximizedCardId: state.maximizedCardId === id ? null : state.maximizedCardId,
         undoStack: pushUndo(state),
       }
     })
+    if (focusViewport) animateViewport(focusViewport)
   },
 
   bringToFront: (id) => {
@@ -2454,9 +2515,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   detachSessionEverywhere: (sessionId) => {
+    let focusViewport: CanvasViewport | null = null
+    let didFocusAfterRemoval = false
+    cancelViewportAnimation()
     set((state) => {
       const layouts: Record<string, CanvasLayout> = {}
+      let activeLayoutRemovedIds = new Set<string>()
+      const now = Date.now()
       for (const [key, layout] of Object.entries(state.layouts)) {
+        const removedIds = new Set(layout.cards.filter((c) => c.refId === sessionId).map((card) => card.id))
         const cards = layout.cards.filter((c) => c.refId !== sessionId)
         if (cards.length === layout.cards.length) {
           layouts[key] = layout
@@ -2466,21 +2533,43 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         const relations = layout.relations.filter((relation) =>
           remainingIds.has(relation.fromCardId) && remainingIds.has(relation.toCardId),
         )
-        layouts[key] = { ...layout, cards, relations }
+        layouts[key] = {
+          ...layout,
+          cards,
+          recentCardIds: (layout.recentCardIds ?? []).filter((cardId) => remainingIds.has(cardId)),
+          relations,
+        }
+        if (key === state.activeLayoutKey) activeLayoutRemovedIds = removedIds
       }
-      const selectedCardIds = state.selectedCardIds.filter((id) => {
+      const activeLayout = layouts[state.activeLayoutKey]
+      let selectedCardIds = state.selectedCardIds.filter((id) => {
         const card = Object.values(layouts).flatMap((l) => l.cards).find((c) => c.id === id)
         return Boolean(card)
       })
+      if (activeLayout && activeLayoutRemovedIds.size > 0) {
+        const focused = focusCardInLayout(
+          activeLayout,
+          getNextFocusCardIdAfterRemoval(activeLayout, activeLayoutRemovedIds, state.selectedCardIds),
+          now,
+        )
+        if (focused) {
+          layouts[state.activeLayoutKey] = focused.layout
+          selectedCardIds = focused.selectedCardIds
+          focusViewport = focused.focusViewport
+          didFocusAfterRemoval = true
+        }
+      }
       const maximizedExists = state.maximizedCardId
         ? Object.values(layouts).some((layout) => layout.cards.some((card) => card.id === state.maximizedCardId))
         : false
       return {
         layouts,
         selectedCardIds,
+        focusReturn: didFocusAfterRemoval ? null : state.focusReturn,
         maximizedCardId: maximizedExists ? state.maximizedCardId : null,
       }
     })
+    if (focusViewport) animateViewport(focusViewport)
   },
 
   autoPopulateFromSessions: (sessionIds, kindFor) => {
@@ -2538,6 +2627,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   removeCards: (ids) => {
     if (ids.length === 0) return
     const idSet = new Set(ids)
+    let focusViewport: CanvasViewport | null = null
+    cancelViewportAnimation()
     set((state) => {
       const layout = state.layouts[state.activeLayoutKey] ?? defaultLayout()
       const now = Date.now()
@@ -2551,17 +2642,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const relations = layout.relations.filter((relation) =>
         !idSet.has(relation.fromCardId) && !idSet.has(relation.toCardId),
       )
+      const remainingIds = new Set(frameLayout.cards.map((card) => card.id))
+      let nextLayout: CanvasLayout = {
+        ...layout,
+        cards: frameLayout.cards,
+        recentCardIds: (layout.recentCardIds ?? []).filter((cardId) => remainingIds.has(cardId)),
+        relations,
+      }
+      const focused = focusCardInLayout(
+        nextLayout,
+        getNextFocusCardIdAfterRemoval(nextLayout, idSet, state.selectedCardIds),
+        now,
+      )
+      if (focused) {
+        nextLayout = focused.layout
+        focusViewport = focused.focusViewport
+      }
       return {
         layouts: {
           ...state.layouts,
-          [state.activeLayoutKey]: { ...layout, cards: frameLayout.cards, relations },
+          [state.activeLayoutKey]: nextLayout,
         },
-        selectedCardIds: state.selectedCardIds.filter((id) => !idSet.has(id)),
-        focusReturn: state.focusReturn && idSet.has(state.focusReturn.cardId) ? null : state.focusReturn,
+        selectedCardIds: focused?.selectedCardIds ?? state.selectedCardIds.filter((id) => !idSet.has(id)),
+        focusReturn: focused ? null : (state.focusReturn && idSet.has(state.focusReturn.cardId) ? null : state.focusReturn),
         maximizedCardId: state.maximizedCardId && idSet.has(state.maximizedCardId) ? null : state.maximizedCardId,
         undoStack: pushUndo(state),
       }
     })
+    if (focusViewport) animateViewport(focusViewport)
   },
 
   duplicateCards: (ids) => {

@@ -453,6 +453,7 @@ const api = {
         editors?: unknown[]
         worktrees?: unknown[]
         templates?: unknown[]
+        launches?: unknown[]
         activeTasks?: unknown[]
         infiniteTasks?: unknown
         ui: Record<string, unknown>
