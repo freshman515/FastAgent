@@ -888,7 +888,7 @@ function CanvasCommandCardSwitcher({
   onSelect: (cardId: string) => void
 }): JSX.Element {
   const cards = useCanvasStore((state) => state.getLayout().cards)
-  const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds ?? [])
+  const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const sessions = useSessionsStore((state) => state.sessions)
   const editors = useEditorsStore((state) => state.tabs)

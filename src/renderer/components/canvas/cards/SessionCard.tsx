@@ -35,9 +35,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
   const addCardSnapshot = useCanvasStore((state) => state.addCardSnapshot)
   const restoreCardSnapshot = useCanvasStore((state) => state.restoreCardSnapshot)
-  const canvasSessionCards = useCanvasStore((state) =>
-    state.getCards().filter((item) => (item.kind === 'session' || item.kind === 'terminal') && item.refId),
-  )
+  const cards = useCanvasStore((state) => state.getLayout().cards)
   const updateSession = useSessionsStore((state) => state.updateSession)
   const isDarkTheme = useIsDarkTheme()
   const [confirmClose, setConfirmClose] = useState(false)
@@ -85,8 +83,10 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const displayTitle = formatSessionCardTitle(session.name, card.sessionRemark)
   const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
   const sortedSessionCards = useMemo(
-    () => [...canvasSessionCards].sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)),
-    [canvasSessionCards],
+    () => cards
+      .filter((item) => (item.kind === 'session' || item.kind === 'terminal') && item.refId)
+      .sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)),
+    [cards],
   )
   const allSessionCardIds = useMemo(
     () => sortedSessionCards.map((item) => item.refId).filter((id): id is string => Boolean(id)),

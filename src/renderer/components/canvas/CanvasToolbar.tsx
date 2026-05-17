@@ -57,7 +57,7 @@ export function CanvasToolbar({ viewportRef, onOpenSearch, onOpenCommandMode, on
   const scale = useCanvasStore((state) => state.getLayout().viewport.scale)
   const cards = useCanvasStore((state) => state.getLayout().cards)
   const bookmarks = useCanvasStore((state) => state.getLayout().bookmarks)
-  const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds ?? [])
+  const recentCardIds = useCanvasStore((state) => state.getLayout().recentCardIds)
   const layoutSnapshots = useCanvasStore((state) => state.getLayout().snapshots)
   const selectedCardIds = useCanvasStore((state) => state.selectedCardIds)
   const addCard = useCanvasStore((state) => state.addCard)

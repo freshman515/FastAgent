@@ -37,6 +37,8 @@ function defaultLayout(): CanvasLayout {
   return { cards: [], viewport: defaultViewport(), bookmarks: [], recentCardIds: [], relations: [], snapshots: [] }
 }
 
+const FALLBACK_LAYOUT = defaultLayout()
+
 interface CanvasHistoryEntry {
   activeLayoutKey: string
   layouts: Record<string, CanvasLayout>
@@ -1433,7 +1435,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   getLayout: (key) => {
     const layoutKey = key ?? get().activeLayoutKey
-    return get().layouts[layoutKey] ?? defaultLayout()
+    const layouts = get().layouts
+    return layouts[layoutKey] ?? layouts[GLOBAL_LAYOUT_KEY] ?? FALLBACK_LAYOUT
   },
   getCards: () => get().getLayout().cards,
   getViewport: () => get().getLayout().viewport,
@@ -1450,6 +1453,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (layout) layouts[key] = layout
     }
     if (Object.keys(layouts).length === 0) {
+      layouts[GLOBAL_LAYOUT_KEY] = defaultLayout()
+    } else if (!layouts[GLOBAL_LAYOUT_KEY]) {
       layouts[GLOBAL_LAYOUT_KEY] = defaultLayout()
     }
     set({ layouts, selectedCardIds: [], focusReturn: null, maximizedCardId: null, undoStack: [] })

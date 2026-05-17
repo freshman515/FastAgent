@@ -26,9 +26,7 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
   const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
   const addCardSnapshot = useCanvasStore((state) => state.addCardSnapshot)
   const restoreCardSnapshot = useCanvasStore((state) => state.restoreCardSnapshot)
-  const canvasEditorCards = useCanvasStore((state) =>
-    state.getCards().filter((item) => item.kind === 'editor' && item.refId),
-  )
+  const cards = useCanvasStore((state) => state.getLayout().cards)
   const [titleMenu, setTitleMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [pendingBulkClose, setPendingBulkClose] = useState<{ ids: string[]; label: string; modifiedCount: number } | null>(null)
@@ -38,8 +36,10 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
   const language = resolveEditorLanguage(tab.fileName, tab.language)
   const iconInfo = FILE_ICONS[language] ?? FILE_ICONS.plaintext
   const sortedEditorCards = useMemo(
-    () => [...canvasEditorCards].sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)),
-    [canvasEditorCards],
+    () => cards
+      .filter((item) => item.kind === 'editor' && item.refId)
+      .sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)),
+    [cards],
   )
   const allEditorCardIds = useMemo(
     () => sortedEditorCards.map((item) => item.refId).filter((id): id is string => Boolean(id)),
