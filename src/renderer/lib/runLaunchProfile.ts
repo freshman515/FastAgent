@@ -5,6 +5,9 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
+import { startLaunchCompletionWatcher } from '@/lib/launchCompletionWatcher'
+
+type LaunchShellFamily = 'powershell' | 'cmd' | 'posix'
 
 interface RunLaunchProfileOptions {
   profile: LaunchProfile
@@ -54,7 +57,49 @@ function buildShellInput(profile: LaunchProfile): string {
   return [envCommands, buildCommand(profile)].filter(Boolean).join('; ')
 }
 
-function waitAndSubmitCommand(sessionId: string, command: string, attempts = 0): void {
+function inferShellFamily(shell: string | null | undefined): LaunchShellFamily {
+  const name = shell?.split(/[\\/]/).pop()?.toLowerCase() ?? ''
+  if (name === 'cmd' || name === 'cmd.exe') return 'cmd'
+  if (name === 'bash' || name === 'bash.exe' || name === 'zsh' || name === 'zsh.exe' || name === 'sh' || name === 'sh.exe') return 'posix'
+  return 'powershell'
+}
+
+async function resolveLaunchShellFamily(): Promise<LaunchShellFamily> {
+  const settings = useUIStore.getState().settings
+  if (settings.terminalShellMode === 'cmd') return 'cmd'
+  if (settings.terminalShellMode === 'gitbash') return 'posix'
+  if (settings.terminalShellMode === 'pwsh' || settings.terminalShellMode === 'powershell') return 'powershell'
+  if (settings.terminalShellMode === 'custom') return inferShellFamily(settings.terminalShellCommand)
+
+  try {
+    const availability = await window.api.shell.resolveTerminalShell(settings.terminalShellMode)
+    return inferShellFamily(availability.shell)
+  } catch {
+    return 'powershell'
+  }
+}
+
+function splitCompletionMarker(marker: string): [string, string] {
+  const pivot = Math.ceil(marker.length / 2)
+  return [marker.slice(0, pivot), marker.slice(pivot)]
+}
+
+function appendCompletionMarker(command: string, marker: string, family: LaunchShellFamily): string {
+  const [left, right] = splitCompletionMarker(marker)
+  if (family === 'cmd') {
+    return `${command} & set "__pdLaunchA=${left}" & set "__pdLaunchB=${right}" & echo %__pdLaunchA%%__pdLaunchB%`
+  }
+  if (family === 'posix') {
+    return `${command}; __pdLaunchA='${left}'; __pdLaunchB='${right}'; printf '\\033]1337;PragmaLaunchDone=%s\\a' "$__pdLaunchA$__pdLaunchB"`
+  }
+  return `${command}; $__pdLaunchA=${quotePowerShellValue(left)}; $__pdLaunchB=${quotePowerShellValue(right)}; Write-Host -NoNewline ([char]27 + ']1337;PragmaLaunchDone=' + ($__pdLaunchA + $__pdLaunchB) + [char]7)`
+}
+
+function createCompletionMarker(sessionId: string): string {
+  return `PRAGMA_DESK_LAUNCH_DONE_${sessionId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function waitAndSubmitCommand(sessionId: string, command: string, completionMarker: string, attempts = 0): void {
   if (attempts > 40) {
     useUIStore.getState().addToast({
       type: 'error',
@@ -66,11 +111,14 @@ function waitAndSubmitCommand(sessionId: string, command: string, attempts = 0):
 
   const session = useSessionsStore.getState().sessions.find((item) => item.id === sessionId)
   if (session?.ptyId) {
-    void window.api.session.submit(session.ptyId, command, true)
+    startLaunchCompletionWatcher(sessionId, completionMarker)
+    void resolveLaunchShellFamily()
+      .then((family) => window.api.session.submit(session.ptyId!, appendCompletionMarker(command, completionMarker, family), true))
+      .catch(() => window.api.session.submit(session.ptyId!, appendCompletionMarker(command, completionMarker, 'powershell'), true))
     return
   }
 
-  window.setTimeout(() => waitAndSubmitCommand(sessionId, command, attempts + 1), 250)
+  window.setTimeout(() => waitAndSubmitCommand(sessionId, command, completionMarker, attempts + 1), 250)
 }
 
 export function runLaunchProfile({ profile, projectPath, worktreeId, focus = true }: RunLaunchProfileOptions): string | null {
@@ -116,6 +164,7 @@ export function runLaunchProfile({ profile, projectPath, worktreeId, focus = tru
     focusSessionTarget(sessionId)
   }
 
-  window.setTimeout(() => waitAndSubmitCommand(sessionId, command), 300)
+  const completionMarker = createCompletionMarker(sessionId)
+  window.setTimeout(() => waitAndSubmitCommand(sessionId, command, completionMarker), 300)
   return sessionId
 }
