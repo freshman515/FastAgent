@@ -1,4 +1,4 @@
-import type { CanvasCard } from '@shared/types'
+import type { CanvasCard, NoteImage } from '@shared/types'
 import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
 import { createNoteSyncId } from '@/lib/noteSync'
 import { getDefaultCanvasCardSize, useCanvasStore } from '@/stores/canvas'
@@ -12,6 +12,7 @@ interface CreateConnectedNoteForCardOptions {
   createClassicTab?: boolean
   focus?: boolean
   noteBody?: string
+  noteImages?: NoteImage[]
   noteSyncId?: string
 }
 
@@ -21,13 +22,17 @@ export function createConnectedNoteForCard(targetCard: CanvasCard, options: Crea
   const canvasStore = useCanvasStore.getState()
   const noteSyncId = options.noteSyncId ?? createNoteSyncId()
   const noteBody = options.noteBody ?? ''
+  const noteImages = options.noteImages
   const existingNote = canvasStore.getLayout().cards.find((card) => card.kind === 'note' && card.noteSyncId === noteSyncId)
   if (existingNote) {
-    if ((existingNote.noteBody ?? '') !== noteBody) {
-      canvasStore.updateCard(existingNote.id, { noteBody })
+    if ((existingNote.noteBody ?? '') !== noteBody || (noteImages !== undefined && !sameNoteImages(existingNote.noteImages, noteImages))) {
+      canvasStore.updateCard(existingNote.id, {
+        noteBody,
+        ...(noteImages !== undefined ? { noteImages } : {}),
+      })
     }
     canvasStore.addRelation(targetCard.id, existingNote.id, { kind: 'related', direction: 'none' })
-    if (options.createClassicTab !== false) createClassicNoteTab(targetCard, noteSyncId, noteBody)
+    if (options.createClassicTab !== false) createClassicNoteTab(targetCard, noteSyncId, noteBody, noteImages ?? existingNote.noteImages ?? [])
     if (options.focus !== false) focusNoteCard(existingNote.id)
     return existingNote.id
   }
@@ -41,6 +46,7 @@ export function createConnectedNoteForCard(targetCard: CanvasCard, options: Crea
     x: position.x,
     y: position.y,
     noteBody,
+    noteImages: noteImages ?? [],
     noteColor: 'yellow',
     noteSyncId,
   }, {
@@ -50,20 +56,32 @@ export function createConnectedNoteForCard(targetCard: CanvasCard, options: Crea
   })
   addCanvasCardToSpace(cardId, targetSpaceId)
   canvasStore.addRelation(targetCard.id, cardId, { kind: 'related', direction: 'none' })
-  if (options.createClassicTab !== false) createClassicNoteTab(targetCard, noteSyncId, noteBody)
+  if (options.createClassicTab !== false) createClassicNoteTab(targetCard, noteSyncId, noteBody, noteImages ?? [])
   if (options.focus !== false) focusNoteCard(cardId)
   return cardId
 }
 
-function createClassicNoteTab(targetCard: CanvasCard, noteSyncId: string, noteBody: string): void {
+function createClassicNoteTab(targetCard: CanvasCard, noteSyncId: string, noteBody: string, noteImages: NoteImage[]): void {
   if (!targetCard.refId) return
   const targetSession = useSessionsStore.getState().sessions.find((session) => session.id === targetCard.refId)
   if (!targetSession) return
   createConnectedNoteTabForSession(targetSession, undefined, {
     activate: false,
     initialBody: noteBody,
+    initialImages: noteImages,
     noteSyncId,
   })
+}
+
+function sameNoteImages(a: NoteImage[] | undefined, b: NoteImage[] | undefined): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  if (left.length !== right.length) return false
+  return left.every((image, index) => (
+    image.id === right[index].id
+    && image.dataUrl === right[index].dataUrl
+    && image.displayIndex === right[index].displayIndex
+  ))
 }
 
 function focusNoteCard(cardId: string): void {

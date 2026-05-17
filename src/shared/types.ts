@@ -76,6 +76,16 @@ export type OutputState = 'idle' | 'outputting' | 'unread'
  */
 export type SessionActivity = 'running' | 'thinking' | 'idle' | 'completed'
 
+export interface NoteImage {
+  id: string
+  name: string
+  mediaType: string
+  dataUrl: string
+  createdAt: number
+  /** Stable human-facing placeholder number, rendered as [Image #n]. */
+  displayIndex?: number
+}
+
 export interface Session {
   id: string
   projectId: string
@@ -106,6 +116,8 @@ export interface Session {
   customSessionArgs?: string[]
   /** Classic-mode note body. Note sessions do not launch a PTY. */
   noteBody?: string
+  /** Images pasted into a note. Stored as data URLs so notes stay self-contained. */
+  noteImages?: NoteImage[]
   /** Session id this classic note is connected to. */
   connectedSessionId?: string
   /** Shared id linking a classic note tab to a canvas note card. */
@@ -155,6 +167,8 @@ export interface CanvasCard {
   sessionRemark?: string
   /** Note-card body (plain text). */
   noteBody?: string
+  /** Images pasted into a note card. */
+  noteImages?: NoteImage[]
   /** Note-card accent color token (e.g. 'yellow' | 'blue' | 'green' | 'pink'). */
   noteColor?: string
   /** Shared id linking this canvas note card to a classic note tab. */
@@ -997,6 +1011,7 @@ export const IPC = {
   WINDOW_START_VOICE_INPUT: 'window:start-voice-input',
   WINDOW_ENSURE_ENGLISH_INPUT_MODE: 'window:ensure-english-input-mode',
   WINDOW_RESTORE_INPUT_MODE: 'window:restore-input-mode',
+  CLIPBOARD_WRITE_IMAGE: 'clipboard:write-image',
   VOICE_LOCAL_ASR_SERVICE: 'voice:local-asr-service',
   VOICE_TRANSCRIBE: 'voice:transcribe',
   VOICE_STREAM_START: 'voice:stream-start',

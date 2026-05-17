@@ -13,6 +13,7 @@ import { registerUpdaterHandlers } from './updater'
 import { registerMcpHandlers } from './mcp'
 import { registerSessionHistoryHandlers } from './sessionHistory'
 import { registerAppInfoHandlers } from './appInfo'
+import { registerClipboardHandlers } from './clipboard'
 
 export function registerAllHandlers(): void {
   registerWindowHandlers()
@@ -30,4 +31,5 @@ export function registerAllHandlers(): void {
   registerMcpHandlers()
   registerSessionHistoryHandlers()
   registerAppInfoHandlers()
+  registerClipboardHandlers()
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, SessionType, SessionStatus, OutputState, SessionActivity } from '@shared/types'
+import type { NoteImage, Session, SessionType, SessionStatus, OutputState, SessionActivity } from '@shared/types'
 import { DEFAULT_BROWSER_URL, SESSION_TYPE_CONFIG, isClaudeCodeType, isCodexType, isGeminiType } from '@shared/types'
 import { isClaudeSessionUuid } from '@shared/claudeSession'
 import { generateId } from '@/lib/utils'
@@ -92,9 +92,36 @@ function sanitizeSession(s: unknown): Session | null {
       ? obj.customSessionArgs.filter((arg): arg is string => typeof arg === 'string')
       : undefined,
     noteBody: type === 'note' && typeof obj.noteBody === 'string' ? obj.noteBody : undefined,
+    noteImages: type === 'note' ? sanitizeNoteImages(obj.noteImages) : undefined,
     connectedSessionId: type === 'note' && typeof obj.connectedSessionId === 'string' ? obj.connectedSessionId : undefined,
     noteSyncId: type === 'note' && typeof obj.noteSyncId === 'string' ? obj.noteSyncId : undefined,
   }
+}
+
+function sanitizeNoteImages(value: unknown): NoteImage[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const images = value.flatMap((item): NoteImage[] => {
+    if (!item || typeof item !== 'object') return []
+    const image = item as Record<string, unknown>
+    if (
+      typeof image.id !== 'string'
+      || typeof image.dataUrl !== 'string'
+      || !image.dataUrl.startsWith('data:image/')
+    ) {
+      return []
+    }
+    return [{
+      id: image.id,
+      name: typeof image.name === 'string' && image.name.trim() ? image.name : 'image',
+      mediaType: typeof image.mediaType === 'string' && image.mediaType.startsWith('image/') ? image.mediaType : 'image/png',
+      dataUrl: image.dataUrl,
+      createdAt: typeof image.createdAt === 'number' ? image.createdAt : Date.now(),
+      displayIndex: typeof image.displayIndex === 'number' && Number.isInteger(image.displayIndex) && image.displayIndex > 0
+        ? image.displayIndex
+        : undefined,
+    }]
+  })
+  return images.length > 0 ? images : undefined
 }
 
 function persist(sessions: Session[]): void {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CanvasCard, SessionType } from '@shared/types'
+import type { CanvasCard, NoteImage, SessionType } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
@@ -39,6 +39,17 @@ import { useCanvasKeyboard } from './hooks/useCanvasKeyboard'
 import { addCanvasCardToSpace } from './canvasSpaceMembership'
 import { getSmartNewCardPlacement } from './canvasSmartPlacement'
 import { createConnectedNoteForCard } from './canvasConnectedNote'
+
+function sameNoteImages(a: NoteImage[] | undefined, b: NoteImage[] | undefined): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  if (left.length !== right.length) return false
+  return left.every((image, index) => (
+    image.id === right[index].id
+    && image.dataUrl === right[index].dataUrl
+    && image.displayIndex === right[index].displayIndex
+  ))
+}
 
 /**
  * Top-level canvas view. Rendered by `MainPanel` when
@@ -112,7 +123,7 @@ export function CanvasWorkspace(): JSX.Element {
   const classicNoteSyncKey = useSessionsStore((state) =>
     state.sessions
       .filter((session) => session.type === 'note')
-      .map((session) => `${session.id}\x1f${session.connectedSessionId ?? ''}\x1f${session.noteSyncId ?? ''}\x1f${session.noteBody ?? ''}`)
+      .map((session) => `${session.id}\x1f${session.connectedSessionId ?? ''}\x1f${session.noteSyncId ?? ''}\x1f${session.noteBody ?? ''}\x1f${session.noteImages?.map((image) => `${image.id}:${image.displayIndex ?? ''}:${image.dataUrl.length}`).join(',') ?? ''}`)
       .join('\x1e'),
   )
   const editorIdsKey = useEditorsStore((state) => state.tabs.map((tab) => tab.id).join('\x1f'))
@@ -244,6 +255,7 @@ export function CanvasWorkspace(): JSX.Element {
         createConnectedNoteTabForSession(targetSession, undefined, {
           activate: false,
           initialBody: noteCard.noteBody ?? '',
+          initialImages: noteCard.noteImages ?? [],
           noteSyncId,
         })
       }
@@ -258,8 +270,8 @@ export function CanvasWorkspace(): JSX.Element {
       }
       const existingNoteCard = layout.cards.find((card) => card.kind === 'note' && card.noteSyncId === noteSyncId)
       if (existingNoteCard) {
-        if ((existingNoteCard.noteBody ?? '') !== (noteSession.noteBody ?? '')) {
-          canvas.updateCard(existingNoteCard.id, { noteBody: noteSession.noteBody ?? '' })
+        if ((existingNoteCard.noteBody ?? '') !== (noteSession.noteBody ?? '') || !sameNoteImages(existingNoteCard.noteImages, noteSession.noteImages)) {
+          canvas.updateCard(existingNoteCard.id, { noteBody: noteSession.noteBody ?? '', noteImages: noteSession.noteImages ?? [] })
         }
         continue
       }
@@ -271,6 +283,7 @@ export function CanvasWorkspace(): JSX.Element {
           createClassicTab: false,
           focus: false,
           noteBody: noteSession.noteBody ?? '',
+          noteImages: noteSession.noteImages ?? [],
           noteSyncId,
         })
       }

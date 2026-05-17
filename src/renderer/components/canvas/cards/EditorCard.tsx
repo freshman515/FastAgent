@@ -1,10 +1,10 @@
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, Star } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CanvasCard } from '@shared/types'
 import { EditorView } from '@/components/session/EditorView'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { FILE_ICONS, resolveEditorLanguage, useEditorsStore } from '@/stores/editors'
+import { FILE_ICONS, resolveEditorLanguage, useEditorsStore, type EditorTab } from '@/stores/editors'
 import { useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from '../CanvasMenu'
@@ -26,13 +26,44 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
   const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
   const addCardSnapshot = useCanvasStore((state) => state.addCardSnapshot)
   const restoreCardSnapshot = useCanvasStore((state) => state.restoreCardSnapshot)
+  const canvasEditorCards = useCanvasStore((state) =>
+    state.getCards().filter((item) => item.kind === 'editor' && item.refId),
+  )
   const [titleMenu, setTitleMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
+  const [pendingBulkClose, setPendingBulkClose] = useState<{ ids: string[]; label: string; modifiedCount: number } | null>(null)
 
   if (!tab) return null
 
   const language = resolveEditorLanguage(tab.fileName, tab.language)
   const iconInfo = FILE_ICONS[language] ?? FILE_ICONS.plaintext
+  const sortedEditorCards = useMemo(
+    () => [...canvasEditorCards].sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)),
+    [canvasEditorCards],
+  )
+  const allEditorCardIds = useMemo(
+    () => sortedEditorCards.map((item) => item.refId).filter((id): id is string => Boolean(id)),
+    [sortedEditorCards],
+  )
+  const otherEditorCardIds = useMemo(
+    () => allEditorCardIds.filter((id) => id !== tab.id),
+    [allEditorCardIds, tab.id],
+  )
+  const editorCardCenterX = card.x + card.width / 2
+  const leftEditorCardIds = useMemo(
+    () => sortedEditorCards
+      .filter((item) => item.id !== card.id && item.x + item.width / 2 < editorCardCenterX)
+      .map((item) => item.refId)
+      .filter((id): id is string => Boolean(id)),
+    [card.id, editorCardCenterX, sortedEditorCards],
+  )
+  const rightEditorCardIds = useMemo(
+    () => sortedEditorCards
+      .filter((item) => item.id !== card.id && item.x + item.width / 2 > editorCardCenterX)
+      .map((item) => item.refId)
+      .filter((id): id is string => Boolean(id)),
+    [card.id, editorCardCenterX, sortedEditorCards],
+  )
   const title = (
     <div className="flex min-w-0 items-center gap-2">
       <span
@@ -60,17 +91,30 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
     removeCard(card.id)
   }
 
-  const closeFileTab = (): void => {
+  const closeFileTabs = (ids: string[]): void => {
+    const targets = [...new Set(ids)]
+      .map((id) => useEditorsStore.getState().getTab(id))
+      .filter((item): item is EditorTab => Boolean(item))
     const paneStore = usePanesStore.getState()
-    const paneIds = Object.entries(paneStore.paneSessions)
-      .filter(([, tabIds]) => tabIds.includes(tab.id))
-      .map(([paneId]) => paneId)
-    for (const paneId of paneIds) {
-      paneStore.removeSessionFromPane(paneId, tab.id)
+    const canvasStore = useCanvasStore.getState()
+    const editorStore = useEditorsStore.getState()
+    for (const target of targets) {
+      const paneIds = Object.entries(paneStore.paneSessions)
+        .filter(([, tabIds]) => tabIds.includes(target.id))
+        .map(([paneId]) => paneId)
+      for (const paneId of paneIds) {
+        paneStore.removeSessionFromPane(paneId, target.id)
+      }
+      canvasStore.detachSessionEverywhere(target.id)
+      editorStore.closeTab(target.id)
     }
-    useEditorsStore.getState().closeTab(tab.id)
     setConfirmClose(false)
+    setPendingBulkClose(null)
     closeTitleMenu()
+  }
+
+  const closeFileTab = (): void => {
+    closeFileTabs([tab.id])
   }
 
   const requestCloseFile = (): void => {
@@ -80,6 +124,20 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
       return
     }
     closeFileTab()
+  }
+
+  const requestBulkClose = (ids: string[], label: string): void => {
+    const targets = [...new Set(ids)]
+      .map((id) => useEditorsStore.getState().getTab(id))
+      .filter((item): item is EditorTab => Boolean(item))
+    closeTitleMenu()
+    if (targets.length === 0) return
+    const modifiedCount = targets.filter((item) => item.modified).length
+    if (modifiedCount > 0) {
+      setPendingBulkClose({ ids: targets.map((item) => item.id), label, modifiedCount })
+      return
+    }
+    closeFileTabs(targets.map((item) => item.id))
   }
 
   const restoreCard = (): void => {
@@ -144,7 +202,7 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
       {titleMenu && createPortal(
         <>
           <div className="fixed inset-0 z-[420]" onPointerDown={() => setTitleMenu(null)} />
-          <CanvasMenuPanel x={titleMenu.x} y={titleMenu.y} width={188} height={280}>
+          <CanvasMenuPanel x={titleMenu.x} y={titleMenu.y} width={210} height={390}>
             <CanvasMenuItem label={isMaximized ? '还原' : '最大化'} onClick={isMaximized ? restoreCard : maximizeCard} />
             <CanvasMenuItem label={card.favorite ? '取消收藏' : '收藏卡片'} onClick={toggleFavorite} />
             <CanvasMenuItem label="保存卡片快照" onClick={saveCardSnapshot} />
@@ -165,6 +223,30 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
             <CanvasMenuSeparator />
             <CanvasMenuItem label="从画布移除" onClick={detachCardFromCanvas} />
             <CanvasMenuItem label="关闭文件" danger onClick={requestCloseFile} />
+            <CanvasMenuItem
+              label="关闭其他文件卡片"
+              danger
+              disabled={otherEditorCardIds.length === 0}
+              onClick={() => requestBulkClose(otherEditorCardIds, '其他文件卡片')}
+            />
+            <CanvasMenuItem
+              label="关闭左侧文件卡片"
+              danger
+              disabled={leftEditorCardIds.length === 0}
+              onClick={() => requestBulkClose(leftEditorCardIds, '左侧文件卡片')}
+            />
+            <CanvasMenuItem
+              label="关闭右侧文件卡片"
+              danger
+              disabled={rightEditorCardIds.length === 0}
+              onClick={() => requestBulkClose(rightEditorCardIds, '右侧文件卡片')}
+            />
+            <CanvasMenuItem
+              label="关闭全部文件卡片"
+              danger
+              disabled={allEditorCardIds.length === 0}
+              onClick={() => requestBulkClose(allEditorCardIds, '全部文件卡片')}
+            />
           </CanvasMenuPanel>
         </>,
         document.body,
@@ -179,6 +261,22 @@ export function EditorCard({ card, coordinateMode }: EditorCardProps): JSX.Eleme
           danger
           onConfirm={closeFileTab}
           onCancel={() => setConfirmClose(false)}
+        />
+      )}
+
+      {pendingBulkClose && (
+        <ConfirmDialog
+          title={`关闭${pendingBulkClose.label}`}
+          message={
+            pendingBulkClose.modifiedCount > 0
+              ? `${pendingBulkClose.modifiedCount} 个文件有未保存更改，仍要关闭 ${pendingBulkClose.ids.length} 个文件卡片吗？`
+              : `将关闭 ${pendingBulkClose.ids.length} 个文件卡片，确认操作吗？`
+          }
+          confirmLabel="关闭"
+          cancelLabel="取消"
+          danger
+          onConfirm={() => closeFileTabs(pendingBulkClose.ids)}
+          onCancel={() => setPendingBulkClose(null)}
         />
       )}
     </>

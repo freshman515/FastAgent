@@ -12,13 +12,23 @@ export interface LaunchProfile {
   color: string       // hex color
 }
 
+export interface LaunchRunState {
+  profileId: string
+  sessionId: string
+  startedAt: number
+}
+
 interface LaunchesState {
   profiles: LaunchProfile[]
+  runningByProject: Record<string, LaunchRunState>
   _loaded: boolean
   _loadFromConfig: (raw: unknown[]) => void
   addProfile: (profile: Omit<LaunchProfile, 'id'>) => string
   updateProfile: (id: string, updates: Partial<LaunchProfile>) => void
   removeProfile: (id: string) => void
+  setProjectRunningSession: (projectId: string, state: LaunchRunState) => void
+  clearProjectRunningSession: (projectId: string, sessionId?: string) => void
+  clearRunningSession: (sessionId: string) => void
   getProjectProfiles: (projectId: string) => LaunchProfile[]
 }
 
@@ -46,6 +56,7 @@ function sanitize(raw: unknown): LaunchProfile | null {
 
 export const useLaunchesStore = create<LaunchesState>((set, get) => ({
   profiles: [],
+  runningByProject: {},
   _loaded: false,
 
   _loadFromConfig: (raw) => {
@@ -74,6 +85,33 @@ export const useLaunchesStore = create<LaunchesState>((set, get) => ({
     const profiles = s.profiles.filter((p) => p.id !== id)
     persist(profiles)
     return { profiles }
+  }),
+
+  setProjectRunningSession: (projectId, state) => set((s) => ({
+    runningByProject: {
+      ...s.runningByProject,
+      [projectId]: state,
+    },
+  })),
+
+  clearProjectRunningSession: (projectId, sessionId) => set((s) => {
+    const current = s.runningByProject[projectId]
+    if (!current || (sessionId && current.sessionId !== sessionId)) return s
+    const { [projectId]: _removed, ...runningByProject } = s.runningByProject
+    return { runningByProject }
+  }),
+
+  clearRunningSession: (sessionId) => set((s) => {
+    let touched = false
+    const runningByProject: Record<string, LaunchRunState> = {}
+    for (const [projectId, state] of Object.entries(s.runningByProject)) {
+      if (state.sessionId === sessionId) {
+        touched = true
+      } else {
+        runningByProject[projectId] = state
+      }
+    }
+    return touched ? { runningByProject } : s
   }),
 
   getProjectProfiles: (projectId) => get().profiles.filter((p) => p.projectId === projectId),

@@ -123,6 +123,11 @@ const api = {
     selectFolder: () => ipcRenderer.invoke(IPC.DIALOG_SELECT_FOLDER) as Promise<string | null>,
   },
 
+  clipboard: {
+    writeImageDataUrl: (dataUrl: string) =>
+      ipcRenderer.invoke(IPC.CLIPBOARD_WRITE_IMAGE, dataUrl) as Promise<boolean>,
+  },
+
   shell: {
     openPath: (path: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_PATH, path),
     openExternal: (url: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),

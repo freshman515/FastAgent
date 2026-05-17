@@ -463,7 +463,7 @@ export function getTerminalBufferText(sessionId: string, lineCount = 120): strin
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import type { Session, SessionDataEvent } from '@shared/types'
+import type { NoteImage, Session, SessionDataEvent } from '@shared/types'
 import { isClaudeCodeType, isCodexType, isGeminiType, isWslSessionType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -473,6 +473,12 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { getXtermTheme, defaultDarkTheme } from '@/lib/ghosttyTheme'
 import { parseCustomSessionArgs } from '@/lib/createSession'
 import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
+import {
+  assignNoteImageDisplayIndices,
+  createNoteImagePlaceholderText,
+  hasNoteImagePlaceholder,
+  readNoteImagesFromClipboardItems,
+} from '@/lib/noteClipboardImage'
 
 const TERMINAL_FONT_SIZE_MIN = 8
 const TERMINAL_FONT_SIZE_MAX = 36
@@ -597,7 +603,7 @@ export function findTerminalFileLinkAtCell(line: IBufferLine, cellColumn: number
   }) ?? null
 }
 
-const TERMINAL_BOTTOM_SAFE_PADDING_PX = 4
+const TERMINAL_BOTTOM_SAFE_PADDING_PX = 0
 const TERMINAL_REPAINT_DELAYS_MS = [50, 150, 350, 700] as const
 const INITIAL_TERMINAL_FIT_ATTEMPTS = 8
 
@@ -722,6 +728,9 @@ function scheduleTerminalRepaint(
 export function useXterm(
   session: Session,
   isActive: boolean,
+  options: {
+    onCreateConnectedNoteShortcut?: (initialBody: string, initialImages: NoteImage[]) => void
+  } = {},
 ): {
   containerRef: React.RefObject<HTMLDivElement | null>
   searchAddonRef: React.RefObject<SearchAddon | null>
@@ -735,10 +744,12 @@ export function useXterm(
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const pasteFromClipboardRef = useRef<(() => Promise<void>) | null>(null)
   const sessionRef = useRef(session)
+  const createConnectedNoteShortcutRef = useRef(options.onCreateConnectedNoteShortcut)
   const lastPtyDimensionsRef = useRef<{ ptyId: string; cols: number; rows: number } | null>(null)
   const pendingPtyResizeRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
   sessionRef.current = session
+  createConnectedNoteShortcutRef.current = options.onCreateConnectedNoteShortcut
 
   const requestPtyResize = (
     ptyId: string,
@@ -1141,10 +1152,70 @@ export function useXterm(
     // Undo stack for software undo (used by non-terminal sessions).
     // Each entry is a "chunk" that was added in one action (paste = one chunk, keystroke = one char).
     let undoStack: string[] = []
+    let pendingComposerInput = ''
+    let pendingComposerImages: NoteImage[] = []
     let pendingQuestionStartLine: number | null = null
     let pendingQuestionText = ''
 
     const getCursorBufferLine = (): number => terminal.buffer.active.baseY + terminal.buffer.active.cursorY
+
+    const removePendingComposerInputText = (text: string): void => {
+      if (!text) return
+      const removeCount = [...text].length
+      pendingComposerInput = [...pendingComposerInput].slice(0, -removeCount).join('')
+      syncPendingComposerImagesToInput()
+    }
+
+    const syncPendingComposerImagesToInput = (): void => {
+      if (pendingComposerImages.length === 0) return
+      pendingComposerImages = pendingComposerImages.filter((image, index) =>
+        hasNoteImagePlaceholder(pendingComposerInput, image, index),
+      )
+    }
+
+    const appendPendingComposerImages = (images: NoteImage[]): void => {
+      if (images.length === 0) return
+      const indexedImages = assignNoteImageDisplayIndices(images, pendingComposerImages)
+      const placeholders = createNoteImagePlaceholderText(indexedImages)
+      const spacer = pendingComposerInput && !/\s$/.test(pendingComposerInput) ? ' ' : ''
+      pendingComposerInput = `${pendingComposerInput}${spacer}${placeholders}`
+      pendingComposerImages = [...pendingComposerImages, ...indexedImages]
+    }
+
+    const trackPendingComposerInput = (data: string): void => {
+      if (data === '\r' || data === '\n') {
+        pendingComposerInput = ''
+        pendingComposerImages = []
+        return
+      }
+
+      const plainData = data
+        .replace(/\x1b\[200~/g, '')
+        .replace(/\x1b\[201~/g, '')
+        .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+        .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+
+      for (const ch of [...plainData]) {
+        if (ch === '\x15') {
+          pendingComposerInput = ''
+          pendingComposerImages = []
+          continue
+        }
+        if (ch === '\b' || ch === '\x7f') {
+          pendingComposerInput = [...pendingComposerInput].slice(0, -1).join('')
+          continue
+        }
+        if (ch === '\r' || ch === '\n') {
+          pendingComposerInput += '\n'
+          continue
+        }
+        const code = ch.charCodeAt(0)
+        if (ch === '\t' || (code >= 32 && code !== 127)) {
+          pendingComposerInput += ch
+        }
+      }
+      syncPendingComposerImagesToInput()
+    }
 
     const trackPotentialQuestionInput = (data: string): void => {
       const plainData = data
@@ -1196,6 +1267,9 @@ export function useXterm(
         const items = await navigator.clipboard.read()
         const hasImage = items.some((item) => item.types.some((t) => t.startsWith('image/')))
         if (hasImage) {
+          await readNoteImagesFromClipboardItems(items)
+            .then(appendPendingComposerImages)
+            .catch(() => {})
           if (ptyId) {
             // Capture what the agent echoes (e.g. "[Image #1]") so Ctrl+Z can undo it
             let echoed = ''
@@ -1255,6 +1329,19 @@ export function useXterm(
         return false
       }
 
+      if (isPlainCtrl && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        e.stopPropagation()
+        const initialBody = pendingComposerInput.trimEnd()
+        const initialImages = pendingComposerImages
+        createConnectedNoteShortcutRef.current?.(initialBody, initialImages)
+        if (initialBody || initialImages.length > 0) {
+          pendingComposerInput = ''
+          pendingComposerImages = []
+        }
+        return false
+      }
+
       // Jump to latest output without sending navigation keys to the shell.
       if (!e.shiftKey && !e.altKey
         && ((e.ctrlKey && !e.metaKey && e.key === 'End')
@@ -1304,6 +1391,7 @@ export function useXterm(
             window.api.session.write(ptyId, '\x1f')
           } else if (undoStack.length > 0) {
             const last = undoStack.pop()!
+            removePendingComposerInputText(last)
             // Send one \x7f per code point (handles multi-byte unicode)
             window.api.session.write(ptyId, '\x7f'.repeat([...last].length))
           }
@@ -1334,6 +1422,7 @@ export function useXterm(
     const onDataDisposable = terminal.onData((data) => {
       if (ptyId) {
         trackPotentialQuestionInput(data)
+        trackPendingComposerInput(data)
         // Track individual keystrokes for non-terminal sessions (pastes are tracked at call site)
         if (sessionType !== 'terminal' && sessionType !== 'terminal-wsl' && data.length === 1) {
           const code = data.charCodeAt(0)

@@ -18,6 +18,7 @@ import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetachedApp } from '@/DetachedApp'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
+import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
 import { focusOpenEditorSoon } from '@/components/session/EditorView'
 import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
@@ -2050,7 +2051,7 @@ function MainApp(): JSX.Element {
     window.api.detach.create(
       [session.id],
       project?.name ?? session.name,
-      [session],
+      buildDetachedSessionPayload([session.id], [session]),
       [],
       { projectId: session.projectId, worktreeId: session.worktreeId ?? null },
       pos,

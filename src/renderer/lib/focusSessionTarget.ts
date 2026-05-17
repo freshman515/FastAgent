@@ -1,10 +1,12 @@
-import { isCanvasCardHidden, resolveCanvasLayoutKey, useCanvasStore } from '@/stores/canvas'
+import { getDefaultCanvasCardSize, isCanvasCardHidden, resolveCanvasLayoutKey, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useCanvasUiStore } from '@/stores/canvasUi'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { getSmartNewCardPlacement } from '@/components/canvas/canvasSmartPlacement'
+import { addCanvasCardToSpace } from '@/components/canvas/canvasSpaceMembership'
 import { switchProjectContext } from '@/lib/project-context'
 import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
 import { isTerminalSessionType } from '@shared/types'
@@ -32,12 +34,16 @@ export function focusCanvasSessionTarget(sessionId: string): boolean {
   let cardId = card?.id ?? null
 
   if (!cardId) {
+    const kind = isTerminalSessionType(session.type) ? 'terminal' : 'session'
+    const viewportEl = document.querySelector('[data-canvas-viewport]') as HTMLDivElement | null
+    const placement = getSmartNewCardPlacement({ current: viewportEl }, getDefaultCanvasCardSize(kind))
     cardId = refreshedCanvas.attachSession(
       sessionId,
-      isTerminalSessionType(session.type) ? 'terminal' : 'session',
-      undefined,
-      { forceAvoidOverlap: true },
+      kind,
+      placement?.position,
+      placement?.placeOptions ?? { forceAvoidOverlap: true },
     )
+    if (placement) addCanvasCardToSpace(cardId, placement.activeSpaceId)
     card = useCanvasStore.getState().getCard(cardId)
   }
 

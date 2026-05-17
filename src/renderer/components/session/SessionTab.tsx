@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import {
@@ -18,10 +18,11 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
 import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
-import { removeCanvasNotesBySyncId } from '@/lib/noteSync'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { beginTabDragGuard, endTabDragGuard } from '@/lib/tabDragGuard'
 import { shouldPopOutTabFromDrop } from '@/lib/tabDetachDrop'
+import { closeSessionsById, getClosableSessions } from '@/lib/closeSessions'
+import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
 import { SessionIconView } from './SessionIconView'
 
 interface SessionTabProps {
@@ -80,7 +81,6 @@ export function SessionTab({
   onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
   canSplitSameType = false, onSplitSameType, sameTypeLabel = '同类',
 }: SessionTabProps): JSX.Element {
-  const removeSession = useSessionsStore((s) => s.removeSession)
   const updateSession = useSessionsStore((s) => s.updateSession)
   const setPaneActiveSession = usePanesStore((s) => s.setPaneActiveSession)
   const setActivePaneId = usePanesStore((s) => s.setActivePaneId)
@@ -89,7 +89,7 @@ export function SessionTab({
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
-  const [showCloseAllConfirm, setShowCloseAllConfirm] = useState(false)
+  const [pendingBulkClose, setPendingBulkClose] = useState<{ ids: string[]; label: string } | null>(null)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null)
@@ -109,12 +109,9 @@ export function SessionTab({
   }, [session.id, paneId, setPaneActiveSession, setActivePaneId, isRenaming])
 
   const doClose = useCallback(() => {
-    if (session.ptyId) window.api.session.kill(session.ptyId)
-    if (session.type === 'note') removeCanvasNotesBySyncId(session.noteSyncId)
-    removeSessionFromPane(paneId, session.id)
-    removeSession(session.id)
+    closeSessionsById([session.id])
     setShowCloseConfirm(false)
-  }, [session.id, session.noteSyncId, session.ptyId, session.type, paneId, removeSession, removeSessionFromPane])
+  }, [session.id])
 
   const handleClose = useCallback(
     (e?: React.MouseEvent) => {
@@ -171,8 +168,26 @@ export function SessionTab({
   }, [isActive, startRename])
 
   const paneSessions = usePanesStore((s) => s.paneSessions[paneId] ?? [])
+  const sessionTabIds = useMemo(
+    () => paneSessions.filter((id) => !id.startsWith('editor-')),
+    [paneSessions],
+  )
+  const sessionTabsToLeftIds = useMemo(() => {
+    const currentIndex = paneSessions.indexOf(session.id)
+    if (currentIndex === -1) return []
+    return paneSessions.slice(0, currentIndex).filter((id) => !id.startsWith('editor-'))
+  }, [paneSessions, session.id])
+  const sessionTabsToRightIds = useMemo(() => {
+    const currentIndex = paneSessions.indexOf(session.id)
+    if (currentIndex === -1) return []
+    return paneSessions.slice(currentIndex + 1).filter((id) => !id.startsWith('editor-'))
+  }, [paneSessions, session.id])
+  const otherSessionTabIds = useMemo(
+    () => sessionTabIds.filter((id) => id !== session.id),
+    [session.id, sessionTabIds],
+  )
   const canSplit = paneSessions.length >= 2
-  const canCloseAll = paneSessions.length > 1
+  const canCloseAll = getClosableSessions(sessionTabIds).length > 0
   const isSplit = usePanesStore((s) => s.root.type === 'split')
   const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui' && session.type !== 'note'
   const canCreateConnectedNote = session.type !== 'browser' && session.type !== 'claude-gui' && session.type !== 'note'
@@ -240,18 +255,18 @@ export function SessionTab({
     })
   }, [session.id, session.projectId])
 
-  const doCloseAll = useCallback(() => {
-    const sessionsState = useSessionsStore.getState()
-    const targets = paneSessions
-      .map((sid) => sessionsState.sessions.find((s) => s.id === sid))
-      .filter((s): s is Session => !!s && !s.pinned)
-    for (const s of targets) {
-      if (s.ptyId) window.api.session.kill(s.ptyId)
-      removeSessionFromPane(paneId, s.id)
-      removeSession(s.id)
-    }
-    setShowCloseAllConfirm(false)
-  }, [paneSessions, paneId, removeSession, removeSessionFromPane])
+  const requestBulkClose = useCallback((ids: string[], label: string) => {
+    const targets = getClosableSessions(ids)
+    setContextMenu(null)
+    if (targets.length === 0) return
+    setPendingBulkClose({ ids: targets.map((target) => target.id), label })
+  }, [])
+
+  const confirmBulkClose = useCallback(() => {
+    if (!pendingBulkClose) return
+    closeSessionsById(pendingBulkClose.ids)
+    setPendingBulkClose(null)
+  }, [pendingBulkClose])
   const activeTabClass = isActive
     ? cn(
       'tab-active font-medium text-[var(--color-text-primary)]',
@@ -271,6 +286,7 @@ export function SessionTab({
           setTabDragImage(e)
           beginTabDragGuard({ tabId: session.id, sourcePaneId: paneId, sourceWindowId: currentWindowId })
           const liveSession = useSessionsStore.getState().sessions.find((s) => s.id === session.id) ?? session
+          const sessionPayload = buildDetachedSessionPayload([session.id], [liveSession])
           const dragToken = `tabdrag-${session.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           dragTokenRef.current = dragToken
           e.dataTransfer.setData('session-tab-id', session.id)
@@ -279,7 +295,9 @@ export function SessionTab({
           e.dataTransfer.setData('session-tab-drag-token', dragToken)
           e.dataTransfer.effectAllowed = 'move'
           window.api.detach.registerTabDrag(dragToken, {
+            kind: 'session',
             session: liveSession,
+            sessions: sessionPayload,
             sourcePaneId: paneId,
             sourceWindowId: currentWindowId,
           })
@@ -322,7 +340,7 @@ export function SessionTab({
             window.api.detach.create(
               [session.id],
               detachTitle,
-              liveSession ? [liveSession] : [],
+              buildDetachedSessionPayload([session.id], liveSession ? [liveSession] : []),
               [],
               { projectId: session.projectId, worktreeId: session.worktreeId ?? null },
               pos,
@@ -624,7 +642,7 @@ export function SessionTab({
                 window.api.detach.create(
                   [session.id],
                   detachTitle,
-                  liveSession ? [liveSession] : [],
+                  buildDetachedSessionPayload([session.id], liveSession ? [liveSession] : []),
                   [],
                   { projectId: session.projectId, worktreeId: session.worktreeId ?? null },
                   pos,
@@ -712,13 +730,40 @@ export function SessionTab({
               </>
             )}
 
-            {/* Close All Sessions */}
+            {/* Close range */}
+            <button
+              onClick={() => requestBulkClose(otherSessionTabIds, '其他会话标签页')}
+              disabled={getClosableSessions(otherSessionTabIds).length === 0}
+              className={getClosableSessions(otherSessionTabIds).length === 0
+                ? 'flex w-full cursor-not-allowed items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'
+                : 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]'}
+            >
+              关闭其他会话标签页
+            </button>
+            <button
+              onClick={() => requestBulkClose(sessionTabsToLeftIds, '左侧会话标签页')}
+              disabled={getClosableSessions(sessionTabsToLeftIds).length === 0}
+              className={getClosableSessions(sessionTabsToLeftIds).length === 0
+                ? 'flex w-full cursor-not-allowed items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'
+                : 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]'}
+            >
+              关闭左侧会话标签页
+            </button>
+            <button
+              onClick={() => requestBulkClose(sessionTabsToRightIds, '右侧会话标签页')}
+              disabled={getClosableSessions(sessionTabsToRightIds).length === 0}
+              className={getClosableSessions(sessionTabsToRightIds).length === 0
+                ? 'flex w-full cursor-not-allowed items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)] opacity-40'
+                : 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]'}
+            >
+              关闭右侧会话标签页
+            </button>
             {canCloseAll && (
               <button
-                onClick={() => { setContextMenu(null); setShowCloseAllConfirm(true) }}
+                onClick={() => requestBulkClose(sessionTabIds, '全部会话标签页')}
                 className="flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-error)] hover:bg-[var(--color-bg-surface)]"
               >
-                关闭全部会话
+                关闭全部会话标签页
               </button>
             )}
           </div>
@@ -737,28 +782,16 @@ export function SessionTab({
         />
       )}
 
-      {showCloseAllConfirm && (() => {
-        const sessionsState = useSessionsStore.getState()
-        const closable = paneSessions
-          .map((sid) => sessionsState.sessions.find((s) => s.id === sid))
-          .filter((s): s is Session => !!s && !s.pinned)
-        const total = paneSessions.length
-        const pinnedCount = total - closable.length
-        return (
-          <ConfirmDialog
-            title="关闭全部会话"
-            message={
-              pinnedCount > 0
-                ? `将关闭 ${closable.length} 个会话（${pinnedCount} 个已固定会话会保留），确认操作吗？`
-                : `将关闭全部 ${closable.length} 个会话，确认操作吗？`
-            }
-            confirmLabel="全部关闭"
-            danger
-            onConfirm={doCloseAll}
-            onCancel={() => setShowCloseAllConfirm(false)}
-          />
-        )
-      })()}
+      {pendingBulkClose && (
+        <ConfirmDialog
+          title={`关闭${pendingBulkClose.label}`}
+          message={`将关闭 ${pendingBulkClose.ids.length} 个会话，已固定会话会保留。确认操作吗？`}
+          confirmLabel="关闭"
+          danger
+          onConfirm={confirmBulkClose}
+          onCancel={() => setPendingBulkClose(null)}
+        />
+      )}
     </>
   )
 }

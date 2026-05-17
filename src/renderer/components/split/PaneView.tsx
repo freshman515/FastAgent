@@ -12,6 +12,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { beginTabDragGuard, endTabDragGuard, getCurrentTabDragData } from '@/lib/tabDragGuard'
 import { shouldPopOutTabFromDrop } from '@/lib/tabDetachDrop'
+import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionTab } from '@/components/session/SessionTab'
 import { NewSessionMenu } from '@/components/session/NewSessionMenu'
@@ -114,7 +115,7 @@ type PaneTabItem =
 type ExternalDragPreview = { tabId: string; targetId: string | null; side: 'left' | 'right' }
 type LiveTabPlacement = { tabId: string; targetId: string | null; side: 'left' | 'right'; targetPaneId: string }
 type DetachedTabDragPayload =
-  | { kind: 'session'; session: ReturnType<typeof useSessionsStore.getState>['sessions'][number]; sourcePaneId: string; sourceWindowId: string }
+  | { kind?: 'session'; session: ReturnType<typeof useSessionsStore.getState>['sessions'][number]; sessions?: ReturnType<typeof useSessionsStore.getState>['sessions']; sourcePaneId: string; sourceWindowId: string }
   | { kind: 'editor'; editor: EditorTabItem; sourcePaneId: string; sourceWindowId: string }
 
 const MENU_ITEM = 'flex w-full items-center px-3 py-1.5 text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]'
@@ -257,6 +258,11 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
     const currentIndex = paneTabIds.indexOf(tab.id)
     if (currentIndex === -1) return []
     return paneTabIds.slice(currentIndex + 1).filter((id) => id.startsWith('editor-'))
+  }, [paneTabIds, tab.id])
+  const fileTabsToLeftIds = useMemo(() => {
+    const currentIndex = paneTabIds.indexOf(tab.id)
+    if (currentIndex === -1) return []
+    return paneTabIds.slice(0, currentIndex).filter((id) => id.startsWith('editor-'))
   }, [paneTabIds, tab.id])
   const otherFileTabIds = useMemo(
     () => fileTabIds.filter((id) => id !== tab.id),
@@ -483,6 +489,13 @@ function EditorTabButton({ tab, isActive, isPaneFocused, paneId, projectId, curr
               className={fileTabsToRightIds.length === 0 ? MENU_ITEM_DISABLED : MENU_ITEM}
             >
               关闭右侧文件标签页
+            </button>
+            <button
+              onClick={() => requestClose(fileTabsToLeftIds)}
+              disabled={fileTabsToLeftIds.length === 0}
+              className={fileTabsToLeftIds.length === 0 ? MENU_ITEM_DISABLED : MENU_ITEM}
+            >
+              关闭左侧文件标签页
             </button>
             <button
               onClick={() => requestClose(fileTabIds)}
@@ -1043,11 +1056,14 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
     const payload = window.api.detach.claimTabDrag(dragToken, currentWindowId) as DetachedTabDragPayload | null
     if (!payload) return null
 
-    const tabId = payload.kind === 'session' ? payload.session.id : payload.editor.id
-    if (payload.kind === 'session') {
-      useSessionsStore.getState().upsertSessions([payload.session])
-    } else {
+    const isEditorPayload = payload.kind === 'editor'
+    const tabId = isEditorPayload ? payload.editor.id : payload.session.id
+    if (isEditorPayload) {
       useEditorsStore.getState().upsertTabs([payload.editor])
+    } else {
+      useSessionsStore.getState().upsertSessions(
+        payload.sessions ?? buildDetachedSessionPayload([payload.session.id], [payload.session]),
+      )
     }
     const store = usePanesStore.getState()
 
@@ -1060,7 +1076,7 @@ export function PaneView({ paneId, projectId }: PaneViewProps): JSX.Element {
 
     store.setActivePaneId(paneId)
     store.setPaneActiveSession(paneId, tabId)
-    if (payload.kind === 'session') {
+    if (!isEditorPayload) {
       useSessionsStore.getState().setActive(payload.session.id)
     }
     return tabId

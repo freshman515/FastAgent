@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, Star } from 'lucide-react'
 import { useCanvasStore } from '@/stores/canvas'
-import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { scrollTerminalToLatestSoon } from '@/hooks/useXterm'
@@ -12,6 +11,7 @@ import { BrowserSessionView } from '@/components/session/BrowserSessionView'
 import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatSessionCardTitle, normalizeSessionRemark } from '@/lib/canvasSessionLabel'
+import { closeSessionsById, getClosableSessions } from '@/lib/closeSessions'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { CanvasMenuItem, CanvasMenuPanel, CanvasMenuSeparator } from '../CanvasMenu'
@@ -35,7 +35,9 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const toggleMaximizedCard = useCanvasStore((state) => state.toggleMaximizedCard)
   const addCardSnapshot = useCanvasStore((state) => state.addCardSnapshot)
   const restoreCardSnapshot = useCanvasStore((state) => state.restoreCardSnapshot)
-  const removeSession = useSessionsStore((state) => state.removeSession)
+  const canvasSessionCards = useCanvasStore((state) =>
+    state.getCards().filter((item) => (item.kind === 'session' || item.kind === 'terminal') && item.refId),
+  )
   const updateSession = useSessionsStore((state) => state.updateSession)
   const isDarkTheme = useIsDarkTheme()
   const [confirmClose, setConfirmClose] = useState(false)
@@ -44,6 +46,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const [remarkDialogOpen, setRemarkDialogOpen] = useState(false)
   const [remarkValue, setRemarkValue] = useState('')
   const [titleMenu, setTitleMenu] = useState<{ x: number; y: number } | null>(null)
+  const [pendingBulkClose, setPendingBulkClose] = useState<{ ids: string[]; label: string } | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const remarkInputRef = useRef<HTMLInputElement>(null)
 
@@ -81,6 +84,33 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
   const sessionIcon = getSessionIcon(session.type, isDarkTheme)
   const displayTitle = formatSessionCardTitle(session.name, card.sessionRemark)
   const canScrollToBottom = session.type !== 'browser' && session.type !== 'claude-gui'
+  const sortedSessionCards = useMemo(
+    () => [...canvasSessionCards].sort((a, b) => (a.x - b.x) || (a.y - b.y) || (a.createdAt - b.createdAt)),
+    [canvasSessionCards],
+  )
+  const allSessionCardIds = useMemo(
+    () => sortedSessionCards.map((item) => item.refId).filter((id): id is string => Boolean(id)),
+    [sortedSessionCards],
+  )
+  const otherSessionCardIds = useMemo(
+    () => allSessionCardIds.filter((id) => id !== session.id),
+    [allSessionCardIds, session.id],
+  )
+  const sessionCardCenterX = card.x + card.width / 2
+  const leftSessionCardIds = useMemo(
+    () => sortedSessionCards
+      .filter((item) => item.id !== card.id && item.x + item.width / 2 < sessionCardCenterX)
+      .map((item) => item.refId)
+      .filter((id): id is string => Boolean(id)),
+    [card.id, sessionCardCenterX, sortedSessionCards],
+  )
+  const rightSessionCardIds = useMemo(
+    () => sortedSessionCards
+      .filter((item) => item.id !== card.id && item.x + item.width / 2 > sessionCardCenterX)
+      .map((item) => item.refId)
+      .filter((id): id is string => Boolean(id)),
+    [card.id, sessionCardCenterX, sortedSessionCards],
+  )
 
   const startRename = (): void => {
     setTitleMenu(null)
@@ -184,18 +214,21 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
 
   const handleCloseSession = (): void => {
     if (session.pinned) return
-    if (session.ptyId) {
-      void window.api.session.kill(session.ptyId)
-    }
-    const paneStore = usePanesStore.getState()
-    const paneIds = Object.entries(paneStore.paneSessions)
-      .filter(([, sessionIds]) => sessionIds.includes(session.id))
-      .map(([paneId]) => paneId)
-    for (const paneId of paneIds) {
-      paneStore.removeSessionFromPane(paneId, session.id)
-    }
-    removeSession(session.id)
+    closeSessionsById([session.id])
     setConfirmClose(false)
+  }
+
+  const requestBulkClose = (ids: string[], label: string): void => {
+    const targets = getClosableSessions(ids)
+    setTitleMenu(null)
+    if (targets.length === 0) return
+    setPendingBulkClose({ ids: targets.map((target) => target.id), label })
+  }
+
+  const confirmBulkClose = (): void => {
+    if (!pendingBulkClose) return
+    closeSessionsById(pendingBulkClose.ids)
+    setPendingBulkClose(null)
   }
 
   return (
@@ -251,7 +284,7 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
       {titleMenu && createPortal(
         <>
           <div className="fixed inset-0 z-[420]" onPointerDown={() => setTitleMenu(null)} />
-          <CanvasMenuPanel x={titleMenu.x} y={titleMenu.y} width={188} height={320}>
+          <CanvasMenuPanel x={titleMenu.x} y={titleMenu.y} width={210} height={460}>
             <CanvasMenuItem label={isMaximized ? '还原' : '最大化'} onClick={isMaximized ? restoreCard : maximizeCard} />
             {canScrollToBottom && (
               <CanvasMenuItem label="滚动到底部" onClick={scrollToBottom} />
@@ -278,6 +311,30 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
             <CanvasMenuSeparator />
             <CanvasMenuItem label="从画布移除" onClick={detachCardFromCanvas} />
             <CanvasMenuItem label="关闭会话" danger onClick={requestCloseSession} />
+            <CanvasMenuItem
+              label="关闭其他会话卡片"
+              danger
+              disabled={getClosableSessions(otherSessionCardIds).length === 0}
+              onClick={() => requestBulkClose(otherSessionCardIds, '其他会话卡片')}
+            />
+            <CanvasMenuItem
+              label="关闭左侧会话卡片"
+              danger
+              disabled={getClosableSessions(leftSessionCardIds).length === 0}
+              onClick={() => requestBulkClose(leftSessionCardIds, '左侧会话卡片')}
+            />
+            <CanvasMenuItem
+              label="关闭右侧会话卡片"
+              danger
+              disabled={getClosableSessions(rightSessionCardIds).length === 0}
+              onClick={() => requestBulkClose(rightSessionCardIds, '右侧会话卡片')}
+            />
+            <CanvasMenuItem
+              label="关闭全部会话卡片"
+              danger
+              disabled={getClosableSessions(allSessionCardIds).length === 0}
+              onClick={() => requestBulkClose(allSessionCardIds, '全部会话卡片')}
+            />
           </CanvasMenuPanel>
         </>,
         document.body,
@@ -351,6 +408,18 @@ export function SessionCard({ card, coordinateMode }: SessionCardProps): JSX.Ele
           danger
           onConfirm={handleCloseSession}
           onCancel={() => setConfirmClose(false)}
+        />
+      )}
+
+      {pendingBulkClose && (
+        <ConfirmDialog
+          title={`关闭${pendingBulkClose.label}`}
+          message={`将关闭 ${pendingBulkClose.ids.length} 个会话，已固定会话会保留。确认操作吗？`}
+          confirmLabel="关闭"
+          cancelLabel="取消"
+          danger
+          onConfirm={confirmBulkClose}
+          onCancel={() => setPendingBulkClose(null)}
         />
       )}
     </>

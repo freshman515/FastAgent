@@ -1,4 +1,4 @@
-import type { Session } from '@shared/types'
+import type { NoteImage, Session } from '@shared/types'
 import { createNoteSyncId } from '@/lib/noteSync'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
@@ -15,6 +15,7 @@ function getConnectedNoteName(targetSession: Session, existingCount: number): st
 export interface CreateConnectedNoteTabOptions {
   activate?: boolean
   initialBody?: string
+  initialImages?: NoteImage[]
   noteSyncId?: string
 }
 
@@ -38,6 +39,9 @@ export function createConnectedNoteTabForSession(
     }
     if (options.initialBody !== undefined && (existingNote.noteBody ?? '') !== options.initialBody) {
       updates.noteBody = options.initialBody
+    }
+    if (options.initialImages !== undefined) {
+      updates.noteImages = options.initialImages
     }
     sessionsStore.updateSession(existingNote.id, updates)
     if (!panesStore.paneSessions[targetPaneId]?.includes(existingNote.id)) {
@@ -63,6 +67,7 @@ export function createConnectedNoteTabForSession(
   )
   sessionsStore.updateSession(noteId, {
     noteBody: options.initialBody ?? '',
+    noteImages: options.initialImages,
     connectedSessionId: targetSession.id,
     noteSyncId,
     initialized: true,

@@ -3,10 +3,7 @@ import { createPortal } from 'react-dom'
 import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useLaunchesStore, LAUNCH_PRESETS, type LaunchProfile } from '@/stores/launches'
-import { useSessionsStore } from '@/stores/sessions'
-import { usePanesStore } from '@/stores/panes'
-import { useProjectsStore } from '@/stores/projects'
-import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { runLaunchProfile } from '@/lib/runLaunchProfile'
 
 interface LaunchMenuProps {
   projectId: string
@@ -102,49 +99,9 @@ export function LaunchMenu({ projectId, projectPath, position, onClose }: Launch
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const handleRun = useCallback((profile: LaunchProfile) => {
-    // Parse env string into Record
-    const envMap: Record<string, string> = {}
-    for (const line of profile.env.split('\n')) {
-      const eq = line.indexOf('=')
-      if (eq > 0) envMap[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
-    }
-
-    // Build command string to send to a new terminal session
-    const fullCmd = profile.args ? `${profile.command} ${profile.args}` : profile.command
-    const cwd = profile.cwd ? `${projectPath}/${profile.cwd}` : projectPath
-
-    // Create a terminal session
-    const worktreeId = getDefaultWorktreeIdForProject(projectId)
-    const sid = useSessionsStore.getState().addSession(projectId, 'terminal', worktreeId)
-    useSessionsStore.getState().updateSession(sid, { name: `${profile.icon} ${profile.name}`, color: profile.color })
-
-    const paneStore = usePanesStore.getState()
-    paneStore.addSessionToPane(paneStore.activePaneId, sid)
-    paneStore.setPaneActiveSession(paneStore.activePaneId, sid)
-    useSessionsStore.getState().setActive(sid)
-    useProjectsStore.getState().selectProject(projectId)
-
-    // Wait for PTY to be ready, then send the command
-    const checkAndSend = (attempts = 0): void => {
-      if (attempts > 30) return
-      const session = useSessionsStore.getState().sessions.find((s) => s.id === sid)
-      if (session?.ptyId) {
-        // Set env vars first, then cd and run
-        const envCmds = Object.entries(envMap).map(([k, v]) => `$env:${k}="${v}"`).join('; ')
-        const cdCmd = profile.cwd ? `cd "${cwd}"` : ''
-        const parts = [envCmds, cdCmd, fullCmd].filter(Boolean).join('; ')
-        setTimeout(() => {
-          const s = useSessionsStore.getState().sessions.find((x) => x.id === sid)
-          if (s?.ptyId) window.api.session.write(s.ptyId, parts + '\r')
-        }, 500)
-      } else {
-        setTimeout(() => checkAndSend(attempts + 1), 300)
-      }
-    }
-    setTimeout(checkAndSend, 300)
-
+    runLaunchProfile({ profile, projectPath })
     onClose()
-  }, [projectId, projectPath, onClose])
+  }, [projectPath, onClose])
 
   const editingProfile = editingId ? profiles.find((p) => p.id === editingId) : undefined
 

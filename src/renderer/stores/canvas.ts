@@ -14,6 +14,7 @@ import {
   type CanvasRelationDirection,
   type CanvasRelationKind,
   type CanvasViewport,
+  type NoteImage,
 } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { SESSIONS_LAYOUT_KEY } from './panes'
@@ -448,6 +449,7 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
     frameSnapshots: undefined,
     sessionRemark: typeof card.sessionRemark === 'string' ? card.sessionRemark : undefined,
     noteBody: typeof card.noteBody === 'string' ? card.noteBody : undefined,
+    noteImages: sanitizeNoteImages(card.noteImages),
     noteColor: typeof card.noteColor === 'string' ? card.noteColor : undefined,
     noteSyncId: typeof card.noteSyncId === 'string' ? card.noteSyncId : undefined,
     directoryPath: typeof card.directoryPath === 'string' ? card.directoryPath : undefined,
@@ -458,6 +460,32 @@ function sanitizeSnapshotCard(card: CanvasCard): CanvasCard {
     createdAt: typeof card.createdAt === 'number' ? card.createdAt : Date.now(),
     updatedAt: typeof card.updatedAt === 'number' ? card.updatedAt : Date.now(),
   }
+}
+
+function sanitizeNoteImages(value: unknown): NoteImage[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const images = value.flatMap((item): NoteImage[] => {
+    if (!item || typeof item !== 'object') return []
+    const image = item as Record<string, unknown>
+    if (
+      typeof image.id !== 'string'
+      || typeof image.dataUrl !== 'string'
+      || !image.dataUrl.startsWith('data:image/')
+    ) {
+      return []
+    }
+    return [{
+      id: image.id,
+      name: typeof image.name === 'string' && image.name.trim() ? image.name : 'image',
+      mediaType: typeof image.mediaType === 'string' && image.mediaType.startsWith('image/') ? image.mediaType : 'image/png',
+      dataUrl: image.dataUrl,
+      createdAt: typeof image.createdAt === 'number' ? image.createdAt : Date.now(),
+      displayIndex: typeof image.displayIndex === 'number' && Number.isInteger(image.displayIndex) && image.displayIndex > 0
+        ? image.displayIndex
+        : undefined,
+    }]
+  })
+  return images.length > 0 ? images : undefined
 }
 
 function normalizeLegacyNoteCardSize(card: CanvasCard): CanvasCard {
@@ -1632,6 +1660,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         cardSnapshots: partial.cardSnapshots,
         sessionRemark: partial.sessionRemark,
         noteBody: partial.noteBody,
+        noteImages: partial.noteImages,
         noteColor: partial.noteColor,
         noteSyncId: partial.noteSyncId,
         directoryPath: partial.directoryPath,

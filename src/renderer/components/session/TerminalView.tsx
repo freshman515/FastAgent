@@ -1,7 +1,7 @@
 import { X, Zap, ChevronUp, ChevronDown, Copy, ClipboardPaste, FileText, Keyboard, ListChecks, Search, Eraser, Mic, Pause, Play, Send, Undo2, StickyNote } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import type { Session } from '@shared/types'
+import type { NoteImage, Session } from '@shared/types'
 import {
   findTerminalFileLinkAtCell,
   getTerminalQuestionNavigation,
@@ -23,9 +23,13 @@ import { useCanvasStore } from '@/stores/canvas'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { usePanesStore } from '@/stores/panes'
+import { useGitStore } from '@/stores/git'
 import { registerContentSelectAllTarget } from '@/lib/contentSelectAll'
 import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
 import { createConnectedNoteForCard } from '@/components/canvas/canvasConnectedNote'
+import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
+import { clearPtyInput, getClearPtyInputPayload } from '@/lib/noteSend'
 import { SessionIconView } from './SessionIconView'
 
 interface TerminalViewProps {
@@ -366,7 +370,6 @@ async function prepareVoiceAudio(blob: Blob, mimeType: string, websocketEndpoint
 }
 
 export function TerminalView({ session, isActive, paneId, canvasCardId }: TerminalViewProps): JSX.Element {
-  const { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef, isAtBottom } = useXterm(session, isActive)
   const isDarkTheme = useIsDarkTheme()
   const allSessions = useSessionsStore((s) => s.sessions)
   const projects = useProjectsStore((s) => s.projects)
@@ -415,6 +418,70 @@ export function TerminalView({ session, isActive, paneId, canvasCardId }: Termin
   const voiceInputPausedRef = useRef(false)
   const voiceAutoExecuteRef = useRef(false)
   const autoExecuteStreamingVoiceRef = useRef<((state: StreamingVoiceState) => boolean) | null>(null)
+
+  const doCreateConnectedNote = useCallback(() => {
+    setContextMenu(null)
+    if (settings.workspaceLayout === 'canvas' || canvasCardId) {
+      const canvas = useCanvasStore.getState()
+      const targetCard = canvasCardId
+        ? canvas.getCard(canvasCardId)
+        : canvas.getCards().find((card) =>
+            (card.kind === 'session' || card.kind === 'terminal') && card.refId === session.id,
+          )
+      if (targetCard) {
+        createConnectedNoteForCard(targetCard)
+        return
+      }
+    }
+    createConnectedNoteTabForSession(session, paneId)
+  }, [canvasCardId, paneId, session, settings.workspaceLayout])
+
+  const popOutConnectedNote = useCallback((initialBody: string, initialImages: NoteImage[]) => {
+    const noteBody = initialBody.trimEnd()
+    const panesStore = usePanesStore.getState()
+    const targetPaneId = paneId && panesStore.paneSessions[paneId]
+      ? paneId
+      : panesStore.findPaneForSession(session.id) ?? panesStore.activePaneId
+    const noteId = createConnectedNoteTabForSession(session, targetPaneId, {
+      activate: false,
+      initialBody: noteBody,
+      initialImages,
+    })
+    const noteSession = useSessionsStore.getState().sessions.find((item) => item.id === noteId)
+    if (!noteSession) return
+
+    if ((noteBody || initialImages.length > 0) && session.ptyId) {
+      clearPtyInput(session.ptyId)
+    }
+
+    for (const [candidatePaneId, sessionIds] of Object.entries(usePanesStore.getState().paneSessions)) {
+      if (sessionIds.includes(noteId)) {
+        usePanesStore.getState().removeSessionFromPane(candidatePaneId, noteId)
+      }
+    }
+
+    const { popoutPosition, popoutWidth, popoutHeight } = useUIStore.getState().settings
+    const pos = popoutPosition === 'center'
+      ? undefined
+      : { x: window.screenX + Math.round(window.innerWidth / 2), y: window.screenY + Math.round(window.innerHeight / 2) }
+    const project = useProjectsStore.getState().projects.find((item) => item.id === noteSession.projectId)
+    const branch = useGitStore.getState().branchInfo[noteSession.projectId]?.current
+    const detachTitle = (project?.name ?? noteSession.name) + (branch ? `|${branch}` : '')
+    window.api.detach.create(
+      [noteId],
+      detachTitle,
+      buildDetachedSessionPayload([noteId], [noteSession, session]),
+      [],
+      { projectId: noteSession.projectId, worktreeId: noteSession.worktreeId ?? null },
+      pos,
+      { width: popoutWidth, height: popoutHeight },
+    )
+  }, [paneId, session])
+
+  const { containerRef, searchAddonRef, terminalRef, pasteFromClipboardRef, isAtBottom } = useXterm(session, isActive, {
+    onCreateConnectedNoteShortcut: popOutConnectedNote,
+  })
+
   useEffect(() => {
     voiceAcceptsInputRef.current = isActive
   }, [isActive])
@@ -778,11 +845,10 @@ export function TerminalView({ session, isActive, paneId, canvasCardId }: Termin
 
   const clearTerminalInput = useCallback(() => {
     terminalRef.current?.focus()
-    const clearCurrentLine = '\x15\x0b'
     if (session.ptyId) {
-      window.api.session.write(session.ptyId, clearCurrentLine)
+      clearPtyInput(session.ptyId)
     } else {
-      terminalRef.current?.paste(clearCurrentLine)
+      terminalRef.current?.paste(getClearPtyInputPayload())
     }
   }, [session.ptyId, terminalRef])
 
@@ -806,23 +872,6 @@ export function TerminalView({ session, isActive, paneId, canvasCardId }: Termin
       })
     }, 80)
   }, [terminalRef])
-
-  const doCreateConnectedNote = useCallback(() => {
-    setContextMenu(null)
-    if (settings.workspaceLayout === 'canvas' || canvasCardId) {
-      const canvas = useCanvasStore.getState()
-      const targetCard = canvasCardId
-        ? canvas.getCard(canvasCardId)
-        : canvas.getCards().find((card) =>
-            (card.kind === 'session' || card.kind === 'terminal') && card.refId === session.id,
-          )
-      if (targetCard) {
-        createConnectedNoteForCard(targetCard)
-        return
-      }
-    }
-    createConnectedNoteTabForSession(session, paneId)
-  }, [canvasCardId, paneId, session, settings.workspaceLayout])
 
   const stopVoiceLevelMeter = useCallback(() => {
     if (voiceMeterFrameRef.current !== null) {
@@ -1826,7 +1875,7 @@ export function TerminalView({ session, isActive, paneId, canvasCardId }: Termin
       )}
 
         <div
-          className="absolute inset-0 bg-[var(--color-terminal-bg)] p-[10px]"
+          className="absolute inset-0 bg-[var(--color-terminal-bg)] pb-0 pl-[10px] pr-0 pt-0"
           onContextMenu={openContextMenu}
           onDragOver={handleDragOver}
           onDrop={handleDrop}

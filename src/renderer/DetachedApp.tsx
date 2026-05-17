@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
 import { SplitContainer } from '@/components/split/SplitContainer'
+import { includeConnectedNoteTargets } from '@/lib/detachedSessionPayload'
 import type { Session } from '@shared/types'
 
 export function DetachedApp(): JSX.Element {
@@ -76,9 +77,10 @@ export function DetachedApp(): JSX.Element {
     if (!ready) return
     const allIds = Object.values(paneSessions).flat()
     const liveSessions = sessions.filter((session) => allIds.includes(session.id))
+    const sessionSnapshots = includeConnectedNoteTargets(liveSessions, sessions)
     const liveEditors = editors.filter((tab) => allIds.includes(tab.id))
     window.api.detach.updateSessionIds(windowId, allIds)
-    window.api.detach.updateSessions(windowId, liveSessions)
+    window.api.detach.updateSessions(windowId, sessionSnapshots)
     window.api.detach.updateEditors(windowId, liveEditors)
     window.api.detach.updateContext(windowId, {
       projectId: projectIdRef.current || liveSessions[0]?.projectId || liveEditors[0]?.projectId || null,

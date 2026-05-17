@@ -1,16 +1,19 @@
-import { ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Plus, Search, Settings, Square, X, type LucideIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, PanelRightOpen, Play, Plus, Search, Settings, Square, X, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import appIcon from '@/assets/icons/pragma-desk.png'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { closeSessionsById } from '@/lib/closeSessions'
 import { createSessionWithPrompt } from '@/lib/createSession'
+import { runLaunchProfile } from '@/lib/runLaunchProfile'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
 import { usePanesStore } from '@/stores/panes'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useProjectsStore } from '@/stores/projects'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { useLaunchesStore, type LaunchProfile } from '@/stores/launches'
 import { MusicPlayer } from './MusicPlayer'
 import { TitleBarSearch } from './TitleBarSearch'
 import type { ExternalIdeOption } from '@shared/types'
@@ -36,10 +39,137 @@ const TITLE_MENU_BUTTON =
   'flex h-7 items-center rounded-[var(--radius-sm)] px-2.5 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]'
 const TITLE_MENU_ITEM =
   'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-40'
+const RUN_DIALOG_INPUT =
+  'w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none focus:border-[var(--color-accent)]'
+
+type RunProfileFormData = Omit<LaunchProfile, 'id' | 'projectId'>
+
+function getRunProfileCommand(profile: LaunchProfile | null): string {
+  if (!profile) return ''
+  return [profile.command, profile.args].filter((part) => part.trim()).join(' ')
+}
+
+function TitleBarRunDialog({
+  projectName,
+  initialProfile,
+  onClose,
+  onSave,
+}: {
+  projectName: string
+  initialProfile: LaunchProfile | null
+  onClose: () => void
+  onSave: (data: RunProfileFormData) => void
+}): JSX.Element {
+  const initialCommand = getRunProfileCommand(initialProfile)
+  const [name, setName] = useState(initialProfile?.name ?? '运行')
+  const [command, setCommand] = useState(initialCommand)
+  const [cwd, setCwd] = useState(initialProfile?.cwd ?? '')
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    const trimmedCommand = command.trim()
+    if (!trimmedCommand) return
+    onSave({
+      name: name.trim() || trimmedCommand,
+      command: trimmedCommand,
+      args: '',
+      cwd: cwd.trim(),
+      env: initialProfile?.env ?? '',
+      icon: initialProfile?.icon ?? '▶',
+      color: initialProfile?.color ?? '#3ecf7b',
+    })
+  }
+
+  return createPortal(
+    <>
+      <div className="no-drag fixed inset-0 z-[129] bg-black/45" onClick={onClose} />
+      <form
+        onSubmit={handleSubmit}
+        className="no-drag fixed left-1/2 top-1/2 z-[130] w-[min(420px,calc(100vw_-_32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
+      >
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">运行命令</div>
+            <div className="mt-0.5 truncate text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">{projectName}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+            aria-label="关闭"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 px-4 py-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">名称</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className={RUN_DIALOG_INPUT}
+              placeholder="运行"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">命令</span>
+            <input
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              className={RUN_DIALOG_INPUT}
+              placeholder="pnpm dev"
+              autoFocus
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">工作目录</span>
+            <input
+              value={cwd}
+              onChange={(event) => setCwd(event.target.value)}
+              className={RUN_DIALOG_INPUT}
+              placeholder="项目根目录"
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-8 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)]"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={!command.trim()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-3 text-[var(--ui-font-xs)] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Check size={13} />
+            保存
+          </button>
+        </div>
+      </form>
+    </>,
+    document.body,
+  )
+}
 
 export function TitleBar(): JSX.Element | null {
   const [maximized, setMaximized] = useState(false)
   const [ideMenuOpen, setIdeMenuOpen] = useState(false)
+  const [runDialogOpen, setRunDialogOpen] = useState(false)
   const [activeMenu, setActiveMenu] = useState<TitleMenuId | null>(null)
   const [menuAreaHovered, setMenuAreaHovered] = useState(false)
   const [titleBarRevealHovered, setTitleBarRevealHovered] = useState(false)
@@ -140,6 +270,11 @@ export function TitleBar(): JSX.Element | null {
   const fullscreenPaneId = usePanesStore((s) => s.fullscreenPaneId)
   const windowFullscreen = useUIStore((s) => s.windowFullscreen)
   const sessions = useSessionsStore((s) => s.sessions)
+  const launchProfiles = useLaunchesStore((s) => s.profiles)
+  const runningLaunchesByProject = useLaunchesStore((s) => s.runningByProject)
+  const addLaunchProfile = useLaunchesStore((s) => s.addProfile)
+  const updateLaunchProfile = useLaunchesStore((s) => s.updateProfile)
+  const clearProjectRunningSession = useLaunchesStore((s) => s.clearProjectRunningSession)
 
   useEffect(() => {
     titleBarRevealHoveredRef.current = titleBarRevealHovered
@@ -210,6 +345,19 @@ export function TitleBar(): JSX.Element | null {
     [currentProjectTodoItems],
   )
   const activeProjectPath = selectedWorktree?.path ?? selectedProject?.path ?? null
+  const titleRunProfile = useMemo(
+    () => selectedProjectId
+      ? launchProfiles.find((profile) => profile.projectId === selectedProjectId) ?? null
+      : null,
+    [launchProfiles, selectedProjectId],
+  )
+  const titleRunState = selectedProjectId
+    ? runningLaunchesByProject[selectedProjectId] ?? null
+    : null
+  const titleRunSession = titleRunState
+    ? sessions.find((session) => session.id === titleRunState.sessionId) ?? null
+    : null
+  const titleRunActive = Boolean(titleRunState && titleRunSession)
   const menuVisible = titleBarMenuVisibility === 'always' || menuAreaHovered || activeMenu !== null
   const titleBarHidden = hideTitleBar || focusMode
   const titleBarRevealed = !titleBarHidden || titleBarRevealHovered || activeMenu !== null || ideMenuOpen
@@ -220,9 +368,21 @@ export function TitleBar(): JSX.Element | null {
   const titleProject = activeSession
     ? projects.find((project) => project.id === activeSession.projectId) ?? selectedProject
     : selectedProject
+  const runButtonTitle = !selectedProjectId
+    ? '请先选择项目'
+    : titleRunActive
+      ? `停止运行：${titleRunProfile?.name ?? titleRunSession?.name ?? '运行会话'}`
+      : titleRunProfile
+      ? `运行：${titleRunProfile.name}（右键设置）`
+      : '设置运行命令'
   const defaultCustomSession = defaultCustomSessionId
     ? customSessionDefinitions.find((definition) => definition.id === defaultCustomSessionId)
     : null
+
+  useEffect(() => {
+    if (!selectedProjectId || !titleRunState || titleRunSession) return
+    clearProjectRunningSession(selectedProjectId, titleRunState.sessionId)
+  }, [clearProjectRunningSession, selectedProjectId, titleRunSession, titleRunState])
 
   const handleOpenInIde = useCallback(async (ide: ExternalIdeOption) => {
     if (!activeProjectPath || !selectedProject) {
@@ -281,6 +441,84 @@ export function TitleBar(): JSX.Element | null {
       },
     )
   }, [addToast, defaultCustomSession, defaultSessionType, selectedProjectId, selectedWorktreeId])
+
+  const handleRunButtonClick = useCallback(() => {
+    if (!selectedProjectId || !activeProjectPath) {
+      addToast({
+        type: 'warning',
+        title: '未选择项目',
+        body: '请选择一个项目后再运行命令。',
+      })
+      return
+    }
+
+    if (titleRunState) {
+      const closedIds = closeSessionsById([titleRunState.sessionId])
+      clearProjectRunningSession(selectedProjectId, titleRunState.sessionId)
+      if (closedIds.length > 0) {
+        addToast({
+          type: 'success',
+          title: '运行已停止',
+          body: titleRunSession?.name ?? titleRunProfile?.name ?? '运行会话',
+        })
+      } else {
+        addToast({
+          type: 'warning',
+          title: '运行状态已清理',
+          body: '没有找到可关闭的运行会话。',
+        })
+      }
+      return
+    }
+
+    if (!titleRunProfile) {
+      setRunDialogOpen(true)
+      return
+    }
+
+    runLaunchProfile({
+      profile: titleRunProfile,
+      projectPath: activeProjectPath,
+      worktreeId: selectedWorktreeId,
+    })
+  }, [
+    activeProjectPath,
+    addToast,
+    clearProjectRunningSession,
+    selectedProjectId,
+    selectedWorktreeId,
+    titleRunProfile,
+    titleRunSession?.name,
+    titleRunState,
+  ])
+
+  const handleRunButtonContextMenu = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    if (!selectedProjectId) {
+      addToast({
+        type: 'warning',
+        title: '未选择项目',
+        body: '请选择一个项目后再设置运行命令。',
+      })
+      return
+    }
+    setRunDialogOpen(true)
+  }, [addToast, selectedProjectId])
+
+  const handleSaveRunProfile = useCallback((data: RunProfileFormData) => {
+    if (!selectedProjectId) return
+    if (titleRunProfile) {
+      updateLaunchProfile(titleRunProfile.id, data)
+    } else {
+      addLaunchProfile({ ...data, projectId: selectedProjectId })
+    }
+    setRunDialogOpen(false)
+    addToast({
+      type: 'success',
+      title: '运行命令已保存',
+      body: data.command,
+    })
+  }, [addLaunchProfile, addToast, selectedProjectId, titleRunProfile, updateLaunchProfile])
 
   const handleToggleWorkspaceLayout = useCallback(() => {
     const next = workspaceLayout === 'canvas' ? 'panes' : 'canvas'
@@ -644,15 +882,34 @@ export function TitleBar(): JSX.Element | null {
       <div className="no-drag flex h-full items-center">
         <button
           type="button"
+          onClick={handleRunButtonClick}
+          onContextMenu={handleRunButtonContextMenu}
+          disabled={!selectedProjectId || !activeProjectPath}
+          className={cn(
+            'mr-2 inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] px-2.5 text-[var(--ui-font-xs)] font-semibold transition-colors duration-100',
+            titleRunActive
+              ? 'bg-[var(--color-error)]/14 text-[var(--color-error)] hover:bg-[var(--color-error)]/20'
+              : titleRunProfile
+                ? 'bg-[var(--color-accent)]/14 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20'
+                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+            (!selectedProjectId || !activeProjectPath) && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+          )}
+          title={runButtonTitle}
+        >
+          {titleRunActive ? <Square size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
+          <span>{titleRunActive ? '停止' : '运行'}</span>
+        </button>
+        <button
+          type="button"
           role="switch"
           aria-checked={todoPopoverOpen}
           aria-label={todoPopoverOpen ? '关闭项目 Todo' : '打开项目 Todo'}
           onClick={toggleTodoPopover}
           className={cn(
-            'relative mr-2 flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] border transition-colors duration-100',
+            'relative mr-2 flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] transition-colors duration-100',
             todoPopoverOpen
-              ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/18 text-[var(--color-accent)]'
-              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              ? 'bg-[var(--color-accent)]/18 text-[var(--color-accent)]'
+              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
           )}
           title="项目 Todo"
         >
@@ -670,10 +927,10 @@ export function TitleBar(): JSX.Element | null {
           aria-label={focusModeActive ? '退出专注模式' : '进入专注模式'}
           onClick={handleToggleFocusMode}
           className={cn(
-            'mr-2 flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] border transition-colors duration-100',
+            'mr-2 flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] transition-colors duration-100',
             focusModeActive
-              ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/18 text-[var(--color-accent)]'
-              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-hover)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              ? 'bg-[var(--color-accent)]/18 text-[var(--color-accent)]'
+              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
           )}
           title={focusModeActive ? '退出专注模式' : '进入专注模式'}
         >
@@ -890,6 +1147,15 @@ export function TitleBar(): JSX.Element | null {
           ))}
         </div>,
         document.body,
+      )}
+
+      {runDialogOpen && selectedProject && (
+        <TitleBarRunDialog
+          projectName={selectedProject.name}
+          initialProfile={titleRunProfile}
+          onClose={() => setRunDialogOpen(false)}
+          onSave={handleSaveRunProfile}
+        />
       )}
 
       {ideMenuOpen && ideMenuRect && createPortal(
