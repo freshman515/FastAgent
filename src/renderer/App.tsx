@@ -3512,7 +3512,7 @@ function MainApp(): JSX.Element {
       <SettingsDialog />
 
       {/* Quick switcher */}
-      <QuickSwitcher />
+      <QuickSwitcher onSwitchRecentProject={switchRecentPaneCommandProject} />
 
       {/* Permission dialogs */}
       <PermissionDialog />

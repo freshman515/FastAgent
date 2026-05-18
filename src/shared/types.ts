@@ -29,6 +29,7 @@ export interface Project {
   name: string
   path: string
   groupId: string
+  pinned: boolean
 }
 
 export const UNGROUPED_PROJECT_GROUP_ID = '__ungrouped__'

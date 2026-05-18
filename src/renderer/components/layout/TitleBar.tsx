@@ -58,6 +58,7 @@ function createRunProfileForm(profile: LaunchProfile | null = null): RunProfileF
       cwd: '',
       env: '',
       runAsAdmin: false,
+      focusOnStart: false,
       icon: '▶',
       color: '#3ecf7b',
     }
@@ -70,6 +71,7 @@ function createRunProfileForm(profile: LaunchProfile | null = null): RunProfileF
     cwd: profile.cwd,
     env: profile.env,
     runAsAdmin: profile.runAsAdmin,
+    focusOnStart: profile.focusOnStart,
     icon: profile.icon,
     color: profile.color,
   }
@@ -151,6 +153,7 @@ function TitleBarRunDialog({
       cwd: draft.cwd.trim(),
       env: draft.env,
       runAsAdmin: draft.runAsAdmin,
+      focusOnStart: draft.focusOnStart,
     }
 
     if (editingProfile) {
@@ -308,6 +311,32 @@ function TitleBarRunDialog({
               />
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() => setDraft((current) => ({ ...current, focusOnStart: !current.focusOnStart }))}
+            className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-left transition-colors hover:bg-[var(--color-bg-tertiary)]"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Focus size={14} className={draft.focusOnStart ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]'} />
+              <span className="min-w-0">
+                <span className="block text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">运行后跳转到终端</span>
+                <span className="block text-[10px] text-[var(--color-text-tertiary)]">启动后自动切到这条命令新建的运行终端页</span>
+              </span>
+            </span>
+            <span
+              className={cn(
+                'relative h-5 w-9 shrink-0 rounded-full transition-colors',
+                draft.focusOnStart ? 'bg-[var(--color-accent)]' : 'bg-white/[0.08]',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
+                  draft.focusOnStart && 'translate-x-4',
+                )}
+              />
+            </span>
+          </button>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
@@ -423,6 +452,7 @@ export function TitleBar(): JSX.Element | null {
   const defaultCustomSessionId = useUIStore((s) => s.settings.defaultCustomSessionId)
   const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
   const workspaceLayout = useUIStore((s) => s.settings.workspaceLayout)
+  const ctrlTabBehavior = useUIStore((s) => s.settings.ctrlTabBehavior)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const openSettings = useUIStore((s) => s.openSettings)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
@@ -642,13 +672,15 @@ export function TitleBar(): JSX.Element | null {
       profile,
       projectPath: activeProjectPath,
       worktreeId: selectedWorktreeId,
-      focus: false,
+      focus: profile.focusOnStart,
     })
     if (sessionId) {
       addToast({
         type: 'success',
         title: '运行已启动',
-        body: `${profile.name} 已在后台运行，点击跳转到运行会话。`,
+        body: profile.focusOnStart
+          ? `${profile.name} 已打开。`
+          : `${profile.name} 已在后台运行，点击跳转到运行会话。`,
         sessionId,
         duration: 9000,
       })
@@ -813,13 +845,14 @@ export function TitleBar(): JSX.Element | null {
   }, [addToast])
 
   const handleShowShortcuts = useCallback(() => {
+    const ctrlTabHint = ctrlTabBehavior === 'projects' ? 'Ctrl+Tab 切换项目' : 'Ctrl+Tab 切换标签'
     addToast({
       type: 'info',
       title: '快捷键',
-      body: 'F5 运行/停止，Ctrl+Tab 切换标签，Ctrl+W 关闭标签，Ctrl+Shift+T 恢复关闭，Ctrl+Alt+方向键切换分栏，Alt+1~9 切换 pane。',
+      body: `F5 运行/停止，${ctrlTabHint}，Ctrl+W 关闭标签，Ctrl+Shift+T 恢复关闭，Ctrl+Alt+方向键切换分栏，Alt+1~9 切换 pane。`,
       duration: 9000,
     })
-  }, [addToast])
+  }, [addToast, ctrlTabBehavior])
 
   const handleShowAbout = useCallback(() => {
     openSettings('about')

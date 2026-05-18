@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2 } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2, Keyboard } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, AppLaunchMode, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
@@ -28,6 +28,7 @@ import {
   type CanvasInputMode,
   type CanvasWheelBehavior,
   type CanvasWheelZoomModifier,
+  type CtrlTabBehavior,
   type CustomSessionDefinition,
 } from '@/stores/ui'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
@@ -46,10 +47,11 @@ import { SESSION_OPTIONS, getCustomSessionOptionId, orderNewSessionOptions } fro
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 import { isPluginContributionId, parsePluginManifest, preparePluginInstall } from '@/lib/pluginManifest'
 
-type SettingsPage = 'general' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'canvas' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui' | 'about'
+type SettingsPage = 'general' | 'shortcuts' | 'sessions' | 'extensions' | 'wsl' | 'workspace' | 'canvas' | 'notifications' | 'titlebar' | 'git' | 'appearance' | 'terminal' | 'editor' | 'templates' | 'ai' | 'claudeGui' | 'about'
 
 const NAV_ITEMS: Array<{ id: SettingsPage; label: string; description: string; icon: typeof Settings }> = [
   { id: 'general', label: '通用', description: '基础偏好与数据清理', icon: Settings },
+  { id: 'shortcuts', label: '快捷键', description: '全局快捷键行为', icon: Keyboard },
   { id: 'sessions', label: '会话', description: '默认会话与自定义启动器', icon: Terminal },
   { id: 'extensions', label: '扩展', description: '导入插件清单与贡献项', icon: Plug },
   { id: 'wsl', label: 'WSL', description: 'WSL 会话环境与 PATH', icon: Terminal },
@@ -102,6 +104,11 @@ const TERMINAL_SHELL_OPTIONS: Array<{ id: TerminalShellMode; label: string; desc
 const APP_LAUNCH_MODE_OPTIONS: Array<{ id: AppLaunchMode; label: string; desc: string }> = [
   { id: 'normal', label: '普通启动', desc: '默认不主动请求管理员权限' },
   { id: 'admin', label: '管理员启动', desc: '下次启动时弹 UAC 并重启为管理员进程' },
+]
+
+const CTRL_TAB_BEHAVIOR_OPTIONS: Array<{ id: CtrlTabBehavior; label: string; desc: string }> = [
+  { id: 'tabs', label: '切换标签页', desc: '在当前分屏内切换最近标签' },
+  { id: 'projects', label: '切换项目', desc: '在最近使用的项目和 worktree 间切换' },
 ]
 
 const LOCAL_ASR_SHORTCUT_LABEL = 'Ctrl+Alt+V'
@@ -543,6 +550,25 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
           onCancel={() => setConfirmClearSessionsOpen(false)}
         />
       )}
+    </div>
+  )
+}
+
+function ShortcutsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
+  return (
+    <div className={PAGE_STACK}>
+      <PageIntro title="快捷键设置" description="调整全局快捷键在主工作区中的默认动作。" />
+
+      <SettingsSection icon={Keyboard} title="全局快捷键" description="配置不会改变快捷键本身，只改变触发后的目标。">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">Ctrl+Tab</span>
+          <SegmentedChoice
+            value={settings.ctrlTabBehavior}
+            options={CTRL_TAB_BEHAVIOR_OPTIONS}
+            onChange={(v) => onUpdate('ctrlTabBehavior', v)}
+          />
+        </div>
+      </SettingsSection>
     </div>
   )
 }
@@ -3014,6 +3040,7 @@ export function SettingsDialog(): JSX.Element | null {
         <div className="relative flex min-w-0 flex-1 flex-col bg-[linear-gradient(180deg,rgba(0,0,0,0.1),transparent)]">
           <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-none px-6 py-10 pb-20 min-[960px]:px-10">
             {page === 'general' && <GeneralPage settings={settings} onUpdate={handleUpdate} />}
+            {page === 'shortcuts' && <ShortcutsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'sessions' && <SessionsPage settings={settings} onUpdate={handleUpdate} />}
             {page === 'extensions' && <ExtensionsPage settings={settings} />}
             {page === 'wsl' && <WslPage settings={settings} onUpdate={handleUpdate} />}

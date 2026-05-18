@@ -49,10 +49,24 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
   const visibleGroupId = useUIStore((s) => s.settings.visibleGroupId)
   const visibleProjectId = useUIStore((s) => s.settings.visibleProjectId)
   const isDarkTheme = useIsDarkTheme()
-  const [pinnedCollapsed, setPinnedCollapsed] = useState(false)
+  const [pinnedProjectsCollapsed, setPinnedProjectsCollapsed] = useState(false)
+  const [pinnedSessionsCollapsed, setPinnedSessionsCollapsed] = useState(false)
   const normalizedQuery = searchQuery.trim().toLowerCase()
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
   const worktreeById = useMemo(() => new Map(worktrees.map((worktree) => [worktree.id, worktree])), [worktrees])
+  const regularProjects = useMemo(() => projects.filter((project) => !project.pinned), [projects])
+
+  const pinnedProjects = useMemo(() => {
+    const visibleGroup = visibleGroupId ? groups.find((group) => group.id === visibleGroupId) ?? null : null
+
+    return projects.filter((project) => {
+      if (!project.pinned) return false
+      if (visibleProjectId && project.id !== visibleProjectId) return false
+      if (visibleGroupId && (!visibleGroup || !groupContainsGroup(visibleGroup, groups, project.groupId))) return false
+      if (!normalizedQuery) return true
+      return project.name.toLowerCase().includes(normalizedQuery)
+    })
+  }, [groups, normalizedQuery, projects, visibleGroupId, visibleProjectId])
 
   const filteredGroups = useMemo(() => {
     const validGroupIds = new Set(groups.map((group) => group.id))
@@ -60,25 +74,27 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
 
     if (visibleProjectId) {
       const visibleProject = projects.find((project) => project.id === visibleProjectId)
+      if (visibleProject?.pinned) return []
       return visibleProject ? groups.filter((group) => group.id === visibleProject.groupId) : []
     }
 
     let result = visibleGroupId ? groups.filter((g) => g.id === visibleGroupId) : rootGroups
     if (normalizedQuery) {
-      result = result.filter((g) => groupSubtreeMatches(g, groups, projects, normalizedQuery))
+      result = result.filter((g) => groupSubtreeMatches(g, groups, regularProjects, normalizedQuery))
     }
     return result
-  }, [groups, normalizedQuery, projects, visibleGroupId, visibleProjectId])
+  }, [groups, normalizedQuery, projects, regularProjects, visibleGroupId, visibleProjectId])
 
   const ungroupedProjects = useMemo(() => {
     const validGroupIds = new Set(groups.map((group) => group.id))
     if (visibleProjectId) {
-      return projects.filter((project) => project.id === visibleProjectId && !validGroupIds.has(project.groupId))
+      return projects.filter((project) => project.id === visibleProjectId && !project.pinned && !validGroupIds.has(project.groupId))
     }
 
     if (visibleGroupId) return []
     return projects.filter((project) => {
       if (validGroupIds.has(project.groupId)) return false
+      if (project.pinned) return false
       return !normalizedQuery || project.name.toLowerCase().includes(normalizedQuery)
     })
   }, [groups, normalizedQuery, projects, visibleGroupId, visibleProjectId])
@@ -103,7 +119,7 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
       })
   }, [allSessions, groups, normalizedQuery, outputStates, projectById, visibleGroupId, visibleProjectId])
 
-  if (pinnedSessions.length === 0 && filteredGroups.length === 0 && ungroupedProjects.length === 0) {
+  if (pinnedProjects.length === 0 && pinnedSessions.length === 0 && filteredGroups.length === 0 && ungroupedProjects.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-bg-primary)]/50 text-[var(--color-text-tertiary)] opacity-20">
@@ -121,37 +137,84 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
 
   return (
     <div className="flex flex-col">
-      {pinnedSessions.length > 0 && (
+      {pinnedProjects.length > 0 && (
         <div className="mb-2 border-b border-[var(--color-border)]/35 pb-2">
           <div
             className="mx-1 mb-1 mt-1.5 flex h-8 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-3 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-surface)]/45 hover:text-[var(--color-text-primary)]"
-            onClick={() => setPinnedCollapsed((value) => !value)}
-            title={pinnedCollapsed ? '展开置顶' : '折叠置顶'}
+            onClick={() => setPinnedProjectsCollapsed((value) => !value)}
+            title={pinnedProjectsCollapsed ? '展开置顶项目' : '折叠置顶项目'}
           >
             <Pin size={13} className="shrink-0 fill-current text-[var(--color-accent)]" />
-            <span className="shrink-0 truncate text-[var(--ui-font-sm)] font-semibold">置顶</span>
+            <span className="shrink-0 truncate text-[var(--ui-font-sm)] font-semibold">置顶项目</span>
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation()
-                setPinnedCollapsed((value) => !value)
+                setPinnedProjectsCollapsed((value) => !value)
               }}
               onDoubleClick={(event) => event.stopPropagation()}
               className="-ml-0.5 flex h-5 w-4 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
-              title={pinnedCollapsed ? '展开置顶' : '折叠置顶'}
-              aria-label={pinnedCollapsed ? '展开置顶' : '折叠置顶'}
+              title={pinnedProjectsCollapsed ? '展开置顶项目' : '折叠置顶项目'}
+              aria-label={pinnedProjectsCollapsed ? '展开置顶项目' : '折叠置顶项目'}
             >
               <ChevronRight
                 size={12}
                 strokeWidth={2.5}
-                className={pinnedCollapsed ? 'transition-transform duration-200' : 'rotate-90 transition-transform duration-200'}
+                className={pinnedProjectsCollapsed ? 'transition-transform duration-200' : 'rotate-90 transition-transform duration-200'}
+              />
+            </button>
+            <span className="ml-auto flex h-4.5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/18 px-1.5 text-[10px] font-bold leading-none text-[var(--color-accent)]">
+              {pinnedProjects.length}
+            </span>
+          </div>
+          {!pinnedProjectsCollapsed && (
+            <div className="space-y-0.5">
+              {pinnedProjects.map((project) => {
+                const group = groups.find((item) => item.id === project.groupId)
+                return (
+                  <ProjectItem
+                    key={`pinned-project-${project.id}`}
+                    project={project}
+                    groupColor={group?.color}
+                    onOpenProject={onOpenProject}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {pinnedSessions.length > 0 && (
+        <div className="mb-2 border-b border-[var(--color-border)]/35 pb-2">
+          <div
+            className="mx-1 mb-1 mt-1.5 flex h-8 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-3 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-surface)]/45 hover:text-[var(--color-text-primary)]"
+            onClick={() => setPinnedSessionsCollapsed((value) => !value)}
+            title={pinnedSessionsCollapsed ? '展开置顶会话' : '折叠置顶会话'}
+          >
+            <Pin size={13} className="shrink-0 fill-current text-[var(--color-accent)]" />
+            <span className="shrink-0 truncate text-[var(--ui-font-sm)] font-semibold">置顶会话</span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                setPinnedSessionsCollapsed((value) => !value)
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              className="-ml-0.5 flex h-5 w-4 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
+              title={pinnedSessionsCollapsed ? '展开置顶会话' : '折叠置顶会话'}
+              aria-label={pinnedSessionsCollapsed ? '展开置顶会话' : '折叠置顶会话'}
+            >
+              <ChevronRight
+                size={12}
+                strokeWidth={2.5}
+                className={pinnedSessionsCollapsed ? 'transition-transform duration-200' : 'rotate-90 transition-transform duration-200'}
               />
             </button>
             <span className="ml-auto flex h-4.5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/18 px-1.5 text-[10px] font-bold leading-none text-[var(--color-accent)]">
               {pinnedSessions.length}
             </span>
           </div>
-          {!pinnedCollapsed && <div className="space-y-0.5">
+          {!pinnedSessionsCollapsed && <div className="space-y-0.5">
             {pinnedSessions.map((session) => {
               const project = projectById.get(session.projectId)
               return (
@@ -172,7 +235,7 @@ export function GroupList({ searchQuery = '', onOpenProject }: GroupListProps): 
         </div>
       )}
       {filteredGroups.map((group) => (
-        <GroupItem key={group.id} group={group} searchQuery={searchQuery} onOpenProject={onOpenProject} />
+        <GroupItem key={group.id} group={group} searchQuery={searchQuery} onOpenProject={onOpenProject} hidePinnedProjects />
       ))}
       {ungroupedProjects.length > 0 && (
         <div className="mt-4 pt-2 border-t border-[var(--color-border)]/30">

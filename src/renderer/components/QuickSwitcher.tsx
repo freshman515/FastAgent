@@ -4,6 +4,7 @@ import { switchProjectContext } from '@/lib/project-context'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { usePanesStore } from '@/stores/panes'
+import { useUIStore } from '@/stores/ui'
 import { FILE_ICONS, useEditorsStore } from '@/stores/editors'
 import { useWorktreesStore } from '@/stores/worktrees'
 import claudeIcon from '@/assets/icons/Claude.png'
@@ -50,6 +51,10 @@ interface SwitcherItem {
   label?: string
   modified?: boolean
   language?: string
+}
+
+interface QuickSwitcherProps {
+  onSwitchRecentProject?: (offset: -1 | 1) => void
 }
 
 function getWorktreeLabel(
@@ -134,7 +139,7 @@ function renderStatusBadge(item: SwitcherItem): JSX.Element | null {
   return null
 }
 
-export function QuickSwitcher(): JSX.Element | null {
+export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}): JSX.Element | null {
   const [mode, setMode] = useState<SwitcherMode | null>(null)
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
@@ -149,6 +154,7 @@ export function QuickSwitcher(): JSX.Element | null {
   const projects = useProjectsStore((s) => s.projects)
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const worktrees = useWorktreesStore((s) => s.worktrees)
+  const ctrlTabBehavior = useUIStore((s) => s.settings.ctrlTabBehavior)
   const activePaneId = usePanesStore((s) => s.activePaneId)
   const activeTabId = usePanesStore((s) => s.paneActiveSession[s.activePaneId] ?? null)
   const paneSessions = usePanesStore((s) => s.paneSessions[activePaneId] ?? [])
@@ -311,6 +317,14 @@ export function QuickSwitcher(): JSX.Element | null {
       const currentMode = modeRef.current
       if (currentMode === 'search' || !event.ctrlKey || event.key !== 'Tab') return
 
+      if (ctrlTabBehavior === 'projects') {
+        if (!onSwitchRecentProject) return
+        event.preventDefault()
+        event.stopPropagation()
+        onSwitchRecentProject(event.shiftKey ? -1 : 1)
+        return
+      }
+
       const items = mruItemsRef.current
       if (items.length === 0) return
 
@@ -353,7 +367,7 @@ export function QuickSwitcher(): JSX.Element | null {
       window.removeEventListener('keyup', handleKeyUp, true)
       window.removeEventListener('blur', handleBlur)
     }
-  }, [mode])
+  }, [ctrlTabBehavior, mode, onSwitchRecentProject])
 
   useEffect(() => {
     if (!mode) {

@@ -719,6 +719,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const selectProject = useProjectsStore((s) => s.selectProject)
   const removeProject = useProjectsStore((s) => s.removeProject)
+  const setProjectPinned = useProjectsStore((s) => s.setProjectPinned)
   const removeProjectFromGroup = useGroupsStore((s) => s.removeProjectFromGroup)
   const allSessions = useSessionsStore((s) => s.sessions)
   const outputStates = useSessionsStore((s) => s.outputStates)
@@ -892,6 +893,12 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
     setShowMenu(null)
   }, [project.groupId, project.id, removeProject, removeProjectFromGroup])
 
+  const handleToggleProjectPinned = useCallback(() => {
+    setProjectPinned(project.id, !project.pinned)
+    setContextMenu(null)
+    setShowMenu(null)
+  }, [project.id, project.pinned, setProjectPinned])
+
   const handleCopyProjectPath = useCallback(async () => {
     setContextMenu(null)
     setShowMenu(null)
@@ -1053,6 +1060,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
 
         {/* Status indicators */}
         <div className="flex items-center gap-1.5">
+          {project.pinned && <Pin size={11} className="shrink-0 fill-current text-[var(--color-accent)]" />}
           {hasOutputting && <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)] shadow-[0_0_4px_var(--color-accent)]" />}
           {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
 
@@ -1216,6 +1224,14 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
             >
               <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
               <Copy size={14} /> 复制项目地址
+            </button>
+            <button
+              className={cn(MENU_ITEM, project.pinned && 'text-[var(--color-accent)]')}
+              onClick={handleToggleProjectPinned}
+            >
+              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
+              <Pin size={14} className={cn(project.pinned && 'fill-current')} />
+              {project.pinned ? '取消置顶' : '置顶项目'}
             </button>
             <div className="my-1.5 h-px bg-white/[0.06] mx-2" />
             

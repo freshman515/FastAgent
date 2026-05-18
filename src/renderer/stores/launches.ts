@@ -9,6 +9,7 @@ export interface LaunchProfile {
   cwd: string        // relative to project path, empty = project root
   env: string         // KEY=VALUE per line
   runAsAdmin: boolean // run with elevated privileges on Windows
+  focusOnStart: boolean // focus the created terminal after starting
   icon: string        // emoji or short label
   color: string       // hex color
 }
@@ -51,6 +52,7 @@ function sanitize(raw: unknown): LaunchProfile | null {
     cwd: typeof o.cwd === 'string' ? o.cwd : '',
     env: typeof o.env === 'string' ? o.env : '',
     runAsAdmin: o.runAsAdmin === true,
+    focusOnStart: o.focusOnStart === true,
     icon: typeof o.icon === 'string' ? o.icon : '▶',
     color: typeof o.color === 'string' ? o.color : '#3ecf7b',
   }

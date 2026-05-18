@@ -11,6 +11,7 @@ interface GroupItemProps {
   group: Group
   searchQuery?: string
   onOpenProject?: (projectId: string) => void
+  hidePinnedProjects?: boolean
   depth?: number
 }
 
@@ -75,7 +76,7 @@ function fitFixedMenuToViewport(element: HTMLElement, position: { x: number; y: 
   element.style.left = `${boundedLeft}px`
 }
 
-export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }: GroupItemProps): JSX.Element {
+export function GroupItem({ group, searchQuery = '', onOpenProject, hidePinnedProjects = false, depth = 0 }: GroupItemProps): JSX.Element {
   const toggleCollapse = useGroupsStore((s) => s.toggleCollapse)
   const removeGroup = useGroupsStore((s) => s.removeGroup)
   const updateGroup = useGroupsStore((s) => s.updateGroup)
@@ -93,6 +94,9 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
     const ordered = ids.map((id) => map.get(id)).filter(Boolean) as typeof allProjects
     const remaining = allProjects.filter((p) => p.groupId === group.id && !ids.includes(p.id))
     let result = [...ordered, ...remaining]
+    if (hidePinnedProjects) {
+      result = result.filter((p) => !p.pinned)
+    }
     if (visibleProjectId) {
       return result.filter((p) => p.id === visibleProjectId)
     }
@@ -101,14 +105,15 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
       result = result.filter((p) => p.name.toLowerCase().includes(normalizedQuery))
     }
     return result
-  }, [allProjects, group.id, group.projectIds, normalizedQuery, visibleProjectId])
+  }, [allProjects, group.id, group.projectIds, hidePinnedProjects, normalizedQuery, visibleProjectId])
   const projectNamesByGroup = useMemo(() => {
     const map = new Map<string, string[]>()
     for (const project of allProjects) {
+      if (hidePinnedProjects && project.pinned) continue
       map.set(project.groupId, [...(map.get(project.groupId) ?? []), project.name.toLowerCase()])
     }
     return map
-  }, [allProjects])
+  }, [allProjects, hidePinnedProjects, visibleProjectId])
   const childGroups = useMemo(() => {
     let result = getOrderedChildGroups(group, allGroups)
     if (visibleProjectId) {
@@ -605,6 +610,7 @@ export function GroupItem({ group, searchQuery = '', onOpenProject, depth = 0 }:
               group={entry.group}
               searchQuery={searchQuery}
               onOpenProject={onOpenProject}
+              hidePinnedProjects={hidePinnedProjects}
               depth={depth + 1}
             />
           ) : (

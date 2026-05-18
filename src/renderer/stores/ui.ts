@@ -26,6 +26,7 @@ export type CanvasSessionListDirection = 'vertical' | 'horizontal'
 export type CanvasInputMode = 'auto' | 'mouse' | 'trackpad'
 export type CanvasWheelBehavior = 'zoom' | 'pan'
 export type CanvasWheelZoomModifier = 'primary' | 'ctrl' | 'alt'
+export type CtrlTabBehavior = 'tabs' | 'projects'
 
 export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
@@ -90,6 +91,10 @@ function normalizeTerminalShellMode(raw: unknown): TerminalShellMode {
 
 function normalizeAppLaunchMode(raw: unknown): AppLaunchMode {
   return raw === 'admin' || raw === 'normal' ? raw : DEFAULT_SETTINGS.appLaunchMode
+}
+
+function normalizeCtrlTabBehavior(raw: unknown): CtrlTabBehavior {
+  return raw === 'tabs' || raw === 'projects' ? raw : DEFAULT_SETTINGS.ctrlTabBehavior
 }
 
 function normalizeVoiceInputMode(raw: unknown): VoiceInputMode {
@@ -350,6 +355,8 @@ export interface AppSettings {
   startupWindowState: 'maximized' | 'normal'
   /** Default process privilege for the next app launch on Windows. */
   appLaunchMode: AppLaunchMode
+  /** Ctrl+Tab target in the main workspace. */
+  ctrlTabBehavior: CtrlTabBehavior
   gitChangesViewMode: GitChangesViewMode
   gitReviewMode: GitReviewMode
   gitReviewFixMode: GitReviewFixMode
@@ -508,6 +515,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   titleBarSearchScope: 'project',
   startupWindowState: 'maximized',
   appLaunchMode: 'normal',
+  ctrlTabBehavior: 'tabs',
   gitChangesViewMode: 'tree',
   gitReviewMode: 'codex',
   gitReviewFixMode: 'claude-gui',
@@ -1809,6 +1817,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         s.startupWindowState = raw.startupWindowState
       }
       s.appLaunchMode = normalizeAppLaunchMode(raw.appLaunchMode)
+      s.ctrlTabBehavior = normalizeCtrlTabBehavior(raw.ctrlTabBehavior)
       if (raw.gitChangesViewMode === 'flat' || raw.gitChangesViewMode === 'tree') {
         s.gitChangesViewMode = raw.gitChangesViewMode
       }
@@ -2015,6 +2024,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
     settings.terminalShellMode = normalizeTerminalShellMode(settings.terminalShellMode)
     settings.appLaunchMode = normalizeAppLaunchMode(settings.appLaunchMode)
+    settings.ctrlTabBehavior = normalizeCtrlTabBehavior(settings.ctrlTabBehavior)
     settings.terminalShellCommand = settings.terminalShellCommand.trim()
     settings.voiceInputMode = normalizeVoiceInputMode(settings.voiceInputMode)
     settings.voiceApiUrl = settings.voiceApiUrl.trim()

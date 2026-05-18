@@ -12,6 +12,7 @@ function sanitizeProject(p: unknown): Project | null {
     name: typeof obj.name === 'string' ? obj.name : basename(obj.path),
     path: obj.path,
     groupId: obj.groupId,
+    pinned: obj.pinned === true,
   }
 }
 
@@ -34,6 +35,7 @@ interface ProjectsState {
   upsertProject: (project: Project) => void
   removeProject: (id: string) => void
   moveProject: (id: string, toGroupId: string) => void
+  setProjectPinned: (id: string, pinned: boolean) => void
   selectProject: (id: string | null) => void
 }
 
@@ -56,6 +58,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       name: basename(path),
       path,
       groupId,
+      pinned: false,
     }
     set((state) => {
       const projects = [...state.projects, newProject]
@@ -89,6 +92,15 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     set((state) => {
       const projects = state.projects.map((p) =>
         p.id === id ? { ...p, groupId: toGroupId } : p,
+      )
+      persist(projects)
+      return { projects }
+    }),
+
+  setProjectPinned: (id, pinned) =>
+    set((state) => {
+      const projects = state.projects.map((p) =>
+        p.id === id ? { ...p, pinned } : p,
       )
       persist(projects)
       return { projects }
