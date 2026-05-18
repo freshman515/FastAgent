@@ -21,6 +21,12 @@ import { ADMIN_RELAUNCH_ARG, isCurrentProcessElevated, relaunchCurrentApplicatio
 
 configureAppPaths()
 
+const APP_USER_MODEL_ID = 'com.pragma.desk'
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_USER_MODEL_ID)
+}
+
 let mainWindow: BrowserWindow | null = null
 const detachedWindows = new Map<string, BrowserWindow>()
 const canvasBookmarkShortcutWebContents = new Set<number>()

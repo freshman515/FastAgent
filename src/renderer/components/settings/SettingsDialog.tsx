@@ -30,6 +30,7 @@ import {
   type CanvasWheelZoomModifier,
   type CtrlTabBehavior,
   type CustomSessionDefinition,
+  type NotificationDisplayMode,
 } from '@/stores/ui'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { useClaudeGuiStore, type ClaudeGuiPreferences } from '@/stores/claudeGui'
@@ -1481,17 +1482,28 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
     <div className={PAGE_STACK}>
       <PageIntro title="通知设置" description="控制 Agent 完成任务时是否弹出提醒和播放声音。" />
       <SettingsSection icon={Bell} title="完成提醒" description="会话任务完成时的桌面通知与音效。">
-        <ToggleRow label="弹出通知" description="在右下角弹出 toast 和系统桌面通知（仅当未在查看该会话时）" checked={settings.notificationToastEnabled} onChange={(v) => onUpdate('notificationToastEnabled', v)} />
+        <ToggleRow label="弹出通知" description="Agent 任务完成时显示提醒；关闭后只保留完成音效。" checked={settings.notificationToastEnabled} onChange={(v) => onUpdate('notificationToastEnabled', v)} />
         {settings.notificationToastEnabled && (
-          <DurationSlider
-            label="通知停留时间"
-            description="右下角完成通知自动关闭前的停留时间。"
-            value={settings.notificationToastDurationMs}
-            min={NOTIFICATION_TOAST_DURATION_MS_MIN}
-            max={NOTIFICATION_TOAST_DURATION_MS_MAX}
-            step={1000}
-            onChange={(v) => onUpdate('notificationToastDurationMs', v)}
-          />
+          <>
+            <SegmentedChoice<NotificationDisplayMode>
+              value={settings.notificationDisplayMode}
+              options={[
+                { id: 'smart', label: '智能通知', desc: '应用在前台时用应用内通知，后台或被遮挡时用桌面通知' },
+                { id: 'desktop', label: '桌面通知', desc: '始终使用系统桌面通知' },
+                { id: 'in-app', label: '应用内通知', desc: '始终只在 Pragma Desk 内显示通知' },
+              ]}
+              onChange={(v) => onUpdate('notificationDisplayMode', v)}
+            />
+            <DurationSlider
+              label="通知停留时间"
+              description="应用内完成通知自动关闭前的停留时间。桌面通知由系统控制。"
+              value={settings.notificationToastDurationMs}
+              min={NOTIFICATION_TOAST_DURATION_MS_MIN}
+              max={NOTIFICATION_TOAST_DURATION_MS_MAX}
+              step={1000}
+              onChange={(v) => onUpdate('notificationToastDurationMs', v)}
+            />
+          </>
         )}
         <ToggleRow label="完成音效" description="播放像素风提示音（正在查看时也会响）" checked={settings.notificationSoundEnabled} onChange={(v) => onUpdate('notificationSoundEnabled', v)} />
         {settings.notificationSoundEnabled && (

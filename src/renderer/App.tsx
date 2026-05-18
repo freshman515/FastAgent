@@ -46,6 +46,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { isClaudeCodeType, isTerminalSessionType, SESSION_TYPE_CONFIG, type ClaudeGuiEvent, type Session } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
+import { showTaskNotification } from '@/lib/taskNotification'
 import { cn } from '@/lib/utils'
 
 interface EditorPathContext {
@@ -2969,18 +2970,16 @@ function MainApp(): JSX.Element {
         ? useProjectsStore.getState().projects.find((p) => p.id === session.projectId)
         : undefined
       const body = project ? `${project.name}\n${name}` : name
-      const { notificationToastEnabled, notificationToastDurationMs, notificationSoundEnabled, notificationSoundVolume } =
+      const { notificationToastDurationMs, notificationSoundEnabled, notificationSoundVolume } =
         useUIStore.getState().settings
-      if (notificationToastEnabled) {
-        useUIStore.getState().addToast({
-          title: 'Task completed',
-          body,
-          type: 'success',
-          sessionId: session?.id,
-          projectId: session?.projectId,
-          duration: notificationToastDurationMs,
-        })
-      }
+      void showTaskNotification({
+        title: 'Task completed',
+        body,
+        type: 'success',
+        sessionId: session?.id,
+        projectId: session?.projectId,
+        duration: notificationToastDurationMs,
+      })
       if (notificationSoundEnabled) {
         playTaskCompleteSound(notificationSoundVolume)
       }

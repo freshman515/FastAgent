@@ -283,8 +283,8 @@ const api = {
   },
 
   notification: {
-    show: (options: { title: string; body?: string; sessionId?: string; projectId?: string }) =>
-      ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, options),
+    show: (options: { title: string; body?: string; sessionId?: string; projectId?: string; force?: boolean }) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, options) as Promise<boolean>,
     onClick: (callback: (data: { sessionId?: string; projectId?: string }) => void) => {
       const handler = (_: unknown, data: { sessionId?: string; projectId?: string }) =>
         callback(data)

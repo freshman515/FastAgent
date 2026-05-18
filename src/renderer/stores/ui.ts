@@ -27,6 +27,7 @@ export type CanvasInputMode = 'auto' | 'mouse' | 'trackpad'
 export type CanvasWheelBehavior = 'zoom' | 'pan'
 export type CanvasWheelZoomModifier = 'primary' | 'ctrl' | 'alt'
 export type CtrlTabBehavior = 'tabs' | 'projects'
+export type NotificationDisplayMode = 'smart' | 'desktop' | 'in-app'
 
 export const CANVAS_SESSION_CARD_WIDTH_MIN = 480
 export const CANVAS_SESSION_CARD_WIDTH_MAX = 2400
@@ -95,6 +96,12 @@ function normalizeAppLaunchMode(raw: unknown): AppLaunchMode {
 
 function normalizeCtrlTabBehavior(raw: unknown): CtrlTabBehavior {
   return raw === 'tabs' || raw === 'projects' ? raw : DEFAULT_SETTINGS.ctrlTabBehavior
+}
+
+function normalizeNotificationDisplayMode(raw: unknown): NotificationDisplayMode {
+  return raw === 'smart' || raw === 'desktop' || raw === 'in-app'
+    ? raw
+    : DEFAULT_SETTINGS.notificationDisplayMode
 }
 
 function normalizeVoiceInputMode(raw: unknown): VoiceInputMode {
@@ -384,6 +391,8 @@ export interface AppSettings {
   popoutPosition: 'cursor' | 'center'
   /** Show in-app toast / system notification when an agent task completes */
   notificationToastEnabled: boolean
+  /** Where task completion notifications should appear. */
+  notificationDisplayMode: NotificationDisplayMode
   /** How long completion toast notifications stay visible, in milliseconds. */
   notificationToastDurationMs: number
   /** Play a sound when an agent task completes */
@@ -531,6 +540,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   popoutHeight: 600,
   popoutPosition: 'cursor',
   notificationToastEnabled: true,
+  notificationDisplayMode: 'smart',
   notificationToastDurationMs: NOTIFICATION_TOAST_DURATION_MS_DEFAULT,
   notificationSoundEnabled: true,
   notificationSoundVolume: 0.6,
@@ -1872,6 +1882,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.popoutHeight === 'number') s.popoutHeight = Math.max(300, Math.min(1080, raw.popoutHeight))
       if (raw.popoutPosition === 'cursor' || raw.popoutPosition === 'center') s.popoutPosition = raw.popoutPosition
       if (typeof raw.notificationToastEnabled === 'boolean') s.notificationToastEnabled = raw.notificationToastEnabled
+      s.notificationDisplayMode = normalizeNotificationDisplayMode(raw.notificationDisplayMode)
       s.notificationToastDurationMs = normalizeNotificationToastDurationMs(raw.notificationToastDurationMs)
       if (typeof raw.notificationSoundEnabled === 'boolean') s.notificationSoundEnabled = raw.notificationSoundEnabled
       if (typeof raw.notificationSoundVolume === 'number') {
@@ -2054,6 +2065,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.canvasNoteCardWidth = clampCanvasNoteCardWidth(settings.canvasNoteCardWidth)
     settings.canvasNoteCardHeight = clampCanvasNoteCardHeight(settings.canvasNoteCardHeight)
     settings.canvasNoteFontSize = clampCanvasNoteFontSize(settings.canvasNoteFontSize)
+    settings.notificationDisplayMode = normalizeNotificationDisplayMode(settings.notificationDisplayMode)
     settings.notificationToastDurationMs = normalizeNotificationToastDurationMs(settings.notificationToastDurationMs)
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))

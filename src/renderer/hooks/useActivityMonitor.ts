@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
+import { showTaskNotification } from '@/lib/taskNotification'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
@@ -39,20 +40,15 @@ export function useActivityMonitor(): void {
                 const project = useProjectsStore
                   .getState()
                   .projects.find((p) => p.id === session.projectId)
-                useUIStore.getState().addToast({
-                  title: `${session.name} completed`,
-                  body: project ? `Project: ${project.name}` : '',
+                const title = `${session.name} completed`
+                const body = project ? `Project: ${project.name}` : ''
+                await showTaskNotification({
+                  title,
+                  body,
                   type: 'info',
                   sessionId: session.id,
                   projectId: session.projectId,
                   duration: settings.notificationToastDurationMs,
-                })
-
-                window.api.notification.show({
-                  title: `${session.name} completed`,
-                  body: project ? `Project: ${project.name}` : '',
-                  sessionId: session.id,
-                  projectId: session.projectId,
                 })
               }
             }
