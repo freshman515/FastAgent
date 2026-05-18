@@ -1,5 +1,5 @@
-import { Check, ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, Play, Plus, Search, Settings, Square, X, type LucideIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
+import { Check, ChevronDown, Columns2, Copy, ExternalLink, Eye, EyeOff, Focus, FolderOpen, GitBranch, HelpCircle, Info, LayoutGrid, ListTodo, Minus, PanelLeftOpen, Play, Plus, Search, Settings, Shield, Square, Trash2, X, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import appIcon from '@/assets/icons/pragma-desk.png'
@@ -49,21 +49,63 @@ function getRunProfileCommand(profile: LaunchProfile | null): string {
   return [profile.command, profile.args].filter((part) => part.trim()).join(' ')
 }
 
+function createRunProfileForm(profile: LaunchProfile | null = null): RunProfileFormData {
+  if (!profile) {
+    return {
+      name: '运行',
+      command: '',
+      args: '',
+      cwd: '',
+      env: '',
+      runAsAdmin: false,
+      icon: '▶',
+      color: '#3ecf7b',
+    }
+  }
+
+  return {
+    name: profile.name,
+    command: getRunProfileCommand(profile),
+    args: '',
+    cwd: profile.cwd,
+    env: profile.env,
+    runAsAdmin: profile.runAsAdmin,
+    icon: profile.icon,
+    color: profile.color,
+  }
+}
+
 function TitleBarRunDialog({
   projectName,
-  initialProfile,
+  profiles,
   onClose,
-  onSave,
+  onAdd,
+  onUpdate,
+  onDelete,
 }: {
   projectName: string
-  initialProfile: LaunchProfile | null
+  profiles: LaunchProfile[]
   onClose: () => void
-  onSave: (data: RunProfileFormData) => void
+  onAdd: (data: RunProfileFormData) => string | null
+  onUpdate: (id: string, data: RunProfileFormData) => void
+  onDelete: (id: string) => void
 }): JSX.Element {
-  const initialCommand = getRunProfileCommand(initialProfile)
-  const [name, setName] = useState(initialProfile?.name ?? '运行')
-  const [command, setCommand] = useState(initialCommand)
-  const [cwd, setCwd] = useState(initialProfile?.cwd ?? '')
+  const [editingId, setEditingId] = useState<string | null>(() => profiles[0]?.id ?? null)
+  const editingProfile = useMemo(
+    () => profiles.find((profile) => profile.id === editingId) ?? null,
+    [editingId, profiles],
+  )
+  const [draft, setDraft] = useState<RunProfileFormData>(() => createRunProfileForm(editingProfile))
+  const isCreating = editingProfile === null
+
+  useEffect(() => {
+    if (!editingId || profiles.some((profile) => profile.id === editingId)) return
+    setEditingId(profiles[0]?.id ?? null)
+  }, [editingId, profiles])
+
+  useEffect(() => {
+    setDraft(createRunProfileForm(editingProfile))
+  }, [editingProfile?.id])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -75,19 +117,51 @@ function TitleBarRunDialog({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
+  const handleCreateNew = (): void => {
+    setEditingId(null)
+    setDraft(createRunProfileForm())
+  }
+
+  const handleSelectProfile = (profile: LaunchProfile): void => {
+    setEditingId(profile.id)
+  }
+
+  const handleDeleteProfile = (): void => {
+    if (!editingProfile) return
+    const currentIndex = profiles.findIndex((profile) => profile.id === editingProfile.id)
+    const nextProfile = profiles[currentIndex + 1] ?? profiles[currentIndex - 1] ?? null
+
+    onDelete(editingProfile.id)
+    setEditingId(nextProfile?.id ?? null)
+    if (!nextProfile) {
+      setDraft(createRunProfileForm())
+    }
+  }
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
-    const trimmedCommand = command.trim()
+    const trimmedCommand = draft.command.trim()
     if (!trimmedCommand) return
-    onSave({
-      name: name.trim() || trimmedCommand,
+
+    const data: RunProfileFormData = {
+      ...draft,
+      name: draft.name.trim() || trimmedCommand,
       command: trimmedCommand,
       args: '',
-      cwd: cwd.trim(),
-      env: initialProfile?.env ?? '',
-      icon: initialProfile?.icon ?? '▶',
-      color: initialProfile?.color ?? '#3ecf7b',
-    })
+      cwd: draft.cwd.trim(),
+      env: draft.env,
+      runAsAdmin: draft.runAsAdmin,
+    }
+
+    if (editingProfile) {
+      onUpdate(editingProfile.id, data)
+      return
+    }
+
+    const newId = onAdd(data)
+    if (newId) {
+      setEditingId(newId)
+    }
   }
 
   return createPortal(
@@ -95,7 +169,7 @@ function TitleBarRunDialog({
       <div className="no-drag fixed inset-0 z-[129] bg-black/45" onClick={onClose} />
       <form
         onSubmit={handleSubmit}
-        className="no-drag fixed left-1/2 top-1/2 z-[130] w-[min(420px,calc(100vw_-_32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
+        className="no-drag fixed left-1/2 top-1/2 z-[130] w-[min(560px,calc(100vw_-_32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl shadow-black/45"
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
           <div className="min-w-0">
@@ -112,12 +186,76 @@ function TitleBarRunDialog({
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 px-4 py-4">
+        <div className="flex flex-col gap-4 px-4 py-4">
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">命令列表</span>
+              <button
+                type="button"
+                onClick={handleCreateNew}
+                className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] px-2.5 text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+              >
+                <Plus size={12} />
+                添加命令
+              </button>
+            </div>
+            <div className="max-h-36 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-1">
+              {profiles.length === 0 ? (
+                <div className="px-2 py-3 text-center text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">暂无运行命令</div>
+              ) : (
+                profiles.map((profile) => {
+                  const active = profile.id === editingProfile?.id
+                  const profileCommand = getRunProfileCommand(profile)
+
+                  return (
+                    <div
+                      key={profile.id}
+                      className={cn(
+                        'flex items-center gap-1 rounded-[var(--radius-sm)]',
+                        active && 'bg-[var(--color-accent)]/12',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSelectProfile(profile)}
+                        className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-tertiary)]"
+                      >
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[10px] font-semibold text-white"
+                          style={{ backgroundColor: profile.color }}
+                        >
+                          {profile.icon}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate text-[var(--ui-font-xs)] font-medium text-[var(--color-text-primary)]">{profile.name}</span>
+                            {profile.runAsAdmin && <Shield size={11} className="shrink-0 text-[var(--color-warning)]" />}
+                          </span>
+                          <span className="block truncate font-mono text-[10px] text-[var(--color-text-tertiary)]">{profileCommand}</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteProfile}
+                        disabled={!active}
+                        className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-error)]/14 hover:text-[var(--color-error)] disabled:pointer-events-none disabled:opacity-0"
+                        aria-label="删除命令"
+                        title="删除命令"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
           <label className="flex flex-col gap-1.5">
             <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">名称</span>
             <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
+              value={draft.name}
+              onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
               className={RUN_DIALOG_INPUT}
               placeholder="运行"
             />
@@ -125,8 +263,8 @@ function TitleBarRunDialog({
           <label className="flex flex-col gap-1.5">
             <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">命令</span>
             <input
-              value={command}
-              onChange={(event) => setCommand(event.target.value)}
+              value={draft.command}
+              onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))}
               className={RUN_DIALOG_INPUT}
               placeholder="pnpm dev"
               spellCheck={false}
@@ -138,12 +276,38 @@ function TitleBarRunDialog({
           <label className="flex flex-col gap-1.5">
             <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">工作目录</span>
             <input
-              value={cwd}
-              onChange={(event) => setCwd(event.target.value)}
+              value={draft.cwd}
+              onChange={(event) => setDraft((current) => ({ ...current, cwd: event.target.value }))}
               className={RUN_DIALOG_INPUT}
               placeholder="项目根目录"
             />
           </label>
+          <button
+            type="button"
+            onClick={() => setDraft((current) => ({ ...current, runAsAdmin: !current.runAsAdmin }))}
+            className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-left transition-colors hover:bg-[var(--color-bg-tertiary)]"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Shield size={14} className={draft.runAsAdmin ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-tertiary)]'} />
+              <span className="min-w-0">
+                <span className="block text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">以管理员身份运行</span>
+                <span className="block text-[10px] text-[var(--color-text-tertiary)]">普通权限下会外部打开管理员终端</span>
+              </span>
+            </span>
+            <span
+              className={cn(
+                'relative h-5 w-9 shrink-0 rounded-full transition-colors',
+                draft.runAsAdmin ? 'bg-[var(--color-warning)]' : 'bg-white/[0.08]',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
+                  draft.runAsAdmin && 'translate-x-4',
+                )}
+              />
+            </span>
+          </button>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
@@ -156,11 +320,11 @@ function TitleBarRunDialog({
           </button>
           <button
             type="submit"
-            disabled={!command.trim()}
+            disabled={!draft.command.trim()}
             className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-3 text-[var(--ui-font-xs)] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Check size={13} />
-            保存
+            {isCreating ? '添加命令' : '保存命令'}
           </button>
         </div>
       </form>
@@ -173,6 +337,7 @@ export function TitleBar(): JSX.Element | null {
   const [maximized, setMaximized] = useState(false)
   const [ideMenuOpen, setIdeMenuOpen] = useState(false)
   const [runDialogOpen, setRunDialogOpen] = useState(false)
+  const [runProfileMenuOpen, setRunProfileMenuOpen] = useState(false)
   const [activeMenu, setActiveMenu] = useState<TitleMenuId | null>(null)
   const [menuAreaHovered, setMenuAreaHovered] = useState(false)
   const [titleBarRevealHovered, setTitleBarRevealHovered] = useState(false)
@@ -183,6 +348,8 @@ export function TitleBar(): JSX.Element | null {
   const titleMenuPopupRef = useRef<HTMLDivElement>(null)
   const ideMenuPopupRef = useRef<HTMLDivElement>(null)
   const ideMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const runProfileMenuRef = useRef<HTMLDivElement>(null)
+  const runProfileMenuButtonRef = useRef<HTMLButtonElement>(null)
   const menuButtonRefs = useRef<Record<TitleMenuId, HTMLButtonElement | null>>({
     file: null,
     edit: null,
@@ -212,15 +379,17 @@ export function TitleBar(): JSX.Element | null {
   useEffect(() => clearMenuCloseTimer, [clearMenuCloseTimer])
 
   useEffect(() => {
-    if (!ideMenuOpen && !activeMenu) return
+    if (!ideMenuOpen && !activeMenu && !runProfileMenuOpen) return
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node
       const insideIdeMenu = ideMenuRef.current?.contains(target) || ideMenuPopupRef.current?.contains(target)
       const insideTitleMenu = titleMenuRef.current?.contains(target) || titleMenuPopupRef.current?.contains(target)
-      if (insideIdeMenu || insideTitleMenu) return
+      const insideRunProfileMenu = runProfileMenuButtonRef.current?.contains(target) || runProfileMenuRef.current?.contains(target)
+      if (insideIdeMenu || insideTitleMenu || insideRunProfileMenu) return
       clearMenuCloseTimer()
       setIdeMenuOpen(false)
+      setRunProfileMenuOpen(false)
       setActiveMenu(null)
     }
 
@@ -228,6 +397,7 @@ export function TitleBar(): JSX.Element | null {
       if (event.key !== 'Escape') return
       clearMenuCloseTimer()
       setIdeMenuOpen(false)
+      setRunProfileMenuOpen(false)
       setActiveMenu(null)
     }
 
@@ -237,7 +407,7 @@ export function TitleBar(): JSX.Element | null {
       window.removeEventListener('mousedown', handlePointerDown)
       window.removeEventListener('keydown', handleEscape)
     }
-  }, [activeMenu, clearMenuCloseTimer, ideMenuOpen])
+  }, [activeMenu, clearMenuCloseTimer, ideMenuOpen, runProfileMenuOpen])
 
   const handleMinimize = useCallback(() => window.api.window.minimize(), [])
   const handleMaximize = useCallback(async () => {
@@ -275,6 +445,7 @@ export function TitleBar(): JSX.Element | null {
   const runningLaunchesByProject = useLaunchesStore((s) => s.runningByProject)
   const addLaunchProfile = useLaunchesStore((s) => s.addProfile)
   const updateLaunchProfile = useLaunchesStore((s) => s.updateProfile)
+  const removeLaunchProfile = useLaunchesStore((s) => s.removeProfile)
   const clearProjectRunningSession = useLaunchesStore((s) => s.clearProjectRunningSession)
 
   useEffect(() => {
@@ -300,7 +471,7 @@ export function TitleBar(): JSX.Element | null {
 
         if (cursorState.inRevealZone || (titleBarRevealHoveredRef.current && cursorState.inTitleBarZone)) {
           setTitleBarRevealHovered(true)
-        } else if (activeMenu === null && !ideMenuOpen) {
+        } else if (activeMenu === null && !ideMenuOpen && !runProfileMenuOpen) {
           setTitleBarRevealHovered(false)
         }
       } finally {
@@ -322,7 +493,7 @@ export function TitleBar(): JSX.Element | null {
       window.clearInterval(intervalId)
       window.removeEventListener('pointermove', handlePointerMove)
     }
-  }, [activeMenu, focusMode, hideTitleBar, ideMenuOpen])
+  }, [activeMenu, focusMode, hideTitleBar, ideMenuOpen, runProfileMenuOpen])
 
   const selectedProjectId = useProjectsStore((s) => s.selectedProjectId)
   const projects = useProjectsStore((s) => s.projects)
@@ -346,22 +517,36 @@ export function TitleBar(): JSX.Element | null {
     [currentProjectTodoItems],
   )
   const activeProjectPath = selectedWorktree?.path ?? selectedProject?.path ?? null
-  const titleRunProfile = useMemo(
+  const titleRunProfiles = useMemo(
     () => selectedProjectId
-      ? launchProfiles.find((profile) => profile.projectId === selectedProjectId) ?? null
-      : null,
+      ? launchProfiles.filter((profile) => profile.projectId === selectedProjectId)
+      : [],
     [launchProfiles, selectedProjectId],
+  )
+  const titleRunProfile = useMemo(
+    () => titleRunProfiles[0] ?? null,
+    [titleRunProfiles],
   )
   const titleRunState = selectedProjectId
     ? runningLaunchesByProject[selectedProjectId] ?? null
     : null
+  const activeTitleRunProfile = useMemo(
+    () => titleRunState
+      ? titleRunProfiles.find((profile) => profile.id === titleRunState.profileId) ?? titleRunProfile
+      : null,
+    [titleRunProfile, titleRunProfiles, titleRunState],
+  )
   const titleRunSession = titleRunState
     ? sessions.find((session) => session.id === titleRunState.sessionId) ?? null
     : null
   const titleRunActive = Boolean(titleRunState && titleRunSession)
+  useEffect(() => {
+    if (titleRunProfiles.length >= 2 && !titleRunActive) return
+    setRunProfileMenuOpen(false)
+  }, [titleRunActive, titleRunProfiles.length])
   const menuVisible = titleBarMenuVisibility === 'always' || menuAreaHovered || activeMenu !== null
   const titleBarHidden = hideTitleBar || focusMode
-  const titleBarRevealed = !titleBarHidden || titleBarRevealHovered || activeMenu !== null || ideMenuOpen
+  const titleBarRevealed = !titleBarHidden || titleBarRevealHovered || activeMenu !== null || ideMenuOpen || runProfileMenuOpen
   const focusModeActive = focusMode
   const activeSession = activeTabId && !activeTabId.startsWith('editor-')
     ? sessions.find((session) => session.id === activeTabId)
@@ -372,9 +557,9 @@ export function TitleBar(): JSX.Element | null {
   const runButtonTitle = !selectedProjectId
     ? '请先选择项目'
     : titleRunActive
-      ? `停止运行：${titleRunProfile?.name ?? titleRunSession?.name ?? '运行会话'}（F5）`
+      ? `停止运行：${activeTitleRunProfile?.name ?? titleRunSession?.name ?? '运行会话'}（F5）`
       : titleRunProfile
-      ? `运行：${titleRunProfile.name}（F5，右键设置）`
+      ? `运行：${titleRunProfile.name}（F5，右侧选择命令，右键设置）`
       : '设置运行命令（F5）'
   const defaultCustomSession = defaultCustomSessionId
     ? customSessionDefinitions.find((definition) => definition.id === defaultCustomSessionId)
@@ -443,6 +628,33 @@ export function TitleBar(): JSX.Element | null {
     )
   }, [addToast, defaultCustomSession, defaultSessionType, selectedProjectId, selectedWorktreeId])
 
+  const handleRunProfile = useCallback((profile: LaunchProfile) => {
+    if (!selectedProjectId || !activeProjectPath) {
+      addToast({
+        type: 'warning',
+        title: '未选择项目',
+        body: '请选择一个项目后再运行命令。',
+      })
+      return
+    }
+
+    const sessionId = runLaunchProfile({
+      profile,
+      projectPath: activeProjectPath,
+      worktreeId: selectedWorktreeId,
+      focus: false,
+    })
+    if (sessionId) {
+      addToast({
+        type: 'success',
+        title: '运行已启动',
+        body: `${profile.name} 已在后台运行，点击跳转到运行会话。`,
+        sessionId,
+        duration: 9000,
+      })
+    }
+  }, [activeProjectPath, addToast, selectedProjectId, selectedWorktreeId])
+
   const handleRunButtonClick = useCallback(() => {
     if (!selectedProjectId || !activeProjectPath) {
       addToast({
@@ -453,6 +665,8 @@ export function TitleBar(): JSX.Element | null {
       return
     }
 
+    setRunProfileMenuOpen(false)
+
     if (titleRunState) {
       const closedIds = closeSessionsById([titleRunState.sessionId])
       clearProjectRunningSession(selectedProjectId, titleRunState.sessionId)
@@ -460,7 +674,7 @@ export function TitleBar(): JSX.Element | null {
         addToast({
           type: 'success',
           title: '运行已停止',
-          body: titleRunSession?.name ?? titleRunProfile?.name ?? '运行会话',
+          body: titleRunSession?.name ?? activeTitleRunProfile?.name ?? '运行会话',
         })
       } else {
         addToast({
@@ -477,27 +691,14 @@ export function TitleBar(): JSX.Element | null {
       return
     }
 
-    const sessionId = runLaunchProfile({
-      profile: titleRunProfile,
-      projectPath: activeProjectPath,
-      worktreeId: selectedWorktreeId,
-      focus: false,
-    })
-    if (sessionId) {
-      addToast({
-        type: 'success',
-        title: '运行已启动',
-        body: `${titleRunProfile.name} 已在后台运行，点击跳转到运行会话。`,
-        sessionId,
-        duration: 9000,
-      })
-    }
+    handleRunProfile(titleRunProfile)
   }, [
+    activeTitleRunProfile?.name,
     activeProjectPath,
     addToast,
     clearProjectRunningSession,
+    handleRunProfile,
     selectedProjectId,
-    selectedWorktreeId,
     titleRunProfile,
     titleRunSession?.name,
     titleRunState,
@@ -514,6 +715,7 @@ export function TitleBar(): JSX.Element | null {
       if (event.repeat || runDialogOpen || settingsOpen) return
       clearMenuCloseTimer()
       setIdeMenuOpen(false)
+      setRunProfileMenuOpen(false)
       setActiveMenu(null)
       handleRunButtonClick()
     }
@@ -522,7 +724,7 @@ export function TitleBar(): JSX.Element | null {
     return () => window.removeEventListener('keydown', handleRunShortcut, true)
   }, [clearMenuCloseTimer, handleRunButtonClick, runDialogOpen, settingsOpen])
 
-  const handleRunButtonContextMenu = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+  const handleRunButtonContextMenu = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     if (!selectedProjectId) {
       addToast({
@@ -532,23 +734,43 @@ export function TitleBar(): JSX.Element | null {
       })
       return
     }
+    setRunProfileMenuOpen(false)
     setRunDialogOpen(true)
   }, [addToast, selectedProjectId])
 
-  const handleSaveRunProfile = useCallback((data: RunProfileFormData) => {
-    if (!selectedProjectId) return
-    if (titleRunProfile) {
-      updateLaunchProfile(titleRunProfile.id, data)
-    } else {
-      addLaunchProfile({ ...data, projectId: selectedProjectId })
-    }
-    setRunDialogOpen(false)
+  const handleAddRunProfile = useCallback((data: RunProfileFormData) => {
+    if (!selectedProjectId) return null
+    const id = addLaunchProfile({ ...data, projectId: selectedProjectId })
+    addToast({
+      type: 'success',
+      title: '运行命令已添加',
+      body: data.command,
+    })
+    return id
+  }, [addLaunchProfile, addToast, selectedProjectId])
+
+  const handleUpdateRunProfile = useCallback((id: string, data: RunProfileFormData) => {
+    updateLaunchProfile(id, data)
     addToast({
       type: 'success',
       title: '运行命令已保存',
       body: data.command,
     })
-  }, [addLaunchProfile, addToast, selectedProjectId, titleRunProfile, updateLaunchProfile])
+  }, [addToast, updateLaunchProfile])
+
+  const handleDeleteRunProfile = useCallback((id: string) => {
+    removeLaunchProfile(id)
+    addToast({
+      type: 'success',
+      title: '运行命令已删除',
+    })
+  }, [addToast, removeLaunchProfile])
+
+  const handleSelectRunProfileFromMenu = useCallback((profile: LaunchProfile) => {
+    if (titleRunActive) return
+    setRunProfileMenuOpen(false)
+    handleRunProfile(profile)
+  }, [handleRunProfile, titleRunActive])
 
   const handleToggleWorkspaceLayout = useCallback(() => {
     const next = workspaceLayout === 'canvas' ? 'panes' : 'canvas'
@@ -559,6 +781,7 @@ export function TitleBar(): JSX.Element | null {
     setTitleBarRevealHovered(false)
     setMenuAreaHovered(false)
     setIdeMenuOpen(false)
+    setRunProfileMenuOpen(false)
     setActiveMenu(null)
     toggleHideTitleBar()
   }, [toggleHideTitleBar])
@@ -567,6 +790,7 @@ export function TitleBar(): JSX.Element | null {
     setTitleBarRevealHovered(false)
     setMenuAreaHovered(false)
     setIdeMenuOpen(false)
+    setRunProfileMenuOpen(false)
     setActiveMenu(null)
     setFocusMode(!focusMode)
   }, [focusMode, setFocusMode])
@@ -770,6 +994,8 @@ export function TitleBar(): JSX.Element | null {
     ? menuButtonRefs.current[activeMenu]?.getBoundingClientRect() ?? null
     : null
   const ideMenuRect = ideMenuButtonRef.current?.getBoundingClientRect() ?? null
+  const runProfileMenuRect = runProfileMenuButtonRef.current?.getBoundingClientRect() ?? null
+  const showRunProfileDropdown = titleRunProfiles.length >= 2 && !titleRunActive
 
   // Only show custom titlebar on Windows/Linux
   if (window.api.platform === 'darwin') return null
@@ -887,25 +1113,51 @@ export function TitleBar(): JSX.Element | null {
       </div>
 
       <div className="no-drag flex h-full items-center">
-        <button
-          type="button"
-          onClick={handleRunButtonClick}
-          onContextMenu={handleRunButtonContextMenu}
-          disabled={!selectedProjectId || !activeProjectPath}
-          className={cn(
-            'mr-2 inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] px-2.5 text-[var(--ui-font-xs)] font-semibold transition-colors duration-100',
-            titleRunActive
-              ? 'bg-[var(--color-error)]/14 text-[var(--color-error)] hover:bg-[var(--color-error)]/20'
-              : titleRunProfile
-                ? 'bg-[var(--color-success)]/14 text-[var(--color-success)] hover:bg-[var(--color-success)]/20'
-                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
-            (!selectedProjectId || !activeProjectPath) && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+        <div className="relative mr-2 flex h-7 items-center">
+          <button
+            type="button"
+            onClick={handleRunButtonClick}
+            onContextMenu={handleRunButtonContextMenu}
+            disabled={!selectedProjectId || !activeProjectPath}
+            className={cn(
+              'inline-flex h-7 items-center gap-1.5 px-2.5 text-[var(--ui-font-xs)] font-semibold transition-colors duration-100',
+              showRunProfileDropdown
+                ? 'rounded-l-[var(--radius-md)] rounded-r-none'
+                : 'rounded-[var(--radius-md)]',
+              titleRunActive
+                ? 'bg-[var(--color-error)]/14 text-[var(--color-error)] hover:bg-[var(--color-error)]/20'
+                : titleRunProfile
+                  ? 'bg-[var(--color-success)]/14 text-[var(--color-success)] hover:bg-[var(--color-success)]/20'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
+              (!selectedProjectId || !activeProjectPath) && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+            )}
+            title={runButtonTitle}
+          >
+            {titleRunActive ? <Square size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
+            <span>{titleRunActive ? '停止' : '运行'}</span>
+          </button>
+          {showRunProfileDropdown && (
+            <button
+              ref={runProfileMenuButtonRef}
+              type="button"
+              onClick={() => {
+                clearMenuCloseTimer()
+                setIdeMenuOpen(false)
+                setActiveMenu(null)
+                setRunProfileMenuOpen((open) => !open)
+              }}
+              disabled={!selectedProjectId || !activeProjectPath}
+              className={cn(
+                'flex h-7 w-6 items-center justify-center rounded-l-none rounded-r-[var(--radius-md)] border-l border-[var(--color-success)]/20 bg-[var(--color-success)]/14 text-[var(--color-success)] transition-colors duration-100 hover:bg-[var(--color-success)]/20',
+                (!selectedProjectId || !activeProjectPath) && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+              )}
+              aria-label="选择运行命令"
+              title="选择运行命令"
+            >
+              <ChevronDown size={12} className={cn('transition-transform', runProfileMenuOpen && 'rotate-180')} />
+            </button>
           )}
-          title={runButtonTitle}
-        >
-          {titleRunActive ? <Square size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
-          <span>{titleRunActive ? '停止' : '运行'}</span>
-        </button>
+        </div>
         <button
           type="button"
           role="switch"
@@ -1120,6 +1372,61 @@ export function TitleBar(): JSX.Element | null {
         </button>
       </div>
 
+      {runProfileMenuOpen && runProfileMenuRect && createPortal(
+        <>
+          <div className="no-drag fixed inset-0 z-[119]" onClick={() => setRunProfileMenuOpen(false)} />
+          <div
+            ref={runProfileMenuRef}
+            className="no-drag fixed z-[120] w-[280px] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-1 shadow-xl shadow-black/35"
+            style={{
+              top: runProfileMenuRect.bottom + 6,
+              left: Math.min(Math.max(8, runProfileMenuRect.right - 280), window.innerWidth - 288),
+            }}
+          >
+            {titleRunProfiles.map((profile) => {
+              const profileCommand = getRunProfileCommand(profile)
+
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  onClick={() => handleSelectRunProfileFromMenu(profile)}
+                  className="no-drag flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--color-bg-tertiary)]"
+                >
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[10px] font-semibold text-white"
+                    style={{ backgroundColor: profile.color }}
+                  >
+                    {profile.icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[var(--ui-font-sm)] font-medium text-[var(--color-text-primary)]">{profile.name}</span>
+                      {profile.runAsAdmin && <Shield size={11} className="shrink-0 text-[var(--color-warning)]" />}
+                    </span>
+                    <span className="block truncate font-mono text-[10px] text-[var(--color-text-tertiary)]">{profileCommand}</span>
+                  </span>
+                  <Play size={12} className="shrink-0 text-[var(--color-text-tertiary)]" fill="currentColor" />
+                </button>
+              )
+            })}
+            <div className="my-1 border-t border-[var(--color-border)]" />
+            <button
+              type="button"
+              onClick={() => {
+                setRunProfileMenuOpen(false)
+                setRunDialogOpen(true)
+              }}
+              className="no-drag flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--ui-font-sm)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+            >
+              <Settings size={13} />
+              管理运行命令
+            </button>
+          </div>
+        </>,
+        document.body,
+      )}
+
       {activeMenuDefinition && activeMenuRect && createPortal(
         <div
           ref={titleMenuPopupRef}
@@ -1159,9 +1466,11 @@ export function TitleBar(): JSX.Element | null {
       {runDialogOpen && selectedProject && (
         <TitleBarRunDialog
           projectName={selectedProject.name}
-          initialProfile={titleRunProfile}
+          profiles={titleRunProfiles}
           onClose={() => setRunDialogOpen(false)}
-          onSave={handleSaveRunProfile}
+          onAdd={handleAddRunProfile}
+          onUpdate={handleUpdateRunProfile}
+          onDelete={handleDeleteRunProfile}
         />
       )}
 

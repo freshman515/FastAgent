@@ -47,6 +47,7 @@ export interface LaunchAdminTerminalOptions {
   terminalShellMode?: TerminalShellMode
   terminalShellCommand?: string
   terminalShellArgs?: string[]
+  initialCommand?: string
 }
 export interface ShellLaunchResult {
   ok: boolean

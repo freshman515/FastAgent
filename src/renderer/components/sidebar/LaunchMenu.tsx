@@ -1,4 +1,4 @@
-import { Play, Plus, Edit3, Trash2, X, Check } from 'lucide-react'
+import { Play, Plus, Edit3, Trash2, X, Check, Shield } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ function ProfileEditor({ projectId, initial, onSave, onCancel }: {
   const [args, setArgs] = useState(initial?.args ?? '')
   const [cwd, setCwd] = useState(initial?.cwd ?? '')
   const [env, setEnv] = useState(initial?.env ?? '')
+  const [runAsAdmin, setRunAsAdmin] = useState(initial?.runAsAdmin ?? false)
   const [icon, setIcon] = useState(initial?.icon ?? '▶')
   const [color, setColor] = useState(initial?.color ?? '#3ecf7b')
 
@@ -61,6 +62,31 @@ function ProfileEditor({ projectId, initial, onSave, onCancel }: {
         <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">环境变量</span>
         <textarea value={env} onChange={(e) => setEnv(e.target.value)} placeholder="KEY=VALUE（每行一条）" rows={2} className={cn(INPUT, 'resize-none')} />
 
+        <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">权限</span>
+        <button
+          type="button"
+          onClick={() => setRunAsAdmin((current) => !current)}
+          className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-left text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-surface)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Shield size={12} className={runAsAdmin ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-tertiary)]'} />
+            <span className="truncate">以管理员身份运行</span>
+          </span>
+          <span
+            className={cn(
+              'relative h-4 w-7 shrink-0 rounded-full transition-colors',
+              runAsAdmin ? 'bg-[var(--color-warning)]' : 'bg-white/[0.08]',
+            )}
+          >
+            <span
+              className={cn(
+                'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white transition-transform',
+                runAsAdmin && 'translate-x-3',
+              )}
+            />
+          </span>
+        </button>
+
         <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">颜色</span>
         <div className="flex gap-1.5">
           {['#3ecf7b', '#5fa0f5', '#7c6aef', '#f0a23b', '#ef5757', '#61dafb', '#512bd4', '#8e8e96'].map((c) => (
@@ -77,7 +103,7 @@ function ProfileEditor({ projectId, initial, onSave, onCancel }: {
       <div className="flex justify-end gap-1.5 pt-1">
         <button onClick={onCancel} className="px-2 py-1 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">取消</button>
         <button
-          onClick={() => { if (name.trim() && command.trim()) onSave({ name, command, args, cwd, env, icon, color }) }}
+          onClick={() => { if (name.trim() && command.trim()) onSave({ name, command, args, cwd, env, runAsAdmin, icon, color }) }}
           disabled={!name.trim() || !command.trim()}
           className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1 text-[var(--ui-font-xs)] text-white hover:opacity-90 disabled:opacity-40"
         >
@@ -149,7 +175,10 @@ export function LaunchMenu({ projectId, projectPath, position, onClose }: Launch
                     <span className="shrink-0 text-sm" style={{ color: p.color }}>{p.icon}</span>
                     <div className="flex flex-col items-start min-w-0">
                       <span className="text-[var(--ui-font-xs)] font-medium text-[var(--color-text-primary)] truncate">{p.name}</span>
-                      <span className="text-[10px] text-[var(--color-text-tertiary)] truncate font-mono">{p.command} {p.args}</span>
+                      <span className="flex max-w-full items-center gap-1 text-[10px] text-[var(--color-text-tertiary)]">
+                        {p.runAsAdmin && <Shield size={10} className="shrink-0 text-[var(--color-warning)]" />}
+                        <span className="truncate font-mono">{p.command} {p.args}</span>
+                      </span>
                     </div>
                   </button>
                   <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

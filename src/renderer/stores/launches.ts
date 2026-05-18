@@ -8,6 +8,7 @@ export interface LaunchProfile {
   args: string
   cwd: string        // relative to project path, empty = project root
   env: string         // KEY=VALUE per line
+  runAsAdmin: boolean // run with elevated privileges on Windows
   icon: string        // emoji or short label
   color: string       // hex color
 }
@@ -49,6 +50,7 @@ function sanitize(raw: unknown): LaunchProfile | null {
     args: typeof o.args === 'string' ? o.args : '',
     cwd: typeof o.cwd === 'string' ? o.cwd : '',
     env: typeof o.env === 'string' ? o.env : '',
+    runAsAdmin: o.runAsAdmin === true,
     icon: typeof o.icon === 'string' ? o.icon : '▶',
     color: typeof o.color === 'string' ? o.color : '#3ecf7b',
   }

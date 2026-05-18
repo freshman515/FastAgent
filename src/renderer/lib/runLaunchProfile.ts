@@ -1,8 +1,10 @@
+import type { LaunchAdminTerminalOptions, SessionType } from '@shared/types'
 import { useLaunchesStore, type LaunchProfile } from '@/stores/launches'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
+import { parseCustomSessionArgs } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { startLaunchCompletionWatcher } from '@/lib/launchCompletionWatcher'
@@ -99,7 +101,19 @@ function createCompletionMarker(sessionId: string): string {
   return `PRAGMA_DESK_LAUNCH_DONE_${sessionId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-function waitAndSubmitCommand(sessionId: string, command: string, completionMarker: string, attempts = 0): void {
+function getAdminTerminalLaunchOptions(initialCommand: string): LaunchAdminTerminalOptions {
+  const settings = useUIStore.getState().settings
+  return {
+    terminalShellMode: settings.terminalShellMode,
+    terminalShellCommand: settings.terminalShellMode === 'custom' ? settings.terminalShellCommand : undefined,
+    terminalShellArgs: settings.terminalShellMode === 'custom'
+      ? parseCustomSessionArgs(settings.terminalShellArgs)
+      : undefined,
+    initialCommand,
+  }
+}
+
+function waitAndSubmitCommand(sessionId: string, command: string, completionMarker?: string, attempts = 0): void {
   if (attempts > 40) {
     useUIStore.getState().addToast({
       type: 'error',
@@ -111,6 +125,11 @@ function waitAndSubmitCommand(sessionId: string, command: string, completionMark
 
   const session = useSessionsStore.getState().sessions.find((item) => item.id === sessionId)
   if (session?.ptyId) {
+    if (!completionMarker) {
+      void window.api.session.submit(session.ptyId, command, true)
+      return
+    }
+
     startLaunchCompletionWatcher(sessionId, completionMarker)
     void resolveLaunchShellFamily()
       .then((family) => window.api.session.submit(session.ptyId!, appendCompletionMarker(command, completionMarker, family), true))
@@ -121,22 +140,19 @@ function waitAndSubmitCommand(sessionId: string, command: string, completionMark
   window.setTimeout(() => waitAndSubmitCommand(sessionId, command, completionMarker, attempts + 1), 250)
 }
 
-export function runLaunchProfile({ profile, projectPath, worktreeId, focus = true }: RunLaunchProfileOptions): string | null {
-  const command = buildShellInput(profile)
-  if (!command.trim()) {
-    useUIStore.getState().addToast({
-      type: 'warning',
-      title: '运行命令为空',
-      body: '请先设置运行命令。',
-    })
-    return null
-  }
-
-  const launchCwd = joinLaunchCwd(projectPath, profile.cwd)
+function createEmbeddedLaunchSession(
+  profile: LaunchProfile,
+  launchCwd: string,
+  command: string,
+  worktreeId: string | null | undefined,
+  focus: boolean,
+  sessionType: Extract<SessionType, 'terminal' | 'terminal-admin'>,
+  watchCompletion = true,
+): string {
   const sessionStore = useSessionsStore.getState()
   const previousActiveSessionId = sessionStore.activeSessionId
   const targetWorktreeId = worktreeId ?? getDefaultWorktreeIdForProject(profile.projectId)
-  const sessionId = sessionStore.addSession(profile.projectId, 'terminal', targetWorktreeId)
+  const sessionId = sessionStore.addSession(profile.projectId, sessionType, targetWorktreeId)
   sessionStore.updateSession(sessionId, {
     name: `${profile.icon} ${profile.name}`.trim(),
     color: profile.color,
@@ -164,7 +180,78 @@ export function runLaunchProfile({ profile, projectPath, worktreeId, focus = tru
     focusSessionTarget(sessionId)
   }
 
-  const completionMarker = createCompletionMarker(sessionId)
+  const completionMarker = watchCompletion ? createCompletionMarker(sessionId) : undefined
   window.setTimeout(() => waitAndSubmitCommand(sessionId, command, completionMarker), 300)
   return sessionId
+}
+
+async function runAdminLaunchProfile(
+  profile: LaunchProfile,
+  launchCwd: string,
+  command: string,
+  worktreeId: string | null | undefined,
+  focus: boolean,
+): Promise<void> {
+  const ui = useUIStore.getState()
+
+  try {
+    if (await window.api.shell.isElevated()) {
+      const sessionId = createEmbeddedLaunchSession(profile, launchCwd, command, worktreeId, focus, 'terminal-admin', false)
+      ui.addToast({
+        type: 'success',
+        title: '管理员运行已启动',
+        body: focus ? profile.name : `${profile.name} 已在后台运行，点击跳转到运行会话。`,
+        sessionId,
+        projectId: profile.projectId,
+        duration: 9000,
+      })
+      return
+    }
+
+    const result = await window.api.shell.openAdminTerminal(launchCwd, getAdminTerminalLaunchOptions(command))
+    if (result.ok) {
+      ui.addToast({
+        type: 'success',
+        title: '已打开管理员终端',
+        body: profile.name,
+        projectId: profile.projectId,
+        duration: 5000,
+      })
+      return
+    }
+
+    ui.addToast({
+      type: 'error',
+      title: '管理员运行启动失败',
+      body: result.error ?? '无法打开管理员终端。',
+      projectId: profile.projectId,
+    })
+  } catch (error) {
+    ui.addToast({
+      type: 'error',
+      title: '管理员运行启动失败',
+      body: error instanceof Error ? error.message : String(error),
+      projectId: profile.projectId,
+    })
+  }
+}
+
+export function runLaunchProfile({ profile, projectPath, worktreeId, focus = true }: RunLaunchProfileOptions): string | null {
+  const command = buildShellInput(profile)
+  if (!command.trim()) {
+    useUIStore.getState().addToast({
+      type: 'warning',
+      title: '运行命令为空',
+      body: '请先设置运行命令。',
+    })
+    return null
+  }
+
+  const launchCwd = joinLaunchCwd(projectPath, profile.cwd)
+  if (profile.runAsAdmin && window.api.platform === 'win32') {
+    void runAdminLaunchProfile(profile, launchCwd, command, worktreeId, focus)
+    return null
+  }
+
+  return createEmbeddedLaunchSession(profile, launchCwd, command, worktreeId, focus, 'terminal')
 }

@@ -33,18 +33,32 @@ function quoteCmdValue(value: string): string {
   return `"${value.replace(/"/g, '""')}"`
 }
 
-function buildAdminShellArgs(targetPath: string, shell: ReturnType<typeof detectShell>): string[] {
+function buildAdminShellArgs(
+  targetPath: string,
+  shell: ReturnType<typeof detectShell>,
+  initialCommand?: string,
+): string[] {
+  const command = initialCommand?.trim()
   if (shell.family === 'powershell') {
+    const startupCommand = [
+      `Set-Location -LiteralPath ${powerShellString(targetPath)}`,
+      command,
+    ].filter(Boolean).join('; ')
     return [
       ...shell.args,
       '-NoExit',
       '-Command',
-      `Set-Location -LiteralPath ${powerShellString(targetPath)}`,
+      startupCommand,
     ]
   }
 
   if (shell.family === 'cmd') {
-    return ['/K', `cd /d ${quoteCmdValue(targetPath)}`]
+    const cwdCommand = `cd /d ${quoteCmdValue(targetPath)}`
+    return ['/K', command ? `${cwdCommand} && ${command}` : cwdCommand]
+  }
+
+  if (command) {
+    return [...shell.args, '-lc', `${command}; exec bash -i`]
   }
 
   return shell.args
@@ -67,7 +81,7 @@ export async function openAdminTerminal(
     customCommand: options.terminalShellCommand,
     customArgs: options.terminalShellArgs,
   })
-  const args = buildAdminShellArgs(targetPath, shell)
+  const args = buildAdminShellArgs(targetPath, shell, options.initialCommand)
   const script = [
     '$ErrorActionPreference = "Stop"',
     `Start-Process -FilePath ${powerShellString(shell.shell)} -ArgumentList ${powerShellArray(args)} -WorkingDirectory ${powerShellString(targetPath)} -Verb RunAs`,
