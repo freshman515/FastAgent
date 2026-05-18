@@ -19,6 +19,7 @@ import type {
   FileSearchResult,
   HistoricalSessionDeleteResult,
   HistoricalSessionListResult,
+  LaunchAdminTerminalOptions,
   McpCloseSessionRequest,
   McpCloseSessionResponse,
   McpCreateSessionRequest,
@@ -34,6 +35,7 @@ import type {
   SessionDataEvent,
   SessionExitEvent,
   SessionReplayPayload,
+  ShellLaunchResult,
   TerminalShellAvailability,
   TerminalShellMode,
   VoiceLocalAsrServiceRequest,
@@ -137,6 +139,10 @@ const api = {
       ipcRenderer.invoke(IPC.SHELL_LIST_IDES) as Promise<ExternalIdeOption[]>,
     resolveTerminalShell: (mode: TerminalShellMode) =>
       ipcRenderer.invoke(IPC.SHELL_RESOLVE_TERMINAL_SHELL, mode) as Promise<TerminalShellAvailability>,
+    isElevated: () =>
+      ipcRenderer.invoke(IPC.SHELL_IS_ELEVATED) as Promise<boolean>,
+    openAdminTerminal: (path: string, options: LaunchAdminTerminalOptions) =>
+      ipcRenderer.invoke(IPC.SHELL_OPEN_ADMIN_TERMINAL, path, options) as Promise<ShellLaunchResult>,
   },
 
   session: {

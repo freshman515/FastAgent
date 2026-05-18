@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CanvasCard, NoteImage, SessionType } from '@shared/types'
+import { isTerminalSessionType, type CanvasCard, type NoteImage, type SessionType } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
@@ -206,7 +206,7 @@ export function CanvasWorkspace(): JSX.Element {
     const created = canvas.autoPopulateFromSessions(newIds, (id) => {
       if (id.startsWith('editor-')) return 'editor'
       const session = sessionsStore.sessions.find((s) => s.id === id)
-      return session?.type === 'terminal' || session?.type === 'terminal-wsl' ? 'terminal' : 'session'
+      return session && isTerminalSessionType(session.type) ? 'terminal' : 'session'
     })
 
     if (shouldFocusActiveTab && activeTabId) {
@@ -829,7 +829,7 @@ function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivEleme
   }
 
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = option.type === 'terminal' || option.type === 'terminal-wsl' || option.customSessionDefinitionId ? 'terminal' : 'session'
+  const cardKind = (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
   createSessionWithPrompt({

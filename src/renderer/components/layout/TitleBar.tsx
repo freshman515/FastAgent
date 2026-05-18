@@ -16,7 +16,7 @@ import { useWorktreesStore } from '@/stores/worktrees'
 import { useLaunchesStore, type LaunchProfile } from '@/stores/launches'
 import { MusicPlayer } from './MusicPlayer'
 import { TitleBarSearch } from './TitleBarSearch'
-import type { ExternalIdeOption } from '@shared/types'
+import { isTerminalSessionType, type ExternalIdeOption } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 
 type TitleMenuId = 'file' | 'edit' | 'view' | 'help'
@@ -129,6 +129,9 @@ function TitleBarRunDialog({
               onChange={(event) => setCommand(event.target.value)}
               className={RUN_DIALOG_INPUT}
               placeholder="pnpm dev"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               autoFocus
             />
           </label>
@@ -252,6 +255,7 @@ export function TitleBar(): JSX.Element | null {
   const workspaceLayout = useUIStore((s) => s.settings.workspaceLayout)
   const updateSettings = useUIStore((s) => s.updateSettings)
   const openSettings = useUIStore((s) => s.openSettings)
+  const settingsOpen = useUIStore((s) => s.settingsOpen)
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
   const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
   const hideStatusBar = useUIStore((s) => s.hideStatusBar)
@@ -368,10 +372,10 @@ export function TitleBar(): JSX.Element | null {
   const runButtonTitle = !selectedProjectId
     ? '请先选择项目'
     : titleRunActive
-      ? `停止运行：${titleRunProfile?.name ?? titleRunSession?.name ?? '运行会话'}`
+      ? `停止运行：${titleRunProfile?.name ?? titleRunSession?.name ?? '运行会话'}（F5）`
       : titleRunProfile
-      ? `运行：${titleRunProfile.name}（右键设置）`
-      : '设置运行命令'
+      ? `运行：${titleRunProfile.name}（F5，右键设置）`
+      : '设置运行命令（F5）'
   const defaultCustomSession = defaultCustomSessionId
     ? customSessionDefinitions.find((definition) => definition.id === defaultCustomSessionId)
     : null
@@ -499,6 +503,25 @@ export function TitleBar(): JSX.Element | null {
     titleRunState,
   ])
 
+  useEffect(() => {
+    const handleRunShortcut = (event: KeyboardEvent): void => {
+      if (event.key !== 'F5' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+
+      if (event.repeat || runDialogOpen || settingsOpen) return
+      clearMenuCloseTimer()
+      setIdeMenuOpen(false)
+      setActiveMenu(null)
+      handleRunButtonClick()
+    }
+
+    window.addEventListener('keydown', handleRunShortcut, true)
+    return () => window.removeEventListener('keydown', handleRunShortcut, true)
+  }, [clearMenuCloseTimer, handleRunButtonClick, runDialogOpen, settingsOpen])
+
   const handleRunButtonContextMenu = useCallback((event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     if (!selectedProjectId) {
@@ -569,7 +592,7 @@ export function TitleBar(): JSX.Element | null {
     addToast({
       type: 'info',
       title: '快捷键',
-      body: 'Ctrl+Tab 切换标签，Ctrl+W 关闭标签，Ctrl+Shift+T 恢复关闭，Ctrl+Alt+方向键切换分栏，Alt+1~9 切换 pane。',
+      body: 'F5 运行/停止，Ctrl+Tab 切换标签，Ctrl+W 关闭标签，Ctrl+Shift+T 恢复关闭，Ctrl+Alt+方向键切换分栏，Alt+1~9 切换 pane。',
       duration: 9000,
     })
   }, [addToast])
@@ -589,7 +612,7 @@ export function TitleBar(): JSX.Element | null {
         items: [
           {
             icon: Plus,
-            label: `新建${defaultCustomSession?.name ?? ((defaultSessionType === 'terminal' || defaultSessionType === 'terminal-wsl') ? '终端' : '默认会话')}`,
+            label: `新建${defaultCustomSession?.name ?? (isTerminalSessionType(defaultSessionType) ? '终端' : '默认会话')}`,
             onSelect: handleCreateDefaultSession,
             disabled: !selectedProjectId,
           },
@@ -874,7 +897,7 @@ export function TitleBar(): JSX.Element | null {
             titleRunActive
               ? 'bg-[var(--color-error)]/14 text-[var(--color-error)] hover:bg-[var(--color-error)]/20'
               : titleRunProfile
-                ? 'bg-[var(--color-accent)]/14 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20'
+                ? 'bg-[var(--color-success)]/14 text-[var(--color-success)] hover:bg-[var(--color-success)]/20'
                 : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]',
             (!selectedProjectId || !activeProjectPath) && 'cursor-not-allowed opacity-50 hover:bg-transparent',
           )}

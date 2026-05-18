@@ -15,8 +15,9 @@ import { claudeGuiService } from './services/ClaudeGuiService'
 import { updaterService } from './services/UpdaterService'
 import { orchestratorService } from './services/OrchestratorService'
 import { installBundledSkills } from './services/SkillInstaller'
-import { isCodexType, type SessionType } from '@shared/types'
+import { isCodexType, type AppLaunchMode, type SessionType } from '@shared/types'
 import { configureAppPaths, shouldRegisterGlobalAgentConfig } from './services/AppPaths'
+import { ADMIN_RELAUNCH_ARG, isCurrentProcessElevated, relaunchCurrentApplicationAsAdmin } from './services/TerminalLauncher'
 
 configureAppPaths()
 
@@ -176,6 +177,27 @@ function getStartupWindowState(): StartupWindowState {
   return config.ui.startupWindowState === 'normal' ? 'normal' : 'maximized'
 }
 
+function getAppLaunchMode(): AppLaunchMode {
+  const config = readConfig()
+  return config.ui.appLaunchMode === 'admin' ? 'admin' : 'normal'
+}
+
+async function relaunchAsAdminIfConfigured(): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  if (process.argv.includes(ADMIN_RELAUNCH_ARG)) return false
+  if (getAppLaunchMode() !== 'admin') return false
+  if (isCurrentProcessElevated()) return false
+
+  const result = await relaunchCurrentApplicationAsAdmin()
+  if (!result.ok) {
+    console.warn('[startup] failed to relaunch as administrator:', result.error)
+    return false
+  }
+
+  app.exit(0)
+  return true
+}
+
 function createWindow(): void {
   const startupWindowState = getStartupWindowState()
   const isMac = process.platform === 'darwin'
@@ -236,6 +258,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  if (await relaunchAsAdminIfConfigured()) return
+
   installExternalProtocolGuards()
   installBundledSkills()
   registerAllHandlers()

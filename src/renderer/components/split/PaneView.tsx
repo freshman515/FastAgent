@@ -22,6 +22,7 @@ import { EditorView } from '@/components/session/EditorView'
 import { NoteSessionView } from '@/components/session/NoteSessionView'
 import { EmptyState } from '@/components/session/EmptyState'
 import { ClaudeCodePanel } from '@/components/rightpanel/ClaudeCodePanel'
+import { isTerminalSessionType, type SessionType } from '@shared/types'
 
 interface PaneViewProps {
   paneId: string
@@ -180,7 +181,7 @@ const PANE_TAB_GROUP_LABEL: Record<PaneTabGroup, string> = {
 
 function getSessionTabGroup(type: string): PaneTabGroup {
   if (type === 'note') return 'note'
-  if (type === 'terminal' || type === 'terminal-wsl') return 'terminal'
+  if (isTerminalSessionType(type as SessionType)) return 'terminal'
   if (type === 'browser') return 'browser'
   if (type.startsWith('claude')) return 'claude'
   if (type.startsWith('codex')) return 'codex'

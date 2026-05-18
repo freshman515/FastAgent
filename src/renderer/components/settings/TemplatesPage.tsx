@@ -9,6 +9,7 @@ import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes
 const SESSION_TYPES: Array<{ value: SessionType; label: string }> = [
   { value: 'browser', label: 'Browser' },
   { value: 'terminal', label: 'Terminal' },
+  { value: 'terminal-admin', label: 'Terminal(Admin)' },
   { value: 'terminal-wsl', label: 'Terminal(WSL)' },
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'claude-code-yolo', label: 'Claude Code YOLO' },

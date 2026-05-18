@@ -1,4 +1,4 @@
-import type { SessionType } from '@shared/types'
+import { isTerminalSessionType, type SessionType } from '@shared/types'
 import claudeIcon from '@/assets/icons/Claude.png'
 import codexDarkIcon from '@/assets/icons/codex_white.svg'
 import codexLightIcon from '@/assets/icons/codex_black.svg'
@@ -21,11 +21,12 @@ const TYPE_ICONS: Record<string, string> = {
   'gemini-yolo': geminiIcon,
   opencode: opencodeIcon,
   note: noteIcon,
+  'terminal-admin': terminalIconDark,
   'terminal-wsl': terminalIconDark,
 }
 
 export function getSessionIcon(type: SessionType, isDarkTheme: boolean): string {
-  if (type === 'terminal' || type === 'terminal-wsl') return isDarkTheme ? terminalIconDark : terminalIconLight
+  if (isTerminalSessionType(type)) return isDarkTheme ? terminalIconDark : terminalIconLight
   if (type === 'codex' || type === 'codex-yolo' || type === 'codex-wsl' || type === 'codex-yolo-wsl') return isDarkTheme ? codexDarkIcon : codexLightIcon
   return TYPE_ICONS[type] ?? claudeIcon
 }

@@ -16,6 +16,7 @@ import { createPragmaDeskMcpConfig, ensurePragmaDeskMcpBridgePath } from './Prag
 import { windowsPathToWslPath } from './WslPath'
 import { createClaudeHookSettingsFile } from './HookInstaller'
 import { shouldRegisterGlobalAgentConfig } from './AppPaths'
+import { isCurrentProcessElevated } from './TerminalLauncher'
 
 const isWindows = process.platform === 'win32'
 const HeadlessTerminal = (headlessPkg as { Terminal: new (options?: Record<string, unknown>) => import('@xterm/headless').Terminal }).Terminal
@@ -594,6 +595,15 @@ export class PtyManager {
     }
 
     assertValidCwd(options.cwd, options.type)
+
+    if (options.type === 'terminal-admin') {
+      if (!isWindows) {
+        throw new Error('Terminal(Admin) 目前只支持 Windows。')
+      }
+      if (!isCurrentProcessElevated()) {
+        throw new Error('Terminal(Admin) 需要 Pragma Desk 本身已以管理员身份运行。请退出后右键 Pragma Desk 选择“以管理员身份运行”，再创建管理员终端。')
+      }
+    }
 
     const id = `pty-${++this.idCounter}-${Date.now()}`
     const shell = detectShell({

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Session, SessionStatus, SessionType } from '@shared/types'
-import { SESSION_TYPE_CONFIG, isClaudeCodeType } from '@shared/types'
+import { SESSION_TYPE_CONFIG, isClaudeCodeType, isTerminalSessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getTerminalBufferText } from '@/hooks/useXterm'
 import { usePanesStore } from '@/stores/panes'
@@ -439,7 +439,7 @@ export function AgentMonitor(): JSX.Element {
     )
   }
 
-  const showAgentSpecific = activeSession.type !== 'terminal' && activeSession.type !== 'terminal-wsl'
+  const showAgentSpecific = !isTerminalSessionType(activeSession.type)
   const showClaudeSpecific = isClaudeCodeType(activeSession.type)
 
   return (

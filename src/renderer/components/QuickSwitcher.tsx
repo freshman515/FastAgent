@@ -28,6 +28,7 @@ const TYPE_ICONS: Record<string, string> = {
   'gemini-yolo': geminiIcon,
   opencode: opencodeIcon,
   terminal: terminalIcon,
+  'terminal-admin': terminalIcon,
   'terminal-wsl': terminalIcon,
 }
 

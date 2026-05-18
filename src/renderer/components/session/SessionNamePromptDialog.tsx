@@ -150,20 +150,20 @@ export function SessionNamePromptDialog(): JSX.Element | null {
           </label>
 
           {/* Footer */}
-          <div className="mt-4 flex items-center justify-between gap-2">
+          <div className="mt-4 flex items-center justify-between gap-3">
             <button
               onClick={handleUseDefault}
               className={cn(
-                'flex items-center gap-1.5 rounded-[var(--radius-md)] px-2.5 py-1.5',
+                'flex min-w-0 items-center gap-1.5 rounded-[var(--radius-md)] px-2.5 py-1.5',
                 'text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]',
                 'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors',
               )}
             >
-              <Sparkles size={13} />
-              使用默认名称
+              <Sparkles size={13} className="shrink-0" />
+              <span className="truncate">使用默认名称</span>
             </button>
-            <div className="flex items-center gap-2">
-              <span className="hidden text-[10px] text-[var(--color-text-tertiary)] sm:inline">
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="hidden shrink-0 text-[10px] text-[var(--color-text-tertiary)] sm:inline">
                 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-1 font-mono">Esc</kbd>
                 <span className="mx-1">·</span>
                 <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-1 font-mono">Enter</kbd>
@@ -171,7 +171,7 @@ export function SessionNamePromptDialog(): JSX.Element | null {
               <button
                 onClick={handleCancel}
                 className={cn(
-                  'rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-1.5',
+                  'h-9 min-w-[64px] whitespace-nowrap rounded-[var(--radius-md)] border border-[var(--color-border)] px-4',
                   'text-[var(--ui-font-sm)] text-[var(--color-text-secondary)]',
                   'hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors',
                 )}
@@ -182,7 +182,7 @@ export function SessionNamePromptDialog(): JSX.Element | null {
                 onClick={handleSubmit}
                 autoFocus
                 className={cn(
-                  'rounded-[var(--radius-md)] px-4 py-1.5 text-[var(--ui-font-sm)] font-medium',
+                  'h-9 min-w-[88px] whitespace-nowrap rounded-[var(--radius-md)] px-4 text-[var(--ui-font-sm)] font-medium',
                   'bg-[var(--color-accent)] text-white shadow-md shadow-[var(--color-accent)]/25',
                   'hover:bg-[var(--color-accent-hover)] hover:shadow-[var(--color-accent)]/35',
                   'transition-all duration-100',

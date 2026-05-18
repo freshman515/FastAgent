@@ -30,6 +30,7 @@ export interface NewSessionOption {
 
 export const SESSION_OPTIONS: SessionOption[] = [
   { type: 'terminal', label: 'Terminal', icon: terminalIcon },
+  { type: 'terminal-admin', label: 'Terminal(Admin)', icon: terminalIcon },
   { type: 'terminal-wsl', label: 'Terminal(WSL)', icon: terminalIcon },
   { type: 'browser', label: 'Browser', icon: browserIcon },
   { type: 'claude-code', label: 'Claude', icon: claudeIcon },

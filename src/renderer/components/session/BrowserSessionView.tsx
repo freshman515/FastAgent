@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Camera, Check, Clipboard, ExternalLink, FileText, Home, LoaderCircle, RotateCw, Send, ShieldAlert, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DEFAULT_BROWSER_URL, type Session } from '@shared/types'
+import { DEFAULT_BROWSER_URL, isTerminalSessionType, type Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
@@ -116,7 +116,7 @@ function isAbortedNavigationError(error: unknown): boolean {
 function isBrowserContextTarget(session: Session, sourceSession: Session): boolean {
   if (session.id === sourceSession.id || session.projectId !== sourceSession.projectId || !session.ptyId) return false
   if (session.type === 'browser' || session.type === 'claude-gui') return false
-  if (session.type === 'terminal' || session.type === 'terminal-wsl') return Boolean(session.customSessionCommand)
+  if (isTerminalSessionType(session.type)) return Boolean(session.customSessionCommand)
   return true
 }
 

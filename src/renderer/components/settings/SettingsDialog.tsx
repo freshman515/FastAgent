@@ -1,7 +1,7 @@
 import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
-import type { AppInfo, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
+import type { AppInfo, AppLaunchMode, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
 import { cn, generateId } from '@/lib/utils'
 import {
   CANVAS_DIRECTORY_CARD_HEIGHT_MAX,
@@ -97,6 +97,11 @@ const TERMINAL_SHELL_OPTIONS: Array<{ id: TerminalShellMode; label: string; desc
   { id: 'cmd', label: 'CMD', desc: '使用 cmd.exe 启动' },
   { id: 'gitbash', label: 'Git Bash', desc: '使用 Git for Windows 的 bash.exe 启动' },
   { id: 'custom', label: '自定义', desc: '指定自己的 shell 路径和参数' },
+]
+
+const APP_LAUNCH_MODE_OPTIONS: Array<{ id: AppLaunchMode; label: string; desc: string }> = [
+  { id: 'normal', label: '普通启动', desc: '默认不主动请求管理员权限' },
+  { id: 'admin', label: '管理员启动', desc: '下次启动时弹 UAC 并重启为管理员进程' },
 ]
 
 const LOCAL_ASR_SHORTCUT_LABEL = 'Ctrl+Alt+V'
@@ -400,6 +405,7 @@ function SegmentedChoice<T extends string>({ value, options, onChange }: {
 const SESSION_TYPE_OPTIONS = [
   { id: 'browser', label: 'Browser' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'terminal-admin', label: 'Terminal(Admin)' },
   { id: 'terminal-wsl', label: 'Terminal(WSL)' },
   { id: 'claude-code', label: 'Claude Code' },
   { id: 'claude-code-yolo', label: 'Claude Code YOLO' },
@@ -417,6 +423,22 @@ const SESSION_TYPE_OPTIONS = [
 function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   const groups = useGroupsStore((s) => s.groups)
   const [confirmClearSessionsOpen, setConfirmClearSessionsOpen] = useState(false)
+  const [isElevated, setIsElevated] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    if (!isWindowsPlatform()) return
+    let cancelled = false
+    window.api.shell.isElevated()
+      .then((value) => {
+        if (!cancelled) setIsElevated(value)
+      })
+      .catch(() => {
+        if (!cancelled) setIsElevated(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const clearAllSessions = useCallback(() => {
     const sessions = useSessionsStore.getState().sessions
@@ -481,6 +503,19 @@ function GeneralPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: 
             onChange={(v) => onUpdate('startupWindowState', v)}
           />
         </div>
+        {isWindowsPlatform() && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">默认启动权限</span>
+            <SegmentedChoice
+              value={settings.appLaunchMode}
+              options={APP_LAUNCH_MODE_OPTIONS}
+              onChange={(v) => onUpdate('appLaunchMode', v)}
+            />
+            <span className="text-[10px] leading-snug text-[var(--color-text-tertiary)]">
+              当前进程：{isElevated === null ? '无法检测' : isElevated ? '管理员' : '普通'}。修改后下次启动生效；手动“以管理员身份运行”仍会按系统选择启动。
+            </span>
+          </div>
+        )}
       </SettingsSection>
 
       <SettingsSection icon={Trash2} title="数据清理" description="清空全部会话标签与分栏布局。项目、分组、主题会保留。">
@@ -1723,6 +1758,23 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
         />
       </SettingsSection>
 
+      {/* Interface */}
+      <div className="h-px bg-[var(--color-border)]" />
+      <div className="flex items-center gap-2 mb-1">
+        <Type size={14} className="text-[var(--color-accent)]" />
+        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          界面字体
+        </span>
+      </div>
+      <FontSizeSlider label="字号" value={settings.uiFontSize} min={11} max={18} onChange={(v) => onUpdate('uiFontSize', v)} />
+      <FontSelect label="字体" value={settings.uiFontFamily} options={UI_FONT_OPTIONS} labels={UI_FONT_LABELS} onChange={(v) => onUpdate('uiFontFamily', v)} />
+      <div
+        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2"
+        style={{ fontSize: settings.uiFontSize, fontFamily: settings.uiFontFamily }}
+      >
+        <span className="text-[var(--color-text-secondary)]">预览：界面层级、按钮标题和说明文字都会使用这里的设置。</span>
+      </div>
+
       {/* Theme header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -1844,23 +1896,6 @@ function AppearancePage({ settings, onUpdate }: { settings: AppSettings; onUpdat
             </button>
           </div>
         ))}
-      </div>
-
-      {/* Interface */}
-      <div className="h-px bg-[var(--color-border)]" />
-      <div className="flex items-center gap-2 mb-1">
-        <Type size={14} className="text-[var(--color-accent)]" />
-        <span className="text-[var(--ui-font-sm)] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-          界面字体
-        </span>
-      </div>
-      <FontSizeSlider label="字号" value={settings.uiFontSize} min={11} max={18} onChange={(v) => onUpdate('uiFontSize', v)} />
-      <FontSelect label="字体" value={settings.uiFontFamily} options={UI_FONT_OPTIONS} labels={UI_FONT_LABELS} onChange={(v) => onUpdate('uiFontFamily', v)} />
-      <div
-        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2"
-        style={{ fontSize: settings.uiFontSize, fontFamily: settings.uiFontFamily }}
-      >
-        <span className="text-[var(--color-text-secondary)]">预览：界面层级、按钮标题和说明文字都会使用这里的设置。</span>
       </div>
     </div>
   )
@@ -2873,7 +2908,7 @@ export function SettingsDialog(): JSX.Element | null {
 
   useEffect(() => {
     if (isWindowsPlatform()) return
-    if (settings.defaultSessionType.includes('wsl')) {
+    if (settings.defaultSessionType.includes('wsl') || settings.defaultSessionType === 'terminal-admin') {
       updateSettings({ defaultSessionType: 'terminal' })
     }
   }, [settings.defaultSessionType, updateSettings])

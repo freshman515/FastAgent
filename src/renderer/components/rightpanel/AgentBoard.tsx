@@ -66,6 +66,7 @@ const SESSION_TYPE_OPTIONS: Array<{ id: BoardSessionType; label: string }> = [
   { id: 'gemini-yolo', label: SESSION_TYPE_CONFIG['gemini-yolo'].label },
   { id: 'opencode', label: SESSION_TYPE_CONFIG.opencode.label },
   { id: 'terminal', label: SESSION_TYPE_CONFIG.terminal.label },
+  { id: 'terminal-admin', label: SESSION_TYPE_CONFIG['terminal-admin'].label },
   { id: 'terminal-wsl', label: SESSION_TYPE_CONFIG['terminal-wsl'].label },
 ]
 const VISIBLE_SESSION_TYPE_OPTIONS = filterSessionTypesForCurrentPlatform(SESSION_TYPE_OPTIONS)

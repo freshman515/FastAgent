@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Session } from '@shared/types'
+import { isTerminalSessionType, type Session } from '@shared/types'
 import { cn } from '@/lib/utils'
 import {
   addTodoForProject,
@@ -117,7 +117,7 @@ export function SessionTab({
     (e?: React.MouseEvent) => {
       e?.stopPropagation()
       if (session.pinned) return
-      if (session.ptyId && session.type !== 'terminal' && session.type !== 'terminal-wsl' && session.status === 'running') {
+      if (session.ptyId && !isTerminalSessionType(session.type) && session.status === 'running') {
         setShowCloseConfirm(true)
         return
       }

@@ -41,7 +41,7 @@ import { useActivityMonitor } from '@/hooks/useActivityMonitor'
 import { useMcpBridge } from '@/hooks/useMcpBridge'
 import { updateAgentStatus } from '@/components/rightpanel/agentRuntime'
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { isClaudeCodeType, SESSION_TYPE_CONFIG, type ClaudeGuiEvent, type Session } from '@shared/types'
+import { isClaudeCodeType, isTerminalSessionType, SESSION_TYPE_CONFIG, type ClaudeGuiEvent, type Session } from '@shared/types'
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { cn } from '@/lib/utils'
@@ -101,7 +101,7 @@ const PANE_COMMAND_SHORTCUTS: Array<{ key: string; label: string }> = [
 ]
 
 function getPaneCommandGroupForSession(type: string): PaneCommandTabGroup {
-  if (type === 'terminal' || type === 'terminal-wsl') return 'terminal'
+  if (isTerminalSessionType(type as Session['type'])) return 'terminal'
   if (type === 'browser') return 'browser'
   if (type.startsWith('claude')) return 'claude'
   if (type.startsWith('codex')) return 'codex'

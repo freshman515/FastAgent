@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react'
-import { SESSION_TYPE_CONFIG, type CanvasCard } from '@shared/types'
+import { isTerminalSessionType, SESSION_TYPE_CONFIG, type CanvasCard } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
@@ -1277,7 +1277,7 @@ function createCanvasSessionAtCenter(
   }
 
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = option.type === 'terminal' || option.type === 'terminal-wsl' || option.customSessionDefinitionId ? 'terminal' : 'session'
+  const cardKind = (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
   createSessionWithPrompt({

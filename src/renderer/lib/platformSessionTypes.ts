@@ -1,6 +1,7 @@
 import { isWslSessionType, type SessionType } from '@shared/types'
 
 export function isSessionTypeAvailableOnCurrentPlatform(type: SessionType): boolean {
+  if (type === 'terminal-admin') return window.api.platform === 'win32'
   if (isWslSessionType(type)) return window.api.platform === 'win32'
   return true
 }

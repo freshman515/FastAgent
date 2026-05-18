@@ -464,7 +464,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import type { NoteImage, Session, SessionDataEvent } from '@shared/types'
-import { isClaudeCodeType, isCodexType, isGeminiType, isWslSessionType } from '@shared/types'
+import { isClaudeCodeType, isCodexType, isGeminiType, isTerminalSessionType, isWslSessionType } from '@shared/types'
 import { useSessionsStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useUIStore } from '@/stores/ui'
@@ -1250,7 +1250,7 @@ export function useXterm(
     // "Paste" action so both paths record undo chunks and share the image /
     // text dispatch logic for Claude Code / Codex.
     const pasteFromClipboard = async (): Promise<void> => {
-      if (sessionType === 'terminal' || sessionType === 'terminal-wsl') {
+      if (isTerminalSessionType(sessionType)) {
         try {
           const text = await navigator.clipboard.readText()
           if (!text) return
@@ -1387,7 +1387,7 @@ export function useXterm(
       // - claude-code / codex: pop last undo-stack entry and send that many backspaces
       if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === 'z') {
         if (ptyId) {
-          if (sessionType === 'terminal' || sessionType === 'terminal-wsl') {
+          if (isTerminalSessionType(sessionType)) {
             window.api.session.write(ptyId, '\x1f')
           } else if (undoStack.length > 0) {
             const last = undoStack.pop()!
@@ -1424,7 +1424,7 @@ export function useXterm(
         trackPotentialQuestionInput(data)
         trackPendingComposerInput(data)
         // Track individual keystrokes for non-terminal sessions (pastes are tracked at call site)
-        if (sessionType !== 'terminal' && sessionType !== 'terminal-wsl' && data.length === 1) {
+        if (!isTerminalSessionType(sessionType) && data.length === 1) {
           const code = data.charCodeAt(0)
           if (code >= 32 && code !== 127) {
             undoStack.push(data)

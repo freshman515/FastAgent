@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_FUNASR_WS_ENDPOINT, LEGACY_DEFAULT_VOICE_API_ENDPOINT } from '@shared/types'
-import type { AgentSessionType, SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrStartupAction, WorkspaceLayout } from '@shared/types'
+import type { AgentSessionType, AppLaunchMode, SessionType, TerminalShellMode, ToastNotification, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrStartupAction, WorkspaceLayout } from '@shared/types'
 import { generateId } from '@/lib/utils'
 import { applyTerminalThemeToApp, clearTerminalThemeFromApp, registerCustomThemes, type GhosttyTheme } from '@/lib/ghosttyTheme'
 import { restoreSelectedProjectPaneLayout } from '@/lib/project-context'
@@ -86,6 +86,10 @@ function normalizeTerminalShellMode(raw: unknown): TerminalShellMode {
     || raw === 'custom'
     ? raw
     : DEFAULT_SETTINGS.terminalShellMode
+}
+
+function normalizeAppLaunchMode(raw: unknown): AppLaunchMode {
+  return raw === 'admin' || raw === 'normal' ? raw : DEFAULT_SETTINGS.appLaunchMode
 }
 
 function normalizeVoiceInputMode(raw: unknown): VoiceInputMode {
@@ -291,7 +295,7 @@ export interface AppSettings {
   editorSyntaxCheck: boolean
   visibleGroupId: string | null // null = show all groups
   visibleProjectId: string | null // null = show all projects
-  defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'terminal' | 'terminal-wsl' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode'
+  defaultSessionType: 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'terminal' | 'terminal-admin' | 'terminal-wsl' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode'
   /** When set, default creation uses a custom launcher instead of defaultSessionType. */
   defaultCustomSessionId: string | null
   customSessionDefinitions: CustomSessionDefinition[]
@@ -344,6 +348,8 @@ export interface AppSettings {
   titleBarMenuVisibility: 'always' | 'hover'
   titleBarSearchScope: 'project' | 'all-projects'
   startupWindowState: 'maximized' | 'normal'
+  /** Default process privilege for the next app launch on Windows. */
+  appLaunchMode: AppLaunchMode
   gitChangesViewMode: GitChangesViewMode
   gitReviewMode: GitReviewMode
   gitReviewFixMode: GitReviewFixMode
@@ -501,6 +507,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   titleBarMenuVisibility: 'always',
   titleBarSearchScope: 'project',
   startupWindowState: 'maximized',
+  appLaunchMode: 'normal',
   gitChangesViewMode: 'tree',
   gitReviewMode: 'codex',
   gitReviewFixMode: 'claude-gui',
@@ -996,6 +1003,7 @@ function isAgentBoardSessionType(value: unknown): value is AgentBoardItem['sessi
     || value === 'gemini-yolo'
     || value === 'opencode'
     || value === 'terminal'
+    || value === 'terminal-admin'
     || value === 'terminal-wsl'
 }
 
@@ -1721,7 +1729,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.editorSyntaxCheck === 'boolean') s.editorSyntaxCheck = raw.editorSyntaxCheck
       if (raw.visibleGroupId === null || typeof raw.visibleGroupId === 'string') s.visibleGroupId = raw.visibleGroupId as string | null
       if (raw.visibleProjectId === null || typeof raw.visibleProjectId === 'string') s.visibleProjectId = raw.visibleProjectId as string | null
-      if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'terminal', 'terminal-wsl', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
+      if (typeof raw.defaultSessionType === 'string' && ['browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'terminal', 'terminal-admin', 'terminal-wsl', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode'].includes(raw.defaultSessionType)) s.defaultSessionType = raw.defaultSessionType as AppSettings['defaultSessionType']
       if (raw.customSessionDefinitions !== undefined) {
         const normalizedCustomSessions = normalizeCustomSessionDefinitions(raw.customSessionDefinitions)
         s.customSessionDefinitions = normalizedCustomSessions.definitions
@@ -1800,6 +1808,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (raw.startupWindowState === 'maximized' || raw.startupWindowState === 'normal') {
         s.startupWindowState = raw.startupWindowState
       }
+      s.appLaunchMode = normalizeAppLaunchMode(raw.appLaunchMode)
       if (raw.gitChangesViewMode === 'flat' || raw.gitChangesViewMode === 'tree') {
         s.gitChangesViewMode = raw.gitChangesViewMode
       }
@@ -2005,6 +2014,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   updateSettings: (updates) => {
     const settings = normalizeCanvasFocusFontSettings({ ...get().settings, ...updates })
     settings.terminalShellMode = normalizeTerminalShellMode(settings.terminalShellMode)
+    settings.appLaunchMode = normalizeAppLaunchMode(settings.appLaunchMode)
     settings.terminalShellCommand = settings.terminalShellCommand.trim()
     settings.voiceInputMode = normalizeVoiceInputMode(settings.voiceInputMode)
     settings.voiceApiUrl = settings.voiceApiUrl.trim()

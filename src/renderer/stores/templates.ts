@@ -3,7 +3,7 @@ import type { SessionTemplate, SessionTemplateItem, SessionType } from '@shared/
 import { generateId } from '@/lib/utils'
 
 const VALID_SESSION_TYPES: SessionType[] = [
-  'browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'claude-gui', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode', 'terminal', 'terminal-wsl',
+  'browser', 'claude-code', 'claude-code-yolo', 'claude-code-wsl', 'claude-code-yolo-wsl', 'claude-gui', 'codex', 'codex-yolo', 'codex-wsl', 'codex-yolo-wsl', 'gemini', 'gemini-yolo', 'opencode', 'terminal', 'terminal-admin', 'terminal-wsl',
 ]
 
 function sanitizeItem(item: unknown): SessionTemplateItem | null {

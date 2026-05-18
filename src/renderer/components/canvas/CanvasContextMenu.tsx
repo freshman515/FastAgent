@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import type { CanvasCard, CanvasRelationDirection, CanvasRelationKind, SessionType } from '@shared/types'
+import { isTerminalSessionType, type CanvasCard, type CanvasRelationDirection, type CanvasRelationKind, type SessionType } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
@@ -398,7 +398,7 @@ function createCanvasSession(
   targetSpaceId?: string,
 ): void {
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = type === 'terminal' || type === 'terminal-wsl' || customSessionDefinitionId ? 'terminal' : 'session'
+  const cardKind = (type && isTerminalSessionType(type)) || customSessionDefinitionId ? 'terminal' : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
   createSessionWithPrompt({ projectId, type, customSessionDefinitionId, worktreeId }, (sessionId) => {

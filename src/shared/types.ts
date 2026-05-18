@@ -33,14 +33,24 @@ export interface Project {
 
 export const UNGROUPED_PROJECT_GROUP_ID = '__ungrouped__'
 
-export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'claude-gui' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal' | 'terminal-wsl' | 'note'
-export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal' | 'terminal-wsl' | 'note'>
-export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'note'>
+export type SessionType = 'browser' | 'claude-code' | 'claude-code-yolo' | 'claude-code-wsl' | 'claude-code-yolo-wsl' | 'claude-gui' | 'codex' | 'codex-yolo' | 'codex-wsl' | 'codex-yolo-wsl' | 'gemini' | 'gemini-yolo' | 'opencode' | 'terminal' | 'terminal-admin' | 'terminal-wsl' | 'note'
+export type AgentSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'terminal' | 'terminal-admin' | 'terminal-wsl' | 'note'>
+export type McpCreatableSessionType = Exclude<SessionType, 'browser' | 'claude-gui' | 'note' | 'terminal-admin'>
 export type TerminalShellMode = 'auto' | 'pwsh' | 'powershell' | 'cmd' | 'gitbash' | 'custom'
+export type AppLaunchMode = 'normal' | 'admin'
 export interface TerminalShellAvailability {
   available: boolean
   shell: string | null
   reason?: string
+}
+export interface LaunchAdminTerminalOptions {
+  terminalShellMode?: TerminalShellMode
+  terminalShellCommand?: string
+  terminalShellArgs?: string[]
+}
+export interface ShellLaunchResult {
+  ok: boolean
+  error?: string
 }
 export const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 
@@ -58,7 +68,7 @@ export function isWslSessionType(type: SessionType): boolean {
 }
 
 export function isTerminalSessionType(type: SessionType): boolean {
-  return type === 'terminal' || type === 'terminal-wsl'
+  return type === 'terminal' || type === 'terminal-admin' || type === 'terminal-wsl'
 }
 
 export function isGeminiType(type: SessionType): boolean {
@@ -1027,6 +1037,8 @@ export const IPC = {
   SHELL_OPEN_IN_IDE: 'shell:open-in-ide',
   SHELL_LIST_IDES: 'shell:list-ides',
   SHELL_RESOLVE_TERMINAL_SHELL: 'shell:resolve-terminal-shell',
+  SHELL_IS_ELEVATED: 'shell:is-elevated',
+  SHELL_OPEN_ADMIN_TERMINAL: 'shell:open-admin-terminal',
 
   CLAUDE_GUI_START: 'claude-gui:start',
   CLAUDE_GUI_STOP: 'claude-gui:stop',
@@ -1068,6 +1080,7 @@ export const SESSION_TYPE_CONFIG: Record<
   'gemini-yolo': { label: 'Gemini YOLO', command: 'gemini', icon: 'sparkles' },
   opencode: { label: 'OpenCode', command: 'opencode', icon: 'code' },
   terminal: { label: 'Terminal', command: '', icon: 'terminal' },
+  'terminal-admin': { label: 'Terminal(Admin)', command: '', icon: 'terminal' },
   'terminal-wsl': { label: 'Terminal(WSL)', command: 'wsl.exe', icon: 'terminal' },
   note: { label: '便签', command: '', icon: 'note' },
 }

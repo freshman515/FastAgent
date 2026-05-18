@@ -1,7 +1,8 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { IPC, type ExternalIdeId, type TerminalShellMode } from '@shared/types'
+import { IPC, type ExternalIdeId, type LaunchAdminTerminalOptions, type TerminalShellMode } from '@shared/types'
 import { getAvailableIdes, openProjectInIde } from '../services/IdeLauncher'
 import { detectTerminalShellAvailability } from '../services/ShellDetector'
+import { isCurrentProcessElevated, openAdminTerminal } from '../services/TerminalLauncher'
 
 export function registerDialogHandlers(): void {
   ipcMain.handle(IPC.SHELL_OPEN_PATH, (_event, path: string) => {
@@ -23,6 +24,14 @@ export function registerDialogHandlers(): void {
 
   ipcMain.handle(IPC.SHELL_RESOLVE_TERMINAL_SHELL, (_event, mode: TerminalShellMode) => {
     return detectTerminalShellAvailability(mode)
+  })
+
+  ipcMain.handle(IPC.SHELL_IS_ELEVATED, () => {
+    return isCurrentProcessElevated()
+  })
+
+  ipcMain.handle(IPC.SHELL_OPEN_ADMIN_TERMINAL, (_event, path: string, options: LaunchAdminTerminalOptions) => {
+    return openAdminTerminal(path, options)
   })
 
   ipcMain.handle(IPC.DIALOG_SELECT_FOLDER, async (event) => {
