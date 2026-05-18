@@ -13,6 +13,7 @@ import terminalIcon from '@/assets/icons/terminal_white.png'
 import { geminiIcon } from '@/lib/geminiIcon'
 import { browserIcon } from '@/lib/browserIcon'
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
+import { openSshConnectionPrompt, SSH_NEW_SESSION_OPTION_ID, sshSessionIcon } from '@/lib/sshSession'
 
 export interface SessionOption {
   type: SessionType
@@ -26,6 +27,7 @@ export interface NewSessionOption {
   icon: string
   type?: SessionType
   customSessionDefinitionId?: string
+  action?: 'ssh'
 }
 
 export const SESSION_OPTIONS: SessionOption[] = [
@@ -46,6 +48,13 @@ export const SESSION_OPTIONS: SessionOption[] = [
   { type: 'gemini-yolo', label: 'Gemini YOLO', icon: geminiIcon },
   { type: 'opencode', label: 'OpenCode', icon: opencodeIcon },
 ]
+
+export const SSH_NEW_SESSION_OPTION: NewSessionOption = {
+  id: SSH_NEW_SESSION_OPTION_ID,
+  label: 'SSH',
+  icon: sshSessionIcon,
+  action: 'ssh',
+}
 
 export function getCustomSessionOptionId(definitionId: string): string {
   return `custom:${definitionId}`
@@ -68,6 +77,18 @@ export function orderNewSessionOptions<T extends { id: string }>(
     .map((item) => item.option)
 }
 
+export function getBuiltInNewSessionOptions(): NewSessionOption[] {
+  return [
+    ...filterSessionTypesForCurrentPlatform(SESSION_OPTIONS).map((option) => ({
+      id: option.type,
+      label: option.label,
+      icon: option.icon,
+      type: option.type,
+    })),
+    SSH_NEW_SESSION_OPTION,
+  ]
+}
+
 export function buildNewSessionOptions(
   customDefinitions: CustomSessionDefinition[],
   hiddenOptionIds: readonly string[] = [],
@@ -75,12 +96,7 @@ export function buildNewSessionOptions(
 ): NewSessionOption[] {
   const hidden = new Set(hiddenOptionIds)
   const options = [
-    ...filterSessionTypesForCurrentPlatform(SESSION_OPTIONS).map((option) => ({
-      id: option.type,
-      label: option.label,
-      icon: option.icon,
-      type: option.type,
-    })),
+    ...getBuiltInNewSessionOptions(),
     ...customDefinitions.map((definition) => ({
       id: getCustomSessionOptionId(definition.id),
       label: definition.name,
@@ -118,6 +134,18 @@ export function NewSessionMenu({
     (option: NewSessionOption) => {
       const worktreeId = getDefaultWorktreeIdForProject(projectId)
       const targetPane = paneId ?? usePanesStore.getState().activePaneId
+      if (option.action === 'ssh') {
+        onClose()
+        openSshConnectionPrompt({
+          projectId,
+          worktreeId,
+          onCreated: (id) => {
+            addSessionToPane(targetPane, id)
+          },
+        })
+        return
+      }
+
       createSessionWithPrompt({
         projectId,
         type: option.type,

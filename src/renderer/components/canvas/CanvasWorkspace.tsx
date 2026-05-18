@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { isTerminalSessionType, type CanvasCard, type NoteImage, type SessionType } from '@shared/types'
+import { isTerminalSessionType, type CanvasCard, type NoteImage } from '@shared/types'
 import { createSessionWithPrompt } from '@/lib/createSession'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
+import { openSshConnectionPrompt } from '@/lib/sshSession'
 import { getDefaultCanvasCardSize, isCanvasCardHidden, useCanvasStore, resolveCanvasLayoutKey } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
@@ -816,6 +817,32 @@ function CulledSessionCard({ card, viewportEl }: { card: CanvasCard; viewportEl:
   return null
 }
 
+function getCanvasCardKindForNewSessionOption(option: NewSessionOption): 'terminal' | 'session' {
+  return option.action === 'ssh' || (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId
+    ? 'terminal'
+    : 'session'
+}
+
+function attachSessionAtViewportCenter(
+  viewportRef: React.RefObject<HTMLDivElement | null>,
+  sessionId: string,
+  cardKind: 'terminal' | 'session',
+): void {
+  const paneStore = usePanesStore.getState()
+  paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
+  useSessionsStore.getState().setActive(sessionId)
+
+  const cardSize = getDefaultCanvasCardSize(cardKind)
+  const placement = getSmartNewCardPlacement(viewportRef, cardSize)
+  if (!placement) return
+  const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
+    x: placement.position.x,
+    y: placement.position.y,
+  }, placement.placeOptions)
+  addCanvasCardToSpace(cardId, placement.activeSpaceId)
+  requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
+}
+
 function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivElement | null>, option: NewSessionOption): void {
   const projectId = useProjectsStore.getState().selectedProjectId
   if (!projectId) {
@@ -829,27 +856,24 @@ function createSessionAtViewportCenter(viewportRef: React.RefObject<HTMLDivEleme
   }
 
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId ? 'terminal' : 'session'
-  const cardSize = getDefaultCanvasCardSize(cardKind)
+  const cardKind = getCanvasCardKindForNewSessionOption(option)
+
+  if (option.action === 'ssh') {
+    openSshConnectionPrompt({
+      projectId,
+      worktreeId,
+      onCreated: (sessionId) => attachSessionAtViewportCenter(viewportRef, sessionId, cardKind),
+    })
+    return
+  }
 
   createSessionWithPrompt({
     projectId,
-    type: option.type as SessionType | undefined,
+    type: option.type,
     customSessionDefinitionId: option.customSessionDefinitionId,
     worktreeId,
   }, (sessionId) => {
-    const paneStore = usePanesStore.getState()
-    paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
-    useSessionsStore.getState().setActive(sessionId)
-
-    const placement = getSmartNewCardPlacement(viewportRef, cardSize)
-    if (!placement) return
-    const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
-      x: placement.position.x,
-      y: placement.position.y,
-    }, placement.placeOptions)
-    addCanvasCardToSpace(cardId, placement.activeSpaceId)
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
+    attachSessionAtViewportCenter(viewportRef, sessionId, cardKind)
   })
 }
 

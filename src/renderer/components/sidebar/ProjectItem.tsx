@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import type { Group, GroupItemOrderEntry, OutputState, Project, Session, SessionType, TaskBundle, Worktree } from '@shared/types'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
+import { openSshConnectionPrompt } from '@/lib/sshSession'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { getSessionIcon } from '@/lib/sessionIcon'
 import { removeCanvasNotesBySyncId } from '@/lib/noteSync'
@@ -483,6 +484,31 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
     setWtContextMenu(null)
   }, [wt.id, wt.path, project.id, project.path])
 
+  const createWorktreeSession = useCallback((option: NewSessionOption) => {
+    handleClick()
+    setWtContextMenu(null)
+    const addToActivePane = (sid: string): void => {
+      usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, sid)
+      useSessionsStore.getState().setActive(sid)
+    }
+
+    if (option.action === 'ssh') {
+      openSshConnectionPrompt({
+        projectId: project.id,
+        worktreeId: wt.id,
+        onCreated: addToActivePane,
+      })
+      return
+    }
+
+    createSessionWithPrompt({
+      projectId: project.id,
+      type: option.type,
+      customSessionDefinitionId: option.customSessionDefinitionId,
+      worktreeId: wt.id,
+    }, addToActivePane)
+  }, [handleClick, project.id, wt.id])
+
   return (
     <>
       <button
@@ -511,19 +537,7 @@ function WorktreeRow({ wt, project, isActive }: { wt: Worktree; project: Project
                 没有可显示的会话类型
               </div>
             ) : sessionOptions.map((opt) => (
-              <button key={opt.id} className={MENU_ITEM} onClick={() => {
-                handleClick()
-                setWtContextMenu(null)
-                createSessionWithPrompt({
-                  projectId: project.id,
-                  type: opt.type,
-                  customSessionDefinitionId: opt.customSessionDefinitionId,
-                  worktreeId: wt.id,
-                }, (sid) => {
-                  usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, sid)
-                  useSessionsStore.getState().setActive(sid)
-                })
-              }}>
+              <button key={opt.id} className={MENU_ITEM} onClick={() => createWorktreeSession(opt)}>
                 <SessionIconView
                   icon={opt.customSessionDefinitionId ? opt.icon : undefined}
                   fallbackSrc={opt.customSessionDefinitionId ? undefined : opt.icon}
@@ -922,17 +936,29 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
     selectProject(project.id)
     setContextMenu(null)
     setProjectSubmenu(null)
+    const worktreeId = getDefaultWorktreeIdForProject(project.id)
+    const addToActivePane = (id: string): void => {
+      usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
+      setActive(id)
+    }
+
+    if (option.action === 'ssh') {
+      openSshConnectionPrompt({
+        projectId: project.id,
+        worktreeId,
+        onCreated: addToActivePane,
+      })
+      return
+    }
+
     createSessionWithPrompt(
       {
         projectId: project.id,
         type: option.type,
         customSessionDefinitionId: option.customSessionDefinitionId,
-        worktreeId: getDefaultWorktreeIdForProject(project.id),
+        worktreeId,
       },
-      (id) => {
-        usePanesStore.getState().addSessionToPane(usePanesStore.getState().activePaneId, id)
-        setActive(id)
-      },
+      addToActivePane,
     )
   }, [project.id, selectProject, setActive])
 

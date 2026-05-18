@@ -638,6 +638,8 @@ interface UIState {
 
   sessionNamePrompt: SessionNamePromptRequest | null
   setSessionNamePrompt: (prompt: SessionNamePromptRequest | null) => void
+  sshConnectionPrompt: SshConnectionPromptRequest | null
+  setSshConnectionPrompt: (prompt: SshConnectionPromptRequest | null) => void
 }
 
 export interface SessionNamePromptRequest {
@@ -648,6 +650,13 @@ export interface SessionNamePromptRequest {
   sessionType?: SessionType
   onSubmit: (name: string) => void
   onUseDefault: () => void
+  onCancel: () => void
+}
+
+export interface SshConnectionPromptRequest {
+  projectId: string
+  worktreeId?: string
+  onCreated: (sessionId: string) => void
   onCancel: () => void
 }
 
@@ -2126,6 +2135,8 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   sessionNamePrompt: null,
   setSessionNamePrompt: (prompt) => set({ sessionNamePrompt: prompt }),
+  sshConnectionPrompt: null,
+  setSshConnectionPrompt: (prompt) => set({ sshConnectionPrompt: prompt }),
 }))
 
 function applyUIFont(settings: AppSettings): void {

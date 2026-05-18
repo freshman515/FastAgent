@@ -456,6 +456,7 @@ export function TitleBar(): JSX.Element | null {
   const updateSettings = useUIStore((s) => s.updateSettings)
   const openSettings = useUIStore((s) => s.openSettings)
   const settingsOpen = useUIStore((s) => s.settingsOpen)
+  const sshConnectionPrompt = useUIStore((s) => s.sshConnectionPrompt)
   const toggleDockPanel = useUIStore((s) => s.toggleDockPanel)
   const hideLeftPanel = useUIStore((s) => s.hideLeftPanel)
   const hideStatusBar = useUIStore((s) => s.hideStatusBar)
@@ -744,7 +745,7 @@ export function TitleBar(): JSX.Element | null {
       event.stopPropagation()
       event.stopImmediatePropagation()
 
-      if (event.repeat || runDialogOpen || settingsOpen) return
+      if (event.repeat || runDialogOpen || settingsOpen || sshConnectionPrompt) return
       clearMenuCloseTimer()
       setIdeMenuOpen(false)
       setRunProfileMenuOpen(false)
@@ -754,7 +755,7 @@ export function TitleBar(): JSX.Element | null {
 
     window.addEventListener('keydown', handleRunShortcut, true)
     return () => window.removeEventListener('keydown', handleRunShortcut, true)
-  }, [clearMenuCloseTimer, handleRunButtonClick, runDialogOpen, settingsOpen])
+  }, [clearMenuCloseTimer, handleRunButtonClick, runDialogOpen, settingsOpen, sshConnectionPrompt])
 
   const handleRunButtonContextMenu = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault()

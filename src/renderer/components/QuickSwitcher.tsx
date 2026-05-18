@@ -143,10 +143,12 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
   const [mode, setMode] = useState<SwitcherMode | null>(null)
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [mruCycleItems, setMruCycleItems] = useState<SwitcherItem[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const modeRef = useRef<SwitcherMode | null>(null)
   const selectedIdxRef = useRef(0)
   const mruItemsRef = useRef<SwitcherItem[]>([])
+  const mruCycleItemsRef = useRef<SwitcherItem[] | null>(null)
 
   const sessions = useSessionsStore((s) => s.sessions)
   const outputStates = useSessionsStore((s) => s.outputStates)
@@ -162,6 +164,7 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
 
   modeRef.current = mode
   selectedIdxRef.current = selectedIdx
+  mruCycleItemsRef.current = mruCycleItems
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -303,6 +306,8 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
         }
         if (mode === 'mru') {
           event.preventDefault()
+          modeRef.current = null
+          setMruCycleItems(null)
           setMode(null)
         }
       }
@@ -325,7 +330,9 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
         return
       }
 
-      const items = mruItemsRef.current
+      const items = currentMode === 'mru'
+        ? (mruCycleItemsRef.current ?? mruItemsRef.current)
+        : mruItemsRef.current
       if (items.length === 0) return
 
       event.preventDefault()
@@ -333,13 +340,17 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
 
       modeRef.current = 'mru'
       setMode('mru')
-      setSelectedIdx((currentIdx) => {
-        if (currentMode !== 'mru') {
-          return event.shiftKey ? items.length - 1 : 0
-        }
-        const direction = event.shiftKey ? -1 : 1
-        return (currentIdx + direction + items.length) % items.length
-      })
+      if (currentMode !== 'mru') {
+        setMruCycleItems(items)
+        mruCycleItemsRef.current = items
+      }
+
+      const currentIdx = currentMode === 'mru' ? selectedIdxRef.current : (event.shiftKey ? items.length : -1)
+      const direction = event.shiftKey ? -1 : 1
+      const nextIdx = (currentIdx + direction + items.length) % items.length
+      selectedIdxRef.current = nextIdx
+      setSelectedIdx(nextIdx)
+      activateItem(items[nextIdx])
     }
 
     const handleKeyUp = (event: KeyboardEvent): void => {
@@ -347,15 +358,15 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
       if (event.key !== 'Control') return
 
       event.preventDefault()
-      const item = mruItemsRef.current[selectedIdxRef.current]
-      if (item) activateItem(item)
       modeRef.current = null
+      setMruCycleItems(null)
       setMode(null)
     }
 
     const handleBlur = (): void => {
       if (modeRef.current !== 'mru') return
       modeRef.current = null
+      setMruCycleItems(null)
       setMode(null)
     }
 
@@ -373,10 +384,11 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
     if (!mode) {
       setQuery('')
       setSelectedIdx(0)
+      setMruCycleItems(null)
     }
   }, [mode])
 
-  const visibleItems = mode === 'mru' ? mruItems : searchableItems
+  const visibleItems = mode === 'mru' ? (mruCycleItems ?? mruItems) : searchableItems
 
   useEffect(() => {
     if (visibleItems.length === 0) {
@@ -390,6 +402,7 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
 
   const close = useCallback(() => {
     modeRef.current = null
+    setMruCycleItems(null)
     setMode(null)
   }, [])
 
@@ -456,7 +469,7 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
                 窗格最近标签
               </div>
               <div className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
-                释放 <span className="font-semibold text-[var(--color-text-primary)]">Ctrl</span> 切换到高亮标签
+                按住 <span className="font-semibold text-[var(--color-text-primary)]">Ctrl</span> 继续按 Tab 选择，释放 Ctrl 关闭
               </div>
             </div>
             <div className="rounded-full bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-[11px] text-[var(--color-text-tertiary)]">

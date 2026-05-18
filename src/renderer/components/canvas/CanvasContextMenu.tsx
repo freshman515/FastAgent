@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { isTerminalSessionType, type CanvasCard, type CanvasRelationDirection, type CanvasRelationKind, type SessionType } from '@shared/types'
+import { isTerminalSessionType, type CanvasCard, type CanvasRelationDirection, type CanvasRelationKind } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { getDefaultWorktreeIdForProject } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
+import { openSshConnectionPrompt } from '@/lib/sshSession'
 import { getDefaultCanvasCardSize, useCanvasStore } from '@/stores/canvas'
 import { usePanesStore } from '@/stores/panes'
 import { useProjectsStore } from '@/stores/projects'
@@ -12,7 +13,7 @@ import { useEditorsStore } from '@/stores/editors'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { useUIStore, type CanvasArrangeMode } from '@/stores/ui'
 import { useCanvasUiStore } from '@/stores/canvasUi'
-import { buildNewSessionOptions } from '@/components/session/NewSessionMenu'
+import { buildNewSessionOptions, type NewSessionOption } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { FRAME_COLORS } from './cards/FrameCard'
 import { addCanvasCardToActiveSpace, addCanvasCardToSpace } from './canvasSpaceMembership'
@@ -319,7 +320,7 @@ function buildCanvasItems(
         customIcon: Boolean(option.customSessionDefinitionId),
         onClick: () => {
           if (!projectId) return
-          createCanvasSession(projectId, option.type, state.worldX, state.worldY, option.customSessionDefinitionId)
+          createCanvasSession(projectId, option, state.worldX, state.worldY)
         },
       })),
     },
@@ -391,17 +392,18 @@ function buildCanvasItems(
 
 function createCanvasSession(
   projectId: string,
-  type: SessionType | undefined,
+  option: NewSessionOption,
   worldX: number,
   worldY: number,
-  customSessionDefinitionId?: string,
   targetSpaceId?: string,
 ): void {
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = (type && isTerminalSessionType(type)) || customSessionDefinitionId ? 'terminal' : 'session'
+  const cardKind = option.action === 'ssh' || (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId
+    ? 'terminal'
+    : 'session'
   const cardSize = getDefaultCanvasCardSize(cardKind)
 
-  createSessionWithPrompt({ projectId, type, customSessionDefinitionId, worktreeId }, (sessionId) => {
+  const attachSession = (sessionId: string): void => {
     const paneStore = usePanesStore.getState()
     paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
 
@@ -418,7 +420,23 @@ function createCanvasSession(
     })
     addCanvasCardToSpace(cardId, spaceId)
     requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
-  })
+  }
+
+  if (option.action === 'ssh') {
+    openSshConnectionPrompt({
+      projectId,
+      worktreeId,
+      onCreated: attachSession,
+    })
+    return
+  }
+
+  createSessionWithPrompt({
+    projectId,
+    type: option.type,
+    customSessionDefinitionId: option.customSessionDefinitionId,
+    worktreeId,
+  }, attachSession)
 }
 
 function createDirectoryCardAt(projectId: string, directoryPath: string, title: string, x: number, y: number, targetSpaceId?: string): string {
@@ -497,7 +515,7 @@ function buildCardItems(
         customIcon: Boolean(option.customSessionDefinitionId),
         onClick: () => {
           if (!projectId) return
-          createCanvasSession(projectId, option.type, world.x, world.y, option.customSessionDefinitionId, card.id)
+          createCanvasSession(projectId, option, world.x, world.y, card.id)
         },
       })),
     })

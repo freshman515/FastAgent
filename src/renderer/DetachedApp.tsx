@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
 import { sanitizeEditorTab, useEditorsStore } from '@/stores/editors'
 import { SplitContainer } from '@/components/split/SplitContainer'
+import { SshConnectionDialog } from '@/components/session/SshConnectionDialog'
 import { includeConnectedNoteTargets } from '@/lib/detachedSessionPayload'
 import type { Session } from '@shared/types'
 
@@ -101,6 +102,7 @@ export function DetachedApp(): JSX.Element {
       <div className="flex-1 overflow-hidden">
         <SplitContainer projectId={projectIdRef.current} />
       </div>
+      <SshConnectionDialog />
     </div>
   )
 }

@@ -43,7 +43,7 @@ import { parseThemeAuto } from '@/lib/themeImport'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { parseCustomSessionArgs } from '@/lib/createSession'
 import { SessionIconView } from '@/components/session/SessionIconView'
-import { SESSION_OPTIONS, getCustomSessionOptionId, orderNewSessionOptions } from '@/components/session/NewSessionMenu'
+import { getBuiltInNewSessionOptions, getCustomSessionOptionId, orderNewSessionOptions } from '@/components/session/NewSessionMenu'
 import { filterSessionTypesForCurrentPlatform } from '@/lib/platformSessionTypes'
 import { isPluginContributionId, parsePluginManifest, preparePluginInstall } from '@/lib/pluginManifest'
 
@@ -681,7 +681,7 @@ function SessionsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate:
 
   const parsedArgs = useMemo(() => parseCustomSessionArgs(draft.args), [draft.args])
   const visibleSessionTypeOptions = useMemo(() => filterSessionTypesForCurrentPlatform(SESSION_TYPE_OPTIONS), [])
-  const visibleNewSessionBuiltInOptions = useMemo(() => filterSessionTypesForCurrentPlatform(SESSION_OPTIONS), [])
+  const visibleNewSessionBuiltInOptions = useMemo(() => getBuiltInNewSessionOptions(), [])
   const hiddenNewSessionOptionIds = useMemo(() => new Set(settings.hiddenNewSessionOptionIds), [settings.hiddenNewSessionOptionIds])
   const unorderedNewSessionMenuOptions = useMemo(() => [
     ...visibleNewSessionBuiltInOptions.map((option) => ({

@@ -11,6 +11,7 @@ import {
   type NewSessionOption,
 } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
+import { SshConnectionDialog } from '@/components/session/SshConnectionDialog'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { QuickSwitcher } from '@/components/QuickSwitcher'
 import { PermissionDialog } from '@/components/permission/PermissionDialog'
@@ -23,6 +24,7 @@ import { focusOpenEditorSoon } from '@/components/session/EditorView'
 import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
 import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/project-context'
 import { createSessionWithPrompt } from '@/lib/createSession'
+import { openSshConnectionPrompt } from '@/lib/sshSession'
 import { getPaneElementRects, getPaneLeafIds, usePanesStore, type PaneElementRect } from '@/stores/panes'
 import { useCanvasStore } from '@/stores/canvas'
 import { useUIStore } from '@/stores/ui'
@@ -248,6 +250,7 @@ function scoreNewSessionOption(option: NewSessionOption, query: string): number 
     option.id,
     option.type ?? '',
     option.customSessionDefinitionId ?? '',
+    option.action ?? '',
   ].map(normalizePaneCommandQuery).filter(Boolean)
 
   if (fields.some((field) => field === query)) return 100
@@ -552,6 +555,27 @@ function PaneCommandNewSessionDialog({
     const projectId = selectedProjectId
     const paneId = usePanesStore.getState().activePaneId
     const worktreeId = getDefaultWorktreeIdForProject(projectId)
+    const activateCreatedSession = (sessionId: string): void => {
+      const paneStore = usePanesStore.getState()
+      paneStore.addSessionToPane(paneId, sessionId)
+      paneStore.setActivePaneId(paneId)
+      useSessionsStore.getState().setActive(sessionId)
+    }
+
+    if (option.action === 'ssh') {
+      onClose()
+      openSshConnectionPrompt({
+        projectId,
+        worktreeId,
+        onCreated: (sessionId) => {
+          activateCreatedSession(sessionId)
+          onAfterNamePromptClose()
+        },
+        onCancel: onAfterNamePromptClose,
+      })
+      return
+    }
+
     const defaultName = option.customSessionDefinitionId
       ? useSessionsStore.getState().generateDefaultSessionName(projectId, 'terminal', option.label)
       : useSessionsStore.getState().generateDefaultSessionName(projectId, option.type ?? 'terminal')
@@ -563,10 +587,7 @@ function PaneCommandNewSessionDialog({
         worktreeId,
         forceName: name,
       }, (sessionId) => {
-        const paneStore = usePanesStore.getState()
-        paneStore.addSessionToPane(paneId, sessionId)
-        paneStore.setActivePaneId(paneId)
-        useSessionsStore.getState().setActive(sessionId)
+        activateCreatedSession(sessionId)
       })
     }
 
@@ -3183,6 +3204,7 @@ function MainApp(): JSX.Element {
         || paneCommandJumpOpen
         || paneCommandInputOpen
         || ui.sessionNamePrompt
+        || ui.sshConnectionPrompt
       ) return
 
       if (paneCommandEditing) {
@@ -3525,6 +3547,7 @@ function MainApp(): JSX.Element {
 
       {/* Session name prompt */}
       <SessionNamePromptDialog />
+      <SshConnectionDialog />
     </div>
   )
 }

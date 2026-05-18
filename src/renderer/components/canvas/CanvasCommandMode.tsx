@@ -5,6 +5,7 @@ import { getDefaultWorktreeIdForProject, switchProjectContext } from '@/lib/proj
 import { focusTerminalInputSoon, scrollTerminalToLatest } from '@/hooks/useXterm'
 import { cn } from '@/lib/utils'
 import { formatSessionCardTitle } from '@/lib/canvasSessionLabel'
+import { openSshConnectionPrompt } from '@/lib/sshSession'
 import { buildNewSessionOptions, type NewSessionOption } from '@/components/session/NewSessionMenu'
 import { SessionIconView } from '@/components/session/SessionIconView'
 import { focusOpenEditorSoon } from '@/components/session/EditorView'
@@ -118,6 +119,7 @@ function scoreNewSessionOption(option: NewSessionOption, query: string): number 
     option.id,
     option.type ?? '',
     option.customSessionDefinitionId ?? '',
+    option.action ?? '',
   ].map(normalizeCommandQuery).filter(Boolean)
 
   if (fields.some((field) => field === query)) return 100
@@ -384,6 +386,22 @@ function CanvasCommandNewSessionDialog({
   const openNamePrompt = useCallback((option: NewSessionOption) => {
     if (!selectedProjectId) return
     const projectId = selectedProjectId
+    const worktreeId = getDefaultWorktreeIdForProject(projectId)
+
+    if (option.action === 'ssh') {
+      onClose()
+      openSshConnectionPrompt({
+        projectId,
+        worktreeId,
+        onCreated: (sessionId) => {
+          attachCanvasSessionAtCenter(viewportRef, sessionId, 'terminal')
+          onAfterNamePromptClose()
+        },
+        onCancel: onAfterNamePromptClose,
+      })
+      return
+    }
+
     const defaultName = option.customSessionDefinitionId
       ? useSessionsStore.getState().generateDefaultSessionName(projectId, 'terminal', option.label)
       : useSessionsStore.getState().generateDefaultSessionName(projectId, option.type ?? 'terminal')
@@ -1260,6 +1278,32 @@ function addNoteAtCenter(viewportRef: RefObject<HTMLDivElement | null>): void {
   addCanvasCardToSpace(cardId, placement.activeSpaceId)
 }
 
+function getCanvasCardKindForNewSessionOption(option: NewSessionOption): 'terminal' | 'session' {
+  return option.action === 'ssh' || (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId
+    ? 'terminal'
+    : 'session'
+}
+
+function attachCanvasSessionAtCenter(
+  viewportRef: RefObject<HTMLDivElement | null>,
+  sessionId: string,
+  cardKind: 'terminal' | 'session',
+): void {
+  const paneStore = usePanesStore.getState()
+  paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
+  useSessionsStore.getState().setActive(sessionId)
+
+  const cardSize = getDefaultCanvasCardSize(cardKind)
+  const placement = getSmartNewCardPlacement(viewportRef, cardSize)
+  if (!placement) return
+  const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
+    x: placement.position.x,
+    y: placement.position.y,
+  }, placement.placeOptions)
+  addCanvasCardToSpace(cardId, placement.activeSpaceId)
+  requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
+}
+
 function createCanvasSessionAtCenter(
   viewportRef: RefObject<HTMLDivElement | null>,
   option: NewSessionOption,
@@ -1277,8 +1321,7 @@ function createCanvasSessionAtCenter(
   }
 
   const worktreeId = getDefaultWorktreeIdForProject(projectId)
-  const cardKind = (option.type && isTerminalSessionType(option.type)) || option.customSessionDefinitionId ? 'terminal' : 'session'
-  const cardSize = getDefaultCanvasCardSize(cardKind)
+  const cardKind = getCanvasCardKindForNewSessionOption(option)
 
   createSessionWithPrompt({
     projectId,
@@ -1287,18 +1330,7 @@ function createCanvasSessionAtCenter(
     worktreeId,
     forceName: name,
   }, (sessionId) => {
-    const paneStore = usePanesStore.getState()
-    paneStore.addSessionToPane(paneStore.activePaneId, sessionId)
-    useSessionsStore.getState().setActive(sessionId)
-
-    const placement = getSmartNewCardPlacement(viewportRef, cardSize)
-    if (!placement) return
-    const cardId = useCanvasStore.getState().attachSession(sessionId, cardKind, {
-      x: placement.position.x,
-      y: placement.position.y,
-    }, placement.placeOptions)
-    addCanvasCardToSpace(cardId, placement.activeSpaceId)
-    requestAnimationFrame(() => useCanvasStore.getState().focusOnCard(cardId, { allowReturn: false }))
+    attachCanvasSessionAtCenter(viewportRef, sessionId, cardKind)
   })
 }
 
@@ -1986,6 +2018,7 @@ export function useCanvasCommandMode({
         || newSessionOpen
         || useUIStore.getState().settingsOpen
         || useUIStore.getState().sessionNamePrompt
+        || useUIStore.getState().sshConnectionPrompt
       ) return
 
       if (editingRef.current) {
