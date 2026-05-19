@@ -1,6 +1,6 @@
 {
   "name": "pragma-desk",
-  "version": "0.4.48",
+  "version": "0.4.49",
   "description": "Desktop workspace for multi-agent coding sessions",
   "main": "./out/main/index.js",
   "type": "module",

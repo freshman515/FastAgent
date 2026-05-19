@@ -48,7 +48,7 @@ import { isClaudeCodeType, isTerminalSessionType, SESSION_TYPE_CONFIG, type Clau
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { showTaskNotification } from '@/lib/taskNotification'
-import { addCompletedSessionNotification } from '@/lib/completionNotification'
+import { addCompletedSessionNotification, addRunningSessionNotification } from '@/lib/completionNotification'
 import { cn } from '@/lib/utils'
 
 interface EditorPathContext {
@@ -2947,6 +2947,11 @@ function MainApp(): JSX.Element {
           completionTimers.delete(event.sessionId)
         }, 10000)
         completionTimers.set(event.sessionId, timer)
+      } else if (event.activity === 'running' || event.activity === 'thinking') {
+        const session = useSessionsStore.getState().sessions.find((item) => item.id === event.sessionId)
+        if (session) {
+          addRunningSessionNotification({ session })
+        }
       }
 
       // When session is removed elsewhere we don't know; clearActivity is a safety net

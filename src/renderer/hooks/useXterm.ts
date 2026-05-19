@@ -1421,6 +1421,14 @@ export function useXterm(
     // xterm → PTY
     const onDataDisposable = terminal.onData((data) => {
       if (ptyId) {
+        if (data === '\x1b' && !isTerminalSessionType(sessionType)) {
+          const ui = useUIStore.getState()
+          for (const notification of ui.completionNotifications) {
+            if (notification.sessionId === sessionId && notification.status === 'running') {
+              ui.removeCompletionNotification(notification.id)
+            }
+          }
+        }
         trackPotentialQuestionInput(data)
         trackPendingComposerInput(data)
         // Track individual keystrokes for non-terminal sessions (pastes are tracked at call site)

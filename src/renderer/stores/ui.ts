@@ -277,6 +277,7 @@ export interface CompletionNotification {
   title: string
   body: string
   type: 'success' | 'warning'
+  status: 'running' | 'completed'
   sessionId: string
   projectId: string
   sessionName: string
@@ -414,6 +415,8 @@ export interface AppSettings {
   notificationToastDurationMs: number
   /** Show the top-right recent completion notification stack. */
   completionNotificationEnabled: boolean
+  /** Show top-right notifications while agent sessions are running. */
+  runningNotificationEnabled: boolean
   /** How long top-right recent completion notifications stay visible. */
   completionNotificationDurationMs: number
   /** Play a sound when an agent task completes */
@@ -565,6 +568,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationDisplayMode: 'smart',
   notificationToastDurationMs: NOTIFICATION_TOAST_DURATION_MS_DEFAULT,
   completionNotificationEnabled: true,
+  runningNotificationEnabled: true,
   completionNotificationDurationMs: COMPLETION_NOTIFICATION_DURATION_MS_DEFAULT,
   notificationSoundEnabled: true,
   notificationSoundVolume: 0.6,
@@ -1924,6 +1928,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       s.notificationDisplayMode = normalizeNotificationDisplayMode(raw.notificationDisplayMode)
       s.notificationToastDurationMs = normalizeNotificationToastDurationMs(raw.notificationToastDurationMs)
       if (typeof raw.completionNotificationEnabled === 'boolean') s.completionNotificationEnabled = raw.completionNotificationEnabled
+      if (typeof raw.runningNotificationEnabled === 'boolean') s.runningNotificationEnabled = raw.runningNotificationEnabled
       s.completionNotificationDurationMs = normalizeCompletionNotificationDurationMs(raw.completionNotificationDurationMs)
       if (typeof raw.notificationSoundEnabled === 'boolean') s.notificationSoundEnabled = raw.notificationSoundEnabled
       if (typeof raw.notificationSoundVolume === 'number') {

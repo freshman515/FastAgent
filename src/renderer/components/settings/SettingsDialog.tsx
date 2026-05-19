@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2, Keyboard } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2, Keyboard, LoaderCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, AppLaunchMode, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
@@ -1557,7 +1557,7 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
         />
         {settings.completionNotificationEnabled && (
           <DurationNumberField
-            label="停留时间"
+            label="完成提醒停留时间"
             description="手动打开对应会话会提前消失。"
             value={settings.completionNotificationDurationMs}
             min={COMPLETION_NOTIFICATION_DURATION_MS_MIN}
@@ -1567,6 +1567,15 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
             onChange={(v) => onUpdate('completionNotificationDurationMs', v)}
           />
         )}
+      </SettingsSection>
+
+      <SettingsSection icon={LoaderCircle} title="右上角运行中" description="任务运行时显示一条可跳转提醒，结束或中断后自动消失。">
+        <ToggleRow
+          label="显示运行中提醒"
+          description={settings.runningNotificationEnabled ? '点击提醒只跳转到对应项目和会话，不会关闭提醒。' : '关闭后任务运行时不显示右上角提醒。'}
+          checked={settings.runningNotificationEnabled}
+          onChange={(v) => onUpdate('runningNotificationEnabled', v)}
+        />
       </SettingsSection>
 
       <SettingsSection icon={Volume2} title="完成音效" description="任务完成时播放提示音，可独立于通知开关使用。">

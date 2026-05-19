@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, LoaderCircle, X } from 'lucide-react'
 import { useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { MouseEvent } from 'react'
@@ -44,6 +44,15 @@ function isNotificationTargetVisible(notification: CompletionNotification): bool
   return false
 }
 
+function formatNotificationAge(createdAt: number): string {
+  const elapsed = Math.max(0, Date.now() - createdAt)
+  const minute = 60 * 1000
+  if (elapsed < minute) return '刚刚'
+  const minutes = Math.floor(elapsed / minute)
+  if (minutes < 60) return `${minutes} 分钟前`
+  return `${Math.floor(minutes / 60)} 小时前`
+}
+
 export function CompletionNotificationCenter(): JSX.Element | null {
   const notifications = useUIStore((state) => state.completionNotifications)
   const enabled = useUIStore((state) => state.settings.completionNotificationEnabled)
@@ -67,7 +76,7 @@ export function CompletionNotificationCenter(): JSX.Element | null {
   useEffect(() => {
     if (!enabled) return
     for (const notification of notifications) {
-      if (isNotificationTargetVisible(notification)) {
+      if (notification.status === 'completed' && isNotificationTargetVisible(notification)) {
         removeForSession(notification.sessionId)
       }
     }
@@ -86,7 +95,9 @@ export function CompletionNotificationCenter(): JSX.Element | null {
 
   const handleJump = useCallback((notification: CompletionNotification): void => {
     focusSessionTarget(notification.sessionId)
-    removeForSession(notification.sessionId)
+    if (notification.status === 'completed') {
+      removeForSession(notification.sessionId)
+    }
   }, [removeForSession])
 
   const handleClose = useCallback((event: MouseEvent<HTMLButtonElement>, id: string): void => {
@@ -97,10 +108,16 @@ export function CompletionNotificationCenter(): JSX.Element | null {
   if (!enabled || notifications.length === 0) return null
 
   return createPortal(
-    <div className="pointer-events-none fixed right-4 top-12 z-[9998] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-2">
+    <div className="pointer-events-none fixed right-4 top-12 z-[9998] flex w-[388px] max-w-[calc(100vw-32px)] flex-col gap-2">
       <AnimatePresence mode="popLayout">
         {notifications.map((notification) => {
-          const Icon = notification.type === 'warning' ? AlertTriangle : CheckCircle2
+          const Icon = notification.status === 'running'
+            ? LoaderCircle
+            : notification.type === 'warning'
+              ? AlertTriangle
+              : CheckCircle2
+          const isWarning = notification.type === 'warning'
+          const isRunning = notification.status === 'running'
           return (
             <motion.div
               key={notification.id}
@@ -118,40 +135,46 @@ export function CompletionNotificationCenter(): JSX.Element | null {
                 handleJump(notification)
               }}
               className={cn(
-                'pointer-events-auto flex h-10 cursor-pointer items-center gap-2.5 rounded-[var(--radius-lg)] px-3',
-                'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/96',
-                'shadow-xl shadow-black/25 backdrop-blur-md',
-                'focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-bg-primary)]',
+                'group pointer-events-auto relative flex min-h-[64px] cursor-pointer items-center gap-3 overflow-hidden rounded-[12px] px-3.5 py-3',
+                'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
+                'transition-colors duration-200 hover:border-white/18 hover:bg-[var(--color-bg-surface)]',
+                'focus:outline-none focus-visible:ring-1 focus-visible:ring-white/25 focus-visible:ring-offset-0',
               )}
               aria-label="跳转到完成的会话"
             >
-              <Icon
-                size={17}
+              <div
                 className={cn(
-                  'shrink-0',
-                  notification.type === 'warning' ? 'text-[var(--color-warning)]' : 'text-[var(--color-success)]',
+                  'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+                  isRunning
+                    ? 'bg-[#2f80ed]/18 text-[#5aa7ff] transition-colors duration-200 group-hover:bg-[#2f80ed]/24'
+                    : isWarning
+                    ? 'bg-[var(--color-warning)]/16 text-[var(--color-warning)] transition-colors duration-200 group-hover:bg-[var(--color-warning)]/22'
+                    : 'bg-[var(--color-success)]/16 text-[var(--color-success)] transition-colors duration-200 group-hover:bg-[var(--color-success)]/22',
                 )}
-              />
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <span className="min-w-0 truncate text-[var(--ui-font-sm)] font-semibold text-[var(--color-text-primary)]">
-                  {notification.projectName}
-                </span>
-                <span className="shrink-0 text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">·</span>
-                <span className="min-w-0 truncate text-[var(--ui-font-xs)] font-medium text-[var(--color-text-secondary)]">
-                  {notification.sessionName}
-                </span>
-              </div>
-              <span className="shrink-0 text-[10px] font-medium text-[var(--color-text-tertiary)]">
-                完成
-              </span>
-              <button
-                type="button"
-                onClick={(event) => handleClose(event, notification.id)}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
-                aria-label="关闭完成通知"
               >
-                <X size={12} />
-              </button>
+                <Icon size={20} className={cn('shrink-0', isRunning && 'animate-spin')} />
+              </div>
+              <div className="relative min-w-0 flex-1">
+                <div className="min-w-0 truncate text-[15px] font-semibold leading-5 text-[var(--color-text-primary)]">
+                  {notification.projectName}
+                </div>
+                <div className="mt-0.5 min-w-0 truncate text-[11px] font-normal leading-4 text-[var(--color-text-secondary)]">
+                  {notification.sessionName} {isRunning ? '已启动' : '已完成'}
+                </div>
+              </div>
+              <div className="relative flex shrink-0 items-center gap-3 self-center">
+                <div className="text-[var(--ui-font-xs)] font-normal leading-5 text-[var(--color-text-tertiary)]">
+                  {formatNotificationAge(notification.createdAt)}
+                </div>
+                <button
+                  type="button"
+                  onClick={(event) => handleClose(event, notification.id)}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-tertiary)] opacity-80 transition-colors hover:bg-white/8 hover:text-[var(--color-text-secondary)] hover:opacity-100"
+                  aria-label="关闭完成通知"
+                >
+                  <X size={13} />
+                </button>
+              </div>
             </motion.div>
           )
         })}

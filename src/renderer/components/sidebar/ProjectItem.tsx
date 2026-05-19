@@ -1,4 +1,4 @@
-import { Archive, ArrowRightLeft, Check, ChevronRight, Copy, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, MoreHorizontal, Pin, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
+import { Archive, ArrowRightLeft, Check, ChevronRight, Copy, ExternalLink, Eye, Folder, FolderOpen, GitBranch, Layers, List, LoaderCircle, Pin, Play, Plus as PlusIcon, Rocket, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Group, GroupItemOrderEntry, OutputState, Project, Session, SessionType, TaskBundle, Worktree } from '@shared/types'
@@ -10,6 +10,7 @@ import { getSessionIcon } from '@/lib/sessionIcon'
 import { removeCanvasNotesBySyncId } from '@/lib/noteSync'
 import { cn } from '@/lib/utils'
 import { useIsDarkTheme } from '@/hooks/useIsDarkTheme'
+import { useProjectRunningTaskCount } from '@/hooks/useProjectRunningTaskCount'
 import { useProjectsStore } from '@/stores/projects'
 import { normalizeGroupColor, useGroupsStore } from '@/stores/groups'
 import { useSessionsStore } from '@/stores/sessions'
@@ -761,7 +762,6 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const worktrees = useMemo(() => allWorktrees.filter((w) => w.projectId === project.id), [allWorktrees, project.id])
 
   const [expanded, setExpanded] = useState(false)
-  const [showMenu, setShowMenu] = useState<{ x: number; y: number } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showNewBranch, setShowNewBranch] = useState(false)
   const [showNewWorktree, setShowNewWorktree] = useState(false)
@@ -854,7 +854,7 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
     () => new Map(worktrees.map((worktree) => [worktree.id, worktree])),
     [worktrees],
   )
-  const runningSessionCount = useMemo(() => sessions.filter((s) => s.status === 'running').length, [sessions])
+  const runningTaskCount = useProjectRunningTaskCount(project.id)
   const otherGroups = useMemo(
     () => allGroups.filter((g) => g.id !== project.groupId),
     [allGroups, project.groupId],
@@ -893,8 +893,6 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
 
   const isSelected = selectedProjectId === project.id
   const isMainWtActive = isSelected && (!selectedWorktreeId || selectedWorktreeId === mainWorktree?.id)
-  const hasUnread = sessions.some((s) => outputStates[s.id] === 'unread')
-  const hasOutputting = sessions.some((s) => outputStates[s.id] === 'outputting')
 
   const handleSelect = useCallback(() => {
     if (isMainWtActive) return
@@ -904,18 +902,15 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
   const handleRemove = useCallback(() => {
     removeProjectFromGroup(project.groupId, project.id)
     removeProject(project.id)
-    setShowMenu(null)
   }, [project.groupId, project.id, removeProject, removeProjectFromGroup])
 
   const handleToggleProjectPinned = useCallback(() => {
     setProjectPinned(project.id, !project.pinned)
     setContextMenu(null)
-    setShowMenu(null)
   }, [project.id, project.pinned, setProjectPinned])
 
   const handleCopyProjectPath = useCallback(async () => {
     setContextMenu(null)
-    setShowMenu(null)
     try {
       await navigator.clipboard.writeText(project.path)
       addToast({
@@ -1078,56 +1073,26 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
           )}
         </div>
 
-        <span className={cn(
-          'flex-1 truncate text-[var(--ui-font-sm)] transition-colors duration-200 font-medium'
-        )}>
+        <span className="min-w-0 flex-1 truncate text-[var(--ui-font-sm)] font-medium transition-colors duration-200">
           {project.name}
         </span>
 
         {/* Status indicators */}
-        <div className="flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5">
+          {runningTaskCount > 0 && (
+            <LoaderCircle
+              size={15}
+              className={cn(
+                'shrink-0 animate-spin',
+                isDarkTheme ? 'text-white/90' : 'text-[var(--color-accent)]',
+              )}
+              title={`${runningTaskCount} 个会话正在运行任务`}
+              aria-label={`${runningTaskCount} 个会话正在运行任务`}
+            />
+          )}
           {project.pinned && <Pin size={11} className="shrink-0 fill-current text-[var(--color-accent)]" />}
-          {hasOutputting && <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)] shadow-[0_0_4px_var(--color-accent)]" />}
-          {hasUnread && !hasOutputting && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warning)]" />}
-
-          <span
-            className={cn(
-              'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none transition-all duration-200',
-              sessions.length > 0
-                ? isMainWtActive ? 'bg-[var(--project-selected-color)] text-white' : 'bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
-                : 'text-[var(--color-text-tertiary)] opacity-40',
-            )}
-          >
-            {sessions.length}
-          </span>
         </div>
 
-        {/* Branch badge */}
-        {branchInfo?.current && (
-          <div
-            className={cn(
-              'flex max-w-[80px] shrink-0 items-center gap-1 rounded-sm px-1 py-0.5 text-[10px] font-medium leading-none transition-all duration-200',
-              'bg-[var(--color-bg-primary)]/40 text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]',
-              isMainWtActive && 'bg-black/20 text-[var(--color-text-secondary)]'
-            )}
-            title={branchInfo.isDirty
-              ? `当前分支：${branchInfo.current}（有未提交更改）`
-              : `当前分支：${branchInfo.current}`}
-          >
-            <GitBranch size={10} className="shrink-0 opacity-70" />
-            <span className="truncate">{branchInfo.current}</span>
-            {branchInfo.isDirty && <span className="h-1 w-1 shrink-0 rounded-full bg-[var(--color-warning)] shadow-[0_0_2px_var(--color-warning)]" />}
-          </div>
-        )}
-
-        <button onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setShowMenu(showMenu ? null : { x: r.right, y: r.bottom + 4 }) }}
-          className={cn(
-            'flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)]',
-            'text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100',
-            'hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] transition-all duration-150'
-          )}>
-          <MoreHorizontal size={12} />
-        </button>
       </div>
 
       {/* Project children (sessions first, then worktrees) */}
@@ -1176,32 +1141,6 @@ export function ProjectItem({ project, groupColor, onOpenProject }: ProjectItemP
             />
           ))}
         </div>
-      )}
-
-      {/* Three-dot menu */}
-      {showMenu && createPortal(
-        <>
-          <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => setShowMenu(null)} />
-          <div style={{ top: showMenu.y, left: showMenu.x, zIndex: 9999 }}
-            className={cn(
-              'fixed min-w-[200px] overflow-visible rounded-[var(--radius-lg)] border border-white/[0.08]',
-              'bg-[var(--color-bg-secondary)]/90 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] py-1.5 p-1',
-              'animate-in fade-in zoom-in-95 duration-150',
-            )}>
-            <div className="px-3 py-1.5 mb-1 border-b border-white/[0.05]">
-              <p className="truncate text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] opacity-60">项目路径</p>
-              <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--color-text-secondary)] opacity-80">{project.path}</p>
-            </div>
-            <button onClick={() => { setShowMenu(null); window.api.shell.openPath(project.path) }} className={MENU_ITEM}>
-              <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--color-accent)] scale-y-0 opacity-0 transition-all duration-200 group-hover/menuitem:scale-y-100 group-hover/menuitem:opacity-100 group-hover/menuitem:shadow-[0_0_8px_var(--color-accent)]" />
-              <ExternalLink size={14} /> <span className="flex-1">在资源管理器中打开</span>
-            </button>
-            <button onClick={() => { setShowMenu(null); handleRemove() }}
-              className="group/item relative flex h-8.5 w-full items-center gap-3 px-3 rounded-[var(--radius-md)] text-left text-[13px] transition-all duration-200 text-[var(--color-error)] hover:bg-[var(--color-error)]/15">
-              <Trash2 size={14} /> <span className="flex-1">移除项目</span>
-            </button>
-          </div>
-        </>, document.body,
       )}
 
       {/* Right-click context menu */}

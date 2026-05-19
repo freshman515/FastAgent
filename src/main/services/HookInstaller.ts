@@ -1,6 +1,6 @@
 // HookInstaller — Register Pragma Desk hooks for Claude Code and Codex.
-// Claude: Stop (command hook), Notification/PermissionRequest (HTTP hooks)
-// Codex: Stop (command hook)
+// Claude: activity command hooks, Notification/PermissionRequest (HTTP hooks)
+// Codex: activity command hooks
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -9,6 +9,7 @@ import { getAppProfileId, getConfiguredUserDataDir } from './AppPaths'
 
 const CLAUDE_HOOK_SCRIPT_BASE = 'pragma-desk-hook'
 const CODEX_HOOK_SCRIPT_BASE = 'pragma-desk-codex-hook'
+const CODEX_ACTIVITY_EVENTS = ['UserPromptSubmit', 'Stop'] as const
 const HTTP_HOOK_MARKER_BASE = 'pragma-desk' // marker in HTTP hook URLs
 const DEFAULT_HOOK_PORT = 24680
 const HOOK_PORT_RANGE = 5
@@ -133,7 +134,7 @@ function buildPortList(activePort: number): number[] {
 /** Generate the Codex Stop hook script. It no-ops when Pragma Desk is not running. */
 function generateCodexScript(port: number): string {
   const logFileName = `${CODEX_HOOK_SCRIPT_BASE}${getProfileSuffix()}.log`
-  return `// Pragma Desk Codex Hook — sends Codex Stop events to Pragma Desk
+  return `// Pragma Desk Codex Hook — sends Codex lifecycle events to Pragma Desk
 // Auto-generated — do not edit manually
 const fs = require('fs');
 const http = require('http');
@@ -189,7 +190,7 @@ async function main() {
     data = {};
   }
 
-  data.hook_event_name = data.hook_event_name || 'Stop';
+  data.hook_event_name = data.hook_event_name || process.argv[2] || 'Stop';
   data.pd_session_id = process.env.PRAGMA_DESK_SESSION_ID || data.pd_session_id || null;
   data.pragma_desk_session_type = process.env.PRAGMA_DESK_SESSION_TYPE || data.pragma_desk_session_type || 'codex';
   data.pragma_desk_hook_source = 'codex';
@@ -464,19 +465,22 @@ function registerCodexHooks(port: number): void {
 
   const hooksConfig = readJsonObject(getCodexHooksJsonPath())
   const scriptPath = getCodexScriptPath().replace(/\\/g, '/')
-  const command = `node "${scriptPath}"`
+  const commandForEvent = (event: typeof CODEX_ACTIVITY_EVENTS[number]) =>
+    event === 'Stop' ? `node "${scriptPath}"` : `node "${scriptPath}" ${event}`
   const commandMarker = getCodexHookMarker()
 
-  addCommandHook(
-    hooksConfig,
-    'Stop',
-    command,
-    commandMarker,
-    'Notifying Pragma Desk',
-  )
+  for (const event of CODEX_ACTIVITY_EVENTS) {
+    addCommandHook(
+      hooksConfig,
+      event,
+      commandForEvent(event),
+      commandMarker,
+      'Notifying Pragma Desk',
+    )
+  }
 
   writeJsonObject(getCodexHooksJsonPath(), hooksConfig)
-  console.log(`[HookInstaller] registered Codex Stop hook (${getAppProfileId()}) → port ${port}`)
+  console.log(`[HookInstaller] registered Codex activity hooks (${getAppProfileId()}) → port ${port}`)
 }
 
 /** Register hooks in user-level agent config files and write hook scripts */
@@ -536,14 +540,15 @@ export function unregisterHooks(): void {
 
     const hooksConfig = readJsonObject(getCodexHooksJsonPath())
     const hooks = (hooksConfig.hooks ?? {}) as Record<string, HookEntry[]>
-    if (Array.isArray(hooks.Stop)) {
-      hooks.Stop = hooks.Stop.filter(
+    for (const event of CODEX_ACTIVITY_EVENTS) {
+      if (!Array.isArray(hooks[event])) continue
+      hooks[event] = hooks[event].filter(
         (e) => !e.hooks?.some((h) => h.type === 'command' && h.command?.includes(codexCommandMarker)),
       )
-      if (hooks.Stop.length === 0) delete hooks.Stop
-      hooksConfig.hooks = hooks
-      writeJsonObject(getCodexHooksJsonPath(), hooksConfig)
+      if (hooks[event].length === 0) delete hooks[event]
     }
+    hooksConfig.hooks = hooks
+    writeJsonObject(getCodexHooksJsonPath(), hooksConfig)
 
     const scriptPath = getCodexScriptPath()
     if (existsSync(scriptPath)) unlinkSync(scriptPath)
