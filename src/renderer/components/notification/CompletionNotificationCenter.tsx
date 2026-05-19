@@ -5,44 +5,7 @@ import { createPortal } from 'react-dom'
 import type { MouseEvent } from 'react'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { cn } from '@/lib/utils'
-import { isCanvasCardHidden, useCanvasStore } from '@/stores/canvas'
-import { usePanesStore } from '@/stores/panes'
-import { useProjectsStore } from '@/stores/projects'
-import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore, type CompletionNotification } from '@/stores/ui'
-
-function isNotificationTargetVisible(notification: CompletionNotification): boolean {
-  const session = useSessionsStore.getState().sessions.find((item) => item.id === notification.sessionId)
-  if (!session) return true
-
-  const selectedProjectId = useProjectsStore.getState().selectedProjectId
-  const sessions = useSessionsStore.getState()
-  const panes = usePanesStore.getState()
-  if (
-    sessions.activeSessionId === notification.sessionId
-    && (panes.workspaceMode === 'sessions' || selectedProjectId === notification.projectId)
-  ) {
-    return true
-  }
-
-  const activePaneSessionIds = new Set(Object.values(panes.paneActiveSession).filter(Boolean))
-  if (
-    activePaneSessionIds.has(notification.sessionId)
-    && (panes.workspaceMode === 'sessions' || selectedProjectId === notification.projectId)
-  ) {
-    return true
-  }
-
-  if (useUIStore.getState().settings.workspaceLayout === 'canvas') {
-    const canvas = useCanvasStore.getState()
-    const visibleCard = canvas.getCards().some((card) =>
-      card.refId === notification.sessionId && !isCanvasCardHidden(card)
-    )
-    if (visibleCard) return true
-  }
-
-  return false
-}
 
 function formatNotificationAge(createdAt: number): string {
   const elapsed = Math.max(0, Date.now() - createdAt)
@@ -56,42 +19,36 @@ function formatNotificationAge(createdAt: number): string {
 export function CompletionNotificationCenter(): JSX.Element | null {
   const notifications = useUIStore((state) => state.completionNotifications)
   const enabled = useUIStore((state) => state.settings.completionNotificationEnabled)
+  const runningEnabled = useUIStore((state) => state.settings.runningNotificationEnabled)
+  const externalCompletionEnabled = useUIStore((state) => state.settings.externalCompletionNotificationEnabled)
+  const externalRunningEnabled = useUIStore((state) => state.settings.externalRunningNotificationEnabled)
   const removeNotification = useUIStore((state) => state.removeCompletionNotification)
   const removeForSession = useUIStore((state) => state.removeCompletionNotificationsForSession)
   const clearNotifications = useUIStore((state) => state.clearCompletionNotifications)
-  const selectedProjectId = useProjectsStore((state) => state.selectedProjectId)
-  const activeSessionId = useSessionsStore((state) => state.activeSessionId)
-  const paneActiveSessionKey = usePanesStore((state) => Object.values(state.paneActiveSession).join('|'))
-  const workspaceMode = usePanesStore((state) => state.workspaceMode)
-  const workspaceLayout = useUIStore((state) => state.settings.workspaceLayout)
-  const canvasActiveLayoutKey = useCanvasStore((state) => state.activeLayoutKey)
-  const canvasLayouts = useCanvasStore((state) => state.layouts)
-
   useEffect(() => {
-    if (!enabled && notifications.length > 0) {
+    const hasAnyNotificationTarget = enabled || runningEnabled || externalCompletionEnabled || externalRunningEnabled
+    if (!hasAnyNotificationTarget && notifications.length > 0) {
       clearNotifications()
     }
-  }, [clearNotifications, enabled, notifications.length])
+  }, [clearNotifications, enabled, externalCompletionEnabled, externalRunningEnabled, notifications.length, runningEnabled])
 
   useEffect(() => {
-    if (!enabled) return
-    for (const notification of notifications) {
-      if (notification.status === 'completed' && isNotificationTargetVisible(notification)) {
-        removeForSession(notification.sessionId)
-      }
+    const overlayNotifications = notifications.filter((notification) => (
+      notification.status === 'running' ? externalRunningEnabled : externalCompletionEnabled
+    ))
+    if (overlayNotifications.length === 0) {
+      window.api.overlay.sendTaskNotifications([])
+      return
     }
-  }, [
-    activeSessionId,
-    canvasActiveLayoutKey,
-    canvasLayouts,
-    enabled,
-    notifications,
-    paneActiveSessionKey,
-    removeForSession,
-    selectedProjectId,
-    workspaceLayout,
-    workspaceMode,
-  ])
+
+    window.api.overlay.sendTaskNotifications(overlayNotifications)
+  }, [externalCompletionEnabled, externalRunningEnabled, notifications])
+
+  useEffect(() => {
+    return () => {
+      window.api.overlay.sendTaskNotifications([])
+    }
+  }, [])
 
   const handleJump = useCallback((notification: CompletionNotification): void => {
     focusSessionTarget(notification.sessionId)
@@ -105,12 +62,18 @@ export function CompletionNotificationCenter(): JSX.Element | null {
     removeNotification(id)
   }, [removeNotification])
 
-  if (!enabled || notifications.length === 0) return null
+  const visibleNotifications = notifications.filter((notification) => (
+    notification.status === 'running'
+      ? runningEnabled
+      : enabled
+  ))
+
+  if (visibleNotifications.length === 0) return null
 
   return createPortal(
     <div className="pointer-events-none fixed right-4 top-12 z-[9998] flex w-[388px] max-w-[calc(100vw-32px)] flex-col gap-2">
       <AnimatePresence mode="popLayout">
-        {notifications.map((notification) => {
+        {visibleNotifications.map((notification) => {
           const Icon = notification.status === 'running'
             ? LoaderCircle
             : notification.type === 'warning'

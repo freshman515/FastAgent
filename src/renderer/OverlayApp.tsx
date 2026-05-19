@@ -1,17 +1,20 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowRight,
   CheckCircle,
+  CheckCircle2,
   AlertTriangle,
   Info,
   XCircle,
   X,
   Shield,
   Check,
+  LoaderCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ToastNotification } from '@shared/types'
+import { useUIStore, type CompletionNotification } from '@/stores/ui'
 
 // ─── Toast constants (same as ToastContainer) ───
 
@@ -50,11 +53,37 @@ const TOOL_COLORS: Record<string, string> = {
   Agent: 'bg-pink-500',
 }
 
+function formatNotificationAge(createdAt: number): string {
+  const elapsed = Math.max(0, Date.now() - createdAt)
+  const minute = 60 * 1000
+  if (elapsed < minute) return '刚刚'
+  const minutes = Math.floor(elapsed / minute)
+  if (minutes < 60) return `${minutes} 分钟前`
+  return `${Math.floor(minutes / 60)} 小时前`
+}
+
 // ─── OverlayApp ───
 
 export function OverlayApp(): JSX.Element {
   const [toasts, setToasts] = useState<ToastNotification[]>([])
   const [permissions, setPermissions] = useState<PermissionEntry[]>([])
+  const [taskNotifications, setTaskNotifications] = useState<CompletionNotification[]>([])
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const init = async (): Promise<void> => {
+      const data = await window.api.config.read()
+      useUIStore.getState()._loadSettings(
+        data.ui,
+        (data as Record<string, unknown>).customThemes as Record<string, unknown> | undefined,
+      )
+      document.documentElement.style.backgroundColor = 'transparent'
+      document.body.style.backgroundColor = 'transparent'
+      const root = document.getElementById('root')
+      if (root) root.style.backgroundColor = 'transparent'
+    }
+    void init()
+  }, [])
 
   // Listen for toast events from main process (forwarded from main window)
   useEffect(() => {
@@ -77,6 +106,10 @@ export function OverlayApp(): JSX.Element {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     })
 
+    const offTaskNotifications = window.api.overlay.onTaskNotifications((raw) => {
+      setTaskNotifications(Array.isArray(raw) ? raw as CompletionNotification[] : [])
+    })
+
     // Permission IPC events are broadcast to all windows by the main process
     const offPermReq = window.api.session.onPermissionRequest((event) => {
       if (event.conversationId) return
@@ -93,17 +126,41 @@ export function OverlayApp(): JSX.Element {
     return () => {
       offToast()
       offRemove()
+      offTaskNotifications()
       offPermReq()
       offPermDismiss()
     }
   }, [])
 
-  const hasContent = toasts.length > 0 || permissions.length > 0
+  const hasContent = toasts.length > 0 || permissions.length > 0 || taskNotifications.length > 0
 
   // Toggle mouse passthrough: allow clicks only when content is visible
   useEffect(() => {
     window.api.overlay.setIgnoreMouse(!hasContent)
   }, [hasContent])
+
+  useEffect(() => {
+    if (!hasContent) {
+      window.api.overlay.setContentSize({ height: 0 })
+      return
+    }
+
+    const element = contentRef.current
+    if (!element) return
+
+    const updateSize = (): void => {
+      const rect = element.getBoundingClientRect()
+      window.api.overlay.setContentSize({
+        width: 420,
+        height: Math.ceil(rect.height + 24),
+      })
+    }
+
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [hasContent, permissions.length, taskNotifications.length, toasts.length])
 
   // ─── Toast handlers ───
 
@@ -161,12 +218,99 @@ export function OverlayApp(): JSX.Element {
     })
   }, [])
 
+  const handleTaskJump = useCallback((notification: CompletionNotification) => {
+    window.api.overlay.sendAction({
+      type: 'jump-notification',
+      sessionId: notification.sessionId,
+      projectId: notification.projectId,
+      notificationId: notification.id,
+      status: notification.status,
+    })
+  }, [])
+
+  const handleTaskDismiss = useCallback((id: string) => {
+    window.api.overlay.sendAction({
+      type: 'dismiss-notification',
+      notificationId: id,
+    })
+  }, [])
+
   return (
     <div
-      className="flex h-screen w-screen flex-col-reverse items-end justify-start p-4 gap-2"
+      className="pointer-events-none flex w-screen items-start justify-end p-3"
       style={{ background: 'transparent' }}
     >
+      <div ref={contentRef} className="flex w-[396px] max-w-[calc(100vw-24px)] flex-col gap-2">
       <AnimatePresence mode="popLayout">
+        {/* ─── Task notification cards ─── */}
+        {taskNotifications.map((notification) => {
+          const isRunning = notification.status === 'running'
+          const isWarning = notification.type === 'warning'
+          const Icon = isRunning ? LoaderCircle : isWarning ? AlertTriangle : CheckCircle2
+          return (
+            <motion.div
+              key={`task-${notification.id}`}
+              layout
+              initial={{ opacity: 0, x: 80, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 80, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 36 }}
+              role="button"
+              tabIndex={0}
+              onClick={() => handleTaskJump(notification)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                handleTaskJump(notification)
+              }}
+              className={cn(
+                'group pointer-events-auto relative flex min-h-[64px] cursor-pointer items-center gap-3 overflow-hidden rounded-[12px] px-3.5 py-3',
+                'border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
+                'transition-colors duration-200 hover:border-white/18 hover:bg-[var(--color-bg-surface)]',
+                'focus:outline-none focus-visible:ring-1 focus-visible:ring-white/25 focus-visible:ring-offset-0',
+              )}
+              aria-label="跳转到完成的会话"
+            >
+              <div
+                className={cn(
+                  'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+                  isRunning
+                    ? 'bg-[#2f80ed]/18 text-[#5aa7ff] transition-colors duration-200 group-hover:bg-[#2f80ed]/24'
+                    : isWarning
+                    ? 'bg-[var(--color-warning)]/16 text-[var(--color-warning)] transition-colors duration-200 group-hover:bg-[var(--color-warning)]/22'
+                    : 'bg-[var(--color-success)]/16 text-[var(--color-success)] transition-colors duration-200 group-hover:bg-[var(--color-success)]/22',
+                )}
+              >
+                <Icon size={20} className={cn('shrink-0', isRunning && 'animate-spin')} />
+              </div>
+              <div className="relative min-w-0 flex-1">
+                <div className="min-w-0 truncate text-[15px] font-semibold leading-5 text-[var(--color-text-primary)]">
+                  {notification.projectName}
+                </div>
+                <div className="mt-0.5 min-w-0 truncate text-[11px] font-normal leading-4 text-[var(--color-text-secondary)]">
+                  {notification.sessionName} {isRunning ? '已启动' : '已完成'}
+                </div>
+              </div>
+              <div className="relative flex shrink-0 items-center gap-3 self-center">
+                <div className="text-[var(--ui-font-xs)] font-normal leading-5 text-[var(--color-text-tertiary)]">
+                  {formatNotificationAge(notification.createdAt)}
+                </div>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleTaskDismiss(notification.id)
+                  }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-tertiary)] opacity-80 transition-colors hover:bg-white/8 hover:text-[var(--color-text-secondary)] hover:opacity-100"
+                  aria-label="关闭完成通知"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </motion.div>
+          )
+        })}
+
         {/* ─── Toast cards ─── */}
         {toasts.map((toast) => {
           const Icon = TYPE_ICONS[toast.type]
@@ -337,6 +481,7 @@ export function OverlayApp(): JSX.Element {
           )
         })}
       </AnimatePresence>
+      </div>
     </div>
   )
 }

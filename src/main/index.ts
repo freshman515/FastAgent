@@ -28,6 +28,10 @@ if (process.platform === 'win32') {
 }
 
 let mainWindow: BrowserWindow | null = null
+let overlayWindow: BrowserWindow | null = null
+let overlayTaskNotifications: unknown[] = []
+let mainWindowWasMaximizedBeforeMinimize = false
+let mainWindowLastNormalStateWasMaximized = false
 let closeConfirmationOpen = false
 const detachedWindows = new Map<string, BrowserWindow>()
 const canvasBookmarkShortcutWebContents = new Set<number>()
@@ -35,6 +39,130 @@ const EXTERNAL_WEB_PROTOCOLS = new Set(['http:', 'https:'])
 const BROWSER_WEBVIEW_NAVIGATION_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'about:', 'data:', 'blob:', 'chrome-extension:'])
 
 type StartupWindowState = 'maximized' | 'normal'
+
+const OVERLAY_WINDOW_WIDTH = 420
+const OVERLAY_WINDOW_MARGIN = 16
+const OVERLAY_WINDOW_TOP_MARGIN = 36
+
+function getOverlayDisplay(): Electron.Display {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const bounds = mainWindow.getBounds()
+    return screen.getDisplayNearestPoint({
+      x: bounds.x + Math.round(bounds.width / 2),
+      y: bounds.y + Math.round(bounds.height / 2),
+    })
+  }
+  return screen.getPrimaryDisplay()
+}
+
+function setOverlayWindowBounds(height: number): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+
+  const display = getOverlayDisplay()
+  const area = display.workArea
+  const safeWidth = Math.min(OVERLAY_WINDOW_WIDTH, Math.max(1, area.width - OVERLAY_WINDOW_MARGIN * 2))
+  const safeHeight = clampNumber(Math.round(height), 1, Math.max(1, area.height - OVERLAY_WINDOW_TOP_MARGIN - OVERLAY_WINDOW_MARGIN))
+  const x = area.x + area.width - safeWidth - OVERLAY_WINDOW_MARGIN
+  const y = area.y + OVERLAY_WINDOW_TOP_MARGIN
+  overlayWindow.setBounds({
+    x,
+    y,
+    width: safeWidth,
+    height: safeHeight,
+  })
+}
+
+function loadOverlayWindow(win: BrowserWindow): void {
+  const query = { overlay: 'true' }
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    const url = new URL(process.env['ELECTRON_RENDERER_URL'])
+    Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v))
+    win.loadURL(url.toString())
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { query })
+  }
+}
+
+function ensureOverlayWindow(): BrowserWindow {
+  if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow
+
+  overlayWindow = new BrowserWindow({
+    width: OVERLAY_WINDOW_WIDTH,
+    height: 1,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    fullscreenable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.cjs'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: true,
+    },
+  })
+
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  setOverlayWindowBounds(1)
+  loadOverlayWindow(overlayWindow)
+
+  overlayWindow.webContents.on('did-finish-load', () => {
+    overlayWindow?.webContents.send('overlay:task-notifications', overlayTaskNotifications)
+  })
+
+  overlayWindow.on('closed', () => {
+    overlayWindow = null
+  })
+
+  return overlayWindow
+}
+
+function sendOverlayTaskNotifications(notifications: unknown[]): void {
+  overlayTaskNotifications = notifications
+  if (notifications.length === 0) {
+    overlayWindow?.webContents.send('overlay:task-notifications', [])
+    overlayWindow?.hide()
+    return
+  }
+
+  const win = ensureOverlayWindow()
+  if (!win.webContents.isLoading()) {
+    win.webContents.send('overlay:task-notifications', notifications)
+  }
+  if (!win.isVisible()) {
+    setOverlayWindowBounds(1)
+    win.showInactive()
+  }
+}
+
+function bringMainWindowToFront(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  const shouldRestoreMaximized = mainWindow.isMaximized() || mainWindowWasMaximizedBeforeMinimize || mainWindowLastNormalStateWasMaximized
+  if (shouldRestoreMaximized) {
+    if (!mainWindow.isMaximized()) {
+      mainWindow.maximize()
+    }
+    if (!mainWindow.isVisible()) mainWindow.show()
+    mainWindow.focus()
+    return
+  }
+
+  if (!mainWindow.isVisible()) mainWindow.show()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.focus()
+}
 
 function clampNumber(value: number, min: number, max: number): number {
   if (max < min) return min
@@ -277,6 +405,25 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  mainWindow.on('maximize', () => {
+    mainWindowLastNormalStateWasMaximized = true
+    mainWindowWasMaximizedBeforeMinimize = true
+  })
+
+  mainWindow.on('unmaximize', () => {
+    const win = mainWindow
+    setTimeout(() => {
+      if (!win || win.isDestroyed()) return
+      if (win.isMinimized()) return
+      mainWindowLastNormalStateWasMaximized = false
+      mainWindowWasMaximizedBeforeMinimize = false
+    }, 80)
+  })
+
+  mainWindow.on('minimize', () => {
+    mainWindowWasMaximizedBeforeMinimize = mainWindowLastNormalStateWasMaximized || (mainWindow?.isMaximized() ?? false)
+  })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     openExternalWebUrl(details.url)
     return { action: 'deny' }
@@ -321,6 +468,42 @@ app.whenReady().then(async () => {
   // Start IDE bridge for Claude Code /ide integration (lock file + WebSocket)
   registerIdeIPC()
   startIdeServer().catch((err) => console.error('[IDE] failed to start:', err))
+
+  // ─── Overlay notification window IPC ───
+  ipcMain.on('overlay:task-notifications', (_event, notifications: unknown[]) => {
+    sendOverlayTaskNotifications(Array.isArray(notifications) ? notifications : [])
+  })
+
+  ipcMain.on('overlay:set-ignore-mouse', (event, ignore: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    win.setIgnoreMouseEvents(Boolean(ignore), { forward: true })
+  })
+
+  ipcMain.on('overlay:set-content-size', (event, size: { width?: number; height?: number } | null) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (BrowserWindow.fromWebContents(event.sender) !== overlayWindow) return
+
+    const height = typeof size?.height === 'number' ? size.height : 0
+    if (height <= 0) {
+      overlayWindow.hide()
+      return
+    }
+
+    setOverlayWindowBounds(height)
+    if (!overlayWindow.isVisible()) overlayWindow.showInactive()
+  })
+
+  ipcMain.on('overlay:action', (_event, action: unknown) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('overlay:action', action)
+    const type = typeof action === 'object' && action !== null && 'type' in action
+      ? (action as { type?: unknown }).type
+      : null
+    if (type === 'jump' || type === 'jump-notification') {
+      bringMainWindowToFront()
+    }
+  })
 
   // ─── Detached window IPC ───
   // Store live tab snapshots for detached windows to fetch and hand back on close
@@ -513,9 +696,7 @@ app.whenReady().then(async () => {
     if (mainWindow.isFocused()) {
       mainWindow.hide()
     } else {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
+      bringMainWindowToFront()
     }
   })
 
@@ -547,6 +728,11 @@ app.on('before-quit', async (e) => {
     if (!win.isDestroyed()) win.destroy()
   }
   detachedWindows.clear()
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.destroy()
+  }
+  overlayWindow = null
+  overlayTaskNotifications = []
 
   try {
     // Snapshot sessions and panes BEFORE graceful shutdown

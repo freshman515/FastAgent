@@ -473,8 +473,10 @@ const api = {
   overlay: {
     sendToast: (toast: unknown) => ipcRenderer.send('overlay:toast', toast),
     removeToast: (id: string) => ipcRenderer.send('overlay:toast-remove', id),
+    sendTaskNotifications: (notifications: unknown[]) => ipcRenderer.send('overlay:task-notifications', notifications),
     sendAction: (action: unknown) => ipcRenderer.send('overlay:action', action),
     setIgnoreMouse: (ignore: boolean) => ipcRenderer.send('overlay:set-ignore-mouse', ignore),
+    setContentSize: (size: { width?: number; height: number }) => ipcRenderer.send('overlay:set-content-size', size),
     onToast: (callback: (toast: unknown) => void) => {
       const handler = (_: unknown, toast: unknown) => callback(toast)
       ipcRenderer.on('overlay:toast', handler)
@@ -489,6 +491,11 @@ const api = {
       const handler = (_: unknown, action: unknown) => callback(action)
       ipcRenderer.on('overlay:action', handler)
       return () => ipcRenderer.removeListener('overlay:action', handler)
+    },
+    onTaskNotifications: (callback: (notifications: unknown[]) => void) => {
+      const handler = (_: unknown, notifications: unknown[]) => callback(notifications)
+      ipcRenderer.on('overlay:task-notifications', handler)
+      return () => ipcRenderer.removeListener('overlay:task-notifications', handler)
     },
     isOverlay: new URLSearchParams(window.location.search).get('overlay') === 'true',
   },

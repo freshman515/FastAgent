@@ -29,7 +29,7 @@ export function addRunningSessionNotification({
   body,
 }: RunningSessionNotificationOptions): void {
   const ui = useUIStore.getState()
-  if (!ui.settings.completionNotificationEnabled || !ui.settings.runningNotificationEnabled) return
+  if (!ui.settings.runningNotificationEnabled && !ui.settings.externalRunningNotificationEnabled) return
 
   const existing = ui.completionNotifications.find(
     (item) => item.sessionId === session.id && item.status === 'running',
@@ -58,7 +58,7 @@ export function addCompletedSessionNotification({
   type = 'success',
 }: CompletedSessionNotificationOptions): void {
   const ui = useUIStore.getState()
-  if (!ui.settings.completionNotificationEnabled) return
+  if (!ui.settings.completionNotificationEnabled && !ui.settings.externalCompletionNotificationEnabled) return
 
   const { projectName, sessionName } = getSessionNotificationNames(session)
 

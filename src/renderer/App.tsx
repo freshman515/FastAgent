@@ -19,6 +19,7 @@ import { PermissionDialog } from '@/components/permission/PermissionDialog'
 import { UpdateDialog } from '@/components/update/UpdateDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetachedApp } from '@/DetachedApp'
+import { OverlayApp } from '@/OverlayApp'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
 import { focusOpenEditorSoon } from '@/components/session/EditorView'
@@ -1781,6 +1782,10 @@ function sanitizePanesConfig(raw: unknown, validTabIds: Set<string>): { panes: R
 }
 
 export function App(): JSX.Element {
+  if (window.api.overlay.isOverlay) {
+    return <OverlayApp />
+  }
+
   // If this window is a detached pop-out, render the detached UI instead
   if (window.api.detach.isDetached) {
     return <DetachedApp />
@@ -2907,9 +2912,15 @@ function MainApp(): JSX.Element {
   // Listen for overlay actions (e.g., "Jump to session" clicked in overlay)
   useEffect(() => {
     const unsubscribe = window.api.overlay.onAction((raw) => {
-      const action = raw as { type: string; sessionId?: string; projectId?: string }
-      if (action.type === 'jump' && action.sessionId) {
+      const action = raw as { type: string; sessionId?: string; projectId?: string; notificationId?: string; status?: string }
+      if ((action.type === 'jump' || action.type === 'jump-notification') && action.sessionId) {
         focusSession(action.sessionId)
+        if (action.type === 'jump-notification' && action.status === 'completed' && action.notificationId) {
+          useUIStore.getState().removeCompletionNotification(action.notificationId)
+        }
+      }
+      if (action.type === 'dismiss-notification' && action.notificationId) {
+        useUIStore.getState().removeCompletionNotification(action.notificationId)
       }
     })
 

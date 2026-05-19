@@ -417,6 +417,10 @@ export interface AppSettings {
   completionNotificationEnabled: boolean
   /** Show top-right notifications while agent sessions are running. */
   runningNotificationEnabled: boolean
+  /** Mirror completed task notifications into an always-on-top overlay window. */
+  externalCompletionNotificationEnabled: boolean
+  /** Mirror running task notifications into an always-on-top overlay window. */
+  externalRunningNotificationEnabled: boolean
   /** How long top-right recent completion notifications stay visible. */
   completionNotificationDurationMs: number
   /** Play a sound when an agent task completes */
@@ -569,6 +573,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationToastDurationMs: NOTIFICATION_TOAST_DURATION_MS_DEFAULT,
   completionNotificationEnabled: true,
   runningNotificationEnabled: true,
+  externalCompletionNotificationEnabled: false,
+  externalRunningNotificationEnabled: false,
   completionNotificationDurationMs: COMPLETION_NOTIFICATION_DURATION_MS_DEFAULT,
   notificationSoundEnabled: true,
   notificationSoundVolume: 0.6,
@@ -1929,6 +1935,16 @@ export const useUIStore = create<UIState>((set, get) => ({
       s.notificationToastDurationMs = normalizeNotificationToastDurationMs(raw.notificationToastDurationMs)
       if (typeof raw.completionNotificationEnabled === 'boolean') s.completionNotificationEnabled = raw.completionNotificationEnabled
       if (typeof raw.runningNotificationEnabled === 'boolean') s.runningNotificationEnabled = raw.runningNotificationEnabled
+      if (typeof raw.externalCompletionNotificationEnabled === 'boolean') {
+        s.externalCompletionNotificationEnabled = raw.externalCompletionNotificationEnabled
+      } else if (typeof raw.externalNotificationWindowEnabled === 'boolean') {
+        s.externalCompletionNotificationEnabled = raw.externalNotificationWindowEnabled
+      }
+      if (typeof raw.externalRunningNotificationEnabled === 'boolean') {
+        s.externalRunningNotificationEnabled = raw.externalRunningNotificationEnabled
+      } else if (typeof raw.externalNotificationWindowEnabled === 'boolean') {
+        s.externalRunningNotificationEnabled = raw.externalNotificationWindowEnabled
+      }
       s.completionNotificationDurationMs = normalizeCompletionNotificationDurationMs(raw.completionNotificationDurationMs)
       if (typeof raw.notificationSoundEnabled === 'boolean') s.notificationSoundEnabled = raw.notificationSoundEnabled
       if (typeof raw.notificationSoundVolume === 'number') {

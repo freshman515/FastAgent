@@ -1,4 +1,4 @@
-import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2, Keyboard, LoaderCircle } from 'lucide-react'
+import { X, Settings, Type, Terminal, Layers, AudioLines, BarChart3, ExternalLink, Trash2, Bot, Eye, EyeOff, FileCode2, Search, Palette, GitBranch, Bell, Volume2, SplitSquareHorizontal, Briefcase, Play, Plus, Pencil, ArrowUp, ArrowDown, RotateCcw, Plug, Upload, Info, RefreshCw, Github, Package, Monitor, Cpu, CheckCircle2, AlertCircle, Grid3x3, MousePointer2, Keyboard } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { DEFAULT_FUNASR_WS_ENDPOINT } from '@shared/types'
 import type { AppInfo, AppLaunchMode, TerminalShellMode, UpdaterEvent, VoiceApiBodyMode, VoiceInputMode, VoiceLocalAsrServiceAction, VoiceLocalAsrServiceResult, VoiceLocalAsrStartupAction } from '@shared/types'
@@ -1514,12 +1514,12 @@ function CanvasPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
 function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   return (
     <div className={PAGE_STACK}>
-      <PageIntro title="通知设置" description="分别控制原有通知、右上角最近完成提醒和完成音效。" />
+      <PageIntro title="通知设置" description="分别控制弹出通知、应用内右上角通知、独立通知窗口和完成音效。" />
 
-      <SettingsSection icon={Bell} title="弹出通知" description="原有的应用内通知或系统桌面通知。">
+      <SettingsSection icon={Bell} title="右下角完成通知" description="原有的应用内右下角通知或系统桌面通知。">
         <ToggleRow
-          label="启用弹出通知"
-          description={settings.notificationToastEnabled ? '任务完成时按下方方式显示通知。' : '关闭后不会显示原有弹出通知。'}
+          label="启用右下角完成通知"
+          description={settings.notificationToastEnabled ? '任务完成时按下方方式显示通知。' : '关闭后不会显示右下角完成通知。'}
           checked={settings.notificationToastEnabled}
           onChange={(v) => onUpdate('notificationToastEnabled', v)}
         />
@@ -1548,14 +1548,20 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
         )}
       </SettingsSection>
 
-      <SettingsSection icon={CheckCircle2} title="右上角最近完成" description="跨项目任务完成后保留一条可跳转的单行提醒。">
+      <SettingsSection icon={CheckCircle2} title="应用内右上角通知" description="在 Pragma Desk 主窗口右上角显示可跳转提醒。">
         <ToggleRow
-          label="启用右上角提醒"
-          description={settings.completionNotificationEnabled ? '点击提醒可跳转到对应项目和会话。' : '关闭后右上角不会保留最近完成提醒。'}
+          label="显示完成提醒"
+          description={settings.completionNotificationEnabled ? '任务完成后保留一条可跳转提醒。' : '关闭后主窗口右上角不显示完成提醒。'}
           checked={settings.completionNotificationEnabled}
           onChange={(v) => onUpdate('completionNotificationEnabled', v)}
         />
-        {settings.completionNotificationEnabled && (
+        <ToggleRow
+          label="显示运行中提醒"
+          description={settings.runningNotificationEnabled ? '任务运行时显示一条可跳转提醒，结束或中断后自动消失。' : '关闭后主窗口右上角不显示运行中提醒。'}
+          checked={settings.runningNotificationEnabled}
+          onChange={(v) => onUpdate('runningNotificationEnabled', v)}
+        />
+        {(settings.completionNotificationEnabled || settings.externalCompletionNotificationEnabled) && (
           <DurationNumberField
             label="完成提醒停留时间"
             description="手动打开对应会话会提前消失。"
@@ -1569,13 +1575,31 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
         )}
       </SettingsSection>
 
-      <SettingsSection icon={LoaderCircle} title="右上角运行中" description="任务运行时显示一条可跳转提醒，结束或中断后自动消失。">
+      <SettingsSection icon={Monitor} title="独立通知窗口" description="在屏幕右上角使用置顶窗口显示任务提醒，主窗口右上角提醒仍保留。">
         <ToggleRow
-          label="显示运行中提醒"
-          description={settings.runningNotificationEnabled ? '点击提醒只跳转到对应项目和会话，不会关闭提醒。' : '关闭后任务运行时不显示右上角提醒。'}
-          checked={settings.runningNotificationEnabled}
-          onChange={(v) => onUpdate('runningNotificationEnabled', v)}
+          label="显示完成通知"
+          description={settings.externalCompletionNotificationEnabled ? '任务完成后在独立窗口显示一条可跳转通知。' : '关闭后独立窗口不显示完成通知。'}
+          checked={settings.externalCompletionNotificationEnabled}
+          onChange={(v) => onUpdate('externalCompletionNotificationEnabled', v)}
         />
+        <ToggleRow
+          label="显示运行中通知"
+          description={settings.externalRunningNotificationEnabled ? '任务运行时在独立窗口显示一条可跳转通知，结束或中断后自动消失。' : '关闭后独立窗口不显示运行中通知。'}
+          checked={settings.externalRunningNotificationEnabled}
+          onChange={(v) => onUpdate('externalRunningNotificationEnabled', v)}
+        />
+        {settings.externalCompletionNotificationEnabled && (
+          <DurationNumberField
+            label="完成通知停留时间"
+            description="与应用内完成提醒使用同一停留时间，手动打开对应会话会提前消失。"
+            value={settings.completionNotificationDurationMs}
+            min={COMPLETION_NOTIFICATION_DURATION_MS_MIN}
+            max={COMPLETION_NOTIFICATION_DURATION_MS_MAX}
+            unitMs={60 * 1000}
+            unitLabel="分钟"
+            onChange={(v) => onUpdate('completionNotificationDurationMs', v)}
+          />
+        )}
       </SettingsSection>
 
       <SettingsSection icon={Volume2} title="完成音效" description="任务完成时播放提示音，可独立于通知开关使用。">
