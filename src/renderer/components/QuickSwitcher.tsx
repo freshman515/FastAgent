@@ -33,7 +33,7 @@ const TYPE_ICONS: Record<string, string> = {
   'terminal-wsl': terminalIcon,
 }
 
-type SwitcherMode = 'search' | 'mru'
+type SwitcherMode = 'search' | 'mru' | 'projects'
 
 interface SwitcherItem {
   id: string
@@ -51,6 +51,14 @@ interface SwitcherItem {
   label?: string
   modified?: boolean
   language?: string
+}
+
+interface ProjectSwitcherItem {
+  id: string
+  title: string
+  subtitle: string
+  isCurrent: boolean
+  pinned: boolean
 }
 
 interface QuickSwitcherProps {
@@ -104,6 +112,10 @@ function activateItem(item: SwitcherItem): void {
   }
 }
 
+function activateProjectItem(item: ProjectSwitcherItem): void {
+  switchProjectContext(item.id, null, null)
+}
+
 function buildMruIds(paneSessions: string[], paneRecentSessions: string[], activeTabId: string | null): string[] {
   const orderedRecent = paneRecentSessions.filter((id) => id !== activeTabId && paneSessions.includes(id))
   const fallback = paneSessions.filter((id) => id !== activeTabId && !orderedRecent.includes(id))
@@ -144,11 +156,15 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [mruCycleItems, setMruCycleItems] = useState<SwitcherItem[] | null>(null)
+  const [projectRecentIds, setProjectRecentIds] = useState<string[]>([])
+  const [projectCycleItems, setProjectCycleItems] = useState<ProjectSwitcherItem[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const modeRef = useRef<SwitcherMode | null>(null)
   const selectedIdxRef = useRef(0)
   const mruItemsRef = useRef<SwitcherItem[]>([])
   const mruCycleItemsRef = useRef<SwitcherItem[] | null>(null)
+  const projectItemsRef = useRef<ProjectSwitcherItem[]>([])
+  const projectCycleItemsRef = useRef<ProjectSwitcherItem[] | null>(null)
 
   const sessions = useSessionsStore((s) => s.sessions)
   const outputStates = useSessionsStore((s) => s.outputStates)
@@ -165,6 +181,7 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
   modeRef.current = mode
   selectedIdxRef.current = selectedIdx
   mruCycleItemsRef.current = mruCycleItems
+  projectCycleItemsRef.current = projectCycleItems
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -285,6 +302,35 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
   mruItemsRef.current = mruItems
 
   useEffect(() => {
+    if (!selectedProjectId) return
+    setProjectRecentIds((current) => [selectedProjectId, ...current.filter((id) => id !== selectedProjectId)].slice(0, 24))
+  }, [selectedProjectId])
+
+  const projectItems = useMemo(() => {
+    const byId = new Map(projects.map((project) => [project.id, project]))
+    const recentIds = projectRecentIds.filter((id) => byId.has(id))
+    const previousIds = recentIds.filter((id) => id !== selectedProjectId)
+    const orderedIds = [
+      ...previousIds,
+      ...projects.map((project) => project.id).filter((id) => id !== selectedProjectId && !previousIds.includes(id)),
+      ...(selectedProjectId && byId.has(selectedProjectId) ? [selectedProjectId] : []),
+    ]
+
+    return orderedIds
+      .map((id) => byId.get(id))
+      .filter((project): project is NonNullable<typeof project> => Boolean(project))
+      .map((project) => ({
+        id: project.id,
+        title: project.name,
+        subtitle: project.path,
+        isCurrent: project.id === selectedProjectId,
+        pinned: project.pinned,
+      }))
+  }, [projectRecentIds, projects, selectedProjectId])
+
+  projectItemsRef.current = projectItems
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault()
@@ -304,10 +350,11 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
           setMode(null)
           return
         }
-        if (mode === 'mru') {
+        if (mode === 'mru' || mode === 'projects') {
           event.preventDefault()
           modeRef.current = null
           setMruCycleItems(null)
+          setProjectCycleItems(null)
           setMode(null)
         }
       }
@@ -323,10 +370,28 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
       if (currentMode === 'search' || !event.ctrlKey || event.key !== 'Tab') return
 
       if (ctrlTabBehavior === 'projects') {
-        if (!onSwitchRecentProject) return
+        const items = currentMode === 'projects'
+          ? (projectCycleItemsRef.current ?? projectItemsRef.current)
+          : projectItemsRef.current
+        if (items.length < 2) return
+
         event.preventDefault()
         event.stopPropagation()
-        onSwitchRecentProject(event.shiftKey ? -1 : 1)
+
+        modeRef.current = 'projects'
+        setMode('projects')
+        if (currentMode !== 'projects') {
+          setProjectCycleItems(items)
+          projectCycleItemsRef.current = items
+        }
+
+        const currentIdx = currentMode === 'projects'
+          ? selectedIdxRef.current
+          : (event.shiftKey ? items.length : -1)
+        const direction = event.shiftKey ? -1 : 1
+        const nextIdx = (currentIdx + direction + items.length) % items.length
+        selectedIdxRef.current = nextIdx
+        setSelectedIdx(nextIdx)
         return
       }
 
@@ -350,23 +415,32 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
       const nextIdx = (currentIdx + direction + items.length) % items.length
       selectedIdxRef.current = nextIdx
       setSelectedIdx(nextIdx)
-      activateItem(items[nextIdx])
     }
 
     const handleKeyUp = (event: KeyboardEvent): void => {
-      if (modeRef.current !== 'mru') return
+      const currentMode = modeRef.current
+      if (currentMode !== 'mru' && currentMode !== 'projects') return
       if (event.key !== 'Control') return
 
       event.preventDefault()
+      if (currentMode === 'projects') {
+        const item = (projectCycleItemsRef.current ?? projectItemsRef.current)[selectedIdxRef.current]
+        if (item) activateProjectItem(item)
+      } else {
+        const item = (mruCycleItemsRef.current ?? mruItemsRef.current)[selectedIdxRef.current]
+        if (item) activateItem(item)
+      }
       modeRef.current = null
       setMruCycleItems(null)
+      setProjectCycleItems(null)
       setMode(null)
     }
 
     const handleBlur = (): void => {
-      if (modeRef.current !== 'mru') return
+      if (modeRef.current !== 'mru' && modeRef.current !== 'projects') return
       modeRef.current = null
       setMruCycleItems(null)
+      setProjectCycleItems(null)
       setMode(null)
     }
 
@@ -385,33 +459,45 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
       setQuery('')
       setSelectedIdx(0)
       setMruCycleItems(null)
+      setProjectCycleItems(null)
     }
   }, [mode])
 
   const visibleItems = mode === 'mru' ? (mruCycleItems ?? mruItems) : searchableItems
+  const visibleProjectItems = mode === 'projects' ? (projectCycleItems ?? projectItems) : []
 
   useEffect(() => {
-    if (visibleItems.length === 0) {
+    const itemCount = mode === 'projects' ? visibleProjectItems.length : visibleItems.length
+    if (itemCount === 0) {
       if (selectedIdx !== 0) setSelectedIdx(0)
       return
     }
-    if (selectedIdx >= visibleItems.length) {
-      setSelectedIdx(visibleItems.length - 1)
+    if (selectedIdx >= itemCount) {
+      setSelectedIdx(itemCount - 1)
     }
-  }, [selectedIdx, visibleItems])
+  }, [mode, selectedIdx, visibleItems, visibleProjectItems])
 
   const close = useCallback(() => {
     modeRef.current = null
     setMruCycleItems(null)
+    setProjectCycleItems(null)
     setMode(null)
   }, [])
 
   const handleSelect = useCallback((idx: number) => {
+    if (mode === 'projects') {
+      const item = visibleProjectItems[idx]
+      if (!item) return
+      activateProjectItem(item)
+      close()
+      return
+    }
+
     const item = visibleItems[idx]
     if (!item) return
     activateItem(item)
     close()
-  }, [close, visibleItems])
+  }, [close, mode, visibleItems, visibleProjectItems])
 
   const handleSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
@@ -466,26 +552,73 @@ export function QuickSwitcher({ onSwitchRecentProject }: QuickSwitcherProps = {}
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
-                窗格最近标签
+                {mode === 'projects' ? '最近项目' : '窗格最近标签'}
               </div>
               <div className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
-                按住 <span className="font-semibold text-[var(--color-text-primary)]">Ctrl</span> 继续按 Tab 选择，释放 Ctrl 关闭
+                按住 <span className="font-semibold text-[var(--color-text-primary)]">Ctrl</span> 继续按 Tab 选择，释放 Ctrl 切换
               </div>
             </div>
             <div className="rounded-full bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-[11px] text-[var(--color-text-tertiary)]">
-              {visibleItems.length} 个标签
+              {mode === 'projects' ? `${visibleProjectItems.length} 个项目` : `${visibleItems.length} 个标签`}
             </div>
           </div>
         )}
 
         <div className="max-h-[420px] overflow-y-auto py-1.5">
-          {visibleItems.length === 0 && (
+          {mode === 'projects' && visibleProjectItems.length === 0 && (
+            <div className="px-4 py-5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
+              暂无项目。
+            </div>
+          )}
+
+          {mode === 'projects' && visibleProjectItems.map((item, index) => {
+            const isSelected = index === selectedIdx
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleSelect(index)}
+                onMouseEnter={() => setSelectedIdx(index)}
+                className={cn(
+                  'flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors',
+                  isSelected
+                    ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]/65',
+                )}
+              >
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-[var(--color-accent)]/15 text-[9px] font-bold text-[var(--color-accent)]">
+                  {item.title.slice(0, 1).toUpperCase()}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13px] font-medium">{item.title}</span>
+                    {item.isCurrent && (
+                      <span className="rounded-full bg-[var(--color-accent)]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
+                        当前
+                      </span>
+                    )}
+                    {item.pinned && (
+                      <span className="rounded-full bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+                        固定
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">
+                    {item.subtitle}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+
+          {mode !== 'projects' && visibleItems.length === 0 && (
             <div className="px-4 py-5 text-[var(--ui-font-sm)] text-[var(--color-text-tertiary)]">
               {mode === 'search' ? '没有匹配的会话或文件。' : '此窗格无最近标签。'}
             </div>
           )}
 
-          {visibleItems.map((item, index) => {
+          {mode !== 'projects' && visibleItems.map((item, index) => {
             const isSelected = index === selectedIdx
             const editorIcon = item.language ? (FILE_ICONS[item.language] ?? FILE_ICONS.plaintext) : null
 
