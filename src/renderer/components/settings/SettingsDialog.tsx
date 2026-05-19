@@ -20,6 +20,8 @@ import {
   CANVAS_SESSION_CARD_HEIGHT_MIN,
   CANVAS_SESSION_CARD_WIDTH_MAX,
   CANVAS_SESSION_CARD_WIDTH_MIN,
+  COMPLETION_NOTIFICATION_DURATION_MS_MAX,
+  COMPLETION_NOTIFICATION_DURATION_MS_MIN,
   DEFAULT_HIDDEN_NEW_SESSION_OPTION_IDS,
   NOTIFICATION_TOAST_DURATION_MS_MAX,
   NOTIFICATION_TOAST_DURATION_MS_MIN,
@@ -303,16 +305,37 @@ function PercentSlider({ label, value, onChange, trailing }: {
   )
 }
 
-function DurationSlider({ label, description, value, min, max, step, onChange }: {
+function DurationNumberField({ label, description, value, min, max, unitMs, unitLabel, onChange }: {
   label: string
   description: string
   value: number
   min: number
   max: number
-  step: number
+  unitMs: number
+  unitLabel: string
   onChange: (v: number) => void
 }): JSX.Element {
-  const seconds = Math.round(value / 1000)
+  const minUnits = Math.max(1, Math.ceil(min / unitMs))
+  const maxUnits = Math.max(minUnits, Math.floor(max / unitMs))
+  const currentUnits = Math.max(minUnits, Math.min(maxUnits, Math.round(value / unitMs)))
+  const [draft, setDraft] = useState(String(currentUnits))
+
+  useEffect(() => {
+    setDraft(String(currentUnits))
+  }, [currentUnits])
+
+  const commitDraft = (): void => {
+    const parsed = Number(draft)
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(currentUnits))
+      return
+    }
+    const nextUnits = Math.max(minUnits, Math.min(maxUnits, Math.round(parsed)))
+    setDraft(String(nextUnits))
+    const nextValue = nextUnits * unitMs
+    if (nextValue !== value) onChange(nextValue)
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-4">
@@ -320,17 +343,28 @@ function DurationSlider({ label, description, value, min, max, step, onChange }:
           <span className="text-[12px] font-semibold tracking-tight text-[var(--color-text-primary)]">{label}</span>
           <span className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-tertiary)]">{description}</span>
         </div>
-        <span className="shrink-0 text-[11px] font-mono font-bold text-[var(--color-text-secondary)]">{seconds} 秒</span>
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.08] accent-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
-      />
+      <label className="flex h-9 w-36 items-center rounded-[var(--radius-md)] border border-white/[0.08] bg-black/20 px-3 transition-colors focus-within:border-[var(--color-accent)] hover:border-white/[0.14]">
+        <input
+          type="number"
+          min={minUnits}
+          max={maxUnits}
+          step={1}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.currentTarget.blur()
+            } else if (event.key === 'Escape') {
+              setDraft(String(currentUnits))
+              event.currentTarget.blur()
+            }
+          }}
+          className="h-full min-w-0 flex-1 appearance-none bg-transparent font-mono text-[12px] font-semibold text-[var(--color-text-primary)] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span className="ml-2 shrink-0 text-[11px] font-medium text-[var(--color-text-tertiary)]">{unitLabel}</span>
+      </label>
     </div>
   )
 }
@@ -1480,9 +1514,15 @@ function CanvasPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (
 function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: keyof AppSettings, v: unknown) => void }): JSX.Element {
   return (
     <div className={PAGE_STACK}>
-      <PageIntro title="通知设置" description="控制 Agent 完成任务时是否弹出提醒和播放声音。" />
-      <SettingsSection icon={Bell} title="完成提醒" description="会话任务完成时的桌面通知与音效。">
-        <ToggleRow label="弹出通知" description="Agent 任务完成时显示提醒；关闭后只保留完成音效。" checked={settings.notificationToastEnabled} onChange={(v) => onUpdate('notificationToastEnabled', v)} />
+      <PageIntro title="通知设置" description="分别控制原有通知、右上角最近完成提醒和完成音效。" />
+
+      <SettingsSection icon={Bell} title="弹出通知" description="原有的应用内通知或系统桌面通知。">
+        <ToggleRow
+          label="启用弹出通知"
+          description={settings.notificationToastEnabled ? '任务完成时按下方方式显示通知。' : '关闭后不会显示原有弹出通知。'}
+          checked={settings.notificationToastEnabled}
+          onChange={(v) => onUpdate('notificationToastEnabled', v)}
+        />
         {settings.notificationToastEnabled && (
           <>
             <SegmentedChoice<NotificationDisplayMode>
@@ -1494,18 +1534,48 @@ function NotificationsPage({ settings, onUpdate }: { settings: AppSettings; onUp
               ]}
               onChange={(v) => onUpdate('notificationDisplayMode', v)}
             />
-            <DurationSlider
+            <DurationNumberField
               label="通知停留时间"
               description="应用内完成通知自动关闭前的停留时间。桌面通知由系统控制。"
               value={settings.notificationToastDurationMs}
               min={NOTIFICATION_TOAST_DURATION_MS_MIN}
               max={NOTIFICATION_TOAST_DURATION_MS_MAX}
-              step={1000}
+              unitMs={1000}
+              unitLabel="秒"
               onChange={(v) => onUpdate('notificationToastDurationMs', v)}
             />
           </>
         )}
-        <ToggleRow label="完成音效" description="播放像素风提示音（正在查看时也会响）" checked={settings.notificationSoundEnabled} onChange={(v) => onUpdate('notificationSoundEnabled', v)} />
+      </SettingsSection>
+
+      <SettingsSection icon={CheckCircle2} title="右上角最近完成" description="跨项目任务完成后保留一条可跳转的单行提醒。">
+        <ToggleRow
+          label="启用右上角提醒"
+          description={settings.completionNotificationEnabled ? '点击提醒可跳转到对应项目和会话。' : '关闭后右上角不会保留最近完成提醒。'}
+          checked={settings.completionNotificationEnabled}
+          onChange={(v) => onUpdate('completionNotificationEnabled', v)}
+        />
+        {settings.completionNotificationEnabled && (
+          <DurationNumberField
+            label="停留时间"
+            description="手动打开对应会话会提前消失。"
+            value={settings.completionNotificationDurationMs}
+            min={COMPLETION_NOTIFICATION_DURATION_MS_MIN}
+            max={COMPLETION_NOTIFICATION_DURATION_MS_MAX}
+            unitMs={60 * 1000}
+            unitLabel="分钟"
+            onChange={(v) => onUpdate('completionNotificationDurationMs', v)}
+          />
+        )}
+      </SettingsSection>
+
+      <SettingsSection icon={Volume2} title="完成音效" description="任务完成时播放提示音，可独立于通知开关使用。">
+        <ToggleRow
+          label="启用完成音效"
+          description={settings.notificationSoundEnabled ? '任务完成时播放提示音，正在查看时也会响。' : '关闭后任务完成时不播放声音。'}
+          checked={settings.notificationSoundEnabled}
+          onChange={(v) => onUpdate('notificationSoundEnabled', v)}
+        />
         {settings.notificationSoundEnabled && (
           <PercentSlider
             label="音量"

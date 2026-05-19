@@ -4,6 +4,7 @@ import { MainPanel } from '@/components/layout/MainPanel'
 import { StatusBar } from '@/components/layout/StatusBar'
 import { RightPanel } from '@/components/layout/RightPanel'
 import { ToastContainer } from '@/components/notification/ToastContainer'
+import { CompletionNotificationCenter } from '@/components/notification/CompletionNotificationCenter'
 import { ProjectTodoFloatingPanel } from '@/components/todo/ProjectTodoFloatingPanel'
 import { SessionNamePromptDialog } from '@/components/session/SessionNamePromptDialog'
 import {
@@ -47,6 +48,7 @@ import { isClaudeCodeType, isTerminalSessionType, SESSION_TYPE_CONFIG, type Clau
 import { toggleCurrentSessionFullscreen } from '@/lib/currentSessionFullscreen'
 import { playTaskCompleteSound } from '@/lib/notificationSound'
 import { showTaskNotification } from '@/lib/taskNotification'
+import { addCompletedSessionNotification } from '@/lib/completionNotification'
 import { cn } from '@/lib/utils'
 
 interface EditorPathContext {
@@ -2980,6 +2982,9 @@ function MainApp(): JSX.Element {
         projectId: session?.projectId,
         duration: notificationToastDurationMs,
       })
+      if (session) {
+        addCompletedSessionNotification({ session, body })
+      }
       if (notificationSoundEnabled) {
         playTaskCompleteSound(notificationSoundVolume)
       }
@@ -3542,6 +3547,7 @@ function MainApp(): JSX.Element {
       <UpdateDialog />
 
       {/* Toast notifications */}
+      <CompletionNotificationCenter />
       <ToastContainer />
 
       {/* Session name prompt */}

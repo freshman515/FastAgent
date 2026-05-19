@@ -51,6 +51,9 @@ export const CANVAS_FOCUS_FONT_RANGE_MAX_DEFAULT = 20
 export const NOTIFICATION_TOAST_DURATION_MS_MIN = 1000
 export const NOTIFICATION_TOAST_DURATION_MS_MAX = 30000
 export const NOTIFICATION_TOAST_DURATION_MS_DEFAULT = 8000
+export const COMPLETION_NOTIFICATION_DURATION_MS_MIN = 30000
+export const COMPLETION_NOTIFICATION_DURATION_MS_MAX = 30 * 60 * 1000
+export const COMPLETION_NOTIFICATION_DURATION_MS_DEFAULT = 5 * 60 * 1000
 const STATUS_BAR_DEFAULT_HIDDEN_VERSION = 1
 const RIGHT_DOCK_DEFAULT_EMPTY_VERSION = 1
 const EDITOR_SYNTAX_CHECK_DEFAULT_OFF_VERSION = 1
@@ -269,6 +272,19 @@ export interface InstalledPlugin {
   }
 }
 
+export interface CompletionNotification {
+  id: string
+  title: string
+  body: string
+  type: 'success' | 'warning'
+  sessionId: string
+  projectId: string
+  sessionName: string
+  projectName: string
+  createdAt: number
+  expiresAt: number
+}
+
 const DEFAULT_QUICK_COMMANDS = [
   { id: 'qc-default-ls', name: 'ls', command: 'ls' },
   { id: 'qc-default-pwd', name: 'pwd', command: 'pwd' },
@@ -396,6 +412,10 @@ export interface AppSettings {
   notificationDisplayMode: NotificationDisplayMode
   /** How long completion toast notifications stay visible, in milliseconds. */
   notificationToastDurationMs: number
+  /** Show the top-right recent completion notification stack. */
+  completionNotificationEnabled: boolean
+  /** How long top-right recent completion notifications stay visible. */
+  completionNotificationDurationMs: number
   /** Play a sound when an agent task completes */
   notificationSoundEnabled: boolean
   /** Notification sound volume, 0..1 */
@@ -544,6 +564,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationToastEnabled: true,
   notificationDisplayMode: 'smart',
   notificationToastDurationMs: NOTIFICATION_TOAST_DURATION_MS_DEFAULT,
+  completionNotificationEnabled: true,
+  completionNotificationDurationMs: COMPLETION_NOTIFICATION_DURATION_MS_DEFAULT,
   notificationSoundEnabled: true,
   notificationSoundVolume: 0.6,
   quickCommandGroups: [],
@@ -647,6 +669,12 @@ interface UIState {
   addToast: (toast: Omit<ToastNotification, 'id' | 'createdAt'>) => string
   removeToast: (id: string) => void
   clearToasts: () => void
+
+  completionNotifications: CompletionNotification[]
+  addCompletionNotification: (notification: Omit<CompletionNotification, 'id' | 'createdAt' | 'expiresAt'> & { duration?: number }) => string
+  removeCompletionNotification: (id: string) => void
+  removeCompletionNotificationsForSession: (sessionId: string) => void
+  clearCompletionNotifications: () => void
 
   sessionNamePrompt: SessionNamePromptRequest | null
   setSessionNamePrompt: (prompt: SessionNamePromptRequest | null) => void
@@ -1310,6 +1338,12 @@ function normalizeNotificationToastDurationMs(value: unknown): number {
     : DEFAULT_SETTINGS.notificationToastDurationMs
 }
 
+function normalizeCompletionNotificationDurationMs(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(Math.max(COMPLETION_NOTIFICATION_DURATION_MS_MIN, Math.min(COMPLETION_NOTIFICATION_DURATION_MS_MAX, value)))
+    : DEFAULT_SETTINGS.completionNotificationDurationMs
+}
+
 function normalizeCanvasFocusFontSettings(settings: AppSettings): AppSettings {
   const minPx = clampCanvasFocusFontPx(settings.canvasFocusReadableFontMinPx)
   const maxPx = clampCanvasFocusFontPx(settings.canvasFocusReadableFontMaxPx)
@@ -1889,6 +1923,8 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (typeof raw.notificationToastEnabled === 'boolean') s.notificationToastEnabled = raw.notificationToastEnabled
       s.notificationDisplayMode = normalizeNotificationDisplayMode(raw.notificationDisplayMode)
       s.notificationToastDurationMs = normalizeNotificationToastDurationMs(raw.notificationToastDurationMs)
+      if (typeof raw.completionNotificationEnabled === 'boolean') s.completionNotificationEnabled = raw.completionNotificationEnabled
+      s.completionNotificationDurationMs = normalizeCompletionNotificationDurationMs(raw.completionNotificationDurationMs)
       if (typeof raw.notificationSoundEnabled === 'boolean') s.notificationSoundEnabled = raw.notificationSoundEnabled
       if (typeof raw.notificationSoundVolume === 'number') {
         s.notificationSoundVolume = Math.max(0, Math.min(1, raw.notificationSoundVolume))
@@ -2072,6 +2108,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     settings.canvasNoteFontSize = clampCanvasNoteFontSize(settings.canvasNoteFontSize)
     settings.notificationDisplayMode = normalizeNotificationDisplayMode(settings.notificationDisplayMode)
     settings.notificationToastDurationMs = normalizeNotificationToastDurationMs(settings.notificationToastDurationMs)
+    settings.completionNotificationDurationMs = normalizeCompletionNotificationDurationMs(settings.completionNotificationDurationMs)
     settings.hiddenNewSessionOptionIds = normalizeHiddenNewSessionOptionIds(settings.hiddenNewSessionOptionIds)
     settings.newSessionMenuPresetVersion = Math.max(NEW_SESSION_MENU_PRESET_VERSION, Math.round(settings.newSessionMenuPresetVersion || 0))
     settings.newSessionOptionOrder = normalizeHiddenNewSessionOptionIds(settings.newSessionOptionOrder)
@@ -2149,6 +2186,50 @@ export const useUIStore = create<UIState>((set, get) => ({
     })),
 
   clearToasts: () => set({ toasts: [] }),
+
+  completionNotifications: [],
+
+  addCompletionNotification: (notification) => {
+    const id = generateId()
+    const now = Date.now()
+    const duration = notification.duration ?? get().settings.completionNotificationDurationMs
+    const { duration: _duration, ...payload } = notification
+    const nextNotification: CompletionNotification = {
+      ...payload,
+      id,
+      createdAt: now,
+      expiresAt: now + duration,
+    }
+
+    set((state) => ({
+      completionNotifications: [
+        nextNotification,
+        ...state.completionNotifications.filter((item) => item.sessionId !== notification.sessionId),
+      ].slice(0, 8),
+    }))
+
+    if (duration > 0) {
+      setTimeout(() => {
+        set((state) => ({
+          completionNotifications: state.completionNotifications.filter((item) => item.id !== id),
+        }))
+      }, duration)
+    }
+
+    return id
+  },
+
+  removeCompletionNotification: (id) =>
+    set((state) => ({
+      completionNotifications: state.completionNotifications.filter((item) => item.id !== id),
+    })),
+
+  removeCompletionNotificationsForSession: (sessionId) =>
+    set((state) => ({
+      completionNotifications: state.completionNotifications.filter((item) => item.sessionId !== sessionId),
+    })),
+
+  clearCompletionNotifications: () => set({ completionNotifications: [] }),
 
   sessionNamePrompt: null,
   setSessionNamePrompt: (prompt) => set({ sessionNamePrompt: prompt }),

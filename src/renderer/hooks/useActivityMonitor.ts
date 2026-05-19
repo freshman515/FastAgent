@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { addCompletedSessionNotification } from '@/lib/completionNotification'
 import { focusSessionTarget } from '@/lib/focusSessionTarget'
 import { showTaskNotification } from '@/lib/taskNotification'
 import { useSessionsStore } from '@/stores/sessions'
@@ -35,20 +36,28 @@ export function useActivityMonitor(): void {
               setOutputState(session.id, isViewing ? 'idle' : 'unread')
               updateStatus(session.id, 'idle')
 
-              const settings = useUIStore.getState().settings
-              if (!isViewing && settings.notificationToastEnabled) {
+              if (!isViewing) {
+                const settings = useUIStore.getState().settings
                 const project = useProjectsStore
                   .getState()
                   .projects.find((p) => p.id === session.projectId)
                 const title = `${session.name} completed`
                 const body = project ? `Project: ${project.name}` : ''
-                await showTaskNotification({
+                if (settings.notificationToastEnabled) {
+                  await showTaskNotification({
+                    title,
+                    body,
+                    type: 'info',
+                    sessionId: session.id,
+                    projectId: session.projectId,
+                    duration: settings.notificationToastDurationMs,
+                  })
+                }
+                addCompletedSessionNotification({
+                  session,
                   title,
                   body,
-                  type: 'info',
-                  sessionId: session.id,
-                  projectId: session.projectId,
-                  duration: settings.notificationToastDurationMs,
+                  type: 'success',
                 })
               }
             }
@@ -88,17 +97,25 @@ export function useActivityMonitor(): void {
 
       const isViewing = activeSessionId === session.id
       const settings = useUIStore.getState().settings
-      if (!isViewing && settings.notificationToastEnabled) {
+      if (!isViewing) {
         const project = useProjectsStore
           .getState()
           .projects.find((p) => p.id === session.projectId)
-        useUIStore.getState().addToast({
+        if (settings.notificationToastEnabled) {
+          useUIStore.getState().addToast({
+            title: `${session.name} exited`,
+            body: `Exit code: ${event.exitCode}${project ? ` | ${project.name}` : ''}`,
+            type: event.exitCode === 0 ? 'success' : 'warning',
+            sessionId: session.id,
+            projectId: session.projectId,
+            duration: settings.notificationToastDurationMs,
+          })
+        }
+        addCompletedSessionNotification({
+          session,
           title: `${session.name} exited`,
           body: `Exit code: ${event.exitCode}${project ? ` | ${project.name}` : ''}`,
           type: event.exitCode === 0 ? 'success' : 'warning',
-          sessionId: session.id,
-          projectId: session.projectId,
-          duration: settings.notificationToastDurationMs,
         })
       }
     })
