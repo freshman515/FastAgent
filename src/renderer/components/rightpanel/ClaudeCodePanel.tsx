@@ -56,6 +56,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUIStore } from '@/stores/ui'
 import { useWorktreesStore } from '@/stores/worktrees'
+import { formatTerminalPaths, hasFileTreeDragPayload, readFileTreeDragPayload } from '@/lib/fileTreeDrag'
 
 interface PendingImage {
   id: string
@@ -2644,6 +2645,25 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
     }
   }, [addReferencedFile, handlePickImages, rootPath])
 
+  const handleApplyDroppedFileTreePath = useCallback(async (event: React.DragEvent): Promise<boolean> => {
+    const payload = readFileTreeDragPayload(event.dataTransfer)
+    if (!payload) return false
+
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDropActive(false)
+
+    if (payload.isDir) {
+      insertAtCursor(`${formatTerminalPaths([payload.path])} `)
+      return true
+    }
+
+    const relativePath = rootPath ? toDisplayPath(payload.path, rootPath) : payload.path.split(/[\\/]/).pop() ?? payload.path
+    const didAdd = await addReferencedFile(payload.path, relativePath)
+    if (didAdd) insertAtCursor(`@${relativePath} `)
+    return true
+  }, [addReferencedFile, insertAtCursor, rootPath])
+
   const handleRevertPatchReview = useCallback(async (review: ClaudeGuiPatchReview, filePath?: string) => {
     if (!activeConversation) return
     const targetFiles = filePath
@@ -2989,13 +3009,20 @@ export function ClaudeCodePanel({ sessionId }: ClaudeCodePanelProps = {}): JSX.E
               : 'border-transparent',
           )}
           onDragOver={(event) => {
-            event.preventDefault()
-            setIsDropActive(true)
+            if (event.dataTransfer.types.includes('Files') || hasFileTreeDragPayload(event.dataTransfer)) {
+              event.preventDefault()
+              setIsDropActive(true)
+              event.dataTransfer.dropEffect = 'copy'
+            }
           }}
           onDragLeave={() => setIsDropActive(false)}
           onDrop={(event) => {
             event.preventDefault()
             setIsDropActive(false)
+            if (hasFileTreeDragPayload(event.dataTransfer)) {
+              void handleApplyDroppedFileTreePath(event)
+              return
+            }
             void handleApplyDroppedFiles(event.dataTransfer.files)
           }}
         >

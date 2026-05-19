@@ -397,6 +397,7 @@ export function GitChanges(): JSX.Element {
   const selectedWorktree = useWorktreesStore((s) => s.worktrees.find((w) => w.id === s.selectedWorktreeId))
   const branchInfo = useGitStore((s) => selectedProjectId ? s.branchInfo[selectedProjectId] : undefined)
   const gitChangesViewMode = useUIStore((s) => s.settings.gitChangesViewMode)
+  const gitTreeDefaultExpandDepth = useUIStore((s) => s.settings.gitTreeDefaultExpandDepth)
   const gitReviewMode = useUIStore((s) => s.settings.gitReviewMode)
   const customSessionDefinitions = useUIStore((s) => s.settings.customSessionDefinitions)
   const updateSettings = useUIStore((s) => s.updateSettings)
@@ -411,6 +412,7 @@ export function GitChanges(): JSX.Element {
   const [stagedCollapsed, setStagedCollapsed] = useState(false)
   const [changesCollapsed, setChangesCollapsed] = useState(false)
   const [collapsedTreeDirs, setCollapsedTreeDirs] = useState<Set<string>>(() => new Set())
+  const [expandedTreeDirs, setExpandedTreeDirs] = useState<Set<string>>(() => new Set())
   const [activeTab, setActiveTab] = useState<'review' | 'changes'>('changes')
   const [fixRequestId, setFixRequestId] = useState<string | null>(null)
   const [reviewRunnerMenu, setReviewRunnerMenu] = useState<{ x: number; y: number } | null>(null)
@@ -473,11 +475,34 @@ export function GitChanges(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [reviewRunnerMenu])
 
-  const toggleTreeDirectory = useCallback((key: string) => {
+  const toggleTreeDirectory = useCallback((key: string, collapsed: boolean, defaultCollapsed: boolean) => {
+    if (collapsed) {
+      setCollapsedTreeDirs((current) => {
+        if (!current.has(key)) return current
+        const next = new Set(current)
+        next.delete(key)
+        return next
+      })
+      if (defaultCollapsed) {
+        setExpandedTreeDirs((current) => {
+          const next = new Set(current)
+          next.add(key)
+          return next
+        })
+      }
+      return
+    }
+
+    setExpandedTreeDirs((current) => {
+      if (!current.has(key)) return current
+      const next = new Set(current)
+      next.delete(key)
+      return next
+    })
+    if (defaultCollapsed) return
     setCollapsedTreeDirs((current) => {
       const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      next.add(key)
       return next
     })
   }, [])
@@ -1201,6 +1226,8 @@ export function GitChanges(): JSX.Element {
                       files={staged}
                       sectionId="staged"
                       collapsedDirs={collapsedTreeDirs}
+                      expandedDirs={expandedTreeDirs}
+                      defaultExpandDepth={gitTreeDefaultExpandDepth}
                       onToggleDir={toggleTreeDirectory}
                       renderFile={(f, depth) => (
                         <FileRow
@@ -1273,6 +1300,8 @@ export function GitChanges(): JSX.Element {
                       files={unstaged}
                       sectionId="unstaged"
                       collapsedDirs={collapsedTreeDirs}
+                      expandedDirs={expandedTreeDirs}
+                      defaultExpandDepth={gitTreeDefaultExpandDepth}
                       onToggleDir={toggleTreeDirectory}
                       renderFile={(f, depth) => (
                         <FileRow
@@ -1386,13 +1415,17 @@ function GitFileTree({
   files,
   sectionId,
   collapsedDirs,
+  expandedDirs,
+  defaultExpandDepth,
   onToggleDir,
   renderFile,
 }: {
   files: GitFileStatus[]
   sectionId: string
   collapsedDirs: Set<string>
-  onToggleDir: (key: string) => void
+  expandedDirs: Set<string>
+  defaultExpandDepth: number
+  onToggleDir: (key: string, collapsed: boolean, defaultCollapsed: boolean) => void
   renderFile: (file: GitFileStatus, depth: number) => React.ReactNode
 }): JSX.Element {
   const tree = useMemo(() => buildGitTree(files), [files])
@@ -1401,13 +1434,14 @@ function GitFileTree({
     if (node.type === 'file') return renderFile(node.file, depth)
 
     const key = `${sectionId}:${node.path}`
-    const collapsed = collapsedDirs.has(key)
+    const defaultCollapsed = depth > defaultExpandDepth
+    const collapsed = collapsedDirs.has(key) || (defaultCollapsed && !expandedDirs.has(key))
 
     return (
       <div key={key}>
         <button
           type="button"
-          onClick={() => onToggleDir(key)}
+          onClick={() => onToggleDir(key, collapsed, defaultCollapsed)}
           className="group flex w-full items-center gap-1.5 py-[3px] pr-3 text-[var(--ui-font-xs)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-tertiary)]"
           style={{ paddingLeft: `${18 + depth * 14}px` }}
           title={node.path}

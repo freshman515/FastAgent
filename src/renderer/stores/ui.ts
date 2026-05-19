@@ -365,6 +365,7 @@ export interface AppSettings {
   /** Ctrl+Tab target in the main workspace. */
   ctrlTabBehavior: CtrlTabBehavior
   gitChangesViewMode: GitChangesViewMode
+  gitTreeDefaultExpandDepth: number
   gitReviewMode: GitReviewMode
   gitReviewFixMode: GitReviewFixMode
   /** Last visited settings dialog page — persisted so reopening lands on the previous tab */
@@ -526,6 +527,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   appLaunchMode: 'normal',
   ctrlTabBehavior: 'tabs',
   gitChangesViewMode: 'tree',
+  gitTreeDefaultExpandDepth: 4,
   gitReviewMode: 'codex',
   gitReviewFixMode: 'claude-gui',
   lastSettingsPage: 'general',
@@ -1839,6 +1841,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       s.ctrlTabBehavior = normalizeCtrlTabBehavior(raw.ctrlTabBehavior)
       if (raw.gitChangesViewMode === 'flat' || raw.gitChangesViewMode === 'tree') {
         s.gitChangesViewMode = raw.gitChangesViewMode
+      }
+      if (typeof raw.gitTreeDefaultExpandDepth === 'number' && Number.isFinite(raw.gitTreeDefaultExpandDepth)) {
+        s.gitTreeDefaultExpandDepth = Math.max(0, Math.min(12, Math.round(raw.gitTreeDefaultExpandDepth)))
       }
       {
         const normalizedGitReviewMode = normalizeGitReviewMode(raw.gitReviewMode)

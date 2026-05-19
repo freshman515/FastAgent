@@ -1606,6 +1606,25 @@ function GitPage({ settings, onUpdate }: { settings: AppSettings; onUpdate: (k: 
             onChange={(v) => onUpdate('gitChangesViewMode', v)}
           />
         </div>
+        <label className="flex max-w-[220px] flex-col gap-1.5">
+          <span className="text-[var(--ui-font-xs)] text-[var(--color-text-tertiary)]">目录树默认展开最大层级</span>
+          <input
+            type="number"
+            min={0}
+            max={12}
+            step={1}
+            value={settings.gitTreeDefaultExpandDepth}
+            onChange={(event) => {
+              const parsed = Number(event.target.value)
+              if (!Number.isFinite(parsed)) return
+              onUpdate('gitTreeDefaultExpandDepth', Math.max(0, Math.min(12, Math.round(parsed))))
+            }}
+            className="h-8 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2.5 text-[var(--ui-font-sm)] text-[var(--color-text-primary)] outline-none"
+          />
+          <span className="text-[var(--ui-font-2xs)] text-[var(--color-text-tertiary)]">
+            默认 4：展开第 0-4 级目录，更深层级默认折叠。
+          </span>
+        </label>
       </SettingsSection>
     </div>
   )

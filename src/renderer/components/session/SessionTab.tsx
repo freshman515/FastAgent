@@ -23,6 +23,8 @@ import { beginTabDragGuard, endTabDragGuard } from '@/lib/tabDragGuard'
 import { shouldPopOutTabFromDrop } from '@/lib/tabDetachDrop'
 import { closeSessionsById, getClosableSessions } from '@/lib/closeSessions'
 import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
+import { formatTerminalPaths, hasFileTreeDragPayload, readFileTreeDragPayload } from '@/lib/fileTreeDrag'
+import { buildBracketedPastePayload } from '@/lib/noteSend'
 import { SessionIconView } from './SessionIconView'
 
 interface SessionTabProps {
@@ -93,6 +95,7 @@ export function SessionTab({
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null)
+  const [fileDropActive, setFileDropActive] = useState(false)
   const [todoPickerOpen, setTodoPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragTokenRef = useRef<string | null>(null)
@@ -267,6 +270,26 @@ export function SessionTab({
     closeSessionsById(pendingBulkClose.ids)
     setPendingBulkClose(null)
   }, [pendingBulkClose])
+
+  const handleFileTreeDrop = useCallback((event: React.DragEvent): boolean => {
+    const payload = readFileTreeDragPayload(event.dataTransfer)
+    if (!payload) return false
+
+    event.preventDefault()
+    event.stopPropagation()
+    setFileDropActive(false)
+
+    if (!session.ptyId) return true
+
+    setPaneActiveSession(paneId, session.id)
+    setActivePaneId(paneId)
+    window.setTimeout(() => {
+      if (!session.ptyId) return
+      window.api.session.write(session.ptyId, buildBracketedPastePayload(formatTerminalPaths([payload.path])))
+    }, 80)
+    return true
+  }, [paneId, session.id, session.ptyId, setActivePaneId, setPaneActiveSession])
+
   const activeTabClass = isActive
     ? cn(
       'tab-active font-medium text-[var(--color-text-primary)]',
@@ -304,13 +327,27 @@ export function SessionTab({
           onDragStart(session.id, e)
         }}
         onDragOver={(e) => {
+          if (hasFileTreeDragPayload(e.dataTransfer)) {
+            e.preventDefault()
+            e.stopPropagation()
+            e.dataTransfer.dropEffect = session.ptyId ? 'copy' : 'none'
+            setFileDropActive(true)
+            return
+          }
           e.preventDefault()
           e.stopPropagation()
           e.dataTransfer.dropEffect = 'move'
           onDragOver(session.id, e)
         }}
-        onDragLeave={onDragLeave}
+        onDragLeave={(e) => {
+          if (hasFileTreeDragPayload(e.dataTransfer)) {
+            setFileDropActive(false)
+            return
+          }
+          onDragLeave()
+        }}
         onDrop={(e) => {
+          if (handleFileTreeDrop(e)) return
           e.preventDefault()
           e.stopPropagation()
           onDrop(session.id, e)
@@ -364,6 +401,7 @@ export function SessionTab({
           'max-w-[200px] min-w-[120px] transition-all duration-200',
           activeTabClass,
           isDragging && 'tab-dragging-source',
+          fileDropActive && 'ring-1 ring-inset ring-[var(--color-accent)]/60 bg-[var(--color-accent)]/10',
         )}
         onClick={handleClick}
         onContextMenu={handleContextMenu}

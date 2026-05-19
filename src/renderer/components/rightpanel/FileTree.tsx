@@ -1,4 +1,4 @@
-import { ChevronRight, ExternalLink, File, FilePlus, Folder, FolderOpen, FolderPlus, Trash2 } from 'lucide-react'
+import { ChevronRight, Copy, ExternalLink, File, FilePlus, Folder, FolderOpen, FolderPlus, RefreshCw, Trash2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDocumentFileKind } from '@shared/fileTypes'
@@ -11,6 +11,7 @@ import { detectLanguage, FILE_ICONS, useEditorsStore } from '@/stores/editors'
 import { useGitStore } from '@/stores/git'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { openWorkspaceFile } from '@/lib/openWorkspaceFile'
+import { FILE_TREE_DRAG_MIME, readFileTreeDragPayload, type FileTreeDragPayload } from '@/lib/fileTreeDrag'
 
 interface TreeEntry {
   name: string
@@ -18,11 +19,6 @@ interface TreeEntry {
 }
 
 interface TreeSelection {
-  path: string
-  isDir: boolean
-}
-
-interface DragPayload {
   path: string
   isDir: boolean
 }
@@ -41,13 +37,15 @@ interface TreeNodeProps {
   projectId: string | null
   worktreeId?: string
   selectedPath: string | null
+  expandedPaths: Set<string>
   refreshToken: number
   pendingCreation: PendingCreation | null
   onSelect: (selection: TreeSelection) => void
+  onExpandedChange: (path: string, expanded: boolean) => void
   onBeginCreation: (kind: PendingCreation['kind'], selection?: TreeSelection | null) => void
   onSubmitPending: (name: string) => Promise<void>
   onCancelPending: () => void
-  onMovePath: (payload: DragPayload, targetDirectory: string) => Promise<void>
+  onMovePath: (payload: FileTreeDragPayload, targetDirectory: string) => Promise<void>
   onRequestDelete: (selection: TreeSelection) => void
 }
 
@@ -64,8 +62,6 @@ const ACTION_BUTTON = cn(
   'hover:border-[var(--color-accent)]/45 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] hover:shadow-sm',
   'active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed'
 )
-const FILE_TREE_DRAG_MIME = 'application/x-pragma-desk-file-tree-node'
-
 function joinPath(basePath: string, name: string): string {
   return `${basePath.replace(/[\\/]+$/, '')}/${name.replace(/^[\\/]+/, '')}`
 }
@@ -86,18 +82,6 @@ function isNestedPath(parentPath: string, childPath: string): boolean {
   const parent = normalizePath(parentPath)
   const child = normalizePath(childPath)
   return child === parent || child.startsWith(`${parent}/`)
-}
-
-function readDragPayload(event: React.DragEvent): DragPayload | null {
-  const raw = event.dataTransfer.getData(FILE_TREE_DRAG_MIME)
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as Partial<DragPayload>
-    if (typeof parsed.path !== 'string' || typeof parsed.isDir !== 'boolean') return null
-    return { path: parsed.path, isDir: parsed.isDir }
-  } catch {
-    return null
-  }
 }
 
 async function readVisibleEntries(dirPath: string): Promise<TreeEntry[]> {
@@ -216,20 +200,23 @@ function TreeNode({
   projectId,
   worktreeId,
   selectedPath,
+  expandedPaths,
   refreshToken,
   pendingCreation,
   onSelect,
+  onExpandedChange,
   onBeginCreation,
   onSubmitPending,
   onCancelPending,
   onMovePath,
   onRequestDelete,
 }: TreeNodeProps): JSX.Element {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(() => expandedPaths.has(normalizePath(path)))
   const [children, setChildren] = useState<TreeEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const addToast = useUIStore((state) => state.addToast)
   const hoverExpandTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSelected = selectedPath === path
   const showPendingChild = Boolean(isDir && pendingCreation?.directoryPath === path && pendingCreation.afterPath === null)
@@ -248,6 +235,10 @@ function TreeNode({
   }, [isDir, path])
 
   useEffect(() => {
+    setExpanded(expandedPaths.has(normalizePath(path)))
+  }, [expandedPaths, path])
+
+  useEffect(() => {
     if (!expanded) return
     void loadChildren()
   }, [expanded, loadChildren, refreshToken])
@@ -255,22 +246,45 @@ function TreeNode({
   useEffect(() => {
     if (isDir && pendingCreation?.directoryPath === path) {
       setExpanded(true)
+      onExpandedChange(path, true)
     }
-  }, [isDir, path, pendingCreation])
+  }, [isDir, onExpandedChange, path, pendingCreation])
 
   const handleClick = useCallback(() => {
     onSelect({ path, isDir })
     if (isDir) {
-      setExpanded((current) => !current)
+      const nextExpanded = !expanded
+      setExpanded(nextExpanded)
+      onExpandedChange(path, nextExpanded)
       return
     }
 
     openWorkspaceFile(path, { context: { projectId, worktreeId } })
-  }, [isDir, onSelect, path, projectId, worktreeId])
+  }, [expanded, isDir, onExpandedChange, onSelect, path, projectId, worktreeId])
+
+  const copyPath = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(path)
+      addToast({
+        type: 'success',
+        title: isDir ? '已复制文件夹路径' : '已复制文件路径',
+        body: path,
+        duration: 1800,
+      })
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: isDir ? '复制文件夹路径失败' : '复制文件路径失败',
+        body: error instanceof Error ? error.message : '无法写入剪贴板。',
+      })
+    } finally {
+      setCtxMenu(null)
+    }
+  }, [addToast, isDir, path])
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
     if (!isDir) return
-    const payload = readDragPayload(event)
+    const payload = readFileTreeDragPayload(event.dataTransfer)
     if (!payload) return
     if (normalizePath(payload.path) === normalizePath(path)) return
     if (payload.isDir && isNestedPath(payload.path, path)) return
@@ -284,10 +298,11 @@ function TreeNode({
     if (!expanded && hoverExpandTimer.current === null) {
       hoverExpandTimer.current = setTimeout(() => {
         setExpanded(true)
+        onExpandedChange(path, true)
         hoverExpandTimer.current = null
       }, 400)
     }
-  }, [expanded, isDir, path])
+  }, [expanded, isDir, onExpandedChange, path])
 
   const clearDropState = useCallback(() => {
     setDropActive(false)
@@ -299,7 +314,7 @@ function TreeNode({
 
   const handleDrop = useCallback((event: React.DragEvent) => {
     if (!isDir) return
-    const payload = readDragPayload(event)
+    const payload = readFileTreeDragPayload(event.dataTransfer)
     clearDropState()
     if (!payload) return
     if (normalizePath(payload.path) === normalizePath(path)) return
@@ -322,8 +337,8 @@ function TreeNode({
         onClick={handleClick}
         onDragStart={(event) => {
           event.stopPropagation()
-          event.dataTransfer.effectAllowed = 'move'
-          event.dataTransfer.setData(FILE_TREE_DRAG_MIME, JSON.stringify({ path, isDir } satisfies DragPayload))
+          event.dataTransfer.effectAllowed = 'copyMove'
+          event.dataTransfer.setData(FILE_TREE_DRAG_MIME, JSON.stringify({ path, isDir } satisfies FileTreeDragPayload))
           event.dataTransfer.setData('text/plain', path)
         }}
         onDragOver={handleDragOver}
@@ -432,6 +447,12 @@ function TreeNode({
 
             <button
               className={MENU_ITEM}
+              onClick={() => { void copyPath() }}
+            >
+              <Copy size={12} /> {isDir ? '复制文件夹路径' : '复制文件路径'}
+            </button>
+            <button
+              className={MENU_ITEM}
               onClick={() => {
                 window.api.shell.openPath(isDir ? path : getParentPath(path))
                 setCtxMenu(null)
@@ -472,9 +493,11 @@ function TreeNode({
           projectId={projectId}
           worktreeId={worktreeId}
           selectedPath={selectedPath}
+          expandedPaths={expandedPaths}
           refreshToken={refreshToken}
           pendingCreation={pendingCreation}
           onSelect={onSelect}
+          onExpandedChange={onExpandedChange}
           onBeginCreation={onBeginCreation}
           onSubmitPending={onSubmitPending}
           onCancelPending={onCancelPending}
@@ -508,12 +531,35 @@ export function FileTree(): JSX.Element {
   const [entries, setEntries] = useState<TreeEntry[]>([])
   const [selectedEntry, setSelectedEntry] = useState<TreeSelection | null>(null)
   const [refreshToken, setRefreshToken] = useState(0)
+  const [rootLoading, setRootLoading] = useState(false)
+  const [expandedPathsByScope, setExpandedPathsByScope] = useState<Record<string, string[]>>({})
   const [pendingCreation, setPendingCreation] = useState<PendingCreation | null>(null)
   const [pendingDelete, setPendingDelete] = useState<TreeSelection | null>(null)
+
+  const expandedPaths = useMemo(
+    () => new Set(expandedPathsByScope[treeScopeKey] ?? []),
+    [expandedPathsByScope, treeScopeKey],
+  )
 
   const refreshTree = useCallback(() => {
     setRefreshToken((value) => value + 1)
   }, [])
+
+  const handleExpandedChange = useCallback((path: string, expanded: boolean) => {
+    const normalized = normalizePath(path)
+    setExpandedPathsByScope((current) => {
+      const currentSet = new Set(current[treeScopeKey] ?? [])
+      if (expanded) {
+        currentSet.add(normalized)
+      } else {
+        currentSet.delete(normalized)
+      }
+      return {
+        ...current,
+        [treeScopeKey]: Array.from(currentSet),
+      }
+    })
+  }, [treeScopeKey])
 
   useEffect(() => {
     setSelectedEntry(null)
@@ -524,9 +570,21 @@ export function FileTree(): JSX.Element {
 
   useEffect(() => {
     if (!projectPath) return
+    let cancelled = false
+    setRootLoading(true)
     void readVisibleEntries(projectPath)
-      .then((items) => setEntries(items))
-      .catch(() => setEntries([]))
+      .then((items) => {
+        if (!cancelled) setEntries(items)
+      })
+      .catch(() => {
+        if (!cancelled) setEntries([])
+      })
+      .finally(() => {
+        if (!cancelled) setRootLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [projectPath, refreshToken])
 
   const beginCreation = useCallback((kind: PendingCreation['kind'], selection?: TreeSelection | null) => {
@@ -582,7 +640,7 @@ export function FileTree(): JSX.Element {
     setPendingDelete(selection)
   }, [])
 
-  const handleMovePath = useCallback(async (payload: DragPayload, targetDirectory: string) => {
+  const handleMovePath = useCallback(async (payload: FileTreeDragPayload, targetDirectory: string) => {
     const nextPath = joinPath(targetDirectory, getBaseName(payload.path))
     try {
       await window.api.fs.move(payload.path, nextPath)
@@ -651,12 +709,36 @@ export function FileTree(): JSX.Element {
     <div className="flex flex-col h-full bg-[var(--color-bg-secondary)] overflow-hidden">
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border)]/50 px-2.5 py-1.5">
         <span className="pl-1 text-[11px] font-bold tracking-wider text-[var(--color-text-tertiary)] uppercase">File Explorer</span>
-        <div className="flex items-center">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={refreshTree}
+            disabled={rootLoading}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+              'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+              'transition-all duration-150',
+              rootLoading && 'cursor-not-allowed opacity-50',
+            )}
+            title="刷新"
+            aria-label="刷新文件列表"
+          >
+            <RefreshCw size={14} className={rootLoading ? 'animate-spin' : undefined} />
+          </button>
           {selectedProject && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--color-bg-primary)]/40 border border-[var(--color-border)]/50">
+            <button
+              type="button"
+              onClick={() => window.api.shell.openPath(projectPath)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md border border-[var(--color-border)]/50 bg-[var(--color-bg-primary)]/40 px-2 py-0.5',
+                'transition-colors hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)]',
+              )}
+              title="在资源管理器中打开当前项目"
+              aria-label="在资源管理器中打开当前项目"
+            >
               <Folder size={11} className="text-[var(--color-accent)]" />
               <span className="max-w-[120px] truncate text-[10px] font-bold text-[var(--color-text-secondary)] uppercase tracking-tight">{selectedProject.name}</span>
-            </div>
+            </button>
           )}
         </div>
       </div>
@@ -691,9 +773,11 @@ export function FileTree(): JSX.Element {
               projectId={selectedProjectId}
               worktreeId={editorWorktreeId}
               selectedPath={selectedEntry?.path ?? null}
+              expandedPaths={expandedPaths}
               refreshToken={refreshToken}
               pendingCreation={pendingCreation}
               onSelect={setSelectedEntry}
+              onExpandedChange={handleExpandedChange}
               onBeginCreation={beginCreation}
               onSubmitPending={handleSubmitPending}
               onCancelPending={handleCancelPending}

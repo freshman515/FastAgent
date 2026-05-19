@@ -987,8 +987,13 @@ export function registerWindowHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC.WINDOW_CLOSE, () => {
-    app.quit()
+  ipcMain.handle(IPC.WINDOW_CLOSE, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) {
+      win.close()
+    } else {
+      app.quit()
+    }
   })
 
   ipcMain.handle(IPC.WINDOW_IS_MAXIMIZED, (event) => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, screen, shell } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
@@ -28,6 +28,7 @@ if (process.platform === 'win32') {
 }
 
 let mainWindow: BrowserWindow | null = null
+let closeConfirmationOpen = false
 const detachedWindows = new Map<string, BrowserWindow>()
 const canvasBookmarkShortcutWebContents = new Set<number>()
 const EXTERNAL_WEB_PROTOCOLS = new Set(['http:', 'https:'])
@@ -228,6 +229,31 @@ function createWindow(): void {
     },
   })
   installCanvasBookmarkShortcutBridge(mainWindow)
+
+  mainWindow.on('close', (event) => {
+    if (isQuitting || closeConfirmationOpen) return
+    event.preventDefault()
+
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
+
+    closeConfirmationOpen = true
+    void dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['退出', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+      title: '退出 Pragma Desk',
+      message: '确定要关闭 Pragma Desk 吗？',
+      detail: '正在运行的会话会在退出前尝试保存并停止。',
+      noLink: true,
+    }).then(({ response }) => {
+      closeConfirmationOpen = false
+      if (response === 0) app.quit()
+    }).catch(() => {
+      closeConfirmationOpen = false
+    })
+  })
 
   // Auto-approve system audio capture for the music visualizer on Windows.
   // macOS does not support the same loopback capture path and should fall

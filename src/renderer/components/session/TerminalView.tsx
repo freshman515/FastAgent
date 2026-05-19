@@ -30,6 +30,7 @@ import { createConnectedNoteTabForSession } from '@/lib/connectedNoteTabs'
 import { createConnectedNoteForCard } from '@/components/canvas/canvasConnectedNote'
 import { buildDetachedSessionPayload } from '@/lib/detachedSessionPayload'
 import { clearPtyInput, getClearPtyInputPayload } from '@/lib/noteSend'
+import { formatTerminalPaths, hasFileTreeDragPayload, readFileTreeDragPayload } from '@/lib/fileTreeDrag'
 import { SessionIconView } from './SessionIconView'
 
 interface TerminalViewProps {
@@ -1787,26 +1788,38 @@ export function TerminalView({ session, isActive, paneId, canvasCardId }: Termin
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      if (event.dataTransfer.files.length === 0) return
-      event.preventDefault()
       const term = terminalRef.current
       if (!term) return
+
+      const fileTreePayload = readFileTreeDragPayload(event.dataTransfer)
+      if (fileTreePayload) {
+        event.preventDefault()
+        event.stopPropagation()
+        term.focus()
+        term.paste(formatTerminalPaths([fileTreePayload.path]))
+        return
+      }
+
+      if (event.dataTransfer.files.length === 0) return
+      event.preventDefault()
+      event.stopPropagation()
       const paths: string[] = []
       for (const file of Array.from(event.dataTransfer.files)) {
         const path = window.api.files.getPathForFile(file)
         if (!path) continue
-        paths.push(/\s/.test(path) ? `"${path}"` : path)
+        paths.push(path)
       }
       if (paths.length === 0) return
       term.focus()
-      term.paste(paths.join(' '))
+      term.paste(formatTerminalPaths(paths))
     },
     [terminalRef],
   )
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    if (event.dataTransfer.types.includes('Files')) {
+    if (event.dataTransfer.types.includes('Files') || hasFileTreeDragPayload(event.dataTransfer)) {
       event.preventDefault()
+      event.stopPropagation()
       event.dataTransfer.dropEffect = 'copy'
     }
   }, [])
